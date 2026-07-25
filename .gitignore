@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Production
+dist/
+build/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
+.npm-cache/
+.tmp/
+coverage/
+playwright-report/
+test-results/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/tasks.json
+
+# Vercel
+.vercel/
+
+# Supabase local runtime
+supabase/.branches/
+supabase/.temp/
+
+# Local code intelligence indexes
+.codegraph/
+
+# Local agent/workflow instructions
+AGENTS.md
+CLAUDE.md
+Cloud.md
+docs/superpowers/
+
+# Bordel
+bordel/

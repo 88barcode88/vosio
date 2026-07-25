@@ -1,0 +1,317 @@
+"use client";
+
+import { useEffect, useState, useTransition } from "react";
+import { usePathname } from "next/navigation";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Circle,
+  Copy,
+  Download,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldQuestion
+} from "lucide-react";
+import { DeleteAiOutputForm } from "@/components/delete-ai-output-form";
+import {
+  buildStructuredChecklistMarkdown,
+  copyTextToClipboard,
+  downloadMarkdownFile
+} from "@/components/transcript-tabs/export-utils";
+import { getNextStructuredTaskStatus } from "@/lib/ai/structured-status";
+import type {
+  StructuredAiItems,
+  StructuredDecisionRow,
+  StructuredOwnerCategory,
+  StructuredRiskRow,
+  StructuredTaskRow
+} from "@/lib/ai/structured-types";
+
+const ownerOrder: StructuredOwnerCategory[] = ["Moje práce", "Klient", "Nejasné"];
+
+// StructuredItemsContent renders normalized AI rows as actionable workspace data.
+export function StructuredItemsContent({ items }: { items: StructuredAiItems }) {
+  const [checklistMessage, setChecklistMessage] = useState<string | null>(null);
+  const hasStructuredItems = items.tasks.length > 0 || items.decisions.length > 0 || items.risks.length > 0;
+  const pathname = usePathname();
+  const taskOutputIds = getUniqueAiOutputIds(items.tasks);
+
+  // copyChecklist copies the normalized task checklist as readable Markdown.
+  async function copyChecklist() {
+    await copyTextToClipboard(buildStructuredChecklistMarkdown(items.tasks));
+    setChecklistMessage("Checklist zkopírován.");
+  }
+
+  // downloadChecklist saves the normalized task checklist as a Markdown file.
+  function downloadChecklist() {
+    downloadMarkdownFile("vosio-checklist", buildStructuredChecklistMarkdown(items.tasks));
+    setChecklistMessage("Checklist stažen jako MD.");
+  }
+
+  if (!hasStructuredItems) {
+    return null;
+  }
+
+  return (
+    <section className="structured-ai-section" aria-label="Strukturované AI položky">
+      {items.tasks.length > 0 ? (
+        <div className="structured-ai-block">
+          <header>
+            <strong>Úkoly jako checklist</strong>
+            <span>{items.tasks.length} položek</span>
+            <div className="structured-checklist-actions" aria-label="Export checklistu">
+              <button onClick={copyChecklist} type="button">
+                <Copy size={13} />
+                Kopírovat
+              </button>
+              <button onClick={downloadChecklist} type="button">
+                <Download size={13} />
+                MD
+              </button>
+            </div>
+            {taskOutputIds.length > 0 ? (
+              <DeleteAiOutputForm
+                confirmationMessage="Smazat checklist úkolů? Smažou se zdrojové AI výstupy pro tyto úkoly, přepis a nahrávka zůstanou uložené."
+                label="Smazat checklist"
+                next={pathname}
+                outputIds={taskOutputIds}
+                targetSelector=".structured-ai-section"
+              />
+            ) : null}
+          </header>
+          {checklistMessage ? <p className="structured-checklist-message">{checklistMessage}</p> : null}
+          <div className="structured-task-groups">
+            {groupTasksByOwner(items.tasks).map((group) => (
+              <section className="structured-task-group" data-owner-category={group.ownerCategory} key={group.ownerCategory}>
+                <header>
+                  <strong>{group.ownerCategory}</strong>
+                  <span>{group.tasks.length}</span>
+                </header>
+                <div className="structured-task-list">
+                  {group.tasks.map((task) => (
+                    <StructuredTaskRowView key={task.id ?? `${task.ai_output_id}-${task.position}`} task={task} />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {items.decisions.length > 0 ? <StructuredDecisionList decisions={items.decisions} /> : null}
+      {items.risks.length > 0 ? <StructuredRiskList risks={items.risks} /> : null}
+    </section>
+  );
+}
+
+// getUniqueAiOutputIds returns source AI output ids for deleting a structured projection from the workspace.
+function getUniqueAiOutputIds(rows: Array<{ ai_output_id: string }>) {
+  return Array.from(new Set(rows.map((row) => row.ai_output_id).filter(Boolean)));
+}
+
+// groupTasksByOwner keeps the checklist in predictable business buckets.
+function groupTasksByOwner(tasks: StructuredTaskRow[]) {
+  return ownerOrder
+    .map((ownerCategory) => ({
+      ownerCategory,
+      tasks: tasks.filter((task) => task.owner_category === ownerCategory)
+    }))
+    .filter((group) => group.tasks.length > 0);
+}
+
+// StructuredTaskRowView renders one persisted task with an optimistic status toggle.
+function StructuredTaskRowView({ task }: { task: StructuredTaskRow }) {
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const [localStatus, setLocalStatus] = useState(task.status);
+  const isDone = localStatus === "done";
+  const meta = getTaskMeta(task);
+
+  useEffect(() => {
+    setLocalStatus(task.status);
+  }, [task.status]);
+
+  // toggleTaskStatus saves one checklist status without leaving the current scroll position.
+  function toggleTaskStatus() {
+    if (!task.id || isPending) {
+      return;
+    }
+
+    const previousStatus = localStatus;
+    const nextStatus = getNextStructuredTaskStatus(localStatus);
+
+    setLocalStatus(nextStatus);
+    setErrorMessage(null);
+
+    startTransition(async () => {
+      try {
+        const response = await fetch(`/api/transcript-tasks/${task.id}/status`, {
+          body: JSON.stringify({ status: nextStatus }),
+          headers: { "Content-Type": "application/json" },
+          method: "PATCH"
+        });
+
+        if (!response.ok) {
+          setLocalStatus(previousStatus);
+          setErrorMessage("Stav úkolu se nepodařilo uložit.");
+        }
+      } catch {
+        setLocalStatus(previousStatus);
+        setErrorMessage("Stav úkolu se nepodařilo uložit. Zkontrolujte připojení.");
+      }
+    });
+  }
+
+  return (
+    <article className="structured-task-row" data-owner-category={task.owner_category} data-task-status={localStatus}>
+      <button
+        aria-label={isDone ? "Označit úkol jako nedokončený" : "Označit úkol jako hotový"}
+        aria-pressed={isDone}
+        disabled={!task.id || isPending}
+        onClick={toggleTaskStatus}
+        type="button"
+      >
+        {isDone ? <CheckCircle2 size={15} /> : <Circle size={15} />}
+      </button>
+      <div>
+        <strong>{task.title}</strong>
+        {meta.length > 0 ? (
+          <div className="structured-task-meta">
+            {meta.map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
+        ) : null}
+        {task.description ? <p>{task.description}</p> : null}
+        {task.evidence_quote ? (
+          <details className="structured-evidence structured-evidence-compact">
+            <summary aria-label={`Zobrazit důkaz k úkolu ${task.title}`}>Důkaz</summary>
+            <p>"{task.evidence_quote}"</p>
+          </details>
+        ) : null}
+        {errorMessage ? (
+          <p className="structured-task-status-message" role="status">
+            {errorMessage}
+          </p>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+// getTaskMeta builds compact chips for deadline, owner and current state.
+function getTaskMeta(task: StructuredTaskRow) {
+  return [
+    task.owner_name ?? task.owner_category,
+    task.deadline ? `Termín: ${task.deadline}` : null,
+    task.deadline_normalized ? `Datum: ${task.deadline_normalized}` : null,
+    task.status !== "new" ? getTaskStatusLabel(task.status) : null,
+    task.source_type === "inferred" ? "Odvozeno" : null
+  ].filter((item): item is string => Boolean(item));
+}
+
+// getTaskStatusLabel maps stored task states into Czech UI labels.
+function getTaskStatusLabel(status: StructuredTaskRow["status"]) {
+  const labels: Record<StructuredTaskRow["status"], string> = {
+    done: "Hotovo",
+    ignored: "Ignorováno",
+    in_progress: "Rozpracováno",
+    new: "Nové",
+    unclear: "Nejasné",
+    waiting: "Čeká"
+  };
+
+  return labels[status];
+}
+
+// StructuredDecisionList renders confirmations separately from already agreed decisions.
+function StructuredDecisionList({ decisions }: { decisions: StructuredDecisionRow[] }) {
+  return (
+    <div className="structured-ai-block structured-ai-compact-block">
+      <header>
+        <strong>Rozhodnutí</strong>
+        <span>{decisions.length} položek</span>
+      </header>
+      <ul>
+        {decisions.map((decision) => (
+          <li data-decision-status={getDecisionState(decision)} key={decision.id ?? `${decision.ai_output_id}-${decision.position}`}>
+            {getDecisionIcon(decision)}
+            <span>
+              <strong>{decision.title}</strong>
+              <small>{getDecisionLabel(decision)}</small>
+              {decision.evidence_quote ? <em>"{decision.evidence_quote}"</em> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// getDecisionState classifies stored decision status for visual treatment.
+function getDecisionState(decision: StructuredDecisionRow) {
+  const status = decision.status?.toLowerCase() ?? "";
+
+  if (["decided", "agreed", "confirmed"].includes(status)) {
+    return "decided";
+  }
+
+  if (["needs_confirmation", "to_confirm", "proposed", "deferred", "unknown"].includes(status)) {
+    return "needs_confirmation";
+  }
+
+  return "decision";
+}
+
+// getDecisionLabel returns a Czech status label for decision rows.
+function getDecisionLabel(decision: StructuredDecisionRow) {
+  const state = getDecisionState(decision);
+
+  if (state === "decided") {
+    return "Dohodnuto";
+  }
+
+  if (state === "needs_confirmation") {
+    return "K potvrzení";
+  }
+
+  return decision.owner_category ?? "Rozhodnutí";
+}
+
+// getDecisionIcon chooses an icon that distinguishes agreement from pending confirmation.
+function getDecisionIcon(decision: StructuredDecisionRow) {
+  const state = getDecisionState(decision);
+
+  if (state === "decided") {
+    return <ShieldCheck size={13} />;
+  }
+
+  if (state === "needs_confirmation") {
+    return <ShieldQuestion size={13} />;
+  }
+
+  return <ShieldAlert size={13} />;
+}
+
+// StructuredRiskList renders compact risks and blockers with impact details.
+function StructuredRiskList({ risks }: { risks: StructuredRiskRow[] }) {
+  return (
+    <div className="structured-ai-block structured-ai-compact-block">
+      <header>
+        <strong>Rizika / blokery</strong>
+        <span>{risks.length} položek</span>
+      </header>
+      <ul>
+        {risks.map((risk) => (
+          <li data-risk-row="true" key={risk.id ?? `${risk.ai_output_id}-${risk.position}`}>
+            <AlertTriangle size={13} />
+            <span>
+              <strong>{risk.title}</strong>
+              {risk.impact ? <small>Dopad: {risk.impact}</small> : null}
+              {risk.mitigation ? <em>Další krok: {risk.mitigation}</em> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

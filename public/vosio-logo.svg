@@ -1,0 +1,25 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Vosio logo</title>
+  <desc id="desc">Rounded teal Vosio audio wave mark on a dark background.</desc>
+  <rect width="512" height="512" rx="112" fill="#061014"/>
+  <rect x="72" y="72" width="368" height="368" rx="92" fill="#0D1A21" stroke="#244149" stroke-width="8"/>
+  <circle cx="256" cy="256" r="150" fill="#38D9D0" fill-opacity="0.08"/>
+  <circle cx="256" cy="256" r="118" fill="#38D9D0" fill-opacity="0.14"/>
+  <g filter="url(#glow)">
+    <rect x="144" y="230" width="20" height="52" rx="10" fill="#38D9D0"/>
+    <rect x="178" y="194" width="20" height="124" rx="10" fill="#38D9D0"/>
+    <rect x="212" y="156" width="20" height="200" rx="10" fill="#38D9D0"/>
+    <rect x="246" y="118" width="20" height="276" rx="10" fill="#38D9D0"/>
+    <rect x="280" y="156" width="20" height="200" rx="10" fill="#38D9D0"/>
+    <rect x="314" y="194" width="20" height="124" rx="10" fill="#38D9D0"/>
+    <rect x="348" y="230" width="20" height="52" rx="10" fill="#38D9D0"/>
+  </g>
+  <path d="M136 360C168 396 208 414 256 414C304 414 344 396 376 360" stroke="#48D597" stroke-width="16" stroke-linecap="round"/>
+  <defs>
+    <filter id="glow" x="104" y="78" width="304" height="356" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="12"/>
+      <feComposite in2="SourceGraphic" operator="over"/>
+    </filter>
+  </defs>
+</svg>

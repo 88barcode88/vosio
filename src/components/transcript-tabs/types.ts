@@ -1,0 +1,31 @@
+import type { AiOutputView } from "@/lib/ai/types";
+
+export type TranscriptTab = "transcript" | "ai" | "timeline" | "files";
+
+export type TranscriptSpeakerBlock = {
+  label: string;
+  speakerId: string | null;
+  speakerClassName: string;
+  speakerLabel: string;
+  text: string;
+};
+
+export type TimelineChapter = {
+  decisions: string[];
+  end: string | null;
+  relatedActionItems: string[];
+  speakers: string[];
+  start: string | null;
+  summary: string;
+  title: string;
+};
+
+export type AiMarkdownLine =
+  | { kind: "bullet" | "heading" | "paragraph"; text: string }
+  | { kind: "table"; rows: string[][] };
+
+export type ExportTarget =
+  | { id: "recording"; label: string; type: "recording" }
+  | { id: "workspace"; label: string; type: "workspace" }
+  | { id: "transcript"; label: string; type: "transcript" }
+  | { id: string; label: string; output: AiOutputView; type: "ai_output" };

@@ -1,0 +1,46 @@
+{
+  "name": "vosio-app",
+  "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3047",
+    "build": "next build",
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "lint": "eslint . --max-warnings=0",
+    "start": "next start",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "typecheck": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "@soniox/client": "^2.1.0",
+    "@supabase/ssr": "0.10.2",
+    "@supabase/supabase-js": "2.104.0",
+    "lucide-react": "1.14.0",
+    "next": "^16.2.6",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "server-only": "^0.0.1",
+    "tus-js-client": "4.3.1",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@next/eslint-plugin-next": "^16.2.4",
+    "@playwright/test": "^1.59.1",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitest/coverage-v8": "^4.1.5",
+    "eslint": "^9.39.4",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "jsdom": "^29.1.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.59.1",
+    "vitest": "^4.1.5"
+  }
+}

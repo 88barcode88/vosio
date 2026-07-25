@@ -1,0 +1,76 @@
+# Conventions
+
+## Jazyk a pojmy
+
+- Produkt nazývej Vosio.
+- Speech-to-text provider nazývej Soniox.
+- Nepoužívej název SONiVOX, pokud nejde o explicitní opravu překlepu.
+- "Varianta A" znamená upload hotového audio souboru.
+- "Varianta B" znamená nahrávání přímo v aplikaci.
+- "B1" znamená standardní nahrávání s přepisem po dokončení.
+- "B2" znamená realtime přepis během nahrávání.
+
+## Architektonický styl
+
+- Navrhuj cílově robustní systém, ne zahazovací MVP.
+- Funkce může být implementovaná později, ale musí být zohledněná v datovém a stavovém modelu, pokud je cílovou schopností.
+- Dlouhé operace patří do job/worker vrstvy, ne do dlouhého UI requestu.
+- Upload audio souborů má jít přímo do Supabase Storage přes authenticated resumable TUS upload; velké audio nesmí téct přes Vercel.
+- Server-side API route má řešit metadata, autorizaci a vytvoření jobu, ne přenášet velké audio.
+
+## Data a soukromí
+
+- U providerů vždy rozlišuj API režim od consumer web aplikace.
+- AI provider musí defaultně nepoužívat API input/output data k tréninku modelů.
+- Před implementací provider integrace ověř aktuální privacy/data policy.
+- Raw transcript, celé prompty a citlivé AI výstupy nepatří do logů.
+- Audit logy ukládají bezpečná metadata.
+
+## Databáze
+
+- Každá uživatelská tabulka má mít `user_id`, pokud existuje vlastnictví uživatelem.
+- RLS policy musí být součástí migrace.
+- Stavové hodnoty drž konzistentní s `docs/architecture.md`.
+- JSONB používej pro provider segmenty, speakers a raw AI output JSON. Pracovní entity z AI výstupů, jako úkoly nebo kapitoly, ukládej normalizovaně do vlastních tabulek s RLS.
+- Odvozené AI projekce jsou čitelné pro vlastníka, ale jejich obsah kromě checklist `status` nemá běžný uživatel upravovat přímo. Přegenerování obsahu patří přes nový AI job a service role zápis.
+- Mazání musí řešit referenční data i storage objekty.
+
+## Frontend
+
+- Primární UI je pracovní aplikace, ne landing page.
+- Při změnách UI čti `DESIGN.md` a `docs/requirements/ui-direction.md`.
+- Login je interní vstup do aplikace, ne veřejná registrační stránka.
+- Pracovní plocha nesmí jako výchozí stav prezentovat fake meeting/transcript data; pokud funkce ještě není hotová, ukaž reálný prázdný nebo čekající stav.
+- Mobil a desktop jsou stejně důležité.
+- UI musí ukazovat stav nahrávání, uploadu, přepisu a AI zpracování.
+- Chybové stavy musí být srozumitelné a akční.
+- PWA návrh musí počítat s limity mobilních browserů.
+- Aktivní live nahrávání vlastní root-level persistentní provider, takže běžná interní navigace včetně Back/Forward nesmí rekordér odmontovat ani zobrazovat potvrzení. Globální mini panel musí zůstat dostupný pro návrat a ruční zastavení. Označené navigační formuláře, odhlášení, zavření/reload a odchod mimo aplikaci zůstávají chráněné. Probíhající souborový upload persistentní není a interní navigaci dál blokuje.
+- Stav Wake Locku a realtime spojení komunikuj odděleně; varování Wake Locku nesmí tvrdit, že se nahrávání zastavilo.
+- Používej pojmenovaný `<progress>` a úsporné `role=status` zprávy jen při změně fáze, ne při každém upload chunku. Dlouhé názvy souborů musí na mobilu zůstat čitelné s bezpečným zkrácením.
+- Manuální upload respektuje celý runtime limit bucketu. Live audio používá `min(limit bucketu, 128 MiB)` a bezpečnostní rezervu před finalizací; nepopisuj tento limit jako ochranu paměti prohlížeče.
+- Search v běžných seznamech drž lehký a URL řízený. Pokud má hledat v celém transcriptu, přidej nejdřív index/RPC a netahej `raw_text` do shell listu.
+
+## Kód
+
+- TypeScript jako výchozí jazyk.
+- Zod pro validaci vstupů a env; strukturované AI výstupy se zatím parsují z JSONu a mapují do projekčních tabulek, strict `output_schema` validace je samostatný hardening krok.
+- Server-only provider klienti nesmí být importovatelní do client komponent.
+- Nové nebo upravované funkce/metody musí mít komentář hned nad definicí.
+- Preferuj čisté helpery bez mutace vstupů.
+- Nehardcoduj secrets, limity a názvy bucketů přímo do business logiky.
+
+## Ověření
+
+- `npm.cmd run typecheck` ověřuje Next route typy a TypeScript.
+- `npm.cmd run lint` spouští ESLint přes App Router, React a TypeScript pravidla.
+- `npm.cmd run test` spouští Vitest unit testy v `tests/unit/`.
+- `npm.cmd run test:e2e` spouští Playwright smoke testy v `tests/e2e/` proti lokálnímu dev serveru na portu `3047`.
+- `npm.cmd run check` kombinuje typecheck, lint a unit testy pro rychlou před-push kontrolu.
+
+## Dokumentace
+
+- Dokumentace v `docs/` popisuje aktuální stav.
+- Nepřidávej historické sekce typu "v1", "updated" nebo "changed".
+- Po behavior change aktualizuj odpovídající dokument.
+- `docs/requirements/` drž jako aktuální specifikaci cílových funkcí.
