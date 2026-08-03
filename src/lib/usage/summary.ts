@@ -82,15 +82,30 @@ export type CurrentMonthUsageState =
       summary: null;
     };
 
-const AI_PRICING_USD_PER_1M_TOKENS: Record<string, ModelPricing> = Object.fromEntries(
-  aiModelOptions.map((option) => [
-    option.id,
-    {
-      inputUsdPerMillionTokens: option.inputUsdPerMillionTokens,
-      outputUsdPerMillionTokens: option.outputUsdPerMillionTokens
-    }
-  ])
-);
+// Legacy prices keep historical usage estimates stable without exposing removed models in the UI.
+const LEGACY_AI_PRICING_USD_PER_1M_TOKENS: Record<string, ModelPricing> = {
+  "gemini-3.1-flash-lite": { inputUsdPerMillionTokens: 0.25, outputUsdPerMillionTokens: 1.5 },
+  "gemini-3.1-pro-preview": { inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 12 },
+  "gemini-3.5-flash": { inputUsdPerMillionTokens: 1.5, outputUsdPerMillionTokens: 9 },
+  "gpt-4.1-mini": { inputUsdPerMillionTokens: 0.4, outputUsdPerMillionTokens: 1.6 },
+  "gpt-4.1-nano": { inputUsdPerMillionTokens: 0.1, outputUsdPerMillionTokens: 0.4 },
+  "gpt-5.4": { inputUsdPerMillionTokens: 2.5, outputUsdPerMillionTokens: 15 },
+  "gpt-5.4-mini": { inputUsdPerMillionTokens: 0.75, outputUsdPerMillionTokens: 4.5 },
+  "gpt-5.4-nano": { inputUsdPerMillionTokens: 0.2, outputUsdPerMillionTokens: 1.25 }
+};
+
+const AI_PRICING_USD_PER_1M_TOKENS: Record<string, ModelPricing> = {
+  ...LEGACY_AI_PRICING_USD_PER_1M_TOKENS,
+  ...Object.fromEntries(
+    aiModelOptions.map((option) => [
+      option.id,
+      {
+        inputUsdPerMillionTokens: option.inputUsdPerMillionTokens,
+        outputUsdPerMillionTokens: option.outputUsdPerMillionTokens
+      }
+    ])
+  )
+};
 const SONIOX_STT_EQUIVALENT_PRICING_USD_PER_HOUR = {
   async: 0.1,
   realtime: 0.12

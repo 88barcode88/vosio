@@ -52,7 +52,7 @@ export function AiProcessingContent({
         <section className="ai-tab-actions">
           <div className="ai-tab-actions-title">
             <strong>Co z nahrávky vytěžit</strong>
-            <span>Model, teplota a typ výstupu pro tento transcript.</span>
+            <span>Model s pevnou reasoning nebo thinking úrovní a typ výstupu pro tento přepis.</span>
           </div>
           <AiProcessingControls
             settings={userSettings}

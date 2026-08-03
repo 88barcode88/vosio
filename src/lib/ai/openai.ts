@@ -1,6 +1,6 @@
 import { getOpenAIEnv } from "@/lib/env.server";
 import type { AiProviderProcessingResult } from "@/lib/ai/common";
-import { supportsModelTemperature } from "@/lib/model-options";
+import { getAiModelOption, supportsModelTemperature } from "@/lib/model-options";
 
 type OpenAIResponse = {
   id: string;
@@ -58,9 +58,14 @@ function createTextFormat(outputSchema: unknown) {
 
 // createOpenAIRequestBody builds a Responses API payload and omits unsupported sampling controls.
 export function createOpenAIRequestBody(input: RunOpenAIProcessingInput) {
+  const option = getAiModelOption(input.model);
+
   return {
     input: input.prompt,
     model: input.model,
+    ...(option?.reasoningEffort
+      ? { reasoning: { effort: option.reasoningEffort } }
+      : {}),
     ...(supportsModelTemperature(input.model) ? { temperature: input.temperature } : {}),
     text: {
       format: createTextFormat(input.outputSchema)

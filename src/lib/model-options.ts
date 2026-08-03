@@ -2,90 +2,58 @@ export type AiProviderId = "openai" | "gemini";
 
 export type AiModelOption = {
   description: string;
+  geminiThinkingLevel?: "medium" | "high";
   id: string;
   inputUsdPerMillionTokens: number;
   label: string;
   outputUsdPerMillionTokens: number;
   price: string;
   provider: AiProviderId;
+  reasoningEffort?: "high" | "xhigh";
   supportsTemperature?: boolean;
 };
 
+export const DEFAULT_AI_MODEL_ID = "gpt-5.6-terra";
+export const DEFAULT_GEMINI_MODEL_ID = "gemini-3.6-flash";
+export const aiModelIds = [
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gemini-3.6-flash"
+] as const;
+
 export const aiModelOptions = [
   {
-    description: "Silnější OpenAI model pro složitější zápisy, delší call kontext a náročnější rozhodování.",
-    id: "gpt-5.4",
-    inputUsdPerMillionTokens: 2.5,
-    label: "GPT-5.4",
-    outputUsdPerMillionTokens: 15,
-    price: "$2.50 input / $15.00 output za 1M tokenů",
-    provider: "openai",
-    supportsTemperature: false
-  },
-  {
-    description: "Vyvážený levnější model pro shrnutí, úkoly a CRM poznámky.",
-    id: "gpt-4.1-mini",
-    inputUsdPerMillionTokens: 0.4,
-    label: "GPT-4.1 mini",
-    outputUsdPerMillionTokens: 1.6,
-    price: "$0.40 input / $1.60 output za 1M tokenů",
-    provider: "openai"
-  },
-  {
-    description: "Nejlevnější GPT-4.1 varianta pro jednoduché strukturované výstupy.",
-    id: "gpt-4.1-nano",
-    inputUsdPerMillionTokens: 0.1,
-    label: "GPT-4.1 nano",
-    outputUsdPerMillionTokens: 0.4,
-    price: "$0.10 input / $0.40 output za 1M tokenů",
-    provider: "openai"
-  },
-  {
-    description: "Novější mini model pro kvalitnější zápisy a delší kontext za nízkou cenu.",
-    id: "gpt-5.4-mini",
-    inputUsdPerMillionTokens: 0.75,
-    label: "GPT-5.4 mini",
-    outputUsdPerMillionTokens: 4.5,
-    price: "$0.75 input / $4.50 output za 1M tokenů",
-    provider: "openai",
-    supportsTemperature: false
-  },
-  {
-    description: "Nejlevnější GPT-5.4 varianta pro rychlé a levné extrakce.",
-    id: "gpt-5.4-nano",
-    inputUsdPerMillionTokens: 0.2,
-    label: "GPT-5.4 nano",
-    outputUsdPerMillionTokens: 1.25,
-    price: "$0.20 input / $1.25 output za 1M tokenů",
-    provider: "openai",
-    supportsTemperature: false
-  },
-  {
-    description: "Google model pro rychlé výstupy s vyšší kvalitou a grounding ekosystémem.",
-    id: "gemini-3.5-flash",
-    inputUsdPerMillionTokens: 1.5,
-    label: "Gemini 3.5 Flash",
-    outputUsdPerMillionTokens: 9,
-    price: "$1.50 input / $9.00 output za 1M tokenů",
-    provider: "gemini"
-  },
-  {
-    description: "Nejlevnější Gemini volba pro jednoduché extrakce, překlady a vysoký objem.",
-    id: "gemini-3.1-flash-lite",
-    inputUsdPerMillionTokens: 0.25,
-    label: "Gemini 3.1 Flash-Lite",
-    outputUsdPerMillionTokens: 1.5,
-    price: "$0.25 input / $1.50 output za 1M tokenů",
-    provider: "gemini"
-  },
-  {
-    description: "Preview Gemini Pro pro složitější zápisy; cena platí pro prompty do 200k tokenů.",
-    id: "gemini-3.1-pro-preview",
+    description: "Vyvážený GPT-5.6 model pro kvalitní zápisy a složitější práci s dlouhými přepisy; používá reasoning High.",
+    id: "gpt-5.6-terra",
     inputUsdPerMillionTokens: 2,
-    label: "Gemini 3.1 Pro Preview",
+    label: "GPT-5.6 Terra · High",
     outputUsdPerMillionTokens: 12,
     price: "$2.00 input / $12.00 output za 1M tokenů",
-    provider: "gemini"
+    provider: "openai",
+    reasoningEffort: "high",
+    supportsTemperature: false
+  },
+  {
+    description: "Úsporný GPT-5.6 model pro strukturované výstupy a vysoký objem; používá reasoning XHigh.",
+    id: "gpt-5.6-luna",
+    inputUsdPerMillionTokens: 0.2,
+    label: "GPT-5.6 Luna · XHigh",
+    outputUsdPerMillionTokens: 1.2,
+    price: "$0.20 input / $1.20 output za 1M tokenů",
+    provider: "openai",
+    reasoningEffort: "xhigh",
+    supportsTemperature: false
+  },
+  {
+    description: "Rychlý Google model s explicitním thinking Medium pro vícekrokové zápisy a strukturované výstupy.",
+    geminiThinkingLevel: "medium",
+    id: "gemini-3.6-flash",
+    inputUsdPerMillionTokens: 1.5,
+    label: "Gemini 3.6 Flash · Thinking",
+    outputUsdPerMillionTokens: 7.5,
+    price: "$1.50 input / $7.50 output za 1M tokenů",
+    provider: "gemini",
+    supportsTemperature: false
   }
 ] satisfies AiModelOption[];
 
@@ -101,6 +69,17 @@ export const sonioxRealtimeModelOptions = [
 ] as const;
 
 export const sonioxRealtimeModelIds = ["stt-rt-v5"] as const;
+
+// normalizeAiModelId upgrades removed picker values while preserving the selected provider family.
+export function normalizeAiModelId(value: unknown) {
+  if (typeof value === "string" && aiModelIds.includes(value as (typeof aiModelIds)[number])) {
+    return value;
+  }
+
+  return typeof value === "string" && value.startsWith("gemini-")
+    ? DEFAULT_GEMINI_MODEL_ID
+    : DEFAULT_AI_MODEL_ID;
+}
 
 // getAiModelOption finds known model metadata for routing, price display and usage estimates.
 export function getAiModelOption(modelId: string) {

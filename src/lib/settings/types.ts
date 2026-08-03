@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { sonioxRealtimeModelIds } from "@/lib/model-options";
+import {
+  aiModelIds,
+  DEFAULT_AI_MODEL_ID,
+  normalizeAiModelId,
+  sonioxRealtimeModelIds
+} from "@/lib/model-options";
 
 export const settingsProcessingTypes = [
   "summary",
@@ -21,12 +26,14 @@ const sonioxRealtimeModelSchema = z.preprocess(
   z.enum(sonioxRealtimeModelIds)
 );
 
+const aiModelSchema = z.preprocess(normalizeAiModelId, z.enum(aiModelIds));
+
 export const defaultUserSettings = {
   aiTemperature: 0.2,
   audioRetentionPolicy: "keep_audio",
   autoProcessAfterTranscription: false,
   autoProcessingTypes: ["summary"],
-  defaultOpenaiModel: "gpt-4.1-mini",
+  defaultOpenaiModel: DEFAULT_AI_MODEL_ID,
   longRecordingWarningMinutes: 60,
   outputLanguage: "call_language",
   sonioxRealtimeModel: "stt-rt-v5"
@@ -37,7 +44,7 @@ export const userSettingsSchema = z.object({
   audioRetentionPolicy: z.enum(audioRetentionPolicies),
   autoProcessAfterTranscription: z.boolean(),
   autoProcessingTypes: z.array(z.enum(settingsProcessingTypes)),
-  defaultOpenaiModel: z.string().trim().min(1).max(120),
+  defaultOpenaiModel: aiModelSchema,
   longRecordingWarningMinutes: z.number().int().min(5).max(24 * 60),
   outputLanguage: z.enum(outputLanguages),
   sonioxRealtimeModel: sonioxRealtimeModelSchema

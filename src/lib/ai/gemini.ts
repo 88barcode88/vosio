@@ -1,5 +1,6 @@
 import { getGeminiEnv } from "@/lib/env.server";
 import type { AiProviderProcessingResult } from "@/lib/ai/common";
+import { getAiModelOption, supportsModelTemperature } from "@/lib/model-options";
 
 type GeminiResponse = {
   candidates?: Array<{
@@ -16,6 +17,7 @@ type GeminiResponse = {
   usageMetadata?: {
     candidatesTokenCount?: number;
     promptTokenCount?: number;
+    thoughtsTokenCount?: number;
   };
 };
 
@@ -38,12 +40,26 @@ function extractGeminiText(response: GeminiResponse) {
   );
 }
 
-// createGeminiGenerationConfig keeps Gemini output aligned with the stored prompt contract.
-function createGeminiGenerationConfig(input: RunGeminiProcessingInput) {
+// createGeminiGenerationConfig keeps Gemini output aligned with the model and prompt contracts.
+export function createGeminiGenerationConfig(input: RunGeminiProcessingInput) {
+  const option = getAiModelOption(input.model);
+
   return {
     responseMimeType: input.outputSchema ? "application/json" : "text/plain",
-    temperature: input.temperature
+    ...(option?.geminiThinkingLevel
+      ? { thinkingConfig: { thinkingLevel: option.geminiThinkingLevel } }
+      : {}),
+    ...(supportsModelTemperature(input.model) ? { temperature: input.temperature } : {})
   };
+}
+
+// getGeminiOutputTokenCount includes billed thinking tokens in the stored output usage.
+export function getGeminiOutputTokenCount(usage: GeminiResponse["usageMetadata"]) {
+  if (usage?.candidatesTokenCount === undefined && usage?.thoughtsTokenCount === undefined) {
+    return null;
+  }
+
+  return (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
 }
 
 // runGeminiProcessing sends a transcript processing prompt to Google Gemini server-side only.
@@ -88,7 +104,7 @@ export async function runGeminiProcessing(input: RunGeminiProcessingInput): Prom
   return {
     inputTokenCount: payload.usageMetadata?.promptTokenCount ?? null,
     outputText: text,
-    outputTokenCount: payload.usageMetadata?.candidatesTokenCount ?? null,
+    outputTokenCount: getGeminiOutputTokenCount(payload.usageMetadata),
     providerResponseId: payload.responseId ?? null
   };
 }

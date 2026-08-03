@@ -92,13 +92,14 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 - Required only for AI processing.
 - Server-only OpenAI API key.
 - Used for OpenAI AI processing.
-- App model options include `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-4.1-mini`, and `gpt-4.1-nano`; the selected model is stored as a safe user preference and sent only server-side.
+- App model options include `gpt-5.6-terra` with reasoning `high` and `gpt-5.6-luna` with reasoning `xhigh`; the selected model is stored as a safe user preference and sent only server-side.
 
 `GEMINI_API_KEY`
 
 - Optional.
 - Required only when users select Gemini models in `/settings` or the recording AI tab.
 - Server-only Google Gemini API key.
+- Current Gemini option is `gemini-3.6-flash` with thinking level `medium`.
 - Paid Gemini API content is not used to improve Google's products according to the current Google AI pricing/data-use table; do not use Gemini Free tier for sensitive production call content.
 
 ### App-managed model preferences
@@ -108,6 +109,7 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 - Not needed as a Vercel runtime variable.
 - Realtime STT model is a safe user preference in `/settings`.
 - Current default is `stt-rt-v5`.
+- Soniox async transcription remains on the current `stt-async-v5` model.
 
 ### App behavior constants
 

@@ -23,24 +23,37 @@ describe("AI display helpers", () => {
     expect(lines.some((line) => "text" in line && line.text.includes("**"))).toBe(false);
   });
 
-  it("keeps Gemini models available for provider routing", () => {
-    expect(getAiModelOption("gemini-3.5-flash")?.provider).toBe("gemini");
-    expect(aiModelOptions.some((option) => option.id === "gemini-3.1-flash-lite")).toBe(true);
-    expect(aiModelOptions.some((option) => option.id === "gemini-3.1-pro-preview")).toBe(true);
+  it("exposes only the requested current AI models", () => {
+    expect(aiModelOptions.map((option) => option.id)).toEqual([
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gemini-3.6-flash"
+    ]);
   });
 
-  it("keeps GPT-5.4 available with OpenAI pricing metadata", () => {
-    expect(getAiModelOption("gpt-5.4")).toMatchObject({
-      inputUsdPerMillionTokens: 2.5,
-      outputUsdPerMillionTokens: 15,
+  it("stores the requested reasoning level with current OpenAI pricing", () => {
+    expect(getAiModelOption("gpt-5.6-terra")).toMatchObject({
+      inputUsdPerMillionTokens: 2,
+      outputUsdPerMillionTokens: 12,
       provider: "openai",
+      reasoningEffort: "high",
       supportsTemperature: false
+    });
+    expect(getAiModelOption("gpt-5.6-luna")).toMatchObject({
+      inputUsdPerMillionTokens: 0.2,
+      outputUsdPerMillionTokens: 1.2,
+      reasoningEffort: "xhigh"
     });
   });
 
-  it("does not expose temperature controls for GPT-5 reasoning models", () => {
-    expect(supportsModelTemperature("gpt-5.4")).toBe(false);
-    expect(supportsModelTemperature("gpt-4.1-mini")).toBe(true);
+  it("configures Gemini 3.6 Flash with explicit thinking and no deprecated temperature", () => {
+    expect(getAiModelOption("gemini-3.6-flash")).toMatchObject({
+      geminiThinkingLevel: "medium",
+      provider: "gemini",
+      supportsTemperature: false
+    });
+    expect(supportsModelTemperature("gpt-5.6-terra")).toBe(false);
+    expect(supportsModelTemperature("gemini-3.6-flash")).toBe(false);
   });
 
   it("has enough distinct speaker classes before colors repeat for larger meetings", () => {
