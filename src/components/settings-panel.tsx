@@ -38,24 +38,6 @@ const processingTypeLabels: Record<(typeof settingsProcessingTypes)[number], str
   summary: "Shrnutí"
 };
 
-// getAiSettingOptions keeps saved custom model ids visible in the settings select.
-function getAiSettingOptions(settings: UserSettings) {
-  const knownOption = aiModelOptions.some((option) => option.id === settings.defaultOpenaiModel);
-
-  return knownOption
-    ? aiModelOptions
-    : [
-        {
-          description: "Vlastní model uložený v nastavení uživatele.",
-          id: settings.defaultOpenaiModel,
-          label: settings.defaultOpenaiModel,
-          price: "Cena podle aktuálního ceníku providera.",
-          provider: "openai" as const
-        },
-        ...aiModelOptions
-      ];
-}
-
 // formatUsageInteger renders count-like usage values with Czech thousands separators.
 function formatUsageInteger(value: number) {
   return new Intl.NumberFormat("cs-CZ").format(value);
@@ -250,7 +232,7 @@ function UsageSection({ state }: { state: CurrentMonthUsageState }) {
 
 // SettingsPanel renders safe user preferences, account usage, and read-only system boundaries.
 export function SettingsPanel({ settings, status, usageState }: SettingsPanelProps) {
-  const modelOptions = getAiSettingOptions(settings);
+  const modelOptions = aiModelOptions;
   const sonioxRealtimeModel =
     sonioxRealtimeModelOptions.find((option) => option.id === settings.sonioxRealtimeModel)
     ?? sonioxRealtimeModelOptions[0];
@@ -292,17 +274,6 @@ export function SettingsPanel({ settings, status, usageState }: SettingsPanelPro
                 ))}
               </select>
               <small>{getAiModelDescription(settings.defaultOpenaiModel)}</small>
-            </label>
-            <label>
-              <span>Teplota</span>
-              <input
-                defaultValue={settings.aiTemperature}
-                max="2"
-                min="0"
-                name="aiTemperature"
-                step="0.1"
-                type="number"
-              />
             </label>
             <label>
               <span>Jazyk výstupu</span>

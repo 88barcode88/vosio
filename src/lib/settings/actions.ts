@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
+  defaultUserSettings,
   settingsProcessingTypes,
   userSettingsSchema,
   type UserSettings
@@ -41,7 +42,11 @@ function parseSettingsForm(formData: FormData): UserSettings {
     audioRetentionPolicy: getStringField(formData, "audioRetentionPolicy", "keep_audio"),
     autoProcessAfterTranscription: formData.get("autoProcessAfterTranscription") === "on",
     autoProcessingTypes: getProcessingTypes(formData),
-    defaultOpenaiModel: getStringField(formData, "defaultOpenaiModel", "gpt-4.1-mini"),
+    defaultOpenaiModel: getStringField(
+      formData,
+      "defaultOpenaiModel",
+      defaultUserSettings.defaultOpenaiModel
+    ),
     longRecordingWarningMinutes: getNumberField(formData, "longRecordingWarningMinutes", 60),
     outputLanguage: getStringField(formData, "outputLanguage", "call_language"),
     sonioxRealtimeModel: getStringField(formData, "sonioxRealtimeModel", "stt-rt-v5")

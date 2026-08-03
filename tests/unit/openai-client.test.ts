@@ -8,21 +8,23 @@ const baseInput = {
 };
 
 describe("OpenAI client request body", () => {
-  it("omits temperature for GPT-5 reasoning models", () => {
+  it("sends Terra with high reasoning and omits temperature", () => {
     const body = createOpenAIRequestBody({
       ...baseInput,
-      model: "gpt-5.4"
+      model: "gpt-5.6-terra"
     });
 
     expect(body).not.toHaveProperty("temperature");
+    expect(body).toHaveProperty("reasoning.effort", "high");
   });
 
-  it("keeps temperature for GPT-4.1 models", () => {
+  it("sends Luna with xhigh reasoning and omits temperature", () => {
     const body = createOpenAIRequestBody({
       ...baseInput,
-      model: "gpt-4.1-mini"
+      model: "gpt-5.6-luna"
     });
 
-    expect(body).toHaveProperty("temperature", 0.2);
+    expect(body).not.toHaveProperty("temperature");
+    expect(body).toHaveProperty("reasoning.effort", "xhigh");
   });
 });

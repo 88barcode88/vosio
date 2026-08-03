@@ -7,7 +7,12 @@ import { runOpenAIProcessing } from "@/lib/ai/openai";
 import { buildStructuredAiItems } from "@/lib/ai/structured-items";
 import { persistStructuredAiItems } from "@/lib/ai/structured-persistence";
 import { getAiProviderConfigurationError } from "@/lib/env.server";
-import { getAiModelOption, type AiProviderId } from "@/lib/model-options";
+import {
+  aiModelIds,
+  DEFAULT_AI_MODEL_ID,
+  getAiModelOption,
+  type AiProviderId
+} from "@/lib/model-options";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { buildAiTranscriptPromptContext } from "@/lib/transcripts/ai-context";
@@ -34,7 +39,7 @@ const aiProcessingRateLimit = createRateLimiter({ limit: 10, windowMs: 60_000 })
 const requestBodySchema = z.object({
   customPrompt: z.string().trim().min(1).max(4000).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-  model: z.string().trim().min(1).max(120).optional(),
+  model: z.enum(aiModelIds).optional(),
   processingType: z.enum(processingTypes),
   promptId: z.uuid().optional(),
   temperature: z.number().min(0).max(2).optional()
@@ -92,7 +97,7 @@ function renderPrompt(input: {
     .replaceAll("{{custom_prompt}}", input.customPrompt ?? "");
 }
 
-// getAiProviderForModel resolves known models to a provider and keeps unknown custom ids on OpenAI.
+// getAiProviderForModel resolves an allowed app model to its provider adapter.
 function getAiProviderForModel(modelId: string): AiProviderId {
   return getAiModelOption(modelId)?.provider ?? "openai";
 }
@@ -227,7 +232,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const requestedModel = body.data.model ?? "gpt-4.1-mini";
+    const requestedModel = body.data.model ?? DEFAULT_AI_MODEL_ID;
+    const requestedModelOption = getAiModelOption(requestedModel);
     const requestedProvider = getAiProviderForModel(requestedModel);
     const requestedTemperature = body.data.temperature ?? 0.2;
     const providerConfigurationError = getAiProviderConfigurationError(requestedProvider);
@@ -251,7 +257,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
         provider_config: {
           provider: requestedProvider,
           response_format: promptTemplate.output_schema ? "json_schema" : "text",
-          temperature: requestedTemperature
+          ...(requestedModelOption?.reasoningEffort
+            ? { reasoning_effort: requestedModelOption.reasoningEffort }
+            : {}),
+          ...(requestedModelOption?.geminiThinkingLevel
+            ? { thinking_level: requestedModelOption.geminiThinkingLevel }
+            : {})
         },
         started_at: new Date().toISOString(),
         status: "running",

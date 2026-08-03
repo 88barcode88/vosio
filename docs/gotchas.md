@@ -46,7 +46,7 @@ Soniox temporary API key musí vzniknout ve stejné regionální REST API domén
 
 ## Auth metadata jen pro preference
 
-Vosio používá `user_metadata.vosio_settings` pro netajné uživatelské preference, například výchozí AI model, temperature a Soniox realtime model. Tato metadata jsou uživatelsky editovatelná a nesmí se používat pro autorizaci, RLS rozhodnutí, role ani bezpečnostní limity.
+Vosio používá `user_metadata.vosio_settings` pro netajné uživatelské preference, například výchozí AI model a Soniox realtime model. Tato metadata jsou uživatelsky editovatelná a nesmí se používat pro autorizaci, RLS rozhodnutí, role ani bezpečnostní limity.
 
 ## Theme se musí znát už na serveru
 
@@ -62,9 +62,9 @@ Nový systémový prompt nestačí vložit jen do databáze, pokud používá no
 
 Gemini modely jsou v UI běžné AI modely vedle OpenAI, ale backend je směruje na Google Gemini API podle `ai_processing_jobs.provider`. Pokud uživatel vybere Gemini model a ve Vercelu není `GEMINI_API_KEY`, AI processing selže na server-side konfiguraci. Gemini Free tier podle Google pricing tabulky používá obsah ke zlepšování produktů; pro produkční call obsah používej placený Gemini API režim nebo OpenAI.
 
-## GPT-5.x a temperature
+## Reasoning modely a temperature
 
-GPT-5.x reasoning modely v OpenAI Responses API nepodporují sampling `temperature`. Vosio proto u modelů `gpt-5.*` ukládá uživatelskou teplotu jen jako preferenci pro modely, které ji podporují, ale do OpenAI requestu ji neposílá. Pokud provider vrátí chybu modelu, API endpoint ji vrací jako bezpečný `detail`, aby UI neukazovalo jen obecné selhání.
+Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI Responses API dostává pro `gpt-5.6-terra` reasoning `high` a pro `gpt-5.6-luna` `xhigh`; Gemini `generateContent` dostává pro `gemini-3.6-flash` thinking `medium`. Staré hodnoty modelu v user metadata se při načtení bezpečně normalizují na aktuální model stejné provider rodiny. Pokud provider vrátí chybu modelu, API endpoint ji vrací jako bezpečný `detail`, aby UI neukazovalo jen obecné selhání.
 
 ## AI prompt nesmí obsahovat plné Soniox tokeny
 

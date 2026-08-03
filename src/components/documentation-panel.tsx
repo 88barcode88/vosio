@@ -84,7 +84,7 @@ const documentationSections: DocumentationSection[] = [
   },
   {
     body: [
-      "Nastavení obsahuje netajné uživatelské preference: výchozí AI model, teplotu, jazyk výstupu, Soniox realtime model, retenci audia a automatické AI výstupy.",
+      "Nastavení obsahuje netajné uživatelské preference: výchozí AI model, jazyk výstupu, Soniox realtime model, retenci audia a automatické AI výstupy.",
       "Tajné klíče, Supabase service role, Soniox API key, OpenAI API key a volitelný Gemini API key zůstávají pouze ve Vercelu/server-side. Usage část ukazuje orientační AI a Soniox náklady z uložených metadat; fakturační pravda zůstává u provider dashboardů."
     ],
     id: "nastaveni",

@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
-import { aiModelOptions, getAiModelDescription, supportsModelTemperature } from "@/lib/model-options";
+import { aiModelOptions, getAiModelDescription } from "@/lib/model-options";
 import { quickActions } from "@/lib/workspace-data";
 
 type AiProcessingControlsProps = {
@@ -16,24 +16,6 @@ type ActiveAiRun = {
   label: string;
   processingType: string;
 };
-
-// getAiProcessingModelOptions keeps user-saved custom model ids selectable in the AI tab.
-function getAiProcessingModelOptions(settings: UserSettings) {
-  const knownOption = aiModelOptions.some((option) => option.id === settings.defaultOpenaiModel);
-
-  return knownOption
-    ? aiModelOptions
-    : [
-        {
-          description: "Vlastní model uložený v nastavení uživatele.",
-          id: settings.defaultOpenaiModel,
-          label: settings.defaultOpenaiModel,
-          price: "Cena podle aktuálního ceníku providera.",
-          provider: "openai" as const
-        },
-        ...aiModelOptions
-      ];
-}
 
 // getAiProcessingModelHint renders a short model price and quality hint below the selector.
 function getAiProcessingModelHint(modelId: string) {
@@ -65,14 +47,8 @@ function createActiveRunId(processingType: string) {
 }
 
 // getSelectedModelOption returns UI metadata for the currently selected model id.
-function getSelectedModelOption(modelOptions: ReturnType<typeof getAiProcessingModelOptions>, modelId: string) {
-  return modelOptions.find((option) => option.id === modelId) ?? {
-    description: "Vlastní model uložený v nastavení uživatele.",
-    id: modelId,
-    label: modelId,
-    price: "Cena podle aktuálního ceníku.",
-    provider: "openai" as const
-  };
+function getSelectedModelOption(modelId: string) {
+  return aiModelOptions.find((option) => option.id === modelId) ?? aiModelOptions[0];
 }
 
 // getAiProcessingErrorMessage renders provider failures with safe diagnostics when the API returns them.
@@ -91,12 +67,11 @@ export function AiProcessingControls({
 }: AiProcessingControlsProps) {
   const router = useRouter();
   const modelPickerRef = useRef<HTMLDetailsElement>(null);
-  const modelOptions = getAiProcessingModelOptions(settings);
+  const modelOptions = aiModelOptions;
   const [activeRuns, setActiveRuns] = useState<ActiveAiRun[]>([]);
   const [message, setMessage] = useState<string | null>(null);
-  const [model, setModel] = useState(settings.defaultOpenaiModel);
-  const [temperature, setTemperature] = useState(settings.aiTemperature);
-  const selectedModel = getSelectedModelOption(modelOptions, model);
+  const [model, setModel] = useState<string>(settings.defaultOpenaiModel);
+  const selectedModel = getSelectedModelOption(model);
   const canProcess = Boolean(transcriptId);
 
   // addActiveRun marks one AI action as running without blocking another run of the same action.
@@ -128,7 +103,7 @@ export function AiProcessingControls({
 
     try {
       const response = await fetch(`/api/transcripts/${transcriptId}/process`, {
-        body: JSON.stringify({ model, processingType, temperature }),
+        body: JSON.stringify({ model, processingType }),
         headers: { "Content-Type": "application/json" },
         method: "POST"
       });
@@ -155,8 +130,6 @@ export function AiProcessingControls({
       modelPickerRef.current.open = false;
     }
   }
-
-  const selectedModelSupportsTemperature = supportsModelTemperature(model);
 
   return (
     <>
@@ -190,22 +163,6 @@ export function AiProcessingControls({
             </details>
             <small>{getAiProcessingModelHint(model)}</small>
           </div>
-          <label>
-            <span>
-              {selectedModelSupportsTemperature
-                ? `Teplota ${temperature.toFixed(1)}`
-                : "Teplota se u tohoto modelu nepoužívá"}
-            </span>
-            <input
-              disabled={!selectedModelSupportsTemperature}
-              max="1"
-              min="0"
-              onChange={(event) => setTemperature(Number(event.target.value))}
-              step="0.1"
-              type="range"
-              value={temperature}
-            />
-          </label>
         </div>
       </details>
       <div className="quick-grid">

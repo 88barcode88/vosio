@@ -74,7 +74,7 @@ Sidebar nemá obsahovat duplicitní seznam nahrávek ani storage kartu. Nahrávk
 
 `AI zpracování` se nemá zobrazovat jako samostatná primární položka v sidebaru, pokud pouze pracuje s výstupy konkrétní nahrávky. AI patří do detailu nahrávky jako tab.
 
-V detailu nahrávky má AI tab fungovat jako jeden vertikální pracovní tok. Nastavení modelu, temperature a quick actions jsou nahoře v jedné ploše, uložené AI výstupy jsou pod nimi jako rozbalovací karty s krátkým preview. Model picker nesmí být useknutý rodičovským overflow.
+V detailu nahrávky má AI tab fungovat jako jeden vertikální pracovní tok. Nastavení modelu a quick actions jsou nahoře v jedné ploše, uložené AI výstupy jsou pod nimi jako rozbalovací karty s krátkým preview. Model picker nesmí být useknutý rodičovským overflow.
 
 ## Obrazovka nové nahrávky
 
@@ -168,7 +168,7 @@ Má obsahovat:
   - `Zápis ze schůzky`,
   - `CRM poznámka`,
   - `E-mail po hovoru`,
-- pokročilé nastavení modelu a temperature,
+- nastavení aktuálního modelu a jeho pevné reasoning/thinking úrovně,
 - seznam již vytvořených AI výstupů jako kompaktní rozbalovací řádky,
 - detail vybraného výstupu otevřený až po kliknutí.
 
