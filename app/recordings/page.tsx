@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
 import { listRecordings, normalizeRecordingSearchQuery } from "@/lib/recordings/queries";
+import { listRecordingOrganizationOptions } from "@/lib/recording-organization/queries";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,13 +25,17 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
     redirect("/login?next=/recordings");
   }
 
-  const recordings = await listRecordings(supabase, { searchQuery });
+  const [recordings, organizationOptions] = await Promise.all([
+    listRecordings(supabase, { searchQuery }),
+    listRecordingOrganizationOptions(supabase)
+  ]);
 
   return (
     <VosioWorkspace
       aiOutputs={[]}
       recordings={recordings}
       recordingsError={params.error ?? null}
+      recordingOrganizationOptions={organizationOptions}
       recordingsSearchQuery={searchQuery}
       transcripts={[]}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}

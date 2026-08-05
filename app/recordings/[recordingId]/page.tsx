@@ -9,6 +9,10 @@ import { listAiOutputsForTranscripts } from "@/lib/ai/queries";
 import { listStructuredAiItemsForTranscripts } from "@/lib/ai/structured-queries";
 import { getRecordingById } from "@/lib/recordings/queries";
 import { listRecordingMarkers } from "@/lib/recording-markers/queries";
+import {
+  getRecordingOrganization,
+  listRecordingOrganizationOptions
+} from "@/lib/recording-organization/queries";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { listTranscriptsForRecording } from "@/lib/transcripts/queries";
 import { createClient } from "@/lib/supabase/server";
@@ -36,10 +40,11 @@ export default async function RecordingDetailPage({ params }: RecordingDetailPag
     redirect(`/login?next=/recordings/${recordingId}`);
   }
 
-  const [recording, recordingMarkers, transcripts] = await Promise.all([
+  const [recording, recordingMarkers, transcripts, organizationOptions] = await Promise.all([
     getRecordingById(supabase, recordingId),
     listRecordingMarkers(supabase, recordingId),
-    listTranscriptsForRecording(supabase, recordingId)
+    listTranscriptsForRecording(supabase, recordingId),
+    listRecordingOrganizationOptions(supabase)
   ]);
 
   if (!recording) {
@@ -47,9 +52,10 @@ export default async function RecordingDetailPage({ params }: RecordingDetailPag
   }
 
   const transcriptIds = transcripts.map((transcript) => transcript.id);
-  const [aiOutputs, structuredItems] = await Promise.all([
+  const [aiOutputs, structuredItems, recordingOrganization] = await Promise.all([
     listAiOutputsForTranscripts(supabase, transcriptIds),
-    listStructuredAiItemsForTranscripts(supabase, transcriptIds)
+    listStructuredAiItemsForTranscripts(supabase, transcriptIds),
+    getRecordingOrganization(supabase, recording)
   ]);
 
   return (
@@ -60,6 +66,8 @@ export default async function RecordingDetailPage({ params }: RecordingDetailPag
       initialTranscriptTabFromCookie={Boolean(persistedTranscriptTab)}
       recordings={[recording]}
       recordingMarkers={recordingMarkers}
+      recordingOrganization={recordingOrganization}
+      recordingOrganizationOptions={organizationOptions}
       structuredItems={structuredItems}
       transcripts={transcripts}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}

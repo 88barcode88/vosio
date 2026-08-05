@@ -15,6 +15,10 @@ import {
 } from "@/lib/recordings/storage-config";
 import type { RecordingRow } from "@/lib/recordings/types";
 import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
+import type {
+  RecordingOrganization,
+  RecordingOrganizationOptions
+} from "@/lib/recording-organization/types";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
@@ -31,6 +35,8 @@ type VosioWorkspaceProps = {
   promptTemplates?: PromptTemplateRow[];
   recordingStorageConfig?: RecordingStorageConfig;
   recordingMarkers?: RecordingMarkerRow[];
+  recordingOrganization?: RecordingOrganization;
+  recordingOrganizationOptions?: RecordingOrganizationOptions;
   recordings: RecordingRow[];
   recordingsError?: string | null;
   recordingsSearchQuery?: string;
@@ -55,6 +61,8 @@ export function VosioWorkspace({
   promptTemplates = [],
   recordingStorageConfig = unavailableRecordingStorageConfig,
   recordingMarkers = [],
+  recordingOrganization = { client: null, folder: null, project: null, tags: [] },
+  recordingOrganizationOptions = { clients: [], folders: [], projects: [], tags: [] },
   recordings,
   recordingsError = null,
   recordingsSearchQuery = "",
@@ -102,6 +110,7 @@ export function VosioWorkspace({
           ) : view === "recordings" && !activeRecording ? (
             <RecordingsManager
               errorCode={recordingsError}
+              organizationOptions={recordingOrganizationOptions}
               recordings={recordings}
               searchQuery={recordingsSearchQuery}
             />
@@ -121,10 +130,12 @@ export function VosioWorkspace({
               activeAiOutputs={activeAiOutputs}
               activeRecording={activeRecording}
               activeRecordingMarkers={activeRecordingMarkers}
+              activeRecordingOrganization={recordingOrganization}
               activeStructuredItems={activeStructuredItems}
               activeTranscript={activeTranscript}
               initialTab={initialTranscriptTab}
               initialTabFromCookie={initialTranscriptTabFromCookie}
+              recordingOrganizationOptions={recordingOrganizationOptions}
               userSettings={userSettings}
             />
           )}

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { LiveRecordingRecoveryPanel } from "@/components/live-recording-recovery-panel";
 import { RecordingTitleEditor } from "@/components/workspace/recording-title-editor";
+import { OrganizationManager } from "@/components/workspace/organization-manager";
 import { getRecordingCounts, getSourceTypeLabel } from "@/components/workspace/utils";
 import {
   formatFileSize,
@@ -10,6 +11,7 @@ import {
   getStatusLabel,
   type RecordingRow
 } from "@/lib/recordings/types";
+import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
 
 // getRecordingsErrorMessage maps recordings URL errors into compact Czech UI copy.
 function getRecordingsErrorMessage(errorCode: string | null) {
@@ -26,10 +28,12 @@ function getRecordingsErrorMessage(errorCode: string | null) {
 // RecordingsManager renders the compact inbox-style all-recordings workspace.
 export function RecordingsManager({
   errorCode,
+  organizationOptions,
   recordings,
   searchQuery
 }: {
   errorCode: string | null;
+  organizationOptions: RecordingOrganizationOptions;
   recordings: RecordingRow[];
   searchQuery: string;
 }) {
@@ -57,6 +61,7 @@ export function RecordingsManager({
           {errorMessage}
         </p>
       ) : null}
+      <OrganizationManager options={organizationOptions} />
       <LiveRecordingRecoveryPanel />
       <form action="/recordings" className="recordings-search">
         <label>

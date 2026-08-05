@@ -3,6 +3,7 @@ import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import { TranscriptionControls } from "@/components/transcription-controls";
 import { RecordingDetailTitleEditor } from "@/components/workspace/recording-detail-title-editor";
+import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 import {
@@ -19,6 +20,10 @@ import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
+import type {
+  RecordingOrganization,
+  RecordingOrganizationOptions
+} from "@/lib/recording-organization/types";
 import {
   formatDuration,
   getRecordingDotClassName,
@@ -33,19 +38,23 @@ export function RecordingWorkbench({
   activeAiOutputs,
   activeRecording,
   activeRecordingMarkers,
+  activeRecordingOrganization,
   activeStructuredItems,
   activeTranscript,
   initialTab,
   initialTabFromCookie,
+  recordingOrganizationOptions,
   userSettings
 }: {
   activeAiOutputs: AiOutputView[];
   activeRecording: RecordingRow | null;
   activeRecordingMarkers: RecordingMarkerRow[];
+  activeRecordingOrganization: RecordingOrganization;
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
   initialTab: TranscriptTab;
   initialTabFromCookie: boolean;
+  recordingOrganizationOptions: RecordingOrganizationOptions;
   userSettings: UserSettings;
 }) {
   const activeRecordingView = activeRecording
@@ -54,7 +63,11 @@ export function RecordingWorkbench({
 
   return (
     <section className="recording-workbench" aria-label="Aktuální nahrávka">
-      <RecordingCard activeRecording={activeRecordingView} />
+      <RecordingCard
+        activeRecording={activeRecording}
+        activeRecordingOrganization={activeRecordingOrganization}
+        recordingOrganizationOptions={recordingOrganizationOptions}
+      />
       <div className="recording-workbench-grid">
         <TranscriptPanel
           activeAiOutputs={activeAiOutputs}
@@ -81,7 +94,17 @@ export function RecordingWorkbench({
 }
 
 // RecordingCard shows the compact selected-recording header, metadata and title actions.
-function RecordingCard({ activeRecording }: { activeRecording: RecordingClientView | null }) {
+function RecordingCard({
+  activeRecording: activeRecordingRow,
+  activeRecordingOrganization,
+  recordingOrganizationOptions
+}: {
+  activeRecording: RecordingRow | null;
+  activeRecordingOrganization: RecordingOrganization;
+  recordingOrganizationOptions: RecordingOrganizationOptions;
+}) {
+  const activeRecording = activeRecordingRow ? toRecordingClientView(activeRecordingRow) : null;
+
   return (
     <section className="recording-object-header">
       <div className="recording-detail-main">
@@ -112,22 +135,30 @@ function RecordingCard({ activeRecording }: { activeRecording: RecordingClientVi
             </dl>
           </div>
         </div>
-        {activeRecording ? (
+        {activeRecordingRow ? (
           <div className="recording-detail-actions">
             <RecordingDetailTitleEditor
-              key={activeRecording.id}
-              recordingId={activeRecording.id}
-              title={activeRecording.title}
+              key={activeRecordingRow.id}
+              recordingId={activeRecordingRow.id}
+              title={activeRecordingRow.title}
             />
             <DeleteRecordingForm
               label="Smazat nahrávku"
               next="/recordings"
-              recordingId={activeRecording.id}
+              recordingId={activeRecordingRow.id}
               variant="danger"
             />
           </div>
         ) : null}
       </div>
+      {activeRecordingRow ? (
+        <RecordingOrganizationEditor
+          key={`organization-${activeRecordingRow.id}`}
+          options={recordingOrganizationOptions}
+          organization={activeRecordingOrganization}
+          recording={activeRecordingRow}
+        />
+      ) : null}
     </section>
   );
 }
