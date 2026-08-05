@@ -55,6 +55,27 @@ export function getPreferredTranscriptBlock(
     ?? null;
 }
 
+// getNearestTranscriptBlock resolves a point marker to one deterministic renderable block.
+export function getNearestTranscriptBlock(
+  speakerBlocks: TranscriptSpeakerBlock[],
+  startMs: number
+) {
+  const containingBlock = speakerBlocks.find((block) => blockContainsEvidenceStart(block, startMs));
+
+  if (containingBlock) {
+    return containingBlock;
+  }
+
+  return speakerBlocks
+    .filter((block) => block.startMs !== null)
+    .map((block) => ({ block, distance: Math.abs((block.startMs ?? 0) - startMs) }))
+    .sort((left, right) =>
+      left.distance - right.distance
+      || (left.block.startMs ?? 0) - (right.block.startMs ?? 0)
+      || left.block.anchorId.localeCompare(right.block.anchorId)
+    )[0]?.block ?? null;
+}
+
 // getPendingTranscriptTitle returns the main empty-state title for the transcript tab.
 function getPendingTranscriptTitle(activeRecording: RecordingClientView | null) {
   if (!activeRecording) {

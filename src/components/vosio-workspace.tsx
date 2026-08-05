@@ -14,6 +14,7 @@ import {
   type RecordingStorageConfig
 } from "@/lib/recordings/storage-config";
 import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
@@ -29,6 +30,7 @@ type VosioWorkspaceProps = {
   initialTranscriptTabFromCookie?: boolean;
   promptTemplates?: PromptTemplateRow[];
   recordingStorageConfig?: RecordingStorageConfig;
+  recordingMarkers?: RecordingMarkerRow[];
   recordings: RecordingRow[];
   recordingsError?: string | null;
   recordingsSearchQuery?: string;
@@ -52,6 +54,7 @@ export function VosioWorkspace({
   initialTranscriptTabFromCookie = false,
   promptTemplates = [],
   recordingStorageConfig = unavailableRecordingStorageConfig,
+  recordingMarkers = [],
   recordings,
   recordingsError = null,
   recordingsSearchQuery = "",
@@ -69,6 +72,9 @@ export function VosioWorkspace({
     : null;
   const activeTranscript =
     transcripts.find((transcript) => transcript.recording_id === activeRecording?.id) ?? null;
+  const activeRecordingMarkers = activeRecording
+    ? recordingMarkers.filter((marker) => marker.recording_id === activeRecording.id)
+    : [];
   const activeAiOutputs = activeTranscript
     ? aiOutputs.filter((output) => output.transcript_id === activeTranscript.id)
     : [];
@@ -114,6 +120,7 @@ export function VosioWorkspace({
             <RecordingWorkbench
               activeAiOutputs={activeAiOutputs}
               activeRecording={activeRecording}
+              activeRecordingMarkers={activeRecordingMarkers}
               activeStructuredItems={activeStructuredItems}
               activeTranscript={activeTranscript}
               initialTab={initialTranscriptTab}

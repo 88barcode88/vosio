@@ -42,6 +42,7 @@ import {
   tokensToText,
   type RecorderFeedbackTone
 } from "@/components/browser-recorder/helpers";
+import { assertDevelopmentRecordingFactoryAllowed } from "@/components/browser-recorder/development-runtime";
 import type {
   BrowserRecorderProps,
   LiveCaptionBlock,
@@ -114,11 +115,13 @@ export function BrowserRecorder({
   allowTranscriptOnly = false,
   captionMode = false,
   compact = false,
+  developmentRecordingFactory,
   maxAudioFileSizeBytes,
   onStatusChange,
   redirectAfterSave,
   realtimeModel = "stt-rt-v5"
 }: BrowserRecorderProps) {
+  assertDevelopmentRecordingFactoryAllowed(developmentRecordingFactory);
   const router = useRouter();
   const { registerNavigationBlocker } = useRecordingNavigationBlocker();
   const elapsedSecondsRef = useRef(0);
@@ -920,11 +923,13 @@ export function BrowserRecorder({
     setRecorderFeedback("Připravuji mikrofon a live přepis...", "working");
 
     try {
-      const client = new SonioxClient({
-        config: fetchRealtimeConfig,
-        permissions: new BrowserPermissionResolver()
-      });
-      recording = client.realtime.record(getRealtimeRecordingOptions(realtimeModel));
+      const recordingOptions = getRealtimeRecordingOptions(realtimeModel);
+      recording = developmentRecordingFactory
+        ? developmentRecordingFactory(recordingOptions)
+        : new SonioxClient({
+          config: fetchRealtimeConfig,
+          permissions: new BrowserPermissionResolver()
+        }).realtime.record(recordingOptions);
       const sessionRecording = recording;
 
       setElapsedSeconds(0);

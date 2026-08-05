@@ -18,6 +18,7 @@ import {
 import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
+import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import {
   formatDuration,
   getRecordingDotClassName,
@@ -31,6 +32,7 @@ import {
 export function RecordingWorkbench({
   activeAiOutputs,
   activeRecording,
+  activeRecordingMarkers,
   activeStructuredItems,
   activeTranscript,
   initialTab,
@@ -39,6 +41,7 @@ export function RecordingWorkbench({
 }: {
   activeAiOutputs: AiOutputView[];
   activeRecording: RecordingRow | null;
+  activeRecordingMarkers: RecordingMarkerRow[];
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
   initialTab: TranscriptTab;
@@ -56,6 +59,7 @@ export function RecordingWorkbench({
         <TranscriptPanel
           activeAiOutputs={activeAiOutputs}
           activeRecording={activeRecordingView}
+          activeRecordingMarkers={activeRecordingMarkers}
           activeStructuredItems={activeStructuredItems}
           activeTranscript={activeTranscript}
           initialTab={initialTab}
@@ -197,6 +201,7 @@ function RecordingRail({
 function TranscriptPanel({
   activeAiOutputs,
   activeRecording,
+  activeRecordingMarkers,
   activeStructuredItems,
   activeTranscript,
   initialTab,
@@ -205,6 +210,7 @@ function TranscriptPanel({
 }: {
   activeAiOutputs: AiOutputView[];
   activeRecording: RecordingClientView | null;
+  activeRecordingMarkers: RecordingMarkerRow[];
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
   initialTab: TranscriptTab;
@@ -216,6 +222,7 @@ function TranscriptPanel({
       <TranscriptTabs
         activeAiOutputs={activeAiOutputs}
         activeRecording={activeRecording}
+        activeRecordingMarkers={activeRecordingMarkers}
         activeStructuredItems={activeStructuredItems}
         activeTranscript={activeTranscript}
         initialTab={initialTab}

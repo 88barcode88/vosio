@@ -8,6 +8,7 @@ import {
 import { listAiOutputsForTranscripts } from "@/lib/ai/queries";
 import { listStructuredAiItemsForTranscripts } from "@/lib/ai/structured-queries";
 import { getRecordingById } from "@/lib/recordings/queries";
+import { listRecordingMarkers } from "@/lib/recording-markers/queries";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { listTranscriptsForRecording } from "@/lib/transcripts/queries";
 import { createClient } from "@/lib/supabase/server";
@@ -35,8 +36,9 @@ export default async function RecordingDetailPage({ params }: RecordingDetailPag
     redirect(`/login?next=/recordings/${recordingId}`);
   }
 
-  const [recording, transcripts] = await Promise.all([
+  const [recording, recordingMarkers, transcripts] = await Promise.all([
     getRecordingById(supabase, recordingId),
+    listRecordingMarkers(supabase, recordingId),
     listTranscriptsForRecording(supabase, recordingId)
   ]);
 
@@ -57,6 +59,7 @@ export default async function RecordingDetailPage({ params }: RecordingDetailPag
       initialTranscriptTab={persistedTranscriptTab ?? "transcript"}
       initialTranscriptTabFromCookie={Boolean(persistedTranscriptTab)}
       recordings={[recording]}
+      recordingMarkers={recordingMarkers}
       structuredItems={structuredItems}
       transcripts={transcripts}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}

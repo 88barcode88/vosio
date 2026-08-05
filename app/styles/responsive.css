@@ -229,7 +229,7 @@
   }
   .persistent-recorder-dock {
     right: 12px;
-    bottom: 72px;
+    bottom: calc(94px + env(safe-area-inset-bottom));
     width: calc(100vw - 24px);
     padding: 12px;
   }

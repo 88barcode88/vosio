@@ -1,3 +1,5 @@
+import type { RecordOptions, Recording } from "@soniox/client";
+
 export type RecorderStatus = "idle" | "starting" | "recording" | "saving";
 export type LiveSaveMode = "audio_and_transcript" | "transcript_only";
 export type LiveCaptionBlock = {
@@ -16,10 +18,12 @@ export type LiveMarkerFeedback = {
   offsetMs: number;
   tone: "error" | "status" | "working";
 };
+export type DevelopmentRecordingFactory = (options: RecordOptions) => Recording;
 export type BrowserRecorderProps = {
   allowTranscriptOnly?: boolean;
   captionMode?: boolean;
   compact?: boolean;
+  developmentRecordingFactory?: DevelopmentRecordingFactory;
   maxAudioFileSizeBytes: number | null;
   onStatusChange?: (status: RecorderStatus) => void;
   redirectAfterSave?: "detail" | "list";

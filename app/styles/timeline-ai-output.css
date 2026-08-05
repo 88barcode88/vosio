@@ -15,6 +15,58 @@
 .timeline-list-rich {
   gap: 8px;
 }
+.timeline-marker-section,
+.timeline-chapter-section,
+.timeline-marker-list {
+  display: grid;
+  gap: 8px;
+}
+.timeline-marker-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.timeline-marker-row {
+  width: 100%;
+  min-height: 66px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.timeline-marker-row:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: rgba(37, 189, 180, 0.08);
+}
+.timeline-marker-row:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.timeline-marker-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+}
+.timeline-marker-row time {
+  color: var(--teal);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+.timeline-marker-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.timeline-marker-copy > span,
+.timeline-marker-copy small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.timeline-list-header > svg {
+  flex: 0 0 auto;
+  color: var(--teal);
+}
 .file-details {
   gap: 0;
   align-content: start;
@@ -35,7 +87,9 @@
   gap: 2px;
   min-width: 0;
 }
+.timeline-list-header h3,
 .timeline-list-header strong {
+  margin: 0;
   color: var(--text);
   font-size: 13px;
 }

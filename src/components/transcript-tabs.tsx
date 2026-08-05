@@ -18,12 +18,17 @@ import {
   isTranscriptTab,
   VOSIO_ACTIVE_RECORDING_TAB_COOKIE
 } from "@/components/transcript-tabs/tab-state";
-import { getPreferredTranscriptBlock, TranscriptContent } from "@/components/transcript-tabs/transcript-content";
+import {
+  getNearestTranscriptBlock,
+  getPreferredTranscriptBlock,
+  TranscriptContent
+} from "@/components/transcript-tabs/transcript-content";
 import { getTranscriptSpeakerBlocks } from "@/components/transcript-tabs/speaker-blocks";
 import type { TranscriptTab, TranscriptTarget } from "@/components/transcript-tabs/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { RecordingClientView } from "@/lib/recordings/client-view";
+import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import { resolveEvidenceLocation } from "@/lib/transcripts/evidence-location";
@@ -38,6 +43,7 @@ type EvidenceRow = {
 export function TranscriptTabs({
   activeAiOutputs,
   activeRecording,
+  activeRecordingMarkers = [],
   activeStructuredItems,
   activeTranscript,
   initialTab = "transcript",
@@ -46,6 +52,7 @@ export function TranscriptTabs({
 }: {
   activeAiOutputs: AiOutputView[];
   activeRecording: RecordingClientView | null;
+  activeRecordingMarkers?: RecordingMarkerRow[];
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
   initialTab?: TranscriptTab;
@@ -212,6 +219,29 @@ export function TranscriptTabs({
     }, { allowPlay: true });
   }
 
+  // openRecordingMarker guards recording identity before using shared transcript navigation.
+  function openRecordingMarker(target: TranscriptTarget, recordingId: string) {
+    if (
+      recordingId !== activeRecording?.id
+      || target.transcriptId !== activeTranscript?.id
+    ) {
+      return;
+    }
+
+    const speakerBlocks = getTranscriptSpeakerBlocks(
+      activeTranscript.segments,
+      activeTranscript.speakers
+    );
+    const preferredBlock = target.startMs === null
+      ? null
+      : getNearestTranscriptBlock(speakerBlocks, target.startMs);
+
+    openTranscriptLocation({
+      ...target,
+      anchorId: preferredBlock?.anchorId
+    }, { allowPlay: true });
+  }
+
   return (
     <>
       <div className="tabs-row">
@@ -274,7 +304,9 @@ export function TranscriptTabs({
           <TimelineContent
             activeTranscript={activeTranscript}
             aiOutputs={activeAiOutputs}
+            markers={activeRecordingMarkers}
             onOpenAiTab={() => selectActiveTab("ai")}
+            onOpenMarker={openRecordingMarker}
             structuredItems={runtimeStructuredItems}
           />
         ) : null}
