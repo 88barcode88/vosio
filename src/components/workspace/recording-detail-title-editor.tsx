@@ -3,12 +3,13 @@
 import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { useCloseOnSuccessfulSave } from "@/components/use-close-on-successful-save";
-import { createInitialSaveActionState } from "@/lib/forms/save-action-state";
+import { createInitialSaveActionState, type SaveAction } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
 import { updateRecordingTitleStateAction } from "@/lib/recordings/actions";
 
 type RecordingDetailTitleEditorProps = {
   recordingId: string;
+  saveAction?: SaveAction;
   title: string;
 };
 
@@ -31,6 +32,7 @@ function RecordingDetailSaveButton() {
 // RecordingDetailTitleEditor saves a recording title before collapsing its disclosure.
 export function RecordingDetailTitleEditor({
   recordingId,
+  saveAction = updateRecordingTitleStateAction,
   title
 }: RecordingDetailTitleEditorProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -42,12 +44,12 @@ export function RecordingDetailTitleEditor({
   const scopedSaveAction = useCallback(
     (previousState: ReturnType<typeof createInitialSaveActionState>, formData: FormData) =>
       runSaveActionSafely(
-        updateRecordingTitleStateAction,
+        saveAction,
         previousState,
         formData,
         recordingId
       ),
-    [recordingId]
+    [recordingId, saveAction]
   );
   const [actionState, formAction, isPending] = useActionState(
     scopedSaveAction,

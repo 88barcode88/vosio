@@ -90,6 +90,10 @@ Vosio obsahuje pasivní `vosio-license-marker` v HTML metadatech pro rozpoznán�
 
 Stránka `/recordings` umí lehké hledání přes metadata nahrávek. Nepřidávej neindexované `ilike` hledání nad `transcripts.raw_text` jako rychlý fix, protože dlouhé přepisy by zpomalily DB a mohly by lákat k tahání velkých payloadů do shellu. Fulltext v obsahu transcriptů patří do samostatné migrace s FTS/trigram indexem nebo RPC a do UI se má vracet jen seznam odpovídajících nahrávek.
 
+## Submit není potvrzené uložení
+
+Client `onSubmit` proběhne dřív, než server action potvrdí validaci, auth a databázový zápis. Zavření popoveru nebo disclosure přímo v `onSubmit` proto schová chybu a může působit jako falešný úspěch. Kompaktní editory se zavírají jen po nové success revision pro vlastní scope; transport rejection se převádí na error state. Při přepnutí záznamu musí settlement starého scope zůstat ignorovaný. Po ručním zavření erroru si editor pamatuje dismissed scope/revision, aby stejný alert po reopen neožil, ale nový vyšší error se zobrazil.
+
 ## Mazání je potvrzené a optimistické
 
 Destruktivní akce v UI musí mít potvrzovací dialog. Po potvrzení se položka ve frontendu schová okamžitě a server action doběhne na pozadí přes běžné revalidace/redirecty. Pokud server akci odmítne, další navigace nebo refresh ukáže stav podle databáze; optimistické schování nesmí nahrazovat server-side autorizaci ani RLS.

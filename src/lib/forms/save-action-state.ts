@@ -5,6 +5,11 @@ export type SaveActionState = {
   status: "idle" | "success" | "error";
 };
 
+export type SaveAction = (
+  state: SaveActionState,
+  formData: FormData
+) => Promise<SaveActionState>;
+
 export const initialSaveActionState: SaveActionState = {
   message: null,
   revision: 0,

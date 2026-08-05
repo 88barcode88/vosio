@@ -128,6 +128,8 @@ Header má obsahovat:
 - typ zdroje,
 - relevantní akce jako `Zkontrolovat přepis`, `Export`, `Smazat`.
 
+Kompaktní editor názvu zůstává otevřený po dobu ukládání. Zavře se až po potvrzeném serverovém úspěchu a vrátí focus na ovládací prvek, který ho otevřel. Chyba ponechá rozepsaný název i editor na místě, zobrazí inline alert a opakovaný pokus nesmí způsobit skok výšky. Cancel, Escape, kliknutí mimo a trigger mohou editor zavřít jen mimo pending stav.
+
 Nepoužívat velkou waveform dekoraci přes podstatnou část obrazovky. Vizuální prvky mají podporovat orientaci, ne zabírat pracovní prostor.
 
 Detail má používat taby:
@@ -206,9 +208,12 @@ Požadavky:
 - seznam nahrávek bez tlačítka `Otevřít`,
 - kliknutí na řádek otevře detail,
 - editace názvu přes samostatný ovládací prvek,
+- editor názvu se po úspěšném uložení automaticky zavře; při chybě zůstane otevřený s rozepsanou hodnotou,
 - stav nahrávky jasně viditelný,
 - velikost, datum a zdroj zobrazit kompaktně,
 - připravit prostor pro budoucí filtry.
+
+Klienti, projekty, ploché složky a štítky jsou budoucí organizační funkce, nikoli aktuálně hotová část seznamu. Jejich create, rename a assignment editory mají po implementaci použít stejný success-only collapse kontrakt jako název nahrávky; delete zůstává samostatná potvrzovaná destruktivní akce.
 
 ## Mobil
 

@@ -3,12 +3,13 @@
 import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { useCloseOnSuccessfulSave } from "@/components/use-close-on-successful-save";
-import { createInitialSaveActionState } from "@/lib/forms/save-action-state";
+import { createInitialSaveActionState, type SaveAction } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
 import { updateRecordingTitleStateAction } from "@/lib/recordings/actions";
 
 type RecordingTitleEditorProps = {
   recordingId: string;
+  saveAction?: SaveAction;
   title: string;
 };
 
@@ -29,7 +30,11 @@ function RecordingTitleSaveButton() {
 }
 
 // RecordingTitleEditor saves an inbox-row title before closing its anchored popover.
-export function RecordingTitleEditor({ recordingId, title }: RecordingTitleEditorProps) {
+export function RecordingTitleEditor({
+  recordingId,
+  saveAction = updateRecordingTitleStateAction,
+  title
+}: RecordingTitleEditorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState(title);
   const [dismissedError, setDismissedError] = useState<DismissedSaveError | null>(null);
@@ -39,12 +44,12 @@ export function RecordingTitleEditor({ recordingId, title }: RecordingTitleEdito
   const scopedSaveAction = useCallback(
     (previousState: ReturnType<typeof createInitialSaveActionState>, formData: FormData) =>
       runSaveActionSafely(
-        updateRecordingTitleStateAction,
+        saveAction,
         previousState,
         formData,
         recordingId
       ),
-    [recordingId]
+    [recordingId, saveAction]
   );
   const [actionState, formAction, isPending] = useActionState(
     scopedSaveAction,
