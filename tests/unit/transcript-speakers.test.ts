@@ -106,4 +106,65 @@ describe("transcript speaker helpers", () => {
       expect.objectContaining({ speakerId: "2", speakerLabel: "Mluvčí 2", text: "Rozumím." })
     ]);
   });
+
+  it("preserves the first start and last end offset in each consecutive speaker block", () => {
+    const segments = [
+      { end_ms: 2100, speaker: 1, start_ms: 1200, text: "První " },
+      { end_ms: 4200, speaker: 1, start_ms: 2200, text: "blok." },
+      { end_ms: 5100, speaker: 2, start_ms: 4300, text: "Druhý blok." }
+    ];
+
+    expect(getTranscriptSpeakerBlocks(segments, [])).toMatchObject([
+      {
+        anchorId: "transcript-at-1200",
+        endMs: 4200,
+        startMs: 1200,
+        text: "První blok."
+      },
+      {
+        anchorId: "transcript-at-4300",
+        endMs: 5100,
+        startMs: 4300,
+        text: "Druhý blok."
+      }
+    ]);
+  });
+
+  it("uses a stable block fallback when the first token has no timestamp", () => {
+    const blocks = getTranscriptSpeakerBlocks(
+      [
+        { end_ms: null, speaker: 1, start_ms: null, text: "Bez času." },
+        { end_ms: 2200, speaker: 2, start_ms: 1200, text: "S časem." }
+      ],
+      []
+    );
+
+    expect(blocks[0]).toMatchObject({
+      anchorId: "transcript-block-1",
+      endMs: null,
+      startMs: null
+    });
+    expect(blocks[1]).toMatchObject({
+      anchorId: "transcript-at-1200",
+      endMs: 2200,
+      startMs: 1200
+    });
+  });
+
+  it("suffixes duplicate non-null start anchors by resulting block occurrence", () => {
+    const blocks = getTranscriptSpeakerBlocks(
+      [
+        { end_ms: 1500, speaker: 1, start_ms: 1200, text: "První." },
+        { end_ms: 1700, speaker: 2, start_ms: 1200, text: "Druhý." },
+        { end_ms: 1900, speaker: 3, start_ms: 1200, text: "Třetí." }
+      ],
+      []
+    );
+
+    expect(blocks.map((block) => block.anchorId)).toEqual([
+      "transcript-at-1200",
+      "transcript-at-1200-2",
+      "transcript-at-1200-3"
+    ]);
+  });
 });

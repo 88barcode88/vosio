@@ -111,11 +111,15 @@ function SpeakerSummary({ activeTranscript }: { activeTranscript: TranscriptRow 
 
 // TranscriptContent renders saved transcript blocks or the pending transcription empty state.
 export function TranscriptContent({
+  activeBlockAnchorId = null,
   activeRecording,
-  activeTranscript
+  activeTranscript,
+  onOpenTime
 }: {
+  activeBlockAnchorId?: string | null;
   activeRecording: RecordingRow | null;
   activeTranscript: TranscriptRow | null;
+  onOpenTime?: (startMs: number, anchorId: string) => void;
 }) {
   const speakerBlocks = useMemo(
     () => activeTranscript ? getTranscriptSpeakerBlocks(activeTranscript.segments, activeTranscript.speakers) : [],
@@ -134,13 +138,28 @@ export function TranscriptContent({
                 <span role="columnheader">Mluvčí</span>
                 <span role="columnheader">Text</span>
               </div>
-              {speakerBlocks.map((block, index) => (
+              {speakerBlocks.map((block) => (
                 <div
-                  className="transcript-table-row"
-                  key={`${block.label}-${block.speakerLabel}-${index}`}
+                  aria-current={activeBlockAnchorId === block.anchorId ? "true" : undefined}
+                  className={activeBlockAnchorId === block.anchorId
+                    ? "transcript-table-row transcript-table-row-highlighted"
+                    : "transcript-table-row"}
+                  id={block.anchorId}
+                  key={block.anchorId}
                   role="row"
+                  tabIndex={-1}
                 >
-                  <time role="cell">{block.label}</time>
+                  <time role="cell">
+                    {block.startMs !== null && onOpenTime ? (
+                      <button
+                        aria-label={`Otevřít přepis od ${block.label}`}
+                        onClick={() => onOpenTime(block.startMs as number, block.anchorId)}
+                        type="button"
+                      >
+                        {block.label}
+                      </button>
+                    ) : block.label}
+                  </time>
                   <span className={`speaker ${block.speakerClassName}`} role="cell">{block.speakerLabel}</span>
                   <p role="cell">{block.text.trim()}</p>
                 </div>

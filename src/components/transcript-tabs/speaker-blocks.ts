@@ -5,11 +5,13 @@ import {
   getStoredTranscriptSpeakerSummaries,
   getTranscriptSpeakerDisplayName,
   getTranscriptSpeakerLabel,
+  getTranscriptTokenEndMs,
   getTranscriptTokenSpeakerId,
   getTranscriptTokenStartMs,
   getTranscriptTokenText,
   type TranscriptSpeakerSummary
 } from "@/lib/transcripts/speakers";
+import { getTranscriptAnchorId } from "@/lib/transcripts/navigation";
 
 // formatTokenTimestamp renders provider millisecond offsets for transcript blocks.
 export function formatTokenTimestamp(startMs: number | null, fallbackIndex: number) {
@@ -52,7 +54,9 @@ export function getTranscriptSpeakerBlocks(segments: unknown, speakers: unknown)
     return [];
   }
 
-  return tokens.reduce<TranscriptSpeakerBlock[]>((blocks, token, index) => {
+  const startMsOccurrences = new Map<number, number>();
+
+  return tokens.reduce<TranscriptSpeakerBlock[]>((blocks, token) => {
     const text = getTranscriptTokenText(token);
 
     if (!text.trim()) {
@@ -69,18 +73,32 @@ export function getTranscriptSpeakerBlocks(segments: unknown, speakers: unknown)
         ...blocks.slice(0, -1),
         {
           ...previous,
+          endMs: getTranscriptTokenEndMs(token),
           text: `${previous.text}${text}`
         }
       ];
     }
 
+    const startMs = getTranscriptTokenStartMs(token);
+    const fallbackIndex = blocks.length;
+    const timestampOccurrence = startMs === null
+      ? 1
+      : (startMsOccurrences.get(startMs) ?? 0) + 1;
+
+    if (startMs !== null) {
+      startMsOccurrences.set(startMs, timestampOccurrence);
+    }
+
     return [
       ...blocks,
       {
-        label: formatTokenTimestamp(getTranscriptTokenStartMs(token), index),
+        anchorId: getTranscriptAnchorId(startMs, fallbackIndex, timestampOccurrence),
+        endMs: getTranscriptTokenEndMs(token),
+        label: formatTokenTimestamp(startMs, fallbackIndex),
         speakerId: speaker,
         speakerClassName: getSpeakerClassName(speaker),
         speakerLabel,
+        startMs,
         text
       }
     ];
