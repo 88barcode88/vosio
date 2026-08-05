@@ -373,6 +373,9 @@
 .browser-recorder-compact .recording-state {
   grid-column: 1 / -1;
 }
+.browser-recorder-compact .live-marker-actions {
+  grid-column: 1 / -1;
+}
 .live-save-mode {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -458,6 +461,42 @@
   color: var(--text);
   font-variant-numeric: tabular-nums;
   padding: 0 10px;
+}
+.live-marker-actions {
+  display: inline-flex;
+  flex: 1 1 260px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 10px;
+  min-width: 0;
+}
+.live-marker-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--teal) 45%, var(--border));
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--teal) 10%, var(--panel));
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0 11px;
+}
+.live-marker-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.live-marker-feedback {
+  flex: 1 1 180px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.live-marker-feedback[role="alert"] {
+  color: var(--red);
 }
 .recording-indicator {
   width: 9px;

@@ -238,6 +238,13 @@
     flex-direction: column;
     gap: 4px;
   }
+  .live-marker-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .live-marker-button {
+    width: 100%;
+  }
   .ghost-action,
   .danger-action,
   .command-button,

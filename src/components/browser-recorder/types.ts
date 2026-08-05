@@ -5,6 +5,17 @@ export type LiveCaptionBlock = {
   speakerClassName: string;
   text: string;
 };
+export type LiveMarkerAttempt = {
+  clientMarkerId: string;
+  markerType: "important";
+  note: null;
+  offsetMs: number;
+};
+export type LiveMarkerFeedback = {
+  message: string;
+  offsetMs: number;
+  tone: "error" | "status" | "working";
+};
 export type BrowserRecorderProps = {
   allowTranscriptOnly?: boolean;
   captionMode?: boolean;
