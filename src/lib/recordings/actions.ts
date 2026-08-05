@@ -41,20 +41,6 @@ function getOptionalString(formData: FormData, name: string) {
   return typeof value === "string" && value ? value : undefined;
 }
 
-// parseRecordingTitleForm validates the recording rename form payload.
-function parseRecordingTitleForm(formData: FormData) {
-  const parsed = recordingTitleFormSchema.safeParse({
-    recordingId: getRequiredString(formData, "recordingId"),
-    title: getRequiredString(formData, "title")
-  });
-
-  if (!parsed.success) {
-    redirect("/recordings?error=invalid_title");
-  }
-
-  return parsed.data;
-}
-
 // parseRecordingDeleteForm validates the soft-delete recording form payload.
 function parseRecordingDeleteForm(formData: FormData) {
   const parsed = recordingDeleteFormSchema.safeParse({
@@ -116,37 +102,6 @@ async function removeRecordingStorageObjects(
   if (error) {
     throw new Error(error.message);
   }
-}
-
-// updateRecordingTitleAction updates the user-owned recording title through Supabase RLS.
-export async function updateRecordingTitleAction(formData: FormData) {
-  const parsed = parseRecordingTitleForm(formData);
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: userError
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    redirect("/login?next=/recordings");
-  }
-
-  const { data, error } = await supabase
-    .from("recordings")
-    .update({ title: parsed.title })
-    .eq("id", parsed.recordingId)
-    .eq("user_id", user.id)
-    .neq("status", "deleted")
-    .select("id")
-    .maybeSingle();
-
-  if (error || !data) {
-    redirect("/recordings?error=title_update_failed");
-  }
-
-  revalidatePath("/");
-  revalidatePath("/recordings");
-  revalidatePath(`/recordings/${parsed.recordingId}`);
 }
 
 // Updates a user-owned recording title and returns a scoped editor settlement.

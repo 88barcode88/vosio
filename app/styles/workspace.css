@@ -198,6 +198,10 @@
   flex: 0 0 auto;
   justify-content: flex-end;
 }
+.recording-inline-edit-shell {
+  position: relative;
+  flex: 0 0 auto;
+}
 .recording-meta {
   gap: 8px;
   font-size: 12px;

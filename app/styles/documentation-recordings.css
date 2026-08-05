@@ -411,6 +411,11 @@
 .recording-title-edit-button[aria-expanded="true"] {
   color: var(--teal);
 }
+.recording-title-edit-button:disabled,
+.recording-inline-edit summary[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.65;
+}
 .recording-title-popover {
   position: absolute;
   top: calc(100% - 4px);
@@ -506,6 +511,7 @@
 .recording-title-form {
   display: grid;
   gap: 8px;
+  min-height: 118px;
   padding-bottom: 12px;
 }
 .recording-title-form label {
@@ -539,6 +545,21 @@
   background: var(--accent-bg);
   font-weight: 800;
   padding: 0 14px;
+}
+.recording-title-form button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.recording-title-save-error {
+  margin: 0;
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.recording-title-feedback {
+  display: flex;
+  align-items: flex-start;
+  min-height: 34px;
 }
 .delete-recording-form {
   display: flex;

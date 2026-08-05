@@ -7,7 +7,7 @@ import { createInitialSaveActionState } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
 import { updateRecordingTitleStateAction } from "@/lib/recordings/actions";
 
-type RecordingTitleEditorProps = {
+type RecordingDetailTitleEditorProps = {
   recordingId: string;
   title: string;
 };
@@ -17,8 +17,8 @@ type DismissedSaveError = {
   scopeKey: string;
 };
 
-// RecordingTitleSaveButton reflects the pending state of its nearest title form.
-function RecordingTitleSaveButton() {
+// RecordingDetailSaveButton reflects the pending state of its disclosure form.
+function RecordingDetailSaveButton() {
   const { pending } = useFormStatus();
 
   return (
@@ -28,14 +28,17 @@ function RecordingTitleSaveButton() {
   );
 }
 
-// RecordingTitleEditor saves an inbox-row title before closing its anchored popover.
-export function RecordingTitleEditor({ recordingId, title }: RecordingTitleEditorProps) {
+// RecordingDetailTitleEditor saves a recording title before collapsing its disclosure.
+export function RecordingDetailTitleEditor({
+  recordingId,
+  title
+}: RecordingDetailTitleEditorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState(title);
   const [dismissedError, setDismissedError] = useState<DismissedSaveError | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
   const scopedSaveAction = useCallback(
     (previousState: ReturnType<typeof createInitialSaveActionState>, formData: FormData) =>
       runSaveActionSafely(
@@ -88,14 +91,14 @@ export function RecordingTitleEditor({ recordingId, title }: RecordingTitleEdito
     inputRef.current?.focus();
     inputRef.current?.select();
 
-    // closeOnDocumentPointer closes an idle popover clicked from outside.
+    // closeOnDocumentPointer collapses an idle disclosure clicked from outside.
     function closeOnDocumentPointer(event: PointerEvent) {
       if (!isPending && !containerRef.current?.contains(event.target as Node)) {
         dismissEditor();
       }
     }
 
-    // closeOnEscape closes an idle popover for keyboard users.
+    // closeOnEscape collapses an idle disclosure for keyboard users.
     function closeOnEscape(event: KeyboardEvent) {
       if (!isPending && event.key === "Escape") {
         dismissEditor();
@@ -112,40 +115,30 @@ export function RecordingTitleEditor({ recordingId, title }: RecordingTitleEdito
   }, [dismissEditor, isOpen, isPending]);
 
   return (
-    <div className="recording-title-edit" ref={containerRef}>
-      <button
-        aria-expanded={isOpen}
-        className="recording-title-edit-button"
-        disabled={isPending}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          if (isPending) {
-            return;
-          }
+    <div className="recording-inline-edit-shell" ref={containerRef}>
+      <details className="recording-inline-edit" open={isOpen}>
+        <summary
+          aria-disabled={isPending}
+          onClick={(event) => {
+            event.preventDefault();
+            if (isPending) {
+              return;
+            }
 
-          if (isOpen) {
-            dismissEditor();
-          } else {
-            setIsOpen(true);
-          }
-        }}
-        ref={triggerRef}
-        type="button"
-      >
-        Upravit <span aria-hidden="true">{isOpen ? "-" : "+"}</span>
-      </button>
-      <span aria-atomic="true" aria-live="polite" className="visually-hidden recording-title-save-status">
-        {isCurrentSettlement && actionState.status === "success" && !isPending
-          ? actionState.message
-          : ""}
-      </span>
-      {isOpen ? (
+            if (isOpen) {
+              dismissEditor();
+            } else {
+              setIsOpen(true);
+            }
+          }}
+          ref={triggerRef}
+        >
+          Upravit název
+        </summary>
         <form
           action={formAction}
           aria-busy={isPending}
-          className="recording-title-form recording-title-popover"
-          onClick={(event) => event.stopPropagation()}
+          className="recording-title-form"
           onSubmit={(event) => {
             if (isPending) {
               event.preventDefault();
@@ -176,13 +169,18 @@ export function RecordingTitleEditor({ recordingId, title }: RecordingTitleEdito
               ) : null}
           </div>
           <div className="recording-title-popover-actions">
-            <RecordingTitleSaveButton />
+            <RecordingDetailSaveButton />
             <button disabled={isPending} onClick={dismissEditor} type="button">
               Zrušit
             </button>
           </div>
         </form>
-      ) : null}
+      </details>
+      <span aria-atomic="true" aria-live="polite" className="visually-hidden recording-title-save-status">
+        {isCurrentSettlement && actionState.status === "success" && !isPending
+          ? actionState.message
+          : ""}
+      </span>
     </div>
   );
 }

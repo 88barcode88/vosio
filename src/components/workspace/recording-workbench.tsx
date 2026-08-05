@@ -2,9 +2,9 @@ import { AudioLines, CheckCircle2 } from "lucide-react";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import { TranscriptionControls } from "@/components/transcription-controls";
+import { RecordingDetailTitleEditor } from "@/components/workspace/recording-detail-title-editor";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
-import { updateRecordingTitleAction } from "@/lib/recordings/actions";
 import {
   formatFileSize,
   formatRecordingDate,
@@ -103,23 +103,11 @@ function RecordingCard({ activeRecording }: { activeRecording: RecordingRow | nu
         </div>
         {activeRecording ? (
           <div className="recording-detail-actions">
-            <details className="recording-inline-edit">
-              <summary>Upravit název</summary>
-              <form action={updateRecordingTitleAction} className="recording-title-form">
-                <input defaultValue={activeRecording.id} name="recordingId" type="hidden" />
-                <label>
-                  <span>Název</span>
-                  <input
-                    aria-label={`Název nahrávky ${activeRecording.title}`}
-                    defaultValue={activeRecording.title}
-                    maxLength={160}
-                    name="title"
-                    required
-                  />
-                </label>
-                <button type="submit">Uložit</button>
-              </form>
-            </details>
+            <RecordingDetailTitleEditor
+              key={activeRecording.id}
+              recordingId={activeRecording.id}
+              title={activeRecording.title}
+            />
             <DeleteRecordingForm
               label="Smazat nahrávku"
               next="/recordings"
