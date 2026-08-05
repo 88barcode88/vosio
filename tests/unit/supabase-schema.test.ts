@@ -6,6 +6,10 @@ const baselineMigration = readFileSync(
   join(process.cwd(), "supabase", "migrations", "20260617000000_initial_schema.sql"),
   "utf8"
 );
+const evidenceLocationMigration = readFileSync(
+  join(process.cwd(), "supabase", "migrations", "20260804100000_add_evidence_locations.sql"),
+  "utf8"
+);
 
 describe("Supabase schema migrations", () => {
   it("adds ownership and forced RLS for structured AI tables", () => {
@@ -41,6 +45,31 @@ describe("Supabase schema migrations", () => {
     expect(baselineMigration).not.toContain("transcript chapters update own");
     expect(baselineMigration).not.toContain("transcript decisions delete own");
     expect(baselineMigration).not.toContain("transcript risks insert own");
+  });
+
+  it("adds nullable evidence ranges without changing grants or policies", () => {
+    const normalizedMigration = evidenceLocationMigration.replace(/\s+/g, " ");
+
+    for (const tableName of ["transcript_tasks", "transcript_decisions", "transcript_risks"]) {
+      expect(evidenceLocationMigration).toContain(`alter table public.${tableName}`);
+      expect(evidenceLocationMigration).toContain("add column evidence_start_ms bigint");
+      expect(evidenceLocationMigration).toContain("add column evidence_end_ms bigint");
+      expect(evidenceLocationMigration).toContain(`constraint ${tableName}_evidence_range_check check`);
+      expect(normalizedMigration).toContain(
+        `constraint ${tableName}_evidence_range_check check ( `
+        + "(evidence_start_ms is null and evidence_end_ms is null) or ( "
+        + "evidence_start_ms is not null and evidence_end_ms is not null "
+        + "and evidence_start_ms >= 0 and evidence_end_ms >= evidence_start_ms ) )"
+      );
+    }
+
+    expect(evidenceLocationMigration).toContain("alter table public.transcript_risks\n  add column evidence_quote text");
+    expect(evidenceLocationMigration.match(/evidence_start_ms >= 0/g)).toHaveLength(3);
+    expect(evidenceLocationMigration.match(/evidence_end_ms >= evidence_start_ms/g)).toHaveLength(3);
+    expect(evidenceLocationMigration).not.toMatch(/or\s*\(\s*evidence_start_ms\s*>=\s*0/i);
+    expect(evidenceLocationMigration).not.toMatch(/\bgrant\b/i);
+    expect(evidenceLocationMigration).not.toMatch(/\bpolicy\b/i);
+    expect(baselineMigration.match(/grant update \(status\) on public\.transcript_tasks to authenticated;/g)).toHaveLength(1);
   });
 
   it("keeps the baseline aligned with current provider and storage requirements", () => {

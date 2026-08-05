@@ -8,12 +8,14 @@ import type {
   StructuredTaskRow,
   StructuredTaskStatus
 } from "@/lib/ai/structured-types";
+import { resolveEvidenceLocation } from "@/lib/transcripts/evidence-location";
 
 type JsonRecord = Record<string, unknown>;
 
 type StructuredBuildContext = {
   aiOutputId: string;
   processingJobId: string;
+  transcriptSegments?: unknown;
   transcriptId: string;
   userId: string;
 };
@@ -205,6 +207,8 @@ function buildTaskRow(
   }
 
   const record = asRecord(item);
+  const evidenceQuote = getStringField(item, ["evidence_quote", "evidence"]);
+  const evidenceLocation = resolveEvidenceLocation(context.transcriptSegments, evidenceQuote);
 
   return {
     ai_output_id: context.aiOutputId,
@@ -212,7 +216,9 @@ function buildTaskRow(
     deadline_confidence: getStringField(item, ["deadline_confidence", "deadline_type"]),
     deadline_normalized: normalizeDate(record?.deadline_normalized ?? record?.normalized_deadline),
     description: getStringField(item, ["context", "description", "reason", "impact", "notes"]),
-    evidence_quote: getStringField(item, ["evidence_quote", "evidence"]),
+    evidence_end_ms: evidenceLocation?.endMs ?? null,
+    evidence_quote: evidenceQuote,
+    evidence_start_ms: evidenceLocation?.startMs ?? null,
     owner_category: normalizeOwnerCategory(record?.owner_category ?? record?.owner_role, ownerCategory),
     owner_name: getStringField(item, ["owner_name", "owner"]),
     position,
@@ -296,10 +302,14 @@ function buildDecisionRow(
   }
 
   const record = asRecord(item);
+  const evidenceQuote = getStringField(item, ["evidence_quote", "evidence"]);
+  const evidenceLocation = resolveEvidenceLocation(context.transcriptSegments, evidenceQuote);
 
   return {
     ai_output_id: context.aiOutputId,
-    evidence_quote: getStringField(item, ["evidence_quote", "evidence"]),
+    evidence_end_ms: evidenceLocation?.endMs ?? null,
+    evidence_quote: evidenceQuote,
+    evidence_start_ms: evidenceLocation?.startMs ?? null,
     owner_category: normalizeOptionalOwnerCategory(record?.owner_category),
     owner_role: normalizeOwnerRole(record?.owner_role),
     position,
@@ -340,9 +350,14 @@ function buildRiskRow(
   }
 
   const record = asRecord(item);
+  const evidenceQuote = getStringField(item, ["evidence_quote", "evidence"]);
+  const evidenceLocation = resolveEvidenceLocation(context.transcriptSegments, evidenceQuote);
 
   return {
     ai_output_id: context.aiOutputId,
+    evidence_end_ms: evidenceLocation?.endMs ?? null,
+    evidence_quote: evidenceQuote,
+    evidence_start_ms: evidenceLocation?.startMs ?? null,
     impact: getStringField(item, ["impact"]),
     mitigation: getStringField(item, ["mitigation", "mitigation_or_next_step", "needed_to_unblock"]),
     owner_category: normalizeOptionalOwnerCategory(record?.owner_category),

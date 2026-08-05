@@ -4,8 +4,7 @@ import { createRateLimiter } from "@/lib/rate-limit";
 import { parsePossibleJson, type AiProviderProcessingResult } from "@/lib/ai/common";
 import { runGeminiProcessing } from "@/lib/ai/gemini";
 import { runOpenAIProcessing } from "@/lib/ai/openai";
-import { buildStructuredAiItems } from "@/lib/ai/structured-items";
-import { persistStructuredAiItems } from "@/lib/ai/structured-persistence";
+import { persistCompletedAiProcessing } from "@/lib/ai/process-route-orchestration";
 import { getAiProviderConfigurationError } from "@/lib/env.server";
 import {
   aiModelIds,
@@ -122,31 +121,6 @@ async function runAiProviderProcessing(input: {
   }
 
   return runOpenAIProcessing(input);
-}
-
-// storeStructuredOutputRows derives checklist and timeline rows without blocking raw output storage.
-async function storeStructuredOutputRows(input: {
-  admin: ReturnType<typeof createAdminClient>;
-  jobId: string;
-  outputId: string;
-  outputJson: unknown;
-  transcriptId: string;
-  userId: string;
-}) {
-  const structuredItems = buildStructuredAiItems({
-    aiOutputId: input.outputId,
-    processingJobId: input.jobId,
-    transcriptId: input.transcriptId,
-    userId: input.userId
-  }, input.outputJson);
-
-  try {
-    await persistStructuredAiItems(input.admin, structuredItems);
-  } catch (error) {
-    if (error instanceof Error) {
-      console.error("[Vosio AI structured output]", error.message);
-    }
-  }
 }
 
 // getAuthenticatedTranscript verifies ownership and loads transcript text, segments and speakers through RLS.
@@ -314,42 +288,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
         ? parsePossibleJson(result.outputText)
         : null;
 
-      const { data: output, error: outputError } = await admin
-        .from("ai_outputs")
-        .insert({
-          output_json: outputJson,
-          output_text: result.outputText,
-          processing_job_id: job.id,
-          transcript_id: transcript.id,
-          user_id: user.id
-        })
-        .select("id,output_text,output_json")
-        .single();
-
-      if (outputError || !output) {
-        throw new Error("Nepodařilo se uložit AI výstup.");
-      }
-
-      if (outputJson) {
-        await storeStructuredOutputRows({
-          admin,
-          jobId: job.id,
-          outputId: output.id,
-          outputJson,
-          transcriptId: transcript.id,
-          userId: user.id
-        });
-      }
-
-      await admin
-        .from("ai_processing_jobs")
-        .update({
-          completed_at: new Date().toISOString(),
-          input_token_count: result.inputTokenCount,
-          output_token_count: result.outputTokenCount,
-          status: "done"
-        })
-        .eq("id", job.id);
+      const output = await persistCompletedAiProcessing({
+        admin,
+        inputTokenCount: result.inputTokenCount,
+        jobId: job.id,
+        outputJson,
+        outputText: result.outputText,
+        outputTokenCount: result.outputTokenCount,
+        transcriptId: transcript.id,
+        transcriptSegments: transcript.segments,
+        userId: user.id
+      });
 
       return NextResponse.json({ job: { id: job.id, status: "done" }, output });
     } catch (error) {
