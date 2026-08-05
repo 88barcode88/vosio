@@ -6,12 +6,15 @@ import {
 import type { RecordingRow } from "@/lib/recordings/types";
 
 const recording: RecordingRow = {
+  client_id: null,
   created_at: "2026-05-24T09:00:00.000Z",
   duration_seconds: 1800,
   error_message: null,
   file_size_bytes: 2048,
+  folder_id: null,
   id: "recording-1",
   mime_type: "audio/mp4",
+  project_id: null,
   source_type: "upload",
   status: "completed",
   storage_path: "user/recording/file.m4a",

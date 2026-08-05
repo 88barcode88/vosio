@@ -69,12 +69,15 @@ export type RecordingStatus =
   | "deleted";
 
 export type RecordingRow = {
+  client_id: string | null;
   id: string;
   created_at: string;
   duration_seconds: number | null;
   error_message: string | null;
   file_size_bytes: number | null;
+  folder_id: string | null;
   mime_type: string | null;
+  project_id: string | null;
   source_type: "upload" | "in_app_recording" | "realtime";
   status: RecordingStatus;
   storage_path: string | null;

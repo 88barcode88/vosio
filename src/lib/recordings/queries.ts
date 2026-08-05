@@ -5,6 +5,9 @@ import { fetchAllRows } from "@/lib/supabase/pagination";
 const recordingColumns = `
   id,
   user_id,
+  client_id,
+  project_id,
+  folder_id,
   title,
   source_type,
   storage_path,

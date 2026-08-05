@@ -8,12 +8,15 @@ import type { RecordingRow } from "@/lib/recordings/types";
 import { defaultUserSettings } from "@/lib/settings/types";
 
 const recordingWithStoragePath: RecordingRow = {
+  client_id: null,
   created_at: "2026-08-05T08:00:00.000Z",
   duration_seconds: 60,
   error_message: null,
   file_size_bytes: 1024,
+  folder_id: null,
   id: "11111111-1111-4111-8111-111111111111",
   mime_type: "audio/webm",
+  project_id: null,
   source_type: "upload",
   status: "completed",
   storage_path: "private-user/private-recording/audio.webm",
