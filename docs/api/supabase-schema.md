@@ -16,6 +16,33 @@ Systémové prompt templates jsou seedované stabilními UUID a aktuálním kont
 
 Normalizované odvozené tabulky pro práci s AI výstupy jsou `transcript_tasks`, `transcript_chapters`, `transcript_decisions` a `transcript_risks`. `ai_outputs` zůstává raw zdroj AI výstupu; nové tabulky jsou pracovní projekce pro checklist, obsahovou časovou osu, rozhodnutí a rizika. Každá tabulka má `user_id`, forced RLS, owner policies, anon revoke a cascade vazbu na `ai_outputs`. Authenticated klient má nad projekcemi jen čtení a u `transcript_tasks` úzké oprávnění změnit sloupec `status`; vytváření, přepis obsahu a mazání projekcí zůstává server-side přes service role.
 
+## Evidence location forward migrace
+
+Soubor `supabase/migrations/20260804100000_add_evidence_locations.sql` je navazující forward migrace:
+
+- `transcript_tasks`: nullable `evidence_start_ms bigint` a `evidence_end_ms bigint`,
+- `transcript_decisions`: nullable `evidence_start_ms bigint` a `evidence_end_ms bigint`,
+- `transcript_risks`: nullable `evidence_quote text`, `evidence_start_ms bigint` a `evidence_end_ms bigint`.
+
+Každý range constraint dovoluje pouze oba časy `null`, nebo oba časy non-null s `start >= 0` a `end >= start`. Migrace nepřidává žádný `GRANT` ani `POLICY`; baseline dál obsahuje právě úzký authenticated `grant update (status)` pro `transcript_tasks` a existující ownership/RLS model se nemění.
+
+### Stav ověření této migrace
+
+Ověřeno v source a automatických testech:
+
+1. přesný SQL contract sloupců, paired-null range checků a absence nových grantů/policies,
+2. resolver přijímá pouze unique exact contiguous quote match nad uloženými tokeny a ignoruje provider-supplied times,
+3. raw `ai_outputs` se ukládá před odvozenými projekcemi a AI job přejde do `done` až po pokusu o jejich uložení,
+4. component/E2E kontrakt navigace pro single audio, transcript-only a legacy segmented záznam.
+
+Neověřeno a neprovedeno:
+
+1. SQL parse migrace v reálném Postgres/Supabase prostředí,
+2. aplikace migrace do disposable, staging nebo live Supabase,
+3. postflight skutečných sloupců/constraintů, nezměněných grants, forced RLS a two-user cross-tenant čtení.
+
+Release je proto blokovaný: aplikační kód očekávající evidence sloupce se nesmí deploynout před schválenou aplikací migrace a úspěšným postflightem. Tato hranice má přednost před starším tvrzením níže, že core baseline už byla aplikovaná; to tvrzení se vztahuje pouze k baseline, ne k této forward migraci.
+
 ## Public tabulky
 
 - `recordings`
@@ -119,7 +146,7 @@ Nová live nahrávka pod limitem používá jeden finální objekt:
 
 ## Aplikace migrace
 
-Core migrace už byla aplikovaná přes MCP server `supabase-vosio`.
+Core baseline migrace už byla aplikovaná přes MCP server `supabase-vosio`. Toto historické ověření nezahrnuje source-only forward migraci `20260804100000_add_evidence_locations.sql` popsanou výše.
 
 Ověřeno:
 

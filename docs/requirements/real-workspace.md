@@ -34,6 +34,16 @@ When a recording is in status `transcribing`, the client also polls the same `GE
 
 When a completed transcript contains Soniox token-level `speaker` fields, the transcript tab groups consecutive tokens by speaker and displays one compact transcript table with columns for time, speaker, and text. Each speaker gets a stable color class. The speaker summary above the table lets the user save a manual speaker name and business role (`client_customer`, `delivery_team`, or `unknown`) into `transcripts.speakers`; the compact speaker editor scrolls internally when a call has many speakers, so 8+ speakers do not push the whole detail page down. If the provider did not return speaker ids, the UI falls back to the plain `raw_text` transcript.
 
+## Private Audio Playback
+
+The recording detail renders a player only when safe client metadata says `audioAvailability = single`, meaning `recordings.storage_path` points to one concrete Storage object. `none` means there is no audio object. `segmented` means a legacy `/live/` prefix with multiple objects; those recordings remain supported for recovery/retranscription but are not exposed as one playable source.
+
+For a single object the browser calls `GET /api/recordings/{recordingId}/audio`. The route requires a valid Supabase Auth user, queries the recording with both `id` and `user_id`, and returns a 300-second HTTP(S) signed URL only after ownership and eligibility checks. The raw DB `storage_path` is not returned as a separate field or metadata, but the Supabase signed URL contains the encoded object path. Security therefore relies on auth and ownership checks, the private bucket, the signed token and its short expiry rather than path secrecy. Opaque path secrecy would require a media proxy.
+
+`Cache-Control: private, no-store` applies to the JSON API envelope, including error responses, not to the Storage media response or its cache metadata. Uploads currently set Storage `cacheControl` to 3600 seconds. The 300-second signed-token lifetime limits authorization for later URL use; it is not a prohibition on caching audio that was already fetched.
+
+Loading the detail, switching tabs and fetching the signed URL must never create play intent. Only a direct user click on a transcript timestamp or `Otevřít v přepisu` requests playback. If metadata is not ready, the controller may execute that same explicit intent after `loadedmetadata`; this remains click-initiated playback, not autoplay. Transcript-only and segmented recordings still switch tabs and, when a renderable transcript block exists, scroll and highlight evidence without any audio fetch or seek.
+
 When the user records live in the browser:
 
 1. The app asks for microphone permission.
@@ -90,7 +100,15 @@ The `/templates` workspace separates user-owned templates from the system librar
 
 AI processing lets the user choose one current AI model per run. The model selector includes model purpose, provider and indicative token pricing for `gpt-5.6-terra`, `gpt-5.6-luna` and `gemini-3.6-flash`. The selected model is stored in `ai_processing_jobs.model`, the selected provider in `ai_processing_jobs.provider`, and the effective `reasoning_effort` or `thinking_level` in `ai_processing_jobs.provider_config`. The current catalog does not expose temperature because these model configurations do not use it. When an AI run starts, the tab must show a visible running state. The same output type can be started again while an earlier run is still pending, because users may want another pass with different settings.
 
-Tasks extracted by AI are stored as checklist rows with owner category (`Moje práce`, `Klient`, `Nejasné`), optional owner name, deadline, status and evidence quote. Toggling a task updates `transcript_tasks.status` through a server action and RLS. The AI tab groups checklist rows by owner category, keeps evidence collapsed until needed and keeps raw markdown artifacts collapsed when normalized rows exist. The markdown output remains available for review/export, but task state belongs to the normalized table.
+Tasks extracted by AI are stored as checklist rows with owner category (`Moje práce`, `Klient`, `Nejasné`), optional owner name, deadline, status and evidence quote. Toggling a task updates `transcript_tasks.status` through a server action and RLS. The AI tab groups checklist rows by owner category, shows evidence quotes inline, and keeps raw markdown artifacts collapsed when normalized rows exist. The markdown output remains available for review/export, but task state belongs to the normalized table.
+
+## AI Evidence Navigation
+
+Tasks, decisions and risks show `Otevřít v přepisu` only when the app has a complete safe evidence range. The server never trusts milliseconds supplied by the AI provider. It normalizes the quote with NFC, Czech locale case folding, collapsed whitespace and Unicode punctuation removal while preserving accents, symbols and compatibility characters. It searches the full saved Soniox token stream for one exact contiguous whole-token match. Repeated/ambiguous, partial, non-contiguous, missing-timestamp or unmatched quotes keep their text but receive no action.
+
+For legacy tasks and decisions with a quote and null times, `TranscriptTabs` derives a runtime-only location from `activeTranscript.segments`. Risks receive the same fallback only when they have a quote. The derived objects do not mutate server props and are never persisted. If evidence spans speakers, navigation first prefers a block containing the whole range and otherwise the block containing `startMs`; start membership is `[start, end)`, so an exact boundary selects the new block rather than the previous ended block. If no speaker block can own the start, the tab still opens and eligible single audio seeks to the exact time without inventing a highlight.
+
+Direct-click evidence navigation requests play only for eligible single audio. With `none` or `segmented`, the same click performs transcript scroll/highlight without player activity. A mismatched `transcriptId` is rejected before either navigation or seek.
 
 The action-items prompt treats `decisions_to_confirm` as unresolved confirmations only. Already agreed choices belong to `decided_items`, tasks or risks so the UI can show them as agreed decisions instead of open confirmations. The prompt explicitly checks short mentions of Customer Portal, permissions, documents, email templates and process-stage decisions because these often create product follow-up items.
 
@@ -103,6 +121,12 @@ Recording detail export is Markdown-first. The user can export or copy the whole
 The recordings list supports URL-driven search through `q`. Current search is intentionally lightweight and filters loaded recording rows by title, status, source and MIME type. Searching inside complete transcript text is a future fulltext feature that needs a DB index/RPC and must not load raw transcript payloads into the list shell.
 
 AI outputs can be deleted individually from the recording detail. Deleting an AI output removes stored generated content but keeps the processing job metadata available for usage accounting. Recordings use a two-step delete model: first soft-delete to Trash, then permanent delete from Trash, including the Storage object and cascading DB records. Delete actions must ask for confirmation and then update the visible UI optimistically while the server action finishes.
+
+## Evidence Migration Release Boundary
+
+The source tree contains `20260804100000_add_evidence_locations.sql`, and unit/component/E2E tests cover its SQL contract, deterministic resolver and user-visible navigation. The migration is not applied to any disposable, staging or live database in this work. Real SQL parse, paired-null constraints, unchanged grants, forced RLS and two-user isolation remain unverified at the database level.
+
+Do not deploy application code that inserts or selects the new evidence columns before an explicitly approved migration apply and postflight. Source/test verification is not evidence of a successful Supabase migration.
 
 ## Not Yet Implemented
 

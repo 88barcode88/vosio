@@ -247,6 +247,26 @@ Systémové AI prompty jsou uložené v `prompt_templates` jako `is_system = tru
 
 Strukturované projekce jsou tolerantní k aktuálním i starším prompt kontraktům. Detail nahrávky preferuje uložené `transcript_chapters` pro časovou osu a `transcript_tasks` pro checklist, ale stále umí zobrazit původní `ai_outputs.output_json` jako fallback pro starší výstupy. Běžný uživatel má nad projekčními tabulkami jen čtení a u `transcript_tasks` úzké oprávnění změnit `status`; vytváření a přepis projekcí zůstává server-side přes service role.
 
+## Přehrávání audia a navigace na důkaz
+
+Pro přehrávání browser volá `GET /api/recordings/{recordingId}/audio`; route nejdřív ověří request-scoped Supabase Auth session, potom načte pouze řádek se shodným `recordings.user_id` a teprve pro jeden konkrétní objekt v private Storage bucketu vytvoří signed URL s životností 300 sekund. Raw DB hodnota `recordings.storage_path` se nevrací jako samostatné pole ani metadata, ale Supabase signed URL obsahuje encoded cestu k objektu. Bezpečnost proto nestojí na utajení cesty, nýbrž na auth a ownership kontrole, private bucketu, signed tokenu a jeho krátké expiraci. Pokud by produkční požadavek vyžadoval opaque path secrecy, bylo by nutné médium doručovat přes vlastní media proxy.
+
+`Cache-Control: private, no-store` platí pro JSON envelope této API route, včetně chybových odpovědí; nepopisuje response ani cache metadata samotného Storage média. Uploady aktuálně nastavují Storage `cacheControl` na 3600 sekund. Platnost signed tokenu 300 sekund omezuje možnost nově URL autorizovaně použít, ale sama o sobě nezakazuje cache již staženého audia. Klient signed URL nedává do dlouhodobého aplikačního úložiště a po chybě média ji může načíst znovu nejvýše jedním retry.
+
+Playback eligibility je odvozená pouze z bezpečného serverového metadata kontraktu:
+
+- `single`: `storage_path` ukazuje na jeden konkrétní objekt; player se vyrenderuje a smí seekovat/přehrát,
+- `none`: audio objekt neexistuje; transcript a navigace zůstávají dostupné bez playeru,
+- `segmented`: legacy `storage_path` končí `/live/`; segmenty zůstávají čitelné pro recovery/retranscription, ale detail je nepřehrává jako jeden soubor.
+
+Načtení detailu, změna tabu ani background fetch nevytváří play intent. Ten vzniká jen přímým uživatelským kliknutím na čas transcriptu nebo akci `Otevřít v přepisu`; podle připravenosti média se skutečné `play()` provede okamžitě, nebo se tento explicitní intent flushne po `loadedmetadata`. Ani druhý případ není autoplay. Bez eligible single audia stejná akce pouze přepne tab, scrollne a zvýrazní transcript.
+
+Čas důkazu se nebere z providerem navržených milisekund. Server normalizuje quote přes Unicode NFC, český locale case folding, whitespace a Unicode punctuation, ale zachovává diakritiku, symboly a compatibility znaky. Přijme jen jeden přesný souvislý whole-token match v plných uložených `transcripts.segments`; opakovaný, částečný, nesouvislý nebo timestampově neúplný match vrátí `null`. Nové ověřené rozsahy se odvozují až po uložení raw `ai_outputs` a před označením AI jobu jako `done`.
+
+Staré task/decision řádky s quote a nulovými časy získají při renderu pouze odvozenou runtime kopii lokace; risk ji získá jen tehdy, když má quote. Tato kopie nemění server props a nic nepersistuje. Nejednoznačný legacy quote zůstane textem bez falešné akce. Pro highlight se preferuje speaker block obsahující celý rozsah, jinak block vlastnící `startMs` v polouzavřeném intervalu `[start, end)`, takže přesná hranice patří novému bloku. Když renderovatelný block neexistuje, single audio stále seekne na přesný čas, ale UI nevytvoří falešný anchor ani highlight.
+
+Forward migrace `20260804100000_add_evidence_locations.sql` přidává evidence ranges k tasks, decisions a risks a quote k risks. V této fázi je pouze v source a nebyla aplikována ani ověřena proti disposable nebo live DB. Aplikační kód s novými insert/select kontrakty se nesmí deploynout dřív než migrace a postflight kontrola sloupců, paired-null constraintů, grants, forced RLS a cross-user izolace.
+
 ## Bezpečnost
 
 - RLS na všech uživatelských tabulkách.

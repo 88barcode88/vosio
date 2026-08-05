@@ -10,6 +10,14 @@ Audio soubory mohou být velké a dlouhé zpracování nepatří do jednoho Verc
 
 Manuální vícesouborový upload běží sekvenčně. Průběh celé fronty se počítá z odeslaných bytů, ne z průměru procent jednotlivých souborů; nesmí klesnout při přechodu na další soubor. Zrušení musí ukončit aktivní TUS upload a zapsat `recordings.status = failed`. Když selže i tento zápis, UI musí ukázat tuto skutečnou chybu místo falešného tvrzení, že zrušení proběhlo čistě.
 
+## Playback signed URL není veřejný ani trvalý odkaz
+
+`GET /api/recordings/{recordingId}/audio` smí podepsat jen jeden konkrétní objekt vlastněný aktuálním Supabase Auth uživatelem. Route filtruje současně `recordings.id` i `user_id` a vrací signed URL na 300 sekund. Raw DB `storage_path` se neposílá jako samostatné pole ani metadata, Supabase signed URL však encoded cestu objektu obsahuje. Bezpečnost stojí na auth a ownership kontrole, private bucketu, signed tokenu a expiraci, ne na path secrecy; opaque cesta by vyžadovala media proxy. Do klienta nesmí uniknout service role ani provider error detail. `storage_path = null` znamená `none`; prefix končící `/live/` znamená legacy `segmented`; player je eligible pouze pro `single` objekt.
+
+`Cache-Control: private, no-store` patří JSON envelope audio API, ne Storage media response nebo cache metadata média. Upload má aktuálně `cacheControl = 3600`; TTL signed tokenu 300 sekund neznamená zákaz cache již staženého audia.
+
+Načtení playeru, signed URL nebo změna tabu nesmí samo vytvořit play intent. Intent s `play: true` smí vzniknout jen z přímého uživatelského kliknutí. Pokud metadata ještě nejsou připravená, skutečné `play()` může tento uložený explicitní intent flushnout až po `loadedmetadata`; stále nejde o autoplay. Akce transcriptu bez single audia dál scrolluje/highlightuje, pokud existuje renderovatelný block, ale nesmí zkoušet audio fetch/seek ani předstírat anchor, který v transcriptu není.
+
 ## Realtime není jen UI funkce
 
 Realtime přepis ovlivňuje credentials, storage průběžných segmentů, reconnect logiku, mobilní uspávání a stavový model. I když nebude implementovaný první, datový model a UI stavy s ním musí počítat.
@@ -81,6 +89,16 @@ Běžný authenticated uživatel nemá mít široký update/insert/delete grant 
 Checklist v AI zpracování může být hluboko ve scrollovatelném detailu. Pokud změna stavu úkolu používá server action s `redirect(nextPath)`, browser po revalidaci skočí nahoru a akce působí pomalu. Interaktivní checklist proto používá optimistický client update a JSON endpoint bez redirectu; SQL grant `update(status)` jen povoluje zápis a sám o sobě scroll problém neřeší.
 
 Opakované AI generování zůstává auditovatelné přes více `ai_outputs`, ale pracovní checklist v UI nesmí slepě zobrazit každou opakovanou projekci. Aplikace deduplikuje strukturované řádky pro zobrazení podle normalizovaného obsahu a u checklistu preferuje uživatelsky změněný stav (`done`, `in_progress`, `waiting`) před čerstvým duplicitním `new` řádkem.
+
+## Evidence quote není důvěryhodný čas
+
+AI provider může poslat quote i milisekundy, ale autoritativní čas vzniká jen unique exact contiguous whole-token matchem quote proti plným uloženým `transcripts.segments`. Normalizace používá NFC, český locale case, whitespace a Unicode punctuation. Nesmí používat NFKC, odstraňovat Unicode symboly ani odstraňovat diakritiku: `C++` nesmí odpovídat `C`, `①` nesmí odpovídat `1` a `pátek` nesmí odpovídat `patek`. Repeated/ambiguous quote musí skončit `null`, ne prvním náhodným výskytem.
+
+Legacy task/decision/risk časy se při renderu jen odvozují do nové kopie; nic se nepersistuje a risk bez quote žádný fallback nedostane. Pro cross-speaker rozsah se preferuje block obsahující celý range, potom block vlastnící start v intervalu `[start, end)`. Díky tomu předchozí block s `endMs === evidence.startMs` nevyhraje nad novým blockem. Když žádný renderovatelný block neexistuje, exact seek single audia může proběhnout bez anchoru, ale UI nesmí předstírat scroll/highlight.
+
+## Evidence migrace je release blocker
+
+`supabase/migrations/20260804100000_add_evidence_locations.sql` je v tomto stavu pouze source soubor. Testy ověřují textový SQL contract a aplikační chování, ale migrace nebyla parsovaná ani aplikovaná v disposable, staging nebo live Supabase. Nejsou tedy DB-ověřené skutečné sloupce, paired-null constraints, grants, forced RLS ani cross-user izolace. Aplikační kód používající nové evidence sloupce se nesmí deploynout před explicitně schváleným apply a úspěšným postflightem. Nikdy nezaměňuj `npm test`, `check` nebo `build` za důkaz stavu vzdálené databáze.
 
 ## License marker není tracking
 
