@@ -68,6 +68,18 @@ The recording detail loads markers once for the active recording through RLS and
 
 Recorder lifecycle ownership is generation-scoped. Provider callbacks are accepted only for the current start session; final Soniox results remain accepted during graceful stop only for its exact result session; every asynchronous save step checks the exact stop owner. Stop waits up to five seconds for its pending draft. If an audio-backed draft settles after timeout, only that exact late row is failed. If transcript-only stop already has text, its exact late draft can complete once in the background and no fallback duplicate row is created. Stale callbacks, marker responses and stop settlements must not mutate a newer recording session.
 
+## Recording Organization
+
+The source implementation lets an authenticated user organize recordings by client/company, project, one flat folder and multiple tags. A project always belongs to exactly one client; selecting a project without its client or combining a project with another client is invalid. Folders are intentionally flat and independent of clients/projects. A recording may have zero or one client, project and folder and any number of tags.
+
+The compact organization manager creates and renames the user's clients, projects, folders and tags. The recording editor replaces all four assignment dimensions atomically. Every compact create, rename and assignment editor follows save-collapse behavior: submit keeps the editor open and blocks duplicate/dismiss actions while pending; only a confirmed success for the current editor scope collapses it and returns focus; a validation, auth, transport or database error keeps the draft visible with an inline error. Switching to another recording must ignore a late settlement from the previous scope.
+
+Deletion is explicit and constrained. A client cannot be deleted while it still owns projects or is assigned to recordings. Deleting a project keeps the client on each recording and clears only the project. Deleting a flat folder clears only the folder. Deleting a tag or recording removes its tag links. Names are trimmed and case-insensitively unique per user, with project names unique within their client.
+
+The recordings list exposes canonical URL filters `client`, `project`, `folder` and repeatable `tag` alongside `q`. Invalid, foreign, repeated single-value or client/project-mismatched values are removed from the canonical URL; repeated valid tags are deduplicated. Applying organization filters preserves `q` and unrelated URL parameters. Clearing search preserves the current organization draft, and clearing organization filters preserves the current `q` draft. During a navigation transition every filter control is disabled without discarding its draft; a committed canonical URL settles the transition on the same component instance, and an unchanged canonical target does not push another navigation.
+
+Selected tags use ALL semantics: every returned recording must contain every selected tag. The list RPC returns only the current user's non-deleted rows in `created_at desc, id desc` order. The client reads all pages using the stable `(created_at, id)` keyset cursor with identical organization filters, deduplicates an overlapping boundary, rejects a stalled cursor or later-page error, and applies lightweight metadata `q` only after all RPC pages have loaded.
+
 ## Supported Upload Types
 
 - `audio/aac`
@@ -138,9 +150,9 @@ AI outputs can be deleted individually from the recording detail. Deleting an AI
 
 ## Forward Migration Release Boundary
 
-The source tree contains `20260804100000_add_evidence_locations.sql`, and unit/component/E2E tests cover its SQL contract, deterministic resolver and user-visible navigation. The source tree also contains `20260804120000_add_recording_markers.sql`, with source tests for columns, type/note/offset constraints, UUID uniqueness, index, FK/cascade, grants, forced RLS and application behavior. Both migrations are source-only and unapplied to disposable, staging or live Supabase in this work.
+The source tree contains three ordered forward migrations: `20260804100000_add_evidence_locations.sql`, `20260804110000_add_recording_organization.sql` and `20260804120000_add_recording_markers.sql`. Their source/unit/component/E2E tests cover the expected contracts, but all three migrations are source-only and unapplied to disposable, staging or live Supabase in this work. Release order is evidence `10000`, organization `11000`, markers `12000`, successful database postflight, then application deploy.
 
-No real SQL parse, migration apply, postflight or two-user integration test was run. Actual evidence constraints, marker table/index/FK/cascade, grants, forced RLS and cross-tenant isolation therefore remain unverified at the database level. Do not deploy application code that inserts or selects the new evidence columns or `recording_markers` before an explicitly approved apply and successful postflight. Source tests, `npm run check` and production build are not evidence of a successful Supabase migration.
+No real SQL parse, migration apply, postflight or two-user integration test was run. PostgreSQL 15 column-list `ON DELETE SET NULL`, the deferred client `NO ACTION` interaction with full auth-account cascade, actual evidence/organization/marker constraints and indexes, grants, forced RLS, cross-tenant isolation and real-RPC keyset pagination therefore remain unverified at the database level. Do not deploy application code that inserts or selects evidence columns, organization tables/RPC or `recording_markers` before an explicitly approved apply and successful postflight. Source tests, `npm run check` and production build are not evidence of a successful Supabase migration.
 
 ## Not Yet Implemented
 

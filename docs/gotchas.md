@@ -78,7 +78,7 @@ Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI 
 
 `transcripts.segments` může obsahovat token-level Soniox JSON s časem a speaker id pro každé slovo. U delších callů to může vytvořit stovky tisíc až milion tokenů, pokud se JSON pošle přímo do AI promptu. AI endpoint proto před renderem promptu používá kompaktní speaker utterances a do metadat přidává, jestli byly segmenty zkrácené. Plný token-level JSON zůstává v DB pro UI přepis, ale providerům se neposílá celý.
 
-Nový Supabase projekt musí vycházet z baseline migrace `20260617000000_initial_schema.sql`, která už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
+Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a potom pokračuje všemi forward migracemi v repozitáři v timestampovém pořadí; samotná baseline není celý aktuální bootstrap. Source-only forward migrace se přesto nesmí aplikovat živě bez release gate popsaného níže. Baseline už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
 
 ## Strukturované AI tabulky jsou odvozené projekce
 
@@ -102,9 +102,21 @@ Legacy task/decision/risk časy se při renderu jen odvozují do nové kopie; ni
 
 Marker clock může začít až po současné připravenosti aktuálního capture a uloženého draftu. Používá monotónní `performance.now()`, ne `Date.now()`, text timeru nebo Soniox timestamp. Offset se ukládá jako integer včetně hranic `0..86400000` ms. Chyba markeru je izolovaná od recorder lifecycle: nesmí volat stop, čistit stream, měnit session generation ani zastavit přepis.
 
+## Organizace nahrávek není strom
+
+`recording_clients` představuje klienta/firmu, `recording_projects` vždy patří jednomu klientovi, ale `recording_folders` jsou záměrně ploché a globální pro daného uživatele. Nepřidávej parent folder ani odvozenou vazbu složky na klienta/projekt bez nového produktového a migračního rozhodnutí. Nahrávka má nejvýše jednoho klienta, projekt a složku, zatímco štítky jsou many-to-many.
+
+Owner bezpečnost nestojí jen na RLS. Každá organizační FK nese i `user_id` a projektová vazba nese `(project_id, client_id, user_id)`, takže projekt jiného klienta nebo vlastníka nesmí projít přímým zápisem. Case-insensitive unikátnost používá funkční indexy nad `lower(btrim(name))`; prostý `unique(name)` by dovolil vizuální duplicity.
+
+Klientské FK mají deferred `NO ACTION`, ne cascade. To záměrně blokuje běžné smazání používaného klienta, ale odklad má umožnit úplné smazání `auth.users`, při kterém se potomci odstraní v téže transakci. Projektová vazba používá PostgreSQL 15 column-list `ON DELETE SET NULL (project_id)`, aby po smazání projektu zůstal `client_id`; složka vynuluje jen `folder_id` a tag links se při smazání nahrávky nebo štítku mažou kaskádou. Tyto dvě citlivé PostgreSQL cesty musí před live apply projít skutečným PG15 parse/runtime testem, nelze je potvrdit regex testem SQL source.
+
+`assign_recording_organization_v1` nahrazuje klienta, projekt, složku i kompletní tag set v jedné transakci. Nerozděluj assignment do více browser zápisů, protože chyba u cizího štítku nebo neodpovídajícího projektu by mohla zanechat částečný stav. Forced RLS, owner policies a přesné grants musí být ověřené i dvěma reálnými uživateli; textový security test není runtime důkaz.
+
+Filtr více štítků znamená ALL, nikoli ANY. `list_own_recordings_v1` řadí `created_at desc, id desc` a další stránku omezuje tuple cursorem `(created_at, id)`, protože offset při souběžném insert/delete může řádky přeskočit nebo zopakovat. Všechny stránky musí používat stejné organizační filtry, opakovaný cursor je chyba a metadata `q` se smí aplikovat až po načtení všech stránek. Kanonizace `client/project/folder/tag` nesmí zahodit `q` ani nesouvisející URL parametry; same-URL navigace nesmí vytvořit trvalý loading lock.
+
 ## Forward migrace jsou release blocker
 
-`supabase/migrations/20260804100000_add_evidence_locations.sql` i `supabase/migrations/20260804120000_add_recording_markers.sql` jsou v tomto stavu pouze source soubory. Testy ověřují textový SQL contract a aplikační chování, ale migrace nebyly parsované ani aplikované v disposable, staging nebo live Supabase. Nejsou DB-ověřené skutečné evidence sloupce, marker tabulka/index/FK/cascade, constrainty, granty, forced RLS ani cross-user izolace. Aplikační kód používající nové evidence sloupce nebo `recording_markers` se nesmí deploynout před explicitně schváleným apply a úspěšným postflightem. Nikdy nezaměňuj `npm test`, `check` nebo `build` za důkaz stavu vzdálené databáze.
+`20260804100000_add_evidence_locations.sql`, `20260804110000_add_recording_organization.sql` a `20260804120000_add_recording_markers.sql` jsou v tomto stavu pouze source soubory. Pořadí releasu je evidence `10000`, organization `11000`, markers `12000`, DB postflight a teprve potom deploy aplikace. Testy ověřují textový SQL contract a aplikační chování, ale migrace nebyly parsované ani aplikované v disposable, staging nebo live Supabase. Nejsou DB-ověřené skutečné sloupce/tabulky, PG15 column-list `SET NULL`, deferred client `NO ACTION` během account cascade, constrainty, case-insensitive uniqueness, granty, forced RLS, dvouuživatelská izolace ani keyset runtime. Aplikační kód používající tyto nové DB kontrakty se nesmí deploynout před explicitně schváleným apply a úspěšným postflightem. Nikdy nezaměňuj `npm test`, `check` nebo `build` za důkaz stavu vzdálené databáze.
 
 ## License marker není tracking
 
@@ -116,7 +128,7 @@ Stránka `/recordings` umí lehké hledání přes metadata nahrávek. Nepřidá
 
 ## Submit není potvrzené uložení
 
-Client `onSubmit` proběhne dřív, než server action potvrdí validaci, auth a databázový zápis. Zavření popoveru nebo disclosure přímo v `onSubmit` proto schová chybu a může působit jako falešný úspěch. Kompaktní editory se zavírají jen po nové success revision pro vlastní scope; transport rejection se převádí na error state. Při přepnutí záznamu musí settlement starého scope zůstat ignorovaný. Po ručním zavření erroru si editor pamatuje dismissed scope/revision, aby stejný alert po reopen neožil, ale nový vyšší error se zobrazil.
+Client `onSubmit` proběhne dřív, než server action potvrdí validaci, auth a databázový zápis. Zavření popoveru nebo disclosure přímo v `onSubmit` proto schová chybu a může působit jako falešný úspěch. Kompaktní editory názvu i organizace, včetně create/rename klienta, projektu, složky, štítku a assignmentu nahrávky, se zavírají jen po nové success revision pro vlastní scope; transport rejection se převádí na error state. Při přepnutí záznamu musí settlement starého scope zůstat ignorovaný. Po ručním zavření erroru si editor pamatuje dismissed scope/revision, aby stejný alert po reopen neožil, ale nový vyšší error se zobrazil.
 
 ## Mazání je potvrzené a optimistické
 

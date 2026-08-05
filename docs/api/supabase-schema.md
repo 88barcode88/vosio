@@ -2,15 +2,18 @@
 
 ## Stav
 
-Zdroj pravdy pro nový Supabase projekt je jedna baseline migrace:
+Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seřazený řetězec:
 
 - `supabase/migrations/20260617000000_initial_schema.sql`
+- `supabase/migrations/20260804100000_add_evidence_locations.sql`
+- `supabase/migrations/20260804110000_add_recording_organization.sql`
+- `supabase/migrations/20260804120000_add_recording_markers.sql`
 
-Baseline vytváří public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a finální systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky.
+Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000` a `recording_markers` až po `12000`; jejich source-only release gate je popsán níže.
 
-Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby aktuální schema odpovídalo baseline; produkční DB se kvůli baseline neresetuje.
+Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby skutečné schema odpovídalo explicitně schválené a aplikované části aktuálního řetězce; produkční DB se kvůli baseline neresetuje.
 
-Budoucí schema změny se přidávají jako nové migrace za baseline a aplikují se do obou Supabase projektů stejně.
+Budoucí schema změny se přidávají jako nové timestampové migrace na konec řetězce a po schválení se aplikují do obou Supabase projektů stejně.
 
 Systémové prompt templates jsou seedované stabilními UUID a aktuálním kontraktem JSON + `markdown`. Prompty používají vstupní model `raw_text` + `segments` + `speakers`, obsahují pravidla pro speaker role a zahrnují typy `summary`, `action_items`, `meeting_minutes`, `crm_note`, `follow_up_email`, `custom_prompt` a `timeline_chapters`.
 
@@ -43,6 +46,35 @@ Neověřeno a neprovedeno:
 
 Release je proto blokovaný: aplikační kód očekávající evidence sloupce se nesmí deploynout před schválenou aplikací migrace a úspěšným postflightem. Tato hranice má přednost před starším tvrzením níže, že core baseline už byla aplikovaná; to tvrzení se vztahuje pouze k baseline, ne k této forward migraci.
 
+## Recording organization forward migrace
+
+Soubor `supabase/migrations/20260804110000_add_recording_organization.sql` je source-only forward migrace mezi evidence a marker migrací. Přidává:
+
+- `recording_clients`: uživatelský klient/firma,
+- `recording_projects`: projekt povinně patřící jednomu klientovi,
+- `recording_folders`: plochá uživatelská složka bez parent/hierarchie,
+- `recording_tags`: uživatelský štítek,
+- `recording_tag_links`: many-to-many vazba nahrávky a štítku,
+- nullable `recordings.client_id`, `recordings.project_id` a `recordings.folder_id`.
+
+Jedna nahrávka může mít nejvýše jednoho klienta, projekt a složku a více štítků. Check `project_id is null or client_id is not null` a kompozitní FK `(project_id, client_id, user_id) -> recording_projects(id, client_id, user_id)` vynucují, že projekt nelze přiřadit bez klienta, k jinému klientovi ani k jinému vlastníkovi. Ostatní vazby také obsahují `user_id`; cizí ID proto neprojde ani při obejití UI.
+
+Mazací kontrakt je záměrně rozdílný:
+
+- klientské FK z projektů a nahrávek mají `ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED`; běžné smazání používaného klienta je `RESTRICT`-like blokované, ale odklad umožní transakční cascade při smazání celého `auth.users` účtu,
+- projekt používá PostgreSQL 15 column-list `ON DELETE SET NULL (project_id)`, takže nahrávce zůstane klient,
+- složka používá `ON DELETE SET NULL (folder_id)`,
+- smazání nahrávky nebo štítku kaskádově odstraní `recording_tag_links`,
+- všechny organizační entity a tag links mají přímou `user_id -> auth.users(id) ON DELETE CASCADE` vazbu.
+
+Unikátní funkční indexy nad `lower(btrim(name))` zajišťují case-insensitive názvy klientů, složek a štítků v rámci vlastníka a projektů v rámci vlastníka a klienta. Všechny organizační tabulky mají enabled i forced RLS, explicitní owner CRUD policies pro `authenticated`, revoke pro `public` a `anon`, CRUD grants pro `authenticated` a plné grants pro `service_role`.
+
+`assign_recording_organization_v1(uuid,uuid,uuid,uuid,uuid[])` je `SECURITY INVOKER` a v jedné transakci zamkne vlastní aktivní nahrávku, ověří klienta, příslušnost projektu ke klientovi, složku a úplnou deduplikovanou sadu štítků a teprve potom nahradí všechna přiřazení. Chyba nesmí zanechat částečný update. `list_own_recordings_v1(uuid,uuid,uuid,uuid[],timestamptz,uuid,integer)` je owner-safe `SECURITY INVOKER` RPC; více štítků znamená ALL, řazení je `created_at desc, id desc` a další stránka používá tuple predicate `(created_at, id) < (p_before_created_at, p_before_id)` s limitem nejvýše 1000.
+
+### Stav ověření organizační migrace
+
+Source testy ověřují textový schema/security kontrakt a aplikační testy canonical URL, transakční assignment kontrakt, ALL-tag filtrování a keyset klienta. Nebyl proveden skutečný SQL parse ani apply. Neověřený zůstává zejména PostgreSQL 15 parse column-list `ON DELETE SET NULL`, odložený client `NO ACTION` během úplné `auth.users` cascade, skutečná case-insensitive uniqueness, RLS/grant/anon chování se dvěma uživateli a runtime keyset nad reálným RPC.
+
 ## Recording markers forward migrace
 
 Soubor `supabase/migrations/20260804120000_add_recording_markers.sql` je navazující forward migrace pouze ve zdrojovém stromu. Přidává tabulku `recording_markers`:
@@ -67,7 +99,7 @@ Source a automatické testy ověřují textový SQL contract, validaci route, p�
 
 ## Forward migrations release gate
 
-Obě forward migrace, `20260804100000_add_evidence_locations.sql` i `20260804120000_add_recording_markers.sql`, jsou source-only a unapplied. Deploy aplikačního kódu, který nové evidence sloupce nebo `recording_markers` čte či zapisuje, je blokovaný do explicitně schváleného apply a úspěšného DB postflightu. `npm test`, `npm run check` ani `npm run build` nejsou důkazem stavu vzdálené databáze.
+Všechny tři forward migrace jsou source-only a unapplied. Release pořadí je závazné: (1) `20260804100000_add_evidence_locations.sql`, (2) `20260804110000_add_recording_organization.sql`, (3) `20260804120000_add_recording_markers.sql`, (4) DB postflight a teprve (5) deploy aplikace. Deploy kódu, který nové evidence sloupce, organizační tabulky/RPC nebo `recording_markers` čte či zapisuje, je blokovaný do explicitně schváleného apply a úspěšného DB postflightu. `npm test`, `npm run check` ani `npm run build` nejsou důkazem stavu vzdálené databáze.
 
 ## Public tabulky
 
@@ -81,6 +113,11 @@ Obě forward migrace, `20260804100000_add_evidence_locations.sql` i `20260804120
 - `transcript_chapters`
 - `transcript_decisions`
 - `transcript_risks`
+- `recording_clients` po aplikaci source-only forward migrace `20260804110000`
+- `recording_projects` po aplikaci source-only forward migrace `20260804110000`
+- `recording_folders` po aplikaci source-only forward migrace `20260804110000`
+- `recording_tags` po aplikaci source-only forward migrace `20260804110000`
+- `recording_tag_links` po aplikaci source-only forward migrace `20260804110000`
 - `recording_markers` po aplikaci source-only forward migrace `20260804120000`
 - `audit_logs`
 
@@ -126,6 +163,7 @@ Authenticated uživatel:
 - může číst vlastní nahrávky, joby, přepisy, AI joby, AI výstupy a audit metadata,
 - může číst vlastní strukturované AI projekce a měnit pouze `transcript_tasks.status`,
 - může vytvářet/upravovat/mazat vlastní `recordings`,
+- po aplikaci organization migrace může přes forced owner RLS spravovat jen vlastní klienty, projekty, ploché složky, štítky a jejich vazby; assignment a filtrovaný seznam používají pouze authenticated RPC granty,
 - po aplikaci marker migrace může přes forced RLS číst a měnit pouze vlastní `recording_markers`,
 - může vytvářet/upravovat/mazat vlastní nesystémové `prompt_templates`,
 - může pracovat jen se Storage objekty v cestě `user_id/...`.
@@ -175,7 +213,7 @@ Nová live nahrávka pod limitem používá jeden finální objekt:
 
 ## Aplikace migrace
 
-Core baseline migrace už byla aplikovaná přes MCP server `supabase-vosio`. Toto historické ověření nezahrnuje source-only forward migrace `20260804100000_add_evidence_locations.sql` ani `20260804120000_add_recording_markers.sql` popsané výše.
+Core baseline migrace už byla aplikovaná přes MCP server `supabase-vosio`. Toto historické ověření nezahrnuje source-only forward migrace `20260804100000_add_evidence_locations.sql`, `20260804110000_add_recording_organization.sql` ani `20260804120000_add_recording_markers.sql` popsané výše.
 
 Ověřeno:
 
