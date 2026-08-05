@@ -6,10 +6,13 @@ import { RecordingDetailTitleEditor } from "@/components/workspace/recording-det
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 import {
+  toRecordingClientView,
+  type RecordingClientView
+} from "@/lib/recordings/client-view";
+import {
   formatFileSize,
   formatRecordingDate,
   getStatusLabel,
-  isSegmentedRecordingStoragePath,
   type RecordingRow
 } from "@/lib/recordings/types";
 import type { UserSettings } from "@/lib/settings/types";
@@ -42,13 +45,17 @@ export function RecordingWorkbench({
   initialTabFromCookie: boolean;
   userSettings: UserSettings;
 }) {
+  const activeRecordingView = activeRecording
+    ? toRecordingClientView(activeRecording)
+    : null;
+
   return (
     <section className="recording-workbench" aria-label="Aktuální nahrávka">
-      <RecordingCard activeRecording={activeRecording} />
+      <RecordingCard activeRecording={activeRecordingView} />
       <div className="recording-workbench-grid">
         <TranscriptPanel
           activeAiOutputs={activeAiOutputs}
-          activeRecording={activeRecording}
+          activeRecording={activeRecordingView}
           activeStructuredItems={activeStructuredItems}
           activeTranscript={activeTranscript}
           initialTab={initialTab}
@@ -56,10 +63,10 @@ export function RecordingWorkbench({
           userSettings={userSettings}
         />
         <aside className="recording-rail" aria-label="Pracovní stav nahrávky">
-          <CommandBar activeRecording={activeRecording} activeTranscript={activeTranscript} />
+          <CommandBar activeRecording={activeRecordingView} activeTranscript={activeTranscript} />
           <RecordingRail
             activeAiOutputs={activeAiOutputs}
-            activeRecording={activeRecording}
+            activeRecording={activeRecordingView}
             activeStructuredItems={activeStructuredItems}
             activeTranscript={activeTranscript}
           />
@@ -70,7 +77,7 @@ export function RecordingWorkbench({
 }
 
 // RecordingCard shows the compact selected-recording header, metadata and title actions.
-function RecordingCard({ activeRecording }: { activeRecording: RecordingRow | null }) {
+function RecordingCard({ activeRecording }: { activeRecording: RecordingClientView | null }) {
   return (
     <section className="recording-object-header">
       <div className="recording-detail-main">
@@ -129,7 +136,7 @@ function RecordingRail({
   activeTranscript
 }: {
   activeAiOutputs: AiOutputView[];
-  activeRecording: RecordingRow | null;
+  activeRecording: RecordingClientView | null;
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
 }) {
@@ -197,7 +204,7 @@ function TranscriptPanel({
   userSettings
 }: {
   activeAiOutputs: AiOutputView[];
-  activeRecording: RecordingRow | null;
+  activeRecording: RecordingClientView | null;
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
   initialTab: TranscriptTab;
@@ -224,14 +231,12 @@ function CommandBar({
   activeRecording,
   activeTranscript
 }: {
-  activeRecording: RecordingRow | null;
+  activeRecording: RecordingClientView | null;
   activeTranscript: TranscriptRow | null;
 }) {
-  const storedAudioMode = activeRecording?.storage_path
-    ? isSegmentedRecordingStoragePath(activeRecording.storage_path)
-      ? "segments"
-      : "single"
-    : "none";
+  const storedAudioMode = activeRecording?.audioAvailability === "segmented"
+    ? "segments"
+    : activeRecording?.audioAvailability ?? "none";
 
   return (
     <div className="command-bar">

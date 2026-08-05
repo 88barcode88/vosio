@@ -1,9 +1,12 @@
 import { FileAudio } from "lucide-react";
-import type { RecordingRow } from "@/lib/recordings/types";
-import { formatFileSize, isSegmentedRecordingStoragePath } from "@/lib/recordings/types";
+import {
+  getRecordingAudioAvailabilityLabel,
+  type RecordingClientView
+} from "@/lib/recordings/client-view";
+import { formatFileSize } from "@/lib/recordings/types";
 
 // FilesContent renders the stored audio file metadata for the active recording.
-export function FilesContent({ activeRecording }: { activeRecording: RecordingRow | null }) {
+export function FilesContent({ activeRecording }: { activeRecording: RecordingClientView | null }) {
   if (!activeRecording) {
     return (
       <div className="transcript-empty">
@@ -14,7 +17,7 @@ export function FilesContent({ activeRecording }: { activeRecording: RecordingRo
     );
   }
 
-  if (!activeRecording.storage_path) {
+  if (activeRecording.audioAvailability === "none") {
     return (
       <div className="transcript-empty">
         <FileAudio size={34} />
@@ -24,13 +27,14 @@ export function FilesContent({ activeRecording }: { activeRecording: RecordingRo
     );
   }
 
-  const isSegmentedStorage = isSegmentedRecordingStoragePath(activeRecording.storage_path);
   const rows = [
     [
-      isSegmentedStorage ? "Složka v úložišti" : "Cesta v úložišti",
-      activeRecording.storage_path
+      "Uložení",
+      activeRecording.audioAvailability === "single"
+        ? "Jeden audio soubor"
+        : "Audio uložené po částech"
     ],
-    ["Režim", isSegmentedStorage ? "Audio uložené po částech" : "Jeden audio soubor"],
+    ["Dostupnost", getRecordingAudioAvailabilityLabel(activeRecording.audioAvailability)],
     ["Typ", activeRecording.mime_type ?? "Neznámý typ"],
     ["Velikost", formatFileSize(activeRecording.file_size_bytes)]
   ];

@@ -9,7 +9,7 @@ import {
   getSpeakerSummaryMeta,
   getTranscriptSpeakerBlocks
 } from "@/components/transcript-tabs/speaker-blocks";
-import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingClientView } from "@/lib/recordings/client-view";
 import { updateTranscriptSpeakerAction } from "@/lib/transcripts/actions";
 import {
   getStoredTranscriptSpeakerSummaries,
@@ -18,7 +18,7 @@ import {
 import type { TranscriptRow } from "@/lib/transcripts/types";
 
 // getPendingTranscriptTitle returns the main empty-state title for the transcript tab.
-function getPendingTranscriptTitle(activeRecording: RecordingRow | null) {
+function getPendingTranscriptTitle(activeRecording: RecordingClientView | null) {
   if (!activeRecording) {
     return "Nahrajte první nahrávku";
   }
@@ -35,7 +35,7 @@ function getPendingTranscriptTitle(activeRecording: RecordingRow | null) {
 }
 
 // getPendingTranscriptDescription explains what the user should expect for the current state.
-function getPendingTranscriptDescription(activeRecording: RecordingRow | null) {
+function getPendingTranscriptDescription(activeRecording: RecordingClientView | null) {
   if (!activeRecording) {
     return "Po uploadu se tady objeví stav přepisu a později samotný transcript.";
   }
@@ -117,7 +117,7 @@ export function TranscriptContent({
   onOpenTime
 }: {
   activeBlockAnchorId?: string | null;
-  activeRecording: RecordingRow | null;
+  activeRecording: RecordingClientView | null;
   activeTranscript: TranscriptRow | null;
   onOpenTime?: (startMs: number, anchorId: string) => void;
 }) {

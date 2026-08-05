@@ -18,7 +18,7 @@ import { TranscriptContent } from "@/components/transcript-tabs/transcript-conte
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
-import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingClientView } from "@/lib/recordings/client-view";
 import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 
@@ -33,7 +33,7 @@ export function TranscriptTabs({
   userSettings
 }: {
   activeAiOutputs: AiOutputView[];
-  activeRecording: RecordingRow | null;
+  activeRecording: RecordingClientView | null;
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
   initialTab?: TranscriptTab;

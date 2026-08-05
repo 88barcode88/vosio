@@ -8,6 +8,7 @@ import { getEmptyStructuredAiItems } from "@/lib/ai/structured-queries";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { PromptTemplateRow } from "@/lib/prompt-templates/types";
+import { toRecordingClientView } from "@/lib/recordings/client-view";
 import {
   unavailableRecordingStorageConfig,
   type RecordingStorageConfig
@@ -79,6 +80,7 @@ export function VosioWorkspace({
         tasks: structuredItems.tasks.filter((task) => task.transcript_id === activeTranscript.id)
       }
     : getEmptyStructuredAiItems();
+  const deletedRecordingViews = deletedRecordings.map(toRecordingClientView);
 
   return (
     <main className="workspace-shell">
@@ -100,7 +102,7 @@ export function VosioWorkspace({
           ) : view === "ai" || view === "templates" || view === "documentation" || view === "trash" || view === "settings" ? (
             <UtilityWorkspaceView
               aiOutputs={aiOutputs}
-              deletedRecordings={deletedRecordings}
+              deletedRecordings={deletedRecordingViews}
               promptTemplates={promptTemplates}
               settings={userSettings}
               settingsStatus={settingsStatus}

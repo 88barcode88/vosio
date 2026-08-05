@@ -7,24 +7,22 @@ import {
 } from "@/components/transcript-tabs/export-utils";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
-import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingClientView } from "@/lib/recordings/client-view";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 
 const createdAt = "2026-05-24T09:00:00.000Z";
 
-const recording: RecordingRow = {
+const recording: RecordingClientView = {
+  audioAvailability: "single",
   created_at: createdAt,
   duration_seconds: 120,
-  error_message: null,
   file_size_bytes: 1024,
   id: "recording-1",
   mime_type: "audio/mp4",
   source_type: "upload",
   status: "completed",
-  storage_path: "user/recording/file.m4a",
   title: "Call s klientem",
   updated_at: createdAt,
-  user_id: "user-1"
 };
 
 const transcript: TranscriptRow = {
