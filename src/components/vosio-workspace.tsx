@@ -14,7 +14,7 @@ import {
   unavailableRecordingStorageConfig,
   type RecordingStorageConfig
 } from "@/lib/recordings/storage-config";
-import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingRow, RecordingSearchPage } from "@/lib/recordings/types";
 import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import type {
   RecordingOrganization,
@@ -43,6 +43,10 @@ type VosioWorkspaceProps = {
   recordings: RecordingRow[];
   recordingsError?: string | null;
   recordingsSearchQuery?: string;
+  recordingSearchError?: string | null;
+  recordingSearchNextHref?: string | null;
+  recordingSearchPage?: RecordingSearchPage | null;
+  recordingSearchPreviousHref?: string | null;
   settingsStatus?: "error" | "saved" | null;
   structuredItems?: StructuredAiItems;
   templateStatus?: "created" | "duplicated" | "error" | "saved" | null;
@@ -71,6 +75,10 @@ export function VosioWorkspace({
   recordings,
   recordingsError = null,
   recordingsSearchQuery = "",
+  recordingSearchError = null,
+  recordingSearchNextHref = null,
+  recordingSearchPage = null,
+  recordingSearchPreviousHref = null,
   settingsStatus = null,
   structuredItems = getEmptyStructuredAiItems(),
   templateStatus = null,
@@ -121,6 +129,10 @@ export function VosioWorkspace({
               organizationOptions={recordingOrganizationOptions}
               recordings={recordings}
               searchQuery={recordingsSearchQuery}
+              searchError={recordingSearchError}
+              searchNextHref={recordingSearchNextHref}
+              searchPage={recordingSearchPage}
+              searchPreviousHref={recordingSearchPreviousHref}
             />
           ) : view === "ai" || view === "templates" || view === "documentation" || view === "trash" || view === "settings" ? (
             <UtilityWorkspaceView

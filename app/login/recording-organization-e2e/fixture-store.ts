@@ -10,7 +10,6 @@ import type {
   RecordingTagRow
 } from "@/lib/recording-organization/types";
 import type { RecordingOrganizationFilters } from "@/lib/recording-organization/filters";
-import { recordingMatchesSearch } from "@/lib/recordings/queries";
 import type { RecordingRow } from "@/lib/recordings/types";
 
 const fixtureUserId = "00000000-0000-4000-8000-000000000001";
@@ -121,6 +120,12 @@ function createFixtureState(scope: string): FixtureState {
 const fixtureGlobal = globalThis as FixtureGlobal;
 const fixtures = fixtureGlobal.__vosioRecordingOrganizationFixtures ?? new Map<string, FixtureState>();
 fixtureGlobal.__vosioRecordingOrganizationFixtures = fixtures;
+
+// fixtureRecordingMatchesSearch keeps development-only fixture filtering local to the adapter.
+function fixtureRecordingMatchesSearch(recording: RecordingRow, normalizedQuery: string) {
+  return !normalizedQuery
+    || recording.title.toLocaleLowerCase("cs-CZ").includes(normalizedQuery.toLocaleLowerCase("cs-CZ"));
+}
 
 // requireFixtureState returns one bounded isolated fixture and evicts the oldest scope if needed.
 function requireFixtureState(scope: string) {
@@ -390,6 +395,6 @@ export function listOrganizationFixtureRecordings(
       && (!filters.projectId || recording.project_id === filters.projectId)
       && (!filters.folderId || recording.folder_id === filters.folderId)
       && filters.tagIds.every((tagId) => assignedTagIds.includes(tagId))
-      && recordingMatchesSearch(recording, normalizedQuery);
+      && fixtureRecordingMatchesSearch(recording, normalizedQuery);
   });
 }

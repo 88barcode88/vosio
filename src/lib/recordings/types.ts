@@ -86,6 +86,31 @@ export type RecordingRow = {
   user_id: string;
 };
 
+export type RecordingSearchResult = {
+  clientId: string | null;
+  createdAt: string;
+  durationSeconds: number | null;
+  fileSizeBytes: number | null;
+  folderId: string | null;
+  id: string;
+  matchedExcerpt: string | null;
+  matchEndMs: number | null;
+  matchStartMs: number | null;
+  mimeType: string | null;
+  projectId: string | null;
+  sourceType: RecordingRow["source_type"];
+  status: RecordingStatus;
+  title: string;
+  updatedAt: string;
+};
+
+export type RecordingSearchPage = {
+  page: number;
+  pageSize: number;
+  results: RecordingSearchResult[];
+  totalCount: number;
+};
+
 // isSegmentedRecordingStoragePath detects live audio archives stored as multiple objects.
 export function isSegmentedRecordingStoragePath(storagePath: string | null | undefined) {
   return storagePath?.endsWith(`/${SEGMENTED_RECORDING_STORAGE_FOLDER}/`) ?? false;

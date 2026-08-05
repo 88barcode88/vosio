@@ -188,7 +188,7 @@ describe("RecordingFilters draft composition", () => {
     expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.disabled).toBe(false);
   });
 
-  it("settles a canonical URL commit on the same component instance and skips a same-URL push", async () => {
+  it("resets search pagination, settles the URL commit and skips a same-URL push", async () => {
     const navigationRequest = createDeferred();
     navigation.currentSearch = "q=%20%20call%20%20notes%20%20&q=ignored&page=2";
     navigation.push.mockImplementationOnce(() => navigationRequest.promise);
@@ -198,7 +198,7 @@ describe("RecordingFilters draft composition", () => {
 
     clickButtonDuringTransition("Použít filtry");
     const target = navigation.push.mock.calls[0]?.[0] as string;
-    expect(target).toBe("/recordings?q=call+notes&page=2");
+    expect(target).toBe("/recordings?q=call+notes");
     expect(container.querySelector("form.recording-filters")?.getAttribute("aria-busy")).toBe("true");
 
     await act(async () => {

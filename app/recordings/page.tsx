@@ -5,11 +5,23 @@ import {
   createRecordingSearchParams,
   type RecordingSearchParamsInput
 } from "@/lib/recording-organization/filters";
-import { listRecordings, normalizeRecordingSearchQuery } from "@/lib/recordings/queries";
+import { listRecordings } from "@/lib/recordings/queries";
+import {
+  RECORDING_SEARCH_MAX_PAGE,
+  RECORDING_SEARCH_PAGE_SIZE,
+  buildRecordingSearchPageHref,
+  canonicalizeRecordingSearchParams,
+  normalizeRecordingSearchQuery,
+  searchOwnRecordings
+} from "@/lib/recordings/search";
 import { listRecordingOrganizationOptions } from "@/lib/recording-organization/queries";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
-import { isTranscriptSearchIndexWarningCode } from "@/lib/transcripts/search-warning";
+import type { RecordingSearchPage, RecordingRow } from "@/lib/recordings/types";
+import {
+  TRANSCRIPT_SEARCH_INDEX_WARNING,
+  isTranscriptSearchIndexWarningCode
+} from "@/lib/transcripts/search-warning";
 
 type RecordingsPageProps = {
   searchParams: Promise<RecordingSearchParamsInput>;
@@ -33,14 +45,53 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
     createRecordingSearchParams(params),
     organizationOptions
   );
-  if (canonical.changed) {
-    const queryString = canonical.searchParams.toString();
+  const canonicalSearch = canonicalizeRecordingSearchParams(canonical.searchParams, searchQuery);
+  if (canonical.changed || canonicalSearch.changed) {
+    const queryString = canonicalSearch.searchParams.toString();
     redirect(queryString ? `/recordings?${queryString}` : "/recordings");
   }
-  const recordings = await listRecordings(supabase, {
-    organizationFilters: canonical.filters,
-    searchQuery
-  });
+  let recordings: RecordingRow[] = [];
+  let recordingSearchError: string | null = null;
+  let recordingSearchPage: RecordingSearchPage | null = searchQuery ? {
+    page: canonicalSearch.page,
+    pageSize: RECORDING_SEARCH_PAGE_SIZE,
+    results: [],
+    totalCount: 0
+  } : null;
+
+  if (searchQuery) {
+    try {
+      recordingSearchPage = await searchOwnRecordings(supabase, {
+        organizationFilters: canonical.filters,
+        page: canonicalSearch.page,
+        searchQuery
+      });
+    } catch {
+      recordingSearchError = "Hledání se nepodařilo načíst. Zkuste to znovu.";
+    }
+
+    if (!recordingSearchError
+      && canonicalSearch.page > 1
+      && recordingSearchPage?.results.length === 0) {
+      redirect(buildRecordingSearchPageHref(canonicalSearch.searchParams, 1));
+    }
+  } else {
+    recordings = await listRecordings(supabase, {
+      organizationFilters: canonical.filters
+    });
+  }
+
+  const paginationParams = new URLSearchParams(canonicalSearch.searchParams);
+  paginationParams.delete("warning", TRANSCRIPT_SEARCH_INDEX_WARNING);
+  const recordingSearchPreviousHref = searchQuery && canonicalSearch.page > 1
+    ? buildRecordingSearchPageHref(paginationParams, canonicalSearch.page - 1)
+    : null;
+  const recordingSearchNextHref = searchQuery
+    && recordingSearchPage
+    && canonicalSearch.page < RECORDING_SEARCH_MAX_PAGE
+    && canonicalSearch.page * recordingSearchPage.pageSize < recordingSearchPage.totalCount
+    ? buildRecordingSearchPageHref(paginationParams, canonicalSearch.page + 1)
+    : null;
 
   return (
     <VosioWorkspace
@@ -50,6 +101,10 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
       recordingOrganizationOptions={organizationOptions}
       recordingOrganizationFilters={canonical.filters}
       recordingsSearchQuery={searchQuery}
+      recordingSearchError={recordingSearchError}
+      recordingSearchNextHref={recordingSearchNextHref}
+      recordingSearchPage={recordingSearchPage}
+      recordingSearchPreviousHref={recordingSearchPreviousHref}
       transcripts={[]}
       transcriptSearchWarning={isTranscriptSearchIndexWarningCode(params.warning)}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RecordingOrganizationFilters } from "@/lib/recording-organization/filters";
-import { getStatusLabel, type RecordingRow } from "@/lib/recordings/types";
+import type { RecordingRow } from "@/lib/recordings/types";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 
 const recordingColumns = `
@@ -28,39 +28,6 @@ type RecordingCursor = {
   id: string;
 };
 
-const sourceSearchLabels: Record<RecordingRow["source_type"], string> = {
-  in_app_recording: "nahrano v aplikaci live zaznam live nahravka",
-  realtime: "realtime live prepis zivy prepis hotovy text vlozeny prepis",
-  upload: "upload soubor nahrany soubor"
-};
-
-// normalizeRecordingSearchQuery prepares user search input for recordings list filtering.
-export function normalizeRecordingSearchQuery(value: string | null | undefined) {
-  return (value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
-}
-
-// recordingMatchesSearch checks lightweight recording fields for the list page search.
-export function recordingMatchesSearch(
-  recording: RecordingRow,
-  normalizedQuery: string
-) {
-  if (!normalizedQuery) {
-    return true;
-  }
-
-  const needle = normalizedQuery.toLocaleLowerCase("cs-CZ");
-  const haystack = [
-    recording.title,
-    recording.status,
-    getStatusLabel(recording.status),
-    recording.source_type,
-    sourceSearchLabels[recording.source_type],
-    recording.mime_type ?? ""
-  ].join(" ").toLocaleLowerCase("cs-CZ");
-
-  return haystack.includes(needle);
-}
-
 // recordingCursorFromRow validates and returns the stable tuple used by keyset pagination.
 function recordingCursorFromRow(recording: RecordingRow): RecordingCursor {
   if (!recording.id || !Number.isFinite(Date.parse(recording.created_at))) {
@@ -70,15 +37,13 @@ function recordingCursorFromRow(recording: RecordingRow): RecordingCursor {
   return { createdAt: recording.created_at, id: recording.id };
 }
 
-// listRecordings loads and optionally filters the current user's recordings through Supabase RLS.
+// listRecordings loads the current user's ordinary organization list through Supabase RLS.
 export async function listRecordings(
   supabase: SupabaseClient,
   options: {
     organizationFilters?: RecordingOrganizationFilters;
-    searchQuery?: string | null;
   } = {}
 ) {
-  const normalizedQuery = normalizeRecordingSearchQuery(options.searchQuery);
   const filters = options.organizationFilters ?? {
     clientId: null,
     folderId: null,
@@ -125,11 +90,7 @@ export async function listRecordings(
     cursor = nextCursor;
   }
 
-  if (!normalizedQuery) {
-    return recordings;
-  }
-
-  return recordings.filter((recording) => recordingMatchesSearch(recording, normalizedQuery));
+  return recordings;
 }
 
 // getRecordingById loads one recording for a detail route through Supabase RLS.

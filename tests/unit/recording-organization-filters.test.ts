@@ -149,7 +149,7 @@ describe("recording organization filter URLs", () => {
 });
 
 describe("recording organization list query", () => {
-  it("uses a stable keyset across a concurrent insert/delete and applies q after every page", async () => {
+  it("uses a stable keyset across a concurrent insert/delete for the ordinary empty-q list", async () => {
     const firstPage = Array.from({ length: 1000 }, (_, index) =>
       createCursorRecording(index, `Memo ${index}`)
     );
@@ -160,9 +160,8 @@ describe("recording organization list query", () => {
       .mockResolvedValueOnce({ data: secondPage, error: null });
 
     await expect(listRecordings({ rpc } as never, {
-      organizationFilters: { clientId: clientA, folderId: folderA, projectId: projectA, tagIds: [tagA, tagB] },
-      searchQuery: "needle"
-    })).resolves.toEqual(secondPage);
+      organizationFilters: { clientId: clientA, folderId: folderA, projectId: projectA, tagIds: [tagA, tagB] }
+    })).resolves.toEqual([...firstPage, ...secondPage]);
 
     expect(rpc).toHaveBeenCalledTimes(2);
     const expectedFilters = {
@@ -233,13 +232,4 @@ describe("recording organization list query", () => {
     expect(stalledRpc).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps q compatibility for a short RPC result", async () => {
-    const rows = [
-      createRecording("recording-2", clientA, "Weekly call"),
-      createRecording("recording-1", clientA, "Internal memo")
-    ];
-    const rpc = vi.fn().mockResolvedValueOnce({ data: rows, error: null });
-    await expect(listRecordings({ rpc } as never, { searchQuery: "weekly" }))
-      .resolves.toEqual([rows[0]]);
-  });
 });

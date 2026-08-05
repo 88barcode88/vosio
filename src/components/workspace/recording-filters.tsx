@@ -7,17 +7,13 @@ import {
   type RecordingOrganizationFilters
 } from "@/lib/recording-organization/filters";
 import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
+import { normalizeRecordingSearchQuery } from "@/lib/recordings/search";
 
 type RecordingFiltersProps = {
   filters: RecordingOrganizationFilters;
   options: RecordingOrganizationOptions;
   searchQuery: string;
 };
-
-// normalizeFilterSearchQuery mirrors the existing bounded q contract without importing server queries.
-function normalizeFilterSearchQuery(value: string) {
-  return value.replace(/\s+/g, " ").trim().slice(0, 120);
-}
 
 // RecordingFilters owns one URL-backed search and organization filter draft.
 export function RecordingFilters({ filters, options, searchQuery }: RecordingFiltersProps) {
@@ -49,9 +45,10 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
       new URLSearchParams(currentSearchParams.toString()),
       nextFilters
     );
-    const normalizedQuery = normalizeFilterSearchQuery(nextQuery);
+    const normalizedQuery = normalizeRecordingSearchQuery(nextQuery);
     if (normalizedQuery) next.set("q", normalizedQuery);
     else next.delete("q");
+    next.delete("page");
     const queryString = next.toString();
     const target = queryString ? `${pathname}?${queryString}` : pathname;
     if (target === committedLocation) return;
@@ -110,7 +107,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
             maxLength={120}
             name="q"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Název, stav, zdroj nebo typ souboru"
+            placeholder="Název, přepis, klient, projekt, složka nebo štítek"
             type="search"
             value={query}
           />

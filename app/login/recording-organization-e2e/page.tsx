@@ -7,7 +7,7 @@ import {
   createRecordingSearchParams,
   type RecordingSearchParamsInput
 } from "@/lib/recording-organization/filters";
-import { normalizeRecordingSearchQuery } from "@/lib/recordings/queries";
+import { normalizeRecordingSearchQuery } from "@/lib/recordings/search";
 import {
   assignFixtureOrganizationAction,
   createFixtureClientAction,

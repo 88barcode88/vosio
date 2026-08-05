@@ -212,6 +212,19 @@
   .recording-filter-actions button {
     width: 100%;
   }
+  .recording-search-result header,
+  .recording-search-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .recording-search-result-meta {
+    display: grid;
+    gap: 4px;
+  }
+  .recording-search-pagination a,
+  .recording-search-pagination > span {
+    width: 100%;
+  }
   .recordings-inbox-header,
   .recording-detail-main {
     display: grid;
