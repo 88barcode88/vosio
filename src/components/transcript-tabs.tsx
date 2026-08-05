@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines } from "lucide-react";
 import { AiProcessingContent } from "@/components/transcript-tabs/ai-processing-content";
 import { ExportControls } from "@/components/transcript-tabs/export-controls";
@@ -18,13 +18,21 @@ import {
   isTranscriptTab,
   VOSIO_ACTIVE_RECORDING_TAB_COOKIE
 } from "@/components/transcript-tabs/tab-state";
-import { TranscriptContent } from "@/components/transcript-tabs/transcript-content";
+import { getPreferredTranscriptBlock, TranscriptContent } from "@/components/transcript-tabs/transcript-content";
+import { getTranscriptSpeakerBlocks } from "@/components/transcript-tabs/speaker-blocks";
 import type { TranscriptTab, TranscriptTarget } from "@/components/transcript-tabs/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { RecordingClientView } from "@/lib/recordings/client-view";
 import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
+import { resolveEvidenceLocation } from "@/lib/transcripts/evidence-location";
+
+type EvidenceRow = {
+  evidence_end_ms: number | null;
+  evidence_quote: string | null;
+  evidence_start_ms: number | null;
+};
 
 // TranscriptTabs renders working transcript, timeline, AI and file tabs.
 export function TranscriptTabs({
@@ -50,6 +58,10 @@ export function TranscriptTabs({
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playerRef = useRef<RecordingAudioPlayerHandle | null>(null);
   const tabStorageKey = getTranscriptTabStorageKey(activeRecording);
+  const runtimeStructuredItems = useMemo(
+    () => deriveRuntimeEvidenceLocations(activeStructuredItems, activeTranscript?.segments),
+    [activeStructuredItems, activeTranscript?.segments]
+  );
 
   useEffect(() => {
     setActiveBlockAnchorId(null);
@@ -187,6 +199,19 @@ export function TranscriptTabs({
     }
   }
 
+  // openStructuredEvidence enriches a verified range with its preferred renderable transcript block.
+  function openStructuredEvidence(target: TranscriptTarget) {
+    const speakerBlocks = activeTranscript
+      ? getTranscriptSpeakerBlocks(activeTranscript.segments, activeTranscript.speakers)
+      : [];
+    const preferredBlock = getPreferredTranscriptBlock(speakerBlocks, target);
+
+    openTranscriptLocation({
+      ...target,
+      anchorId: preferredBlock?.anchorId
+    }, { allowPlay: true });
+  }
+
   return (
     <>
       <div className="tabs-row">
@@ -210,7 +235,7 @@ export function TranscriptTabs({
         <ExportControls
           activeAiOutputs={activeAiOutputs}
           activeRecording={activeRecording}
-          activeStructuredItems={activeStructuredItems}
+          activeStructuredItems={runtimeStructuredItems}
           activeTranscript={activeTranscript}
         />
       </div>
@@ -240,7 +265,8 @@ export function TranscriptTabs({
           <AiProcessingContent
             activeTranscript={activeTranscript}
             aiOutputs={activeAiOutputs}
-            structuredItems={activeStructuredItems}
+            onOpenEvidence={openStructuredEvidence}
+            structuredItems={runtimeStructuredItems}
             userSettings={userSettings}
           />
         ) : null}
@@ -249,7 +275,7 @@ export function TranscriptTabs({
             activeTranscript={activeTranscript}
             aiOutputs={activeAiOutputs}
             onOpenAiTab={() => selectActiveTab("ai")}
-            structuredItems={activeStructuredItems}
+            structuredItems={runtimeStructuredItems}
           />
         ) : null}
         {activeTab === "files" ? <FilesContent activeRecording={activeRecording} /> : null}
@@ -261,6 +287,35 @@ export function TranscriptTabs({
       </div>
     </>
   );
+}
+
+// deriveRuntimeEvidenceLocations adds a non-persistent location only to legacy quoted rows.
+function deriveRuntimeEvidenceLocations(
+  items: StructuredAiItems,
+  transcriptSegments: unknown
+): StructuredAiItems {
+  return {
+    chapters: items.chapters,
+    decisions: items.decisions.map((decision) => deriveEvidenceRowLocation(decision, transcriptSegments)),
+    risks: items.risks.map((risk) => deriveEvidenceRowLocation(risk, transcriptSegments)),
+    tasks: items.tasks.map((task) => deriveEvidenceRowLocation(task, transcriptSegments))
+  };
+}
+
+// deriveEvidenceRowLocation preserves verified ranges and copies only uniquely resolved legacy rows.
+function deriveEvidenceRowLocation<T extends EvidenceRow>(row: T, transcriptSegments: unknown): T {
+  if (
+    !row.evidence_quote ||
+    (row.evidence_start_ms !== null && row.evidence_end_ms !== null)
+  ) {
+    return row;
+  }
+
+  const location = resolveEvidenceLocation(transcriptSegments, row.evidence_quote);
+
+  return location
+    ? { ...row, evidence_end_ms: location.endMs, evidence_start_ms: location.startMs }
+    : row;
 }
 
 // getTranscriptScrollBehavior respects reduced motion while keeping normal navigation smooth.

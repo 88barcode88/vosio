@@ -24,16 +24,19 @@ import type { AiOutputView } from "@/lib/ai/types";
 import { formatRecordingDate } from "@/lib/recordings/types";
 import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
+import type { TranscriptTarget } from "@/components/transcript-tabs/types";
 
 // AiProcessingContent renders AI actions and saved outputs in the recording detail context.
 export function AiProcessingContent({
   activeTranscript,
   aiOutputs,
+  onOpenEvidence,
   structuredItems,
   userSettings
 }: {
   activeTranscript: TranscriptRow | null;
   aiOutputs: AiOutputView[];
+  onOpenEvidence: (target: TranscriptTarget) => void;
   structuredItems: StructuredAiItems;
   userSettings: UserSettings;
 }) {
@@ -64,7 +67,7 @@ export function AiProcessingContent({
           <strong>Zatím žádné AI výstupy</strong>
           <p>Po dokončení přepisu spusťte shrnutí, úkoly, zápis ze schůzky, CRM poznámku, e-mail po hovoru nebo časovou osu.</p>
         </div>
-        <StructuredItemsContent items={structuredItems} />
+        <StructuredItemsContent items={structuredItems} onOpenEvidence={onOpenEvidence} />
       </div>
     );
   }
@@ -89,7 +92,7 @@ export function AiProcessingContent({
         />
       </section>
       <section className="notes-list ai-output-list" aria-label="Uložené AI výstupy">
-        <StructuredItemsContent items={structuredItems} />
+        <StructuredItemsContent items={structuredItems} onOpenEvidence={onOpenEvidence} />
         {aiOutputs.map((output, index) => (
           <AiOutputCard defaultOpen={index === 0 && !hasStructuredItems} key={output.id} output={output} />
         ))}

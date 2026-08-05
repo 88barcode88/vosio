@@ -358,6 +358,7 @@
 }
 .transcript-table-row {
   border-radius: 8px;
+  scroll-margin-block: 96px;
   transition:
     background-color 160ms ease-out,
     box-shadow 160ms ease-out;

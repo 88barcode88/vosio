@@ -16,6 +16,44 @@ import {
   getTranscriptSpeakerDisplayName
 } from "@/lib/transcripts/speakers";
 import type { TranscriptRow } from "@/lib/transcripts/types";
+import type { TranscriptSpeakerBlock, TranscriptTarget } from "@/components/transcript-tabs/types";
+
+// blockContainsEvidenceStart uses a half-open range so a boundary belongs to the new block.
+function blockContainsEvidenceStart(block: TranscriptSpeakerBlock, evidenceStartMs: number) {
+  if (block.startMs === null) {
+    return false;
+  }
+
+  if (block.startMs === evidenceStartMs) {
+    return block.endMs === null || evidenceStartMs < block.endMs;
+  }
+
+  return block.endMs !== null &&
+    block.startMs < evidenceStartMs &&
+    evidenceStartMs < block.endMs;
+}
+
+// getPreferredTranscriptBlock prefers full containment, then the block owning the evidence start.
+export function getPreferredTranscriptBlock(
+  speakerBlocks: TranscriptSpeakerBlock[],
+  target: TranscriptTarget
+) {
+  const { endMs, startMs } = target;
+
+  if (startMs === null || endMs === null || typeof endMs === "undefined") {
+    return null;
+  }
+
+  const containingBlock = speakerBlocks.find((block) =>
+    blockContainsEvidenceStart(block, startMs) &&
+    block.endMs !== null &&
+    block.endMs >= endMs
+  );
+
+  return containingBlock
+    ?? speakerBlocks.find((block) => blockContainsEvidenceStart(block, startMs))
+    ?? null;
+}
 
 // getPendingTranscriptTitle returns the main empty-state title for the transcript tab.
 function getPendingTranscriptTitle(activeRecording: RecordingClientView | null) {
