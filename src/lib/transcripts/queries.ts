@@ -9,6 +9,7 @@ export async function listTranscripts(supabase: SupabaseClient) {
       "id,created_at,language,raw_text,recording_id,segments,speakers,transcription_job_id,user_id"
     )
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .returns<TranscriptRow[]>();
 
   if (error) {
@@ -27,6 +28,7 @@ export async function listTranscriptsForRecording(supabase: SupabaseClient, reco
     )
     .eq("recording_id", recordingId)
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1)
     .returns<TranscriptRow[]>();
 

@@ -371,6 +371,18 @@
   background: rgba(56, 217, 208, 0.1);
   box-shadow: inset 3px 0 0 var(--teal);
 }
+.transcript-raw-block-highlighted {
+  background: rgba(56, 217, 208, 0.1);
+  box-shadow: inset 3px 0 0 var(--teal);
+  scroll-margin-block: 96px;
+}
+.transcript-table-row mark,
+.transcript-raw-block mark {
+  border-radius: 3px;
+  color: inherit;
+  background: rgba(255, 204, 102, 0.38);
+  padding: 0 2px;
+}
 .transcript-table-row time {
   color: var(--muted);
   font-size: 12px;

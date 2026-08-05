@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, createElement } from "react";
+import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import { TranscriptContent } from "@/components/transcript-tabs/transcript-content";
 import type { TranscriptTarget } from "@/components/transcript-tabs/types";
+import type { ResolvedTranscriptDeepLink } from "@/lib/transcripts/deep-link";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { RecordingClientView } from "@/lib/recordings/client-view";
 import { defaultUserSettings } from "@/lib/settings/types";
@@ -35,7 +36,8 @@ vi.mock("@/components/transcript-tabs/recording-audio-player", async () => {
 });
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/recordings/test"
+  usePathname: () => "/recordings/test",
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() })
 }));
 
 vi.mock("@/lib/transcripts/actions", () => ({
@@ -104,6 +106,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   window.localStorage.clear();
+  window.history.replaceState({}, "", "/recordings/test");
   audioPlayerMocks.seekToMs.mockClear();
 });
 
@@ -115,6 +118,7 @@ afterEach(async () => {
   container = null;
   document.body.replaceChildren();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -264,6 +268,305 @@ describe("transcript navigation", () => {
     expect(audioPlayerMocks.seekToMs).not.toHaveBeenCalled();
     expect(container?.querySelector("#transcript-at-1200")?.getAttribute("aria-current"))
       .toBe("true");
+  });
+
+  it("lets one explicit URL target override stored tabs, seek once without autoplay and consume itself", async () => {
+    window.localStorage.setItem(
+      "vosio:recording-tab:00000000-0000-4000-8000-000000000002",
+      "ai"
+    );
+    window.history.replaceState(
+      {},
+      "",
+      "/recordings/test?tab=transcript&at=1200&highlight=Prvn%C3%AD+blok"
+    );
+    const initialDeepLink: ResolvedTranscriptDeepLink = {
+      recordingId: "00000000-0000-4000-8000-000000000002",
+      request: { atMs: 1200, highlightText: "První blok" },
+      target: {
+        anchorId: "transcript-at-1200",
+        highlightText: "První blok",
+        playback: "seek",
+        startMs: 1200,
+        transcriptId: "00000000-0000-4000-8000-000000000001"
+      }
+    };
+    const props = {
+      activeAiOutputs: [],
+      activeRecording: createRecordingView(),
+      activeStructuredItems: emptyStructuredItems,
+      activeTranscript: createTranscript(),
+      initialDeepLink,
+      initialTab: "transcript" as const,
+      initialTabFromUrl: true,
+      userSettings: defaultUserSettings
+    };
+
+    await act(async () => root?.render(createElement(TranscriptTabs, props)));
+
+    expect(container?.querySelector('[role="tabpanel"]')?.id).toBe("recording-tab-panel-transcript");
+    expect(audioPlayerMocks.seekToMs).toHaveBeenCalledTimes(1);
+    expect(audioPlayerMocks.seekToMs).toHaveBeenCalledWith(1200, { play: false });
+    expect(container?.querySelector("#transcript-at-1200")?.getAttribute("aria-current"))
+      .toBe("true");
+    expect(container?.querySelector("#transcript-at-1200 mark")?.textContent).toBe("První blok");
+    expect(window.location.search).toBe("?tab=transcript");
+
+    await act(async () => {
+      container?.querySelector<HTMLButtonElement>("#recording-tab-ai")?.click();
+    });
+    await act(async () => root?.render(createElement(TranscriptTabs, { ...props })));
+
+    expect(container?.querySelector('[role="tabpanel"]')?.id).toBe("recording-tab-panel-ai");
+    expect(audioPlayerMocks.seekToMs).toHaveBeenCalledTimes(1);
+  });
+
+  it("commits one StrictMode target in a real microtask and preserves history state, params and hash", async () => {
+    const nextState = { __NA: true, tree: ["recordings", "test"] };
+    window.history.replaceState(
+      nextState,
+      "",
+      "/recordings/test?keep=1&tab=transcript&at=1200&highlight=Prvn%C3%AD+blok#speaker"
+    );
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    const initialDeepLink: ResolvedTranscriptDeepLink = {
+      recordingId: "00000000-0000-4000-8000-000000000002",
+      request: { atMs: 1200, highlightText: "První blok" },
+      target: {
+        anchorId: "transcript-at-1200",
+        highlightText: "První blok",
+        playback: "seek",
+        startMs: 1200,
+        transcriptId: "00000000-0000-4000-8000-000000000001"
+      }
+    };
+
+    await act(async () => {
+      root?.render(createElement(StrictMode, null, createElement(TranscriptTabs, {
+        activeAiOutputs: [],
+        activeRecording: createRecordingView(),
+        activeStructuredItems: emptyStructuredItems,
+        activeTranscript: createTranscript(),
+        initialDeepLink,
+        initialTab: "transcript",
+        initialTabFromUrl: true,
+        userSettings: defaultUserSettings
+      })));
+      await Promise.resolve();
+    });
+
+    expect(audioPlayerMocks.seekToMs).toHaveBeenCalledTimes(2);
+    expect(replaceState).toHaveBeenCalledTimes(1);
+    expect(window.history.state).toEqual(nextState);
+    expect(window.location.pathname).toBe("/recordings/test");
+    expect(window.location.search).toBe("?keep=1&tab=transcript");
+    expect(window.location.hash).toBe("#speaker");
+  });
+
+  it("cancels the microtask commit when the target unmounts before settlement", async () => {
+    const queuedMicrotasks: Array<() => void> = [];
+    vi.stubGlobal("queueMicrotask", (callback: () => void) => queuedMicrotasks.push(callback));
+    window.history.replaceState(
+      { __NA: true },
+      "",
+      "/recordings/test?tab=transcript&at=1200&highlight=Prvn%C3%AD+blok"
+    );
+
+    await act(async () => root?.render(createElement(TranscriptTabs, {
+      activeAiOutputs: [],
+      activeRecording: createRecordingView(),
+      activeStructuredItems: emptyStructuredItems,
+      activeTranscript: createTranscript(),
+      initialDeepLink: {
+        recordingId: "00000000-0000-4000-8000-000000000002",
+        request: { atMs: 1200, highlightText: "První blok" },
+        target: {
+          anchorId: "transcript-at-1200",
+          highlightText: "První blok",
+          playback: "seek",
+          startMs: 1200,
+          transcriptId: "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      initialTab: "transcript",
+      initialTabFromUrl: true,
+      userSettings: defaultUserSettings
+    })));
+    await act(async () => root?.unmount());
+    root = null;
+    queuedMicrotasks.forEach((callback) => callback());
+
+    expect(window.location.search).toContain("at=1200");
+    expect(window.location.search).toContain("highlight=Prvn%C3%AD+blok");
+  });
+
+  it("rejects a stale server target when the browser URL is already cleaned or has another signature", async () => {
+    const initialDeepLink: ResolvedTranscriptDeepLink = {
+      recordingId: "00000000-0000-4000-8000-000000000002",
+      request: { atMs: 1200, highlightText: "První blok" },
+      target: {
+        anchorId: "transcript-at-1200",
+        highlightText: "První blok",
+        playback: "seek",
+        startMs: 1200,
+        transcriptId: "00000000-0000-4000-8000-000000000001"
+      }
+    };
+
+    window.history.replaceState({}, "", "/recordings/test?tab=transcript");
+    await act(async () => root?.render(createElement(TranscriptTabs, {
+      activeAiOutputs: [],
+      activeRecording: createRecordingView(),
+      activeStructuredItems: emptyStructuredItems,
+      activeTranscript: createTranscript(),
+      initialDeepLink,
+      initialTab: "transcript",
+      initialTabFromUrl: true,
+      userSettings: defaultUserSettings
+    })));
+
+    expect(audioPlayerMocks.seekToMs).not.toHaveBeenCalled();
+    expect(container?.querySelector('[aria-current="true"]')).toBeNull();
+
+    window.history.replaceState(
+      {},
+      "",
+      "/recordings/test?tab=transcript&at=2200&highlight=Jin%C3%BD+text"
+    );
+    await act(async () => root?.render(createElement(TranscriptTabs, {
+      activeAiOutputs: [],
+      activeRecording: createRecordingView(),
+      activeStructuredItems: emptyStructuredItems,
+      activeTranscript: createTranscript(),
+      initialDeepLink: { ...initialDeepLink },
+      initialTab: "transcript",
+      initialTabFromUrl: true,
+      userSettings: defaultUserSettings
+    })));
+
+    expect(audioPlayerMocks.seekToMs).not.toHaveBeenCalled();
+    expect(window.location.search).toContain("at=2200");
+  });
+
+  it("opens the explicit transcript tab without a false target when resolution failed", async () => {
+    window.localStorage.setItem(
+      "vosio:recording-tab:00000000-0000-4000-8000-000000000002",
+      "files"
+    );
+
+    await act(async () => root?.render(createElement(TranscriptTabs, {
+      activeAiOutputs: [],
+      activeRecording: createRecordingView(),
+      activeStructuredItems: emptyStructuredItems,
+      activeTranscript: createTranscript(),
+      initialDeepLink: null,
+      initialTab: "transcript",
+      initialTabFromUrl: true,
+      userSettings: defaultUserSettings
+    })));
+
+    expect(container?.querySelector('[role="tabpanel"]')?.id).toBe("recording-tab-panel-transcript");
+    expect(container?.querySelector('[aria-current="true"]')).toBeNull();
+    expect(container?.querySelector("mark")).toBeNull();
+    expect(audioPlayerMocks.seekToMs).not.toHaveBeenCalled();
+  });
+
+  it.each(["none", "segmented"] as const)(
+    "scrolls and highlights a URL target without player activity for %s audio",
+    async (audioAvailability) => {
+      window.history.replaceState(
+        {},
+        "",
+        "/recordings/test?tab=transcript&at=1200&highlight=Prvn%C3%AD+blok"
+      );
+      const initialDeepLink: ResolvedTranscriptDeepLink = {
+        recordingId: "00000000-0000-4000-8000-000000000002",
+        request: { atMs: 1200, highlightText: "První blok" },
+        target: {
+          anchorId: "transcript-at-1200",
+          highlightText: "První blok",
+          playback: "seek",
+          startMs: 1200,
+          transcriptId: "00000000-0000-4000-8000-000000000001"
+        }
+      };
+
+      await act(async () => root?.render(createElement(TranscriptTabs, {
+        activeAiOutputs: [],
+        activeRecording: createRecordingView(audioAvailability),
+        activeStructuredItems: emptyStructuredItems,
+        activeTranscript: createTranscript(),
+        initialDeepLink,
+        initialTab: "transcript",
+        initialTabFromUrl: true,
+        userSettings: defaultUserSettings
+      })));
+
+      expect(container?.querySelector("#transcript-at-1200")?.getAttribute("aria-current"))
+        .toBe("true");
+      expect(audioPlayerMocks.seekToMs).not.toHaveBeenCalled();
+    }
+  );
+
+  it("highlights a raw paragraph target without seeking", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/recordings/test?tab=transcript&highlight=Lucern+CRM"
+    );
+    const transcript = { ...createTranscript(), segments: [], raw_text: "Ruční Lucern   CRM přepis." };
+    const initialDeepLink: ResolvedTranscriptDeepLink = {
+      recordingId: "00000000-0000-4000-8000-000000000002",
+      request: { atMs: null, highlightText: "Lucern CRM" },
+      target: {
+        anchorId: "transcript-raw",
+        highlightText: "Lucern CRM",
+        playback: "none",
+        startMs: null,
+        transcriptId: transcript.id
+      }
+    };
+
+    await act(async () => root?.render(createElement(TranscriptTabs, {
+      activeAiOutputs: [],
+      activeRecording: createRecordingView(),
+      activeStructuredItems: emptyStructuredItems,
+      activeTranscript: transcript,
+      initialDeepLink,
+      initialTab: "transcript",
+      initialTabFromUrl: true,
+      userSettings: defaultUserSettings
+    })));
+
+    expect(container?.querySelector("#transcript-raw")?.getAttribute("aria-current")).toBe("true");
+    expect(container?.querySelector("#transcript-raw mark")?.textContent).toBe("Lucern   CRM");
+    expect(audioPlayerMocks.seekToMs).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale cross-recording initial target", async () => {
+    await act(async () => root?.render(createElement(TranscriptTabs, {
+      activeAiOutputs: [],
+      activeRecording: createRecordingView(),
+      activeStructuredItems: emptyStructuredItems,
+      activeTranscript: createTranscript(),
+      initialDeepLink: {
+        recordingId: "foreign-recording",
+        request: { atMs: 1200, highlightText: "První blok" },
+        target: {
+          anchorId: "transcript-at-1200",
+          highlightText: "První blok",
+          playback: "seek",
+          startMs: 1200,
+          transcriptId: "00000000-0000-4000-8000-000000000001"
+        }
+      },
+      initialTab: "transcript",
+      initialTabFromUrl: true,
+      userSettings: defaultUserSettings
+    })));
+
+    expect(container?.querySelector('[aria-current="true"]')).toBeNull();
+    expect(audioPlayerMocks.seekToMs).not.toHaveBeenCalled();
   });
 
   it("uses non-animated scrolling when reduced motion is requested", async () => {

@@ -15,6 +15,11 @@ import {
 } from "@/lib/recording-organization/queries";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { listTranscriptsForRecording } from "@/lib/transcripts/queries";
+import {
+  parseTranscriptDeepLink,
+  resolveTranscriptDeepLink
+} from "@/lib/transcripts/deep-link";
+import { getTranscriptSpeakerBlocks } from "@/components/transcript-tabs/speaker-blocks";
 import { createClient } from "@/lib/supabase/server";
 import { isTranscriptSearchIndexWarningCode } from "@/lib/transcripts/search-warning";
 
@@ -29,6 +34,7 @@ type RecordingDetailPageProps = {
 export default async function RecordingDetailPage({ params, searchParams }: RecordingDetailPageProps) {
   const { recordingId } = await params;
   const query = await searchParams;
+  const parsedDeepLink = parseTranscriptDeepLink(query);
   const cookieStore = await cookies();
   const persistedTranscriptTab = parseTranscriptTabCookieValue(
     recordingId,
@@ -55,6 +61,19 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
   }
 
   const transcriptIds = transcripts.map((transcript) => transcript.id);
+  const currentTranscript = transcripts[0] ?? null;
+  const initialDeepLink = parsedDeepLink.request && currentTranscript
+    ? resolveTranscriptDeepLink({
+        rawText: currentTranscript.raw_text,
+        recordingId,
+        request: parsedDeepLink.request,
+        speakerBlocks: getTranscriptSpeakerBlocks(
+          currentTranscript.segments,
+          currentTranscript.speakers
+        ),
+        transcriptId: currentTranscript.id
+      })
+    : null;
   const [aiOutputs, structuredItems, recordingOrganization] = await Promise.all([
     listAiOutputsForTranscripts(supabase, transcriptIds),
     listStructuredAiItemsForTranscripts(supabase, transcriptIds),
@@ -65,8 +84,12 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
     <VosioWorkspace
       activeRecordingId={recordingId}
       aiOutputs={aiOutputs}
-      initialTranscriptTab={persistedTranscriptTab ?? "transcript"}
-      initialTranscriptTabFromCookie={Boolean(persistedTranscriptTab)}
+      initialTranscriptDeepLink={initialDeepLink}
+      initialTranscriptTab={parsedDeepLink.explicitTranscriptTab
+        ? "transcript"
+        : persistedTranscriptTab ?? "transcript"}
+      initialTranscriptTabFromCookie={!parsedDeepLink.explicitTranscriptTab && Boolean(persistedTranscriptTab)}
+      initialTranscriptTabFromUrl={parsedDeepLink.explicitTranscriptTab}
       recordings={[recording]}
       recordingMarkers={recordingMarkers}
       recordingOrganization={recordingOrganization}

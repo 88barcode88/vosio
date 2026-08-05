@@ -32,6 +32,11 @@ import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import { resolveEvidenceLocation } from "@/lib/transcripts/evidence-location";
+import {
+  parseTranscriptDeepLinkSearchParams,
+  transcriptDeepLinkRequestsMatch,
+  type ResolvedTranscriptDeepLink
+} from "@/lib/transcripts/deep-link";
 
 type EvidenceRow = {
   evidence_end_ms: number | null;
@@ -46,8 +51,10 @@ export function TranscriptTabs({
   activeRecordingMarkers = [],
   activeStructuredItems,
   activeTranscript,
+  initialDeepLink = null,
   initialTab = "transcript",
   initialTabFromCookie = false,
+  initialTabFromUrl = false,
   userSettings
 }: {
   activeAiOutputs: AiOutputView[];
@@ -55,14 +62,20 @@ export function TranscriptTabs({
   activeRecordingMarkers?: RecordingMarkerRow[];
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
+  initialDeepLink?: ResolvedTranscriptDeepLink | null;
   initialTab?: TranscriptTab;
   initialTabFromCookie?: boolean;
+  initialTabFromUrl?: boolean;
   userSettings: UserSettings;
 }) {
   const [activeTab, setActiveTab] = useState<TranscriptTab>(initialTab);
   const [activeBlockAnchorId, setActiveBlockAnchorId] = useState<string | null>(null);
+  const [activeHighlightText, setActiveHighlightText] = useState<string | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<TranscriptTarget | null>(null);
+  const activeTranscriptIdentityRef = useRef<string | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialDeepLinkAppliedRef = useRef<string | null>(null);
+  const initialDeepLinkStagedRef = useRef<string | null>(null);
   const playerRef = useRef<RecordingAudioPlayerHandle | null>(null);
   const tabStorageKey = getTranscriptTabStorageKey(activeRecording);
   const runtimeStructuredItems = useMemo(
@@ -71,15 +84,22 @@ export function TranscriptTabs({
   );
 
   useEffect(() => {
-    setActiveBlockAnchorId(null);
-    setPendingNavigation(null);
+    const activeIdentity = `${activeRecording?.id ?? "none"}:${activeTranscript?.id ?? "none"}`;
+    const identityChanged = activeTranscriptIdentityRef.current !== activeIdentity;
+    activeTranscriptIdentityRef.current = activeIdentity;
 
-    if (highlightTimerRef.current) {
-      clearTimeout(highlightTimerRef.current);
-      highlightTimerRef.current = null;
+    if (identityChanged) {
+      setActiveBlockAnchorId(null);
+      setActiveHighlightText(null);
+      setPendingNavigation(null);
+
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = null;
+      }
     }
 
-    if (initialTabFromCookie) {
+    if (initialTabFromUrl || initialTabFromCookie) {
       setActiveTab(initialTab);
 
       try {
@@ -110,6 +130,102 @@ export function TranscriptTabs({
     activeTranscript?.id,
     initialTab,
     initialTabFromCookie,
+    initialTabFromUrl,
+    tabStorageKey
+  ]);
+
+  useEffect(() => {
+    if (
+      !initialDeepLink
+      || initialDeepLink.recordingId !== activeRecording?.id
+      || initialDeepLink.target.transcriptId !== activeTranscript?.id
+    ) {
+      return;
+    }
+
+    const targetKey = JSON.stringify([
+      initialDeepLink.recordingId,
+      initialDeepLink.target.transcriptId,
+      initialDeepLink.target.anchorId,
+      initialDeepLink.target.startMs,
+      initialDeepLink.target.highlightText,
+      initialDeepLink.request.atMs,
+      initialDeepLink.request.highlightText
+    ]);
+    const browserDeepLink = parseTranscriptDeepLinkSearchParams(
+      new URL(window.location.href).searchParams
+    );
+
+    if (
+      initialDeepLinkAppliedRef.current === targetKey
+      || !browserDeepLink.explicitTranscriptTab
+      || !transcriptDeepLinkRequestsMatch(browserDeepLink.request, initialDeepLink.request)
+    ) {
+      return;
+    }
+
+    if (initialDeepLinkStagedRef.current !== targetKey) {
+      initialDeepLinkStagedRef.current = targetKey;
+      setActiveTab("transcript");
+      setActiveBlockAnchorId(initialDeepLink.target.anchorId ?? null);
+      setActiveHighlightText(initialDeepLink.target.highlightText ?? null);
+      setPendingNavigation(initialDeepLink.target);
+      writeActiveTabCookie(activeRecording.id, "transcript");
+
+      try {
+        window.localStorage.setItem(tabStorageKey, "transcript");
+      } catch {
+        // The one-shot URL target remains functional when browser storage is unavailable.
+      }
+
+    }
+
+    if (
+      initialDeepLink.target.startMs !== null
+      && activeRecording.audioAvailability === "single"
+    ) {
+      void playerRef.current?.seekToMs(initialDeepLink.target.startMs, { play: false })
+        .catch(() => undefined);
+    }
+
+    const activeIdentity = `${activeRecording.id}:${activeTranscript.id}`;
+    let cancelled = false;
+
+    queueMicrotask(() => {
+      if (
+        cancelled
+        || activeTranscriptIdentityRef.current !== activeIdentity
+        || initialDeepLinkStagedRef.current !== targetKey
+        || initialDeepLinkAppliedRef.current === targetKey
+      ) {
+        return;
+      }
+
+      const currentUrl = new URL(window.location.href);
+      const currentDeepLink = parseTranscriptDeepLinkSearchParams(currentUrl.searchParams);
+
+      if (
+        !currentDeepLink.explicitTranscriptTab
+        || !transcriptDeepLinkRequestsMatch(currentDeepLink.request, initialDeepLink.request)
+      ) {
+        return;
+      }
+
+      currentUrl.searchParams.delete("at");
+      currentUrl.searchParams.delete("highlight");
+      const consumedPath = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+      window.history.replaceState(window.history.state, "", consumedPath);
+      initialDeepLinkAppliedRef.current = targetKey;
+      initialDeepLinkStagedRef.current = null;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeRecording,
+    activeTranscript?.id,
+    initialDeepLink,
     tabStorageKey
   ]);
 
@@ -125,6 +241,7 @@ export function TranscriptTabs({
       }
 
       setActiveBlockAnchorId(null);
+      setActiveHighlightText(null);
       setPendingNavigation(null);
       return;
     }
@@ -153,6 +270,7 @@ export function TranscriptTabs({
         setActiveBlockAnchorId((currentAnchorId) =>
           currentAnchorId === anchorId ? null : currentAnchorId
         );
+        setActiveHighlightText(null);
       }, 2_000);
     } else {
       if (highlightTimerRef.current) {
@@ -161,6 +279,7 @@ export function TranscriptTabs({
       }
 
       setActiveBlockAnchorId(null);
+      setActiveHighlightText(null);
     }
 
     setPendingNavigation(null);
@@ -191,12 +310,14 @@ export function TranscriptTabs({
   ) {
     if (!activeTranscript || target.transcriptId !== activeTranscript.id) {
       setActiveBlockAnchorId(null);
+      setActiveHighlightText(null);
       setPendingNavigation(null);
       return;
     }
 
     selectActiveTab("transcript");
     setActiveBlockAnchorId(target.anchorId ?? null);
+    setActiveHighlightText(target.highlightText ?? null);
     setPendingNavigation(target);
 
     if (target.startMs !== null && activeRecording?.audioAvailability === "single") {
@@ -278,6 +399,7 @@ export function TranscriptTabs({
         {activeTab === "transcript" ? (
           <TranscriptContent
             activeBlockAnchorId={activeBlockAnchorId}
+            activeHighlightText={activeHighlightText}
             activeRecording={activeRecording}
             activeTranscript={activeTranscript}
             onOpenTime={(startMs, anchorId) => openTranscriptLocation(

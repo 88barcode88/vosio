@@ -19,6 +19,7 @@ import {
 import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
+import type { ResolvedTranscriptDeepLink } from "@/lib/transcripts/deep-link";
 import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import type {
   RecordingOrganization,
@@ -41,8 +42,10 @@ export function RecordingWorkbench({
   activeRecordingOrganization,
   activeStructuredItems,
   activeTranscript,
+  initialDeepLink,
   initialTab,
   initialTabFromCookie,
+  initialTabFromUrl,
   recordingOrganizationOptions,
   userSettings
 }: {
@@ -52,8 +55,10 @@ export function RecordingWorkbench({
   activeRecordingOrganization: RecordingOrganization;
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
+  initialDeepLink: ResolvedTranscriptDeepLink | null;
   initialTab: TranscriptTab;
   initialTabFromCookie: boolean;
+  initialTabFromUrl: boolean;
   recordingOrganizationOptions: RecordingOrganizationOptions;
   userSettings: UserSettings;
 }) {
@@ -75,8 +80,10 @@ export function RecordingWorkbench({
           activeRecordingMarkers={activeRecordingMarkers}
           activeStructuredItems={activeStructuredItems}
           activeTranscript={activeTranscript}
+          initialDeepLink={initialDeepLink}
           initialTab={initialTab}
           initialTabFromCookie={initialTabFromCookie}
+          initialTabFromUrl={initialTabFromUrl}
           userSettings={userSettings}
         />
         <aside className="recording-rail" aria-label="Pracovní stav nahrávky">
@@ -235,8 +242,10 @@ function TranscriptPanel({
   activeRecordingMarkers,
   activeStructuredItems,
   activeTranscript,
+  initialDeepLink,
   initialTab,
   initialTabFromCookie,
+  initialTabFromUrl,
   userSettings
 }: {
   activeAiOutputs: AiOutputView[];
@@ -244,8 +253,10 @@ function TranscriptPanel({
   activeRecordingMarkers: RecordingMarkerRow[];
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
+  initialDeepLink: ResolvedTranscriptDeepLink | null;
   initialTab: TranscriptTab;
   initialTabFromCookie: boolean;
+  initialTabFromUrl: boolean;
   userSettings: UserSettings;
 }) {
   return (
@@ -256,8 +267,10 @@ function TranscriptPanel({
         activeRecordingMarkers={activeRecordingMarkers}
         activeStructuredItems={activeStructuredItems}
         activeTranscript={activeTranscript}
+        initialDeepLink={initialDeepLink}
         initialTab={initialTab}
         initialTabFromCookie={initialTabFromCookie}
+        initialTabFromUrl={initialTabFromUrl}
         userSettings={userSettings}
       />
     </section>

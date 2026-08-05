@@ -24,6 +24,7 @@ import type { RecordingOrganizationFilters } from "@/lib/recording-organization/
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
+import type { ResolvedTranscriptDeepLink } from "@/lib/transcripts/deep-link";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
 import type { WorkspaceView } from "@/lib/workspace-data";
 
@@ -32,8 +33,10 @@ type VosioWorkspaceProps = {
   aiOutputs: AiOutputView[];
   deletedRecordings?: RecordingRow[];
   isCreatingRecording?: boolean;
+  initialTranscriptDeepLink?: ResolvedTranscriptDeepLink | null;
   initialTranscriptTab?: TranscriptTab;
   initialTranscriptTabFromCookie?: boolean;
+  initialTranscriptTabFromUrl?: boolean;
   promptTemplates?: PromptTemplateRow[];
   recordingStorageConfig?: RecordingStorageConfig;
   recordingMarkers?: RecordingMarkerRow[];
@@ -64,8 +67,10 @@ export function VosioWorkspace({
   aiOutputs,
   deletedRecordings = [],
   isCreatingRecording = false,
+  initialTranscriptDeepLink = null,
   initialTranscriptTab = "transcript",
   initialTranscriptTabFromCookie = false,
+  initialTranscriptTabFromUrl = false,
   promptTemplates = [],
   recordingStorageConfig = unavailableRecordingStorageConfig,
   recordingMarkers = [],
@@ -153,8 +158,10 @@ export function VosioWorkspace({
               activeRecordingOrganization={recordingOrganization}
               activeStructuredItems={activeStructuredItems}
               activeTranscript={activeTranscript}
+              initialDeepLink={initialTranscriptDeepLink}
               initialTab={initialTranscriptTab}
               initialTabFromCookie={initialTranscriptTabFromCookie}
+              initialTabFromUrl={initialTranscriptTabFromUrl}
               recordingOrganizationOptions={recordingOrganizationOptions}
               userSettings={userSettings}
             />

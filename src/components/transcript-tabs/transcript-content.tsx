@@ -17,6 +17,10 @@ import {
 } from "@/lib/transcripts/speakers";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { TranscriptSpeakerBlock, TranscriptTarget } from "@/components/transcript-tabs/types";
+import {
+  splitTranscriptHighlight,
+  TRANSCRIPT_RAW_ANCHOR_ID
+} from "@/lib/transcripts/deep-link";
 
 // blockContainsEvidenceStart uses a half-open range so a boundary belongs to the new block.
 function blockContainsEvidenceStart(block: TranscriptSpeakerBlock, evidenceStartMs: number) {
@@ -168,14 +172,31 @@ function SpeakerSummary({ activeTranscript }: { activeTranscript: TranscriptRow 
   );
 }
 
+// HighlightedTranscriptText renders one validated text match without interpreting it as markup.
+function HighlightedTranscriptText({
+  highlightText,
+  text
+}: {
+  highlightText: string | null;
+  text: string;
+}) {
+  return splitTranscriptHighlight(text, highlightText).map((part, index) =>
+    part.highlighted
+      ? <mark key={`${index}-${part.text}`}>{part.text}</mark>
+      : part.text
+  );
+}
+
 // TranscriptContent renders saved transcript blocks or the pending transcription empty state.
 export function TranscriptContent({
   activeBlockAnchorId = null,
+  activeHighlightText = null,
   activeRecording,
   activeTranscript,
   onOpenTime
 }: {
   activeBlockAnchorId?: string | null;
+  activeHighlightText?: string | null;
   activeRecording: RecordingClientView | null;
   activeTranscript: TranscriptRow | null;
   onOpenTime?: (startMs: number, anchorId: string) => void;
@@ -220,7 +241,12 @@ export function TranscriptContent({
                     ) : block.label}
                   </time>
                   <span className={`speaker ${block.speakerClassName}`} role="cell">{block.speakerLabel}</span>
-                  <p role="cell">{block.text.trim()}</p>
+                  <p role="cell">
+                    <HighlightedTranscriptText
+                      highlightText={activeBlockAnchorId === block.anchorId ? activeHighlightText : null}
+                      text={block.text.trim()}
+                    />
+                  </p>
                 </div>
               ))}
             </div>
@@ -232,9 +258,22 @@ export function TranscriptContent({
     return (
       <div className="transcript-list transcript-list-scroll">
         <SpeakerSummary activeTranscript={activeTranscript} />
-        <section className="transcript-raw-block" aria-label="Soniox přepis">
+        <section
+          aria-current={activeBlockAnchorId === TRANSCRIPT_RAW_ANCHOR_ID ? "true" : undefined}
+          aria-label="Soniox přepis"
+          className={activeBlockAnchorId === TRANSCRIPT_RAW_ANCHOR_ID
+            ? "transcript-raw-block transcript-raw-block-highlighted"
+            : "transcript-raw-block"}
+          id={TRANSCRIPT_RAW_ANCHOR_ID}
+          tabIndex={-1}
+        >
           <strong>Soniox přepis</strong>
-          <p>{activeTranscript.raw_text}</p>
+          <p>
+            <HighlightedTranscriptText
+              highlightText={activeBlockAnchorId === TRANSCRIPT_RAW_ANCHOR_ID ? activeHighlightText : null}
+              text={activeTranscript.raw_text}
+            />
+          </p>
         </section>
       </div>
     );

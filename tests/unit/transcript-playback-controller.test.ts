@@ -59,6 +59,20 @@ describe("transcript playback controller", () => {
     expect(audio.play).not.toHaveBeenCalled();
   });
 
+  it("drops a readyState-zero pending seek when its owning player is cleaned up", async () => {
+    const audio = createAudioDouble();
+    const controller = createPlaybackController(() => audio);
+
+    await controller.seekToMs(8_000, { play: false });
+    controller.reset();
+    audio.duration = 20;
+    audio.readyState = 1;
+    await controller.flushPendingSeek();
+
+    expect(audio.currentTime).toBe(0);
+    expect(audio.play).not.toHaveBeenCalled();
+  });
+
   it("seeks immediately after metadata and never plays without an explicit option", async () => {
     const audio = createAudioDouble();
     audio.duration = 30;
