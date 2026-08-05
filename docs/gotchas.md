@@ -96,9 +96,15 @@ AI provider může poslat quote i milisekundy, ale autoritativní čas vzniká j
 
 Legacy task/decision/risk časy se při renderu jen odvozují do nové kopie; nic se nepersistuje a risk bez quote žádný fallback nedostane. Pro cross-speaker rozsah se preferuje block obsahující celý range, potom block vlastnící start v intervalu `[start, end)`. Díky tomu předchozí block s `endMs === evidence.startMs` nevyhraje nad novým blockem. Když žádný renderovatelný block neexistuje, exact seek single audia může proběhnout bez anchoru, ale UI nesmí předstírat scroll/highlight.
 
-## Evidence migrace je release blocker
+## Marker UUID představuje neměnný pokus
 
-`supabase/migrations/20260804100000_add_evidence_locations.sql` je v tomto stavu pouze source soubor. Testy ověřují textový SQL contract a aplikační chování, ale migrace nebyla parsovaná ani aplikovaná v disposable, staging nebo live Supabase. Nejsou tedy DB-ověřené skutečné sloupce, paired-null constraints, grants, forced RLS ani cross-user izolace. Aplikační kód používající nové evidence sloupce se nesmí deploynout před explicitně schváleným apply a úspěšným postflightem. Nikdy nezaměňuj `npm test`, `check` nebo `build` za důkaz stavu vzdálené databáze.
+`client_marker_id` není jen náhodné ID řádku. Browser ho vytvoří jednou spolu s přesným offsetem, typem a poznámkou. Když marker request selže, retry musí poslat stejný payload; nesmí přepočítat `performance.now()` ani vytvořit nové UUID, jinak může nejistý první request vytvořit duplicitní moment. Server vrátí existující řádek jen při přesné shodě všech polí. Stejné UUID s jiným recordingem, offsetem, typem nebo poznámkou je konflikt `409`, ne idempotentní úspěch.
+
+Marker clock může začít až po současné připravenosti aktuálního capture a uloženého draftu. Používá monotónní `performance.now()`, ne `Date.now()`, text timeru nebo Soniox timestamp. Offset se ukládá jako integer včetně hranic `0..86400000` ms. Chyba markeru je izolovaná od recorder lifecycle: nesmí volat stop, čistit stream, měnit session generation ani zastavit přepis.
+
+## Forward migrace jsou release blocker
+
+`supabase/migrations/20260804100000_add_evidence_locations.sql` i `supabase/migrations/20260804120000_add_recording_markers.sql` jsou v tomto stavu pouze source soubory. Testy ověřují textový SQL contract a aplikační chování, ale migrace nebyly parsované ani aplikované v disposable, staging nebo live Supabase. Nejsou DB-ověřené skutečné evidence sloupce, marker tabulka/index/FK/cascade, constrainty, granty, forced RLS ani cross-user izolace. Aplikační kód používající nové evidence sloupce nebo `recording_markers` se nesmí deploynout před explicitně schváleným apply a úspěšným postflightem. Nikdy nezaměňuj `npm test`, `check` nebo `build` za důkaz stavu vzdálené databáze.
 
 ## License marker není tracking
 
@@ -129,6 +135,16 @@ PWA veřejné assety (`/manifest.webmanifest`, `/sw.js`, ikony) musí být vyjmu
 ## Ochrana opuštění aktivního capture workflow má záměrnou hranici
 
 Aktivní live rekordér je připojený v root layoutu přes `PersistentRecordingSessionProvider`, ne uvnitř route `/recordings/new`. Běžné Next.js přechody, včetně Back/Forward mezi stránkami aplikace, proto zachovají stejnou instanci MediaRecorderu a Soniox session; mimo capture stránku se ovládání přesune do fixed mini panelu. Live blocker dovoluje interní odkazy, ale dál chrání označený navigační submit (zejména odhlášení) a browserové zavření či reload přes `beforeunload`. Souborový upload persistentní není a jeho samostatný token dál blokuje i interní odkazy. Více operací musí používat vlastní tokeny, aby cleanup jedné z nich ochranu druhé omylem nevypnul.
+
+## Stop musí patřit přesné recorder session
+
+Nestačí kontrolovat jen React `status`. BrowserRecorder drží generation pro start session, samostatnou result session a stop ownera tvořeného recording instancí a stop generation. Soniox může při graceful `stop()` dodat poslední result tokeny, proto se jejich okno zavírá až po stopu, ale starší callback už potom nesmí změnit text nové session. Stejnou kontrolu ownera musí dělat upload, metadata update, transcript save, error fallback i `finally`; jinak pozdní promise starého stopu vyčistí nový stream nebo draft.
+
+Draft může při stopu stále vznikat. Recorder na přesně spárovaný pending draft čeká nejvýše 5 sekund. Po timeoutu se audio-backed pozdní řádek failne jen přes jeho původní id/user data. Transcript-only cesta s již dostupným textem dokončí přesný pozdní draft jednou na pozadí a nesmí současně založit fallback řádek. Cleanup nebo settlement jiné generation se ignoruje.
+
+## Development recording factory nesmí být produkční cesta
+
+`developmentRecordingFactory` existuje jen jako úzký seam pro browser E2E skutečného `BrowserRecorder` a `PersistentRecordingSessionProvider`; nahrazuje pouze externí Soniox Recording factory/events. Komponenta factory tvrdě odmítne, pokud `NODE_ENV` není `development`, a route `/login/live-marker-e2e` v produkci volá `notFound()`. E2E dál mockuje pouze MediaDevices/MediaRecorder a HTTP hranice. Nepoužívej tento prop k přepínání provideru, bypassu auth/RLS nebo fake produkčnímu ukládání.
 
 ## Next.js public env v client bundle
 

@@ -43,6 +43,32 @@ Neověřeno a neprovedeno:
 
 Release je proto blokovaný: aplikační kód očekávající evidence sloupce se nesmí deploynout před schválenou aplikací migrace a úspěšným postflightem. Tato hranice má přednost před starším tvrzením níže, že core baseline už byla aplikovaná; to tvrzení se vztahuje pouze k baseline, ne k této forward migraci.
 
+## Recording markers forward migrace
+
+Soubor `supabase/migrations/20260804120000_add_recording_markers.sql` je navazující forward migrace pouze ve zdrojovém stromu. Přidává tabulku `recording_markers`:
+
+- `id uuid` s výchozím `gen_random_uuid()`,
+- `client_marker_id uuid` pro retry-safe klientský pokus,
+- `recording_id uuid` a `user_id uuid`,
+- `offset_ms bigint` včetně hranic `0..86400000`,
+- `marker_type text` pouze `important`, `task`, `decision` nebo `follow_up`,
+- nullable `note text` nejvýše 280 znaků,
+- `created_at` a `updated_at`.
+
+Unikátní constraint `(user_id, client_marker_id)` dělá jeden klientský UUID pokus idempotentní. Kompozitní foreign key `(recording_id, user_id)` odkazuje na vlastní nahrávku a maže markery při smazání nahrávky; `user_id` zároveň odkazuje na `auth.users(id)` s cascade. Index `(user_id, recording_id, offset_ms, id)` podporuje stabilní pořadí detailu.
+
+Tabulka má zapnuté i forced RLS. Role `authenticated` dostává `select, insert, update, delete`, ale každá policy vyžaduje `auth.uid() = user_id`; `anon` nemá grant a `service_role` má plný grant. Aplikační `POST /api/recordings/{recordingId}/markers` navíc před insertem ověří session, vlastnictví nahrávky a stav jiný než `deleted`.
+
+První úspěšný insert vrací `201`. Konflikt unikátního `(user_id, client_marker_id)` se načte znovu a vrátí `200` pouze tehdy, když se přesně shoduje `client_marker_id`, `recording_id`, `user_id`, `offset_ms`, `marker_type` i `note`. Reuse stejného UUID s jiným payloadem vrací `409`; jiné chyby se nesmí vydávat za úspěšný retry.
+
+### Stav ověření marker migrace
+
+Source a automatické testy ověřují textový SQL contract, validaci route, přesný retry konflikt, pořadí dotazu a aplikační full/compact/timeline chování. Nebyl proveden skutečný SQL parse ani apply v disposable, staging nebo live Supabase. Nebyl proveden postflight tabulky, constraintů, indexu, FK/cascade, grantů, forced RLS ani dvouuživatelský cross-tenant integration test.
+
+## Forward migrations release gate
+
+Obě forward migrace, `20260804100000_add_evidence_locations.sql` i `20260804120000_add_recording_markers.sql`, jsou source-only a unapplied. Deploy aplikačního kódu, který nové evidence sloupce nebo `recording_markers` čte či zapisuje, je blokovaný do explicitně schváleného apply a úspěšného DB postflightu. `npm test`, `npm run check` ani `npm run build` nejsou důkazem stavu vzdálené databáze.
+
 ## Public tabulky
 
 - `recordings`
@@ -55,6 +81,7 @@ Release je proto blokovaný: aplikační kód očekávající evidence sloupce s
 - `transcript_chapters`
 - `transcript_decisions`
 - `transcript_risks`
+- `recording_markers` po aplikaci source-only forward migrace `20260804120000`
 - `audit_logs`
 
 ## Enumy
@@ -99,6 +126,7 @@ Authenticated uživatel:
 - může číst vlastní nahrávky, joby, přepisy, AI joby, AI výstupy a audit metadata,
 - může číst vlastní strukturované AI projekce a měnit pouze `transcript_tasks.status`,
 - může vytvářet/upravovat/mazat vlastní `recordings`,
+- po aplikaci marker migrace může přes forced RLS číst a měnit pouze vlastní `recording_markers`,
 - může vytvářet/upravovat/mazat vlastní nesystémové `prompt_templates`,
 - může pracovat jen se Storage objekty v cestě `user_id/...`.
 
@@ -109,7 +137,8 @@ Server/worker přes `service_role`:
 - vytváří a upravuje `ai_processing_jobs`,
 - ukládá `ai_outputs`,
 - ukládá odvozené `transcript_tasks`, `transcript_chapters`, `transcript_decisions` a `transcript_risks`,
-- zapisuje `audit_logs`.
+- zapisuje `audit_logs`,
+- po aplikaci marker migrace má plný grant nad `recording_markers`; běžný marker endpoint přesto používá authenticated session a owner RLS.
 
 Manuální restart přepisu používá stejnou server-side kontrolu vlastnictví. Při `POST /api/recordings/{recordingId}/transcription?restart=1` se nejdřív založí nový Soniox job a až potom se smažou existující transcripty pro danou nahrávku; navázané `ai_processing_jobs` a `ai_outputs` se odstraní přes kaskádové FK. Staré dokončené `transcription_jobs` zůstávají kvůli usage historii, běžící lokální joby se označí jako `cancelled`.
 
@@ -146,7 +175,7 @@ Nová live nahrávka pod limitem používá jeden finální objekt:
 
 ## Aplikace migrace
 
-Core baseline migrace už byla aplikovaná přes MCP server `supabase-vosio`. Toto historické ověření nezahrnuje source-only forward migraci `20260804100000_add_evidence_locations.sql` popsanou výše.
+Core baseline migrace už byla aplikovaná přes MCP server `supabase-vosio`. Toto historické ověření nezahrnuje source-only forward migrace `20260804100000_add_evidence_locations.sql` ani `20260804120000_add_recording_markers.sql` popsané výše.
 
 Ověřeno:
 

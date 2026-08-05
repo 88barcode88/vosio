@@ -54,6 +54,20 @@ When the user records live in the browser:
 6. If live audio reaches the detected limit, or the user selects `Jen live přepis`, the app continues realtime transcription and saves the final transcript without a Storage audio object.
 7. The final live transcript is stored in `transcripts` and linked to a realtime `transcription_jobs` row. The job `provider_config.storage` records whether the source was `supabase_recording_upload` or `transcript_only`.
 
+The root `PersistentRecordingSessionProvider` owns the real `BrowserRecorder`. Leaving `/recordings/new` through an internal Next.js navigation removes only the full slot and moves the same recorder instance into the compact dock; capture, Soniox, MediaRecorder, marker clock and stop ownership continue without restart. On mobile the dock must stay above the actual `MobileNav`, and its stop and marker controls must remain separately clickable.
+
+## Live Recording Markers
+
+The live marker button appears in both the full recorder and compact dock, but is enabled only after the current Soniox capture is active and the exact `recordings` draft exists. Readiness starts one monotonic `performance.now()` boundary. A marker offset is the rounded monotonic delta clamped to the inclusive `0..86400000` ms schema range; it is not derived from `Date.now()`, elapsed UI text or Soniox token timestamps.
+
+Every new live marker attempt uses a browser-generated UUID and currently sends `markerType = important` with `note = null`. The schema and API also support `task`, `decision` and `follow_up`, plus a trimmed nullable note up to 280 characters. `POST /api/recordings/{recordingId}/markers` validates a strict UUID recording id and payload, authenticates the user, verifies an owned non-deleted recording, and inserts through authenticated Supabase RLS.
+
+The first insert returns `201`. A unique conflict on `(user_id, client_marker_id)` returns the existing marker with `200` only if recording, user, UUID, offset, type and note all exactly match. Reusing the UUID with a changed field returns `409`. On a transport, validation or persistence failure, the recorder remains active and the same immutable attempt is retained for retry; a marker error must not change capture lifecycle, timer, transcript or stop state.
+
+The recording detail loads markers once for the active recording through RLS and orders them by `offset_ms`, then `id`. `Označené momenty` renders before AI chapters. Without an active transcript marker actions are disabled with explanatory copy. With a transcript, a direct click rejects cross-recording or cross-transcript targets, opens the transcript tab and chooses the block containing the marker point or a deterministic nearest block. `single` audio seeks once and plays from the direct click. `none` and legacy `segmented` perform only scroll/highlight and never fetch, seek or play audio. Loading the detail or timeline never creates autoplay intent.
+
+Recorder lifecycle ownership is generation-scoped. Provider callbacks are accepted only for the current start session; final Soniox results remain accepted during graceful stop only for its exact result session; every asynchronous save step checks the exact stop owner. Stop waits up to five seconds for its pending draft. If an audio-backed draft settles after timeout, only that exact late row is failed. If transcript-only stop already has text, its exact late draft can complete once in the background and no fallback duplicate row is created. Stale callbacks, marker responses and stop settlements must not mutate a newer recording session.
+
 ## Supported Upload Types
 
 - `audio/aac`
@@ -122,11 +136,11 @@ The recordings list supports URL-driven search through `q`. Current search is in
 
 AI outputs can be deleted individually from the recording detail. Deleting an AI output removes stored generated content but keeps the processing job metadata available for usage accounting. Recordings use a two-step delete model: first soft-delete to Trash, then permanent delete from Trash, including the Storage object and cascading DB records. Delete actions must ask for confirmation and then update the visible UI optimistically while the server action finishes.
 
-## Evidence Migration Release Boundary
+## Forward Migration Release Boundary
 
-The source tree contains `20260804100000_add_evidence_locations.sql`, and unit/component/E2E tests cover its SQL contract, deterministic resolver and user-visible navigation. The migration is not applied to any disposable, staging or live database in this work. Real SQL parse, paired-null constraints, unchanged grants, forced RLS and two-user isolation remain unverified at the database level.
+The source tree contains `20260804100000_add_evidence_locations.sql`, and unit/component/E2E tests cover its SQL contract, deterministic resolver and user-visible navigation. The source tree also contains `20260804120000_add_recording_markers.sql`, with source tests for columns, type/note/offset constraints, UUID uniqueness, index, FK/cascade, grants, forced RLS and application behavior. Both migrations are source-only and unapplied to disposable, staging or live Supabase in this work.
 
-Do not deploy application code that inserts or selects the new evidence columns before an explicitly approved migration apply and postflight. Source/test verification is not evidence of a successful Supabase migration.
+No real SQL parse, migration apply, postflight or two-user integration test was run. Actual evidence constraints, marker table/index/FK/cascade, grants, forced RLS and cross-tenant isolation therefore remain unverified at the database level. Do not deploy application code that inserts or selects the new evidence columns or `recording_markers` before an explicitly approved apply and successful postflight. Source tests, `npm run check` and production build are not evidence of a successful Supabase migration.
 
 ## Not Yet Implemented
 
