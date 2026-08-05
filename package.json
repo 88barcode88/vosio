@@ -8,6 +8,7 @@
     "build": "next build",
     "check": "npm run typecheck && npm run lint && npm run test",
     "lint": "eslint . --max-warnings=0",
+    "search:backfill": "node scripts/backfill-transcript-search-chunks.mjs",
     "start": "next start",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

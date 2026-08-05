@@ -67,6 +67,11 @@ import {
 } from "@/lib/recordings/upload";
 import { LIVE_RECORDING_AUTOSAVE_INTERVAL_MS } from "@/lib/live-recording/recovery";
 import { createClient } from "@/lib/supabase/browser";
+import {
+  TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE,
+  addTranscriptSearchIndexWarningToPath,
+  hasTranscriptSearchIndexWarning
+} from "@/lib/transcripts/search-warning";
 
 type WakeLockSentinelLike = {
   addEventListener: (type: "release", listener: () => void, options?: AddEventListenerOptions) => void;
@@ -881,6 +886,18 @@ export function BrowserRecorder({
         throw new Error("Koncept live přepisu se nepodařilo uložit.");
       }
 
+      let payload: unknown = null;
+
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (hasTranscriptSearchIndexWarning(payload)) {
+        setRecorderFeedback(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
+      }
+
       lastDraftAutosaveAtRef.current = Date.now();
     } catch {
       lastDraftAutosaveAtRef.current = Date.now();
@@ -1194,6 +1211,16 @@ export function BrowserRecorder({
     if (!response.ok) {
       throw new Error("Nahrávka je uložená, ale live přepis se nepodařilo uložit.");
     }
+
+    let payload: unknown = null;
+
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    return hasTranscriptSearchIndexWarning(payload);
   }
 
   // createTranscriptOnlyRecording stores or completes a recording row without an audio object.
@@ -1206,13 +1233,18 @@ export function BrowserRecorder({
     const draft = liveRecordingDraftRef.current;
 
     if (draft) {
-      await saveLiveTranscript(draft.id, rawText, tokens, "transcript_only");
+      const hasSearchWarning = await saveLiveTranscript(
+        draft.id,
+        rawText,
+        tokens,
+        "transcript_only"
+      );
 
       if (!stillOwnsStop(stopRecordingInstance, stopGeneration)) {
         return null;
       }
 
-      return draft.id;
+      return { hasSearchWarning, recordingId: draft.id };
     }
 
     if (!stillOwnsStop(stopRecordingInstance, stopGeneration)) {
@@ -1265,24 +1297,32 @@ export function BrowserRecorder({
       throw new Error("Nepovedlo se vytvořit záznam live přepisu.");
     }
 
-    await saveLiveTranscript(recording.id, rawText, tokens, "transcript_only");
+    const hasSearchWarning = await saveLiveTranscript(
+      recording.id,
+      rawText,
+      tokens,
+      "transcript_only"
+    );
 
     if (!stillOwnsStop(stopRecordingInstance, stopGeneration)) {
       return null;
     }
 
-    return recording.id as string;
+    return { hasSearchWarning, recordingId: recording.id as string };
   }
 
   // navigateAfterSave moves the user to the configured destination after saving a recording.
-  function navigateAfterSave(recordingId: string) {
+  function navigateAfterSave(recordingId: string, hasSearchWarning = false) {
     if (redirectAfterSave === "detail") {
-      router.push(`/recordings/${recordingId}`);
+      const path = `/recordings/${recordingId}`;
+      router.push(hasSearchWarning ? addTranscriptSearchIndexWarningToPath(path) : path);
       return;
     }
 
     if (redirectAfterSave === "list") {
-      router.push("/recordings");
+      router.push(hasSearchWarning
+        ? addTranscriptSearchIndexWarningToPath("/recordings")
+        : "/recordings");
       return;
     }
 
@@ -1364,19 +1404,21 @@ export function BrowserRecorder({
         return;
       }
 
-      const recordingId = await createTranscriptOnlyRecording(
+      const saveResult = await createTranscriptOnlyRecording(
         rawText,
         tokens,
         recording,
         stopGeneration
       );
 
-      if (!recordingId || !stillOwnsStop(recording, stopGeneration)) {
+      if (!saveResult || !stillOwnsStop(recording, stopGeneration)) {
         return;
       }
 
-      setRecorderFeedback("Live přepis je uložený bez audio souboru.");
-      navigateAfterSave(recordingId);
+      setRecorderFeedback(saveResult.hasSearchWarning
+        ? TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
+        : "Live přepis je uložený bez audio souboru.");
+      navigateAfterSave(saveResult.recordingId, saveResult.hasSearchWarning);
     } catch (error) {
       if (!stillOwnsStop(recording, stopGeneration)) {
         return;
@@ -1554,7 +1596,7 @@ export function BrowserRecorder({
         return;
       }
 
-      await saveLiveTranscript(
+      const hasSearchWarning = await saveLiveTranscript(
         recording.id,
         rawText,
         tokens,
@@ -1566,7 +1608,9 @@ export function BrowserRecorder({
       }
 
       setRecorderFeedback(
-        audioUploadCompleted
+        hasSearchWarning
+          ? TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
+          : audioUploadCompleted
           ? "Live nahrávka a přepis jsou uložené."
           : audioSaveError
             ? `Přepis je uložený bez audia. ${audioSaveError.message}`
@@ -1576,7 +1620,7 @@ export function BrowserRecorder({
             }),
         audioSaveError ? "error" : "status"
       );
-      navigateAfterSave(recording.id);
+      navigateAfterSave(recording.id, hasSearchWarning);
     } catch (error) {
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
         return;

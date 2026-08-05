@@ -4,6 +4,10 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrowserRecorder } from "@/components/browser-recorder";
+import {
+  TRANSCRIPT_SEARCH_INDEX_WARNING,
+  TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
+} from "@/lib/transcripts/search-warning";
 
 const clientMarkerId = "6bd31215-9b8f-4c68-9e2f-89f4d31f96b1";
 const recordingId = "5ad31215-9b8f-4c68-9e2f-89f4d31f96b0";
@@ -181,20 +185,24 @@ function findButton(label: string) {
 }
 
 // renderRecorder keeps the same component instance while switching full and compact layouts.
-async function renderRecorder(compact = false) {
+async function renderRecorder(
+  compact = false,
+  redirectAfterSave?: "detail" | "list"
+) {
   await act(async () => {
     root?.render(
       <BrowserRecorder
         allowTranscriptOnly
         compact={compact}
         maxAudioFileSizeBytes={null}
+        redirectAfterSave={redirectAfterSave}
       />
     );
   });
 }
 
 // startReadyRecorder crosses Soniox active state and the persisted live-draft boundary.
-async function startReadyRecorder() {
+async function startReadyRecorder(redirectAfterSave?: "detail" | "list") {
   const draft = createDeferred<{
     data: { id: string } | null;
     error: { message: string } | null;
@@ -205,7 +213,7 @@ async function startReadyRecorder() {
   mocks.createBrowserClient.mockReturnValue(draftClient.client);
   mocks.realtimeRecord.mockReturnValue(realtime.recording);
 
-  await renderRecorder();
+  await renderRecorder(false, redirectAfterSave);
   await act(async () => {
     findButton("Nahrávat live")?.click();
     await Promise.resolve();
@@ -540,6 +548,37 @@ describe("BrowserRecorder live markers", () => {
     });
 
     expect(document.querySelector(".live-recording-text")?.textContent).toBe("Závěr hovoru.");
+  });
+
+  it("keeps live draft and final saves successful while exposing the search fallback", async () => {
+    const { realtime } = await startReadyRecorder("detail");
+    mocks.fetch.mockResolvedValue({
+      json: vi.fn().mockResolvedValue({ warnings: [TRANSCRIPT_SEARCH_INDEX_WARNING] }),
+      ok: true
+    });
+
+    await act(async () => {
+      realtime.handlers.get("result")?.({
+        tokens: [{ end_ms: 900, speaker: 0, start_ms: 0, text: "Uložený závěr." }]
+      } as never);
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.fetch.mock.calls.some(([url]) =>
+      String(url).endsWith(`/api/recordings/${recordingId}/live-draft`)
+    )).toBe(true);
+    expect(mocks.fetch.mock.calls.some(([url]) =>
+      String(url).endsWith(`/api/recordings/${recordingId}/live-transcript`)
+    )).toBe(true);
+    expect(document.querySelector('[role="status"]')?.textContent)
+      .toBe(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
+    expect(mocks.routerPush).toHaveBeenCalledWith(
+      `/recordings/${recordingId}?warning=${TRANSCRIPT_SEARCH_INDEX_WARNING}`
+    );
+    expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
   });
 
   it("adopts an audio draft that resolves after stop invalidates the active phase", async () => {

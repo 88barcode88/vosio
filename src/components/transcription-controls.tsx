@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Link2, RotateCcw, Sparkles } from "lucide-react";
+import {
+  TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE,
+  hasTranscriptSearchIndexWarning
+} from "@/lib/transcripts/search-warning";
 
 type TranscriptionControlsProps = {
   storedAudioMode?: "none" | "segments" | "single";
@@ -21,6 +25,7 @@ type TranscriptionEndpointPayload = {
     id?: string;
     text?: string;
   };
+  warnings?: unknown;
 };
 type TranscriptionCallOptions = {
   automatic?: boolean;
@@ -156,9 +161,11 @@ export function TranscriptionControls({
 
       setLastCheckedAt(formatCheckTime(new Date()));
       setLastJobStatus(payload?.job?.status ?? null);
-      setMessage(options.restart
-        ? "Nový Soniox job běží na pozadí. Původní přepis se nahradí až po úspěšném doběhnutí."
-        : getTranscriptionMessage(method, payload));
+      setMessage(hasTranscriptSearchIndexWarning(payload)
+        ? TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
+        : options.restart
+          ? "Nový Soniox job běží na pozadí. Původní přepis se nahradí až po úspěšném doběhnutí."
+          : getTranscriptionMessage(method, payload));
 
       if (
         method === "POST" ||
@@ -263,7 +270,7 @@ export function TranscriptionControls({
       {lastJobStatus ? (
         <p className="command-state">Stav Soniox jobu: {getJobStatusLabel(lastJobStatus)}.</p>
       ) : null}
-      {message ? <p className="command-state">{message}</p> : null}
+      {message ? <p aria-live="polite" className="command-state" role="status">{message}</p> : null}
       {storedAudioMode === "segments" && !shouldPollTranscription ? (
         <p className="command-state">
           Tahle live nahrávka je uložená po částech. Přepis z audia se spouští jako dávka segmentů.

@@ -16,16 +16,19 @@ import {
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { listTranscriptsForRecording } from "@/lib/transcripts/queries";
 import { createClient } from "@/lib/supabase/server";
+import { isTranscriptSearchIndexWarningCode } from "@/lib/transcripts/search-warning";
 
 type RecordingDetailPageProps = {
   params: Promise<{
     recordingId: string;
   }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 // RecordingDetailPage renders the workspace with a URL-selected active recording.
-export default async function RecordingDetailPage({ params }: RecordingDetailPageProps) {
+export default async function RecordingDetailPage({ params, searchParams }: RecordingDetailPageProps) {
   const { recordingId } = await params;
+  const query = await searchParams;
   const cookieStore = await cookies();
   const persistedTranscriptTab = parseTranscriptTabCookieValue(
     recordingId,
@@ -70,6 +73,7 @@ export default async function RecordingDetailPage({ params }: RecordingDetailPag
       recordingOrganizationOptions={organizationOptions}
       structuredItems={structuredItems}
       transcripts={transcripts}
+      transcriptSearchWarning={isTranscriptSearchIndexWarningCode(query.warning)}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}
       userEmail={user.email ?? "uzivatel@vosio.local"}
       view="recordings"

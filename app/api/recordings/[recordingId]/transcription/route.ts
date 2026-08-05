@@ -11,6 +11,8 @@ import {
   mapSonioxStatus
 } from "@/lib/soniox/client";
 import { RECORDINGS_BUCKET, isSegmentedRecordingStoragePath } from "@/lib/recordings/types";
+import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
+import { getTranscriptSearchWarningPayload } from "@/lib/transcripts/search-warning";
 import { extractTranscriptSpeakerSummaries } from "@/lib/transcripts/speakers";
 import { getRetranscriptionCleanupTranscriptId } from "@/lib/transcripts/retranscription";
 
@@ -412,8 +414,10 @@ async function saveCombinedSegmentTranscript(input: {
       transcriptId: existingTranscript.id,
       userId: input.userId
     });
+  }
 
-    const { error } = await input.admin
+  const transcriptWrite = existingTranscript
+    ? await input.admin
       .from("transcripts")
       .update({
         raw_text: rawText,
@@ -422,27 +426,32 @@ async function saveCombinedSegmentTranscript(input: {
         transcription_job_id: input.jobs.at(-1)?.id ?? null
       })
       .eq("id", existingTranscript.id)
-      .eq("user_id", input.userId);
+      .eq("user_id", input.userId)
+      .select("id,recording_id,user_id,raw_text,segments,speakers")
+      .single()
+    : await input.admin
+      .from("transcripts")
+      .insert({
+        raw_text: rawText,
+        recording_id: input.recordingId,
+        segments: combinedTokens,
+        speakers,
+        transcription_job_id: input.jobs.at(-1)?.id ?? null,
+        user_id: input.userId
+      })
+      .select("id,recording_id,user_id,raw_text,segments,speakers")
+      .single();
 
-    if (error) {
-      throw new Error(`Unable to update saved segment transcript: ${error.message}`);
-    }
-  } else {
-    const { error } = await input.admin.from("transcripts").insert({
-      raw_text: rawText,
-      recording_id: input.recordingId,
-      segments: combinedTokens,
-      speakers,
-      transcription_job_id: input.jobs.at(-1)?.id ?? null,
-      user_id: input.userId
-    });
-
-    if (error) {
-      throw new Error(`Unable to save segment transcript: ${error.message}`);
-    }
+  if (transcriptWrite.error || !transcriptWrite.data) {
+    throw new Error("Unable to save combined segment transcript");
   }
 
-  return getSonioxAudioDurationSeconds(cumulativeDurationMs);
+  const indexResult = await replaceTranscriptSearchChunks(input.admin, transcriptWrite.data);
+
+  return {
+    durationSeconds: getSonioxAudioDurationSeconds(cumulativeDurationMs),
+    indexResult
+  };
 }
 
 // getSonioxAudioDurationSeconds converts provider audio duration metadata into stored seconds.
@@ -709,7 +718,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         return NextResponse.json({ job: { provider_job_id: null, status: jobStatus } });
       }
 
-      const durationSeconds = await saveCombinedSegmentTranscript({
+      const { durationSeconds, indexResult } = await saveCombinedSegmentTranscript({
         admin,
         jobs: refreshedJobs,
         recordingId: recording.id,
@@ -730,7 +739,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       }
 
       return NextResponse.json({
-        job: { provider_job_id: null, status: jobStatus }
+        job: { provider_job_id: null, status: jobStatus },
+        ...getTranscriptSearchWarningPayload(indexResult)
       });
     }
 
@@ -798,8 +808,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         transcriptId: existingTranscript.id,
         userId: user.id
       });
+    }
 
-      const { error: transcriptUpdateError } = await admin
+    const transcriptWrite = existingTranscript
+      ? await admin
         .from("transcripts")
         .update({
           raw_text: transcript.text,
@@ -808,25 +820,27 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           transcription_job_id: latestJob.id
         })
         .eq("id", existingTranscript.id)
-        .eq("user_id", user.id);
+        .eq("user_id", user.id)
+        .select("id,recording_id,user_id,raw_text,segments,speakers")
+        .single()
+      : await admin
+        .from("transcripts")
+        .insert({
+          raw_text: transcript.text,
+          recording_id: recording.id,
+          segments: transcript.tokens,
+          speakers,
+          transcription_job_id: latestJob.id,
+          user_id: user.id
+        })
+        .select("id,recording_id,user_id,raw_text,segments,speakers")
+        .single();
 
-      if (transcriptUpdateError) {
-        throw new Error(`Unable to update saved transcript: ${transcriptUpdateError.message}`);
-      }
-    } else {
-      const { error: transcriptInsertError } = await admin.from("transcripts").insert({
-        raw_text: transcript.text,
-        recording_id: recording.id,
-        segments: transcript.tokens,
-        speakers,
-        transcription_job_id: latestJob.id,
-        user_id: user.id
-      });
-
-      if (transcriptInsertError) {
-        throw new Error(`Unable to save transcript: ${transcriptInsertError.message}`);
-      }
+    if (transcriptWrite.error || !transcriptWrite.data) {
+      throw new Error("Unable to save transcript");
     }
+
+    const indexResult = await replaceTranscriptSearchChunks(admin, transcriptWrite.data);
 
     const { error: recordingCompleteError } = await admin
       .from("recordings")
@@ -843,7 +857,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({
       job: { ...latestJob, status: jobStatus },
-      transcript: { id: transcript.id, text: transcript.text }
+      transcript: { id: transcript.id, text: transcript.text },
+      ...getTranscriptSearchWarningPayload(indexResult)
     });
   } catch (error) {
     return routeErrorResponse(error, "Nepodařilo se zkontrolovat stav přepisu.");

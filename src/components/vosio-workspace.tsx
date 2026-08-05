@@ -4,6 +4,7 @@ import { RecordingWorkbench } from "@/components/workspace/recording-workbench";
 import { RecordingsManager } from "@/components/workspace/recordings-manager";
 import { WorkspaceSidebar } from "@/components/workspace/sidebar";
 import { UtilityWorkspaceView } from "@/components/workspace/utility-workspace-view";
+import { TranscriptSearchWarningNotice } from "@/components/transcript-search-warning-notice";
 import { getEmptyStructuredAiItems } from "@/lib/ai/structured-queries";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
@@ -46,6 +47,7 @@ type VosioWorkspaceProps = {
   structuredItems?: StructuredAiItems;
   templateStatus?: "created" | "duplicated" | "error" | "saved" | null;
   transcripts: TranscriptRow[];
+  transcriptSearchWarning?: boolean;
   usageState?: CurrentMonthUsageState;
   userSettings?: UserSettings;
   userEmail: string;
@@ -73,6 +75,7 @@ export function VosioWorkspace({
   structuredItems = getEmptyStructuredAiItems(),
   templateStatus = null,
   transcripts,
+  transcriptSearchWarning = false,
   usageState,
   userSettings = defaultUserSettings,
   userEmail,
@@ -104,6 +107,7 @@ export function VosioWorkspace({
       <WorkspaceSidebar activeView={view} userEmail={userEmail} />
 
       <section className="content-area">
+        {transcriptSearchWarning ? <TranscriptSearchWarningNotice /> : null}
         <div className="workspace-grid workspace-grid-wide">
           {isCreatingRecording ? (
             <NewRecordingWorkspace

@@ -9,6 +9,7 @@ import { listRecordings, normalizeRecordingSearchQuery } from "@/lib/recordings/
 import { listRecordingOrganizationOptions } from "@/lib/recording-organization/queries";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
+import { isTranscriptSearchIndexWarningCode } from "@/lib/transcripts/search-warning";
 
 type RecordingsPageProps = {
   searchParams: Promise<RecordingSearchParamsInput>;
@@ -50,6 +51,7 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
       recordingOrganizationFilters={canonical.filters}
       recordingsSearchQuery={searchQuery}
       transcripts={[]}
+      transcriptSearchWarning={isTranscriptSearchIndexWarningCode(params.warning)}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}
       userEmail={user.email ?? "uzivatel@vosio.local"}
       view="recordings"
