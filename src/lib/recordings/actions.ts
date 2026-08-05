@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getSafeNextPath } from "@/lib/auth/redirects";
+import {
+  createSaveError,
+  createSaveSuccess,
+  type SaveActionState
+} from "@/lib/forms/save-action-state";
 import { RECORDINGS_BUCKET, isSegmentedRecordingStoragePath } from "@/lib/recordings/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -142,6 +147,75 @@ export async function updateRecordingTitleAction(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/recordings");
   revalidatePath(`/recordings/${parsed.recordingId}`);
+}
+
+// Updates a user-owned recording title and returns a scoped editor settlement.
+export async function updateRecordingTitleStateAction(
+  previousState: SaveActionState,
+  formData: FormData
+): Promise<SaveActionState> {
+  const submittedRecordingId = getRequiredString(formData, "recordingId");
+  const parsed = recordingTitleFormSchema.safeParse({
+    recordingId: submittedRecordingId,
+    title: getRequiredString(formData, "title")
+  });
+
+  if (!parsed.success) {
+    return createSaveError(
+      previousState.revision,
+      submittedRecordingId || null,
+      "Zkontrolujte název nahrávky."
+    );
+  }
+
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: userError
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return createSaveError(
+        previousState.revision,
+        parsed.data.recordingId,
+        "Přihlášení vypršelo. Přihlaste se a zkuste to znovu."
+      );
+    }
+
+    const result = await supabase
+      .from("recordings")
+      .update({ title: parsed.data.title })
+      .eq("id", parsed.data.recordingId)
+      .eq("user_id", user.id)
+      .neq("status", "deleted")
+      .select("id,title")
+      .maybeSingle();
+
+    if (result.error || !result.data) {
+      return createSaveError(
+        previousState.revision,
+        parsed.data.recordingId,
+        "Název se nepodařilo uložit."
+      );
+    }
+
+    revalidatePath("/");
+    revalidatePath("/recordings");
+    revalidatePath(`/recordings/${parsed.data.recordingId}`);
+
+    return createSaveSuccess(
+      previousState.revision,
+      parsed.data.recordingId,
+      "Název byl uložen."
+    );
+  } catch {
+    return createSaveError(
+      previousState.revision,
+      parsed.data.recordingId,
+      "Název se nepodařilo uložit. Zkuste to znovu."
+    );
+  }
 }
 
 // deleteRecordingAction soft-deletes a user-owned recording so it appears in Trash.
