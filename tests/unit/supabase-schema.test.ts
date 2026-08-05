@@ -10,6 +10,10 @@ const evidenceLocationMigration = readFileSync(
   join(process.cwd(), "supabase", "migrations", "20260804100000_add_evidence_locations.sql"),
   "utf8"
 );
+const recordingMarkersMigration = readFileSync(
+  join(process.cwd(), "supabase", "migrations", "20260804120000_add_recording_markers.sql"),
+  "utf8"
+);
 
 describe("Supabase schema migrations", () => {
   it("adds ownership and forced RLS for structured AI tables", () => {
@@ -70,6 +74,19 @@ describe("Supabase schema migrations", () => {
     expect(evidenceLocationMigration).not.toMatch(/\bgrant\b/i);
     expect(evidenceLocationMigration).not.toMatch(/\bpolicy\b/i);
     expect(baselineMigration.match(/grant update \(status\) on public\.transcript_tasks to authenticated;/g)).toHaveLength(1);
+  });
+
+  it("adds the owner-safe recording marker forward migration", () => {
+    const normalizedMigration = recordingMarkersMigration.replace(/\s+/g, " ");
+
+    expect(recordingMarkersMigration).toContain("create table public.recording_markers");
+    expect(normalizedMigration).toContain(
+      "foreign key (recording_id, user_id) references public.recordings(id, user_id) on delete cascade"
+    );
+    expect(normalizedMigration).toContain(
+      "alter table public.recording_markers force row level security"
+    );
+    expect(recordingMarkersMigration.match(/create policy "recording markers [^"]+"/g)).toHaveLength(4);
   });
 
   it("keeps the baseline aligned with current provider and storage requirements", () => {
