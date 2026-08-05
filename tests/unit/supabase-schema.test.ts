@@ -10,6 +10,10 @@ const evidenceLocationMigration = readFileSync(
   join(process.cwd(), "supabase", "migrations", "20260804100000_add_evidence_locations.sql"),
   "utf8"
 );
+const recordingOrganizationMigration = readFileSync(
+  join(process.cwd(), "supabase", "migrations", "20260804110000_add_recording_organization.sql"),
+  "utf8"
+);
 const recordingMarkersMigration = readFileSync(
   join(process.cwd(), "supabase", "migrations", "20260804120000_add_recording_markers.sql"),
   "utf8"
@@ -87,6 +91,33 @@ describe("Supabase schema migrations", () => {
       "alter table public.recording_markers force row level security"
     );
     expect(recordingMarkersMigration.match(/create policy "recording markers [^"]+"/g)).toHaveLength(4);
+  });
+
+  it("adds the owner-safe recording organization forward migration", () => {
+    const normalizedMigration = recordingOrganizationMigration.replace(/\s+/g, " ");
+
+    for (const tableName of [
+      "recording_clients",
+      "recording_projects",
+      "recording_folders",
+      "recording_tags",
+      "recording_tag_links"
+    ]) {
+      expect(recordingOrganizationMigration).toContain(`create table public.${tableName}`);
+      expect(normalizedMigration).toContain(
+        `alter table public.${tableName} force row level security`
+      );
+    }
+
+    expect(normalizedMigration).toContain(
+      "foreign key (project_id, client_id, user_id) references public.recording_projects(id, client_id, user_id) on delete set null (project_id)"
+    );
+    expect(normalizedMigration).toContain(
+      "create or replace function public.assign_recording_organization_v1("
+    );
+    expect(normalizedMigration).toContain(
+      "create or replace function public.list_own_recordings_v1("
+    );
   });
 
   it("keeps the baseline aligned with current provider and storage requirements", () => {
