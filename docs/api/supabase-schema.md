@@ -8,8 +8,9 @@ Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seř
 - `supabase/migrations/20260804100000_add_evidence_locations.sql`
 - `supabase/migrations/20260804110000_add_recording_organization.sql`
 - `supabase/migrations/20260804120000_add_recording_markers.sql`
+- `supabase/migrations/20260804130000_add_transcript_fulltext_search.sql`
 
-Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000` a `recording_markers` až po `12000`; jejich source-only release gate je popsán níže.
+Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000` a fulltext search tabulka/RPC/indexy až po `13000`. Baseline proto není kompletní source of truth; úplný source kontrakt je pouze celý uvedený ordered chain. Runtime databáze obsahuje jen tu část řetězce, která na ní byla skutečně schváleně aplikována a postflightem ověřena.
 
 Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby skutečné schema odpovídalo explicitně schválené a aplikované části aktuálního řetězce; produkční DB se kvůli baseline neresetuje.
 
@@ -97,9 +98,35 @@ První úspěšný insert vrací `201`. Konflikt unikátního `(user_id, client_
 
 Source a automatické testy ověřují textový SQL contract, validaci route, přesný retry konflikt, pořadí dotazu a aplikační full/compact/timeline chování. Nebyl proveden skutečný SQL parse ani apply v disposable, staging nebo live Supabase. Nebyl proveden postflight tabulky, constraintů, indexu, FK/cascade, grantů, forced RLS ani dvouuživatelský cross-tenant integration test.
 
+## Transcript fulltext search forward migrace
+
+Soubor `supabase/migrations/20260804130000_add_transcript_fulltext_search.sql` je čtvrtá source-only forward migrace. Přidává:
+
+- unikátní `(id, recording_id, user_id)` na `transcripts` a index `(user_id, recording_id, created_at desc, id desc)` pro přesný latest-transcript výběr,
+- `transcript_search_chunks` s primárním klíčem `(transcript_id, position)`, owner-safe kompozitním FK, volitelnými časy, speaker labelem, textem, stored `tsvector` a GIN indexem,
+- generated metadata search vectors a GIN indexy pro název nahrávky, klienta, projekt, složku a štítek,
+- authenticated `SECURITY INVOKER` RPC `search_own_recordings_v1`,
+- service-only atomické RPC `replace_transcript_search_chunks_v1`,
+- trigger `transcripts_refresh_search_fallback`, který při insert/update transcriptu nahradí chunks jedním raw-text fallbackem bez času,
+- jednorázový source backfill existujících neprázdných `transcripts.raw_text` do fallback chunků.
+
+Přesný aplikační index odvozuje po sobě jdoucí renderovatelné speaker bloky ze stejných tokenů jako transcript UI. Každý chunk zachovává text, stabilní 1-based pozici a dostupný čas. Pokud speaker bloky nejsou renderovatelné, používá se jediný trimmed `raw_text` chunk bez času; prázdný transcript nemá chunk. Async, segment-combine, realtime draft/final, recovery, ruční import a změna speaker metadata po uložení volají `replace_transcript_search_chunks_v1`. Selhání tohoto doplňkového indexování zachová durable transcript i triggerový raw fallback a vrací pouze stabilní nefatální warning.
+
+Search RPC normalizuje whitespace a omezuje dotaz na 120 znaků, parsuje ho přes `websearch_to_tsquery('simple', query_text)` a vrací právě jednu vítěznou shodu pro každou nahrávku. Transcript část pro každou nahrávku používá právě nejnovější vlastní transcript podle `created_at desc, id desc`; starší transcript se po existenci novějšího neprohledává. Eligible množina vyžaduje `auth.uid()`, `recordings.user_id = auth.uid()`, `status <> 'deleted'` a stejné client/project/folder/ALL-tag filtry jako workspace. Výsledky jsou řazené podle ranku, data a recording ID, obsahují pouze excerpt, volitelný `match_start_ms`/`match_end_ms` a `total_count`, nikoli celé transcripty.
+
+Search UI používá bounded `page` a `limit/offset` stránkování po 25 výsledcích. To se nesmí zaměnit s keysetem běžného `list_own_recordings_v1`, který zůstává `(created_at, id)`, ani s keysetem servisního backfillu, který postupuje vzestupně podle transcript `id`.
+
+Tabulka `transcript_search_chunks` má enabled i forced RLS. `authenticated` má pouze `select` vlastních řádků, `anon` nemá grant, `service_role` má plný grant. Search RPC je invoker a executable jen pro `authenticated`; replace RPC je executable jen pro `service_role`. Triggerová funkce je `SECURITY DEFINER`, ale není executable pro `public`, `anon` ani `authenticated`.
+
+Repo obsahuje servisní příkaz `npm run search:backfill`. Vyžaduje explicitní `--environment=disposable|live`; live navíc `--allow-live`, podporuje `--dry-run` a bounded batch `1..500`. V tomto plánu ho **nespouštět**. Neproběhl ani dry-run, ani skutečný backfill v žádné databázi.
+
+### Stav ověření search migrace
+
+Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivaci, latest pořadí, query parsing, owner/deleted/organization filtry, stránkování, deep-link resolvery, raw/manual fallback, ambiguity/no-false-highlight, one-shot warning a single/none/segmented playback chování. Nejde však o DB runtime důkaz. Nebyl proveden skutečný SQL parse nebo apply, postflight tabulky/funkcí/triggeru/indexů, GIN `EXPLAIN`, anon-vs-auth ani dvouuživatelský RLS test, current-vs-old transcript integration test, manual/raw/deleted integration test, runtime stránkování, backfill ani deploy.
+
 ## Forward migrations release gate
 
-Všechny tři forward migrace jsou source-only a unapplied. Release pořadí je závazné: (1) `20260804100000_add_evidence_locations.sql`, (2) `20260804110000_add_recording_organization.sql`, (3) `20260804120000_add_recording_markers.sql`, (4) DB postflight a teprve (5) deploy aplikace. Deploy kódu, který nové evidence sloupce, organizační tabulky/RPC nebo `recording_markers` čte či zapisuje, je blokovaný do explicitně schváleného apply a úspěšného DB postflightu. `npm test`, `npm run check` ani `npm run build` nejsou důkazem stavu vzdálené databáze.
+Všechny čtyři forward migrace jsou source-only a unapplied. Release pořadí je závazné: (1) `20260804100000_add_evidence_locations.sql`, (2) `20260804110000_add_recording_organization.sql`, (3) `20260804120000_add_recording_markers.sql`, (4) `20260804130000_add_transcript_fulltext_search.sql`, (5) úspěšný DB postflight každé cílové databáze a teprve (6) deploy aplikace. Deploy kódu, který kterýkoli nový kontrakt čte či zapisuje, je blokovaný do explicitně schváleného apply a úspěšného postflightu všech cílových DB. `npm test`, `npm run check` ani `npm run build` nejsou důkazem stavu vzdálené databáze.
 
 ## Public tabulky
 
@@ -119,6 +146,7 @@ Všechny tři forward migrace jsou source-only a unapplied. Release pořadí je 
 - `recording_tags` po aplikaci source-only forward migrace `20260804110000`
 - `recording_tag_links` po aplikaci source-only forward migrace `20260804110000`
 - `recording_markers` po aplikaci source-only forward migrace `20260804120000`
+- `transcript_search_chunks` po aplikaci source-only forward migrace `20260804130000`
 - `audit_logs`
 
 ## Enumy
@@ -165,6 +193,7 @@ Authenticated uživatel:
 - může vytvářet/upravovat/mazat vlastní `recordings`,
 - po aplikaci organization migrace může přes forced owner RLS spravovat jen vlastní klienty, projekty, ploché složky, štítky a jejich vazby; assignment a filtrovaný seznam používají pouze authenticated RPC granty,
 - po aplikaci marker migrace může přes forced RLS číst a měnit pouze vlastní `recording_markers`,
+- po aplikaci search migrace může přes forced RLS číst pouze vlastní `transcript_search_chunks` a spouštět owner-safe `search_own_recordings_v1`,
 - může vytvářet/upravovat/mazat vlastní nesystémové `prompt_templates`,
 - může pracovat jen se Storage objekty v cestě `user_id/...`.
 
@@ -176,7 +205,8 @@ Server/worker přes `service_role`:
 - ukládá `ai_outputs`,
 - ukládá odvozené `transcript_tasks`, `transcript_chapters`, `transcript_decisions` a `transcript_risks`,
 - zapisuje `audit_logs`,
-- po aplikaci marker migrace má plný grant nad `recording_markers`; běžný marker endpoint přesto používá authenticated session a owner RLS.
+- po aplikaci marker migrace má plný grant nad `recording_markers`; běžný marker endpoint přesto používá authenticated session a owner RLS,
+- po aplikaci search migrace atomicky nahrazuje `transcript_search_chunks` přes service-only RPC; běžnému authenticated klientovi tento zápis přístupný není.
 
 Manuální restart přepisu používá stejnou server-side kontrolu vlastnictví. Při `POST /api/recordings/{recordingId}/transcription?restart=1` se nejdřív založí nový Soniox job a až potom se smažou existující transcripty pro danou nahrávku; navázané `ai_processing_jobs` a `ai_outputs` se odstraní přes kaskádové FK. Staré dokončené `transcription_jobs` zůstávají kvůli usage historii, běžící lokální joby se označí jako `cancelled`.
 
@@ -213,7 +243,7 @@ Nová live nahrávka pod limitem používá jeden finální objekt:
 
 ## Aplikace migrace
 
-Core baseline migrace už byla aplikovaná přes MCP server `supabase-vosio`. Toto historické ověření nezahrnuje source-only forward migrace `20260804100000_add_evidence_locations.sql`, `20260804110000_add_recording_organization.sql` ani `20260804120000_add_recording_markers.sql` popsané výše.
+Core baseline migrace už byla aplikovaná přes MCP server `supabase-vosio`. Jde pouze o historické ověření baseline, ne o potvrzení úplného aktuálního source kontraktu. Nezahrnuje source-only forward migrace `20260804100000_add_evidence_locations.sql`, `20260804110000_add_recording_organization.sql`, `20260804120000_add_recording_markers.sql` ani `20260804130000_add_transcript_fulltext_search.sql` popsané výše.
 
 Ověřeno:
 
