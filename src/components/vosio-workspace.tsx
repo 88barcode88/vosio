@@ -19,6 +19,7 @@ import type {
   RecordingOrganization,
   RecordingOrganizationOptions
 } from "@/lib/recording-organization/types";
+import type { RecordingOrganizationFilters } from "@/lib/recording-organization/filters";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
@@ -36,6 +37,7 @@ type VosioWorkspaceProps = {
   recordingStorageConfig?: RecordingStorageConfig;
   recordingMarkers?: RecordingMarkerRow[];
   recordingOrganization?: RecordingOrganization;
+  recordingOrganizationFilters?: RecordingOrganizationFilters;
   recordingOrganizationOptions?: RecordingOrganizationOptions;
   recordings: RecordingRow[];
   recordingsError?: string | null;
@@ -62,6 +64,7 @@ export function VosioWorkspace({
   recordingStorageConfig = unavailableRecordingStorageConfig,
   recordingMarkers = [],
   recordingOrganization = { client: null, folder: null, project: null, tags: [] },
+  recordingOrganizationFilters = { clientId: null, folderId: null, projectId: null, tagIds: [] },
   recordingOrganizationOptions = { clients: [], folders: [], projects: [], tags: [] },
   recordings,
   recordingsError = null,
@@ -110,6 +113,7 @@ export function VosioWorkspace({
           ) : view === "recordings" && !activeRecording ? (
             <RecordingsManager
               errorCode={recordingsError}
+              filters={recordingOrganizationFilters}
               organizationOptions={recordingOrganizationOptions}
               recordings={recordings}
               searchQuery={recordingsSearchQuery}

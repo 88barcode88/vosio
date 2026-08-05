@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { RecordingOrganizationFilters } from "@/lib/recording-organization/filters";
 import { getStatusLabel, type RecordingRow } from "@/lib/recordings/types";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 
@@ -19,6 +20,13 @@ const recordingColumns = `
   created_at,
   updated_at
 `;
+
+const ORGANIZATION_RECORDING_PAGE_SIZE = 1000;
+
+type RecordingCursor = {
+  createdAt: string;
+  id: string;
+};
 
 const sourceSearchLabels: Record<RecordingRow["source_type"], string> = {
   in_app_recording: "nahrano v aplikaci live zaznam live nahravka",
@@ -53,22 +61,69 @@ export function recordingMatchesSearch(
   return haystack.includes(needle);
 }
 
+// recordingCursorFromRow validates and returns the stable tuple used by keyset pagination.
+function recordingCursorFromRow(recording: RecordingRow): RecordingCursor {
+  if (!recording.id || !Number.isFinite(Date.parse(recording.created_at))) {
+    throw new Error("Unable to load recordings: invalid pagination cursor");
+  }
+
+  return { createdAt: recording.created_at, id: recording.id };
+}
+
 // listRecordings loads and optionally filters the current user's recordings through Supabase RLS.
 export async function listRecordings(
   supabase: SupabaseClient,
-  options: { searchQuery?: string | null } = {}
+  options: {
+    organizationFilters?: RecordingOrganizationFilters;
+    searchQuery?: string | null;
+  } = {}
 ) {
   const normalizedQuery = normalizeRecordingSearchQuery(options.searchQuery);
-  const recordings = await fetchAllRows<RecordingRow>("Unable to load recordings", (from, to) =>
-    supabase
-      .from("recordings")
-      .select(recordingColumns)
-      .neq("status", "deleted")
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(from, to)
-      .returns<RecordingRow[]>()
-  );
+  const filters = options.organizationFilters ?? {
+    clientId: null,
+    folderId: null,
+    projectId: null,
+    tagIds: []
+  };
+  const recordings: RecordingRow[] = [];
+  const seenRecordingIds = new Set<string>();
+  const seenCursorKeys = new Set<string>();
+  let cursor: RecordingCursor | null = null;
+
+  for (;;) {
+    const { data, error } = await supabase.rpc("list_own_recordings_v1", {
+      p_before_created_at: cursor?.createdAt ?? null,
+      p_before_id: cursor?.id ?? null,
+      p_client_id: filters.clientId,
+      p_folder_id: filters.folderId,
+      p_limit: ORGANIZATION_RECORDING_PAGE_SIZE,
+      p_project_id: filters.projectId,
+      p_tag_ids: filters.tagIds
+    });
+
+    if (error) {
+      throw new Error(`Unable to load recordings: ${error.message}`);
+    }
+    if (!Array.isArray(data)) {
+      throw new Error("Unable to load recordings: invalid paginated response");
+    }
+
+    const page = data as RecordingRow[];
+    for (const recording of page) {
+      if (seenRecordingIds.has(recording.id)) continue;
+      seenRecordingIds.add(recording.id);
+      recordings.push(recording);
+    }
+
+    if (page.length < ORGANIZATION_RECORDING_PAGE_SIZE) break;
+    const nextCursor = recordingCursorFromRow(page[page.length - 1]);
+    const nextCursorKey = `${nextCursor.createdAt}\u0000${nextCursor.id}`;
+    if (seenCursorKeys.has(nextCursorKey)) {
+      throw new Error("Unable to load recordings: recording pagination cursor did not advance");
+    }
+    seenCursorKeys.add(nextCursorKey);
+    cursor = nextCursor;
+  }
 
   if (!normalizedQuery) {
     return recordings;

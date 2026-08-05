@@ -322,8 +322,9 @@ create or replace function public.list_own_recordings_v1(
   p_project_id uuid default null,
   p_folder_id uuid default null,
   p_tag_ids uuid[] default '{}'::uuid[],
-  p_limit integer default 100,
-  p_offset integer default 0
+  p_before_created_at timestamptz default null,
+  p_before_id uuid default null,
+  p_limit integer default 100
 )
 returns setof public.recordings
 language sql
@@ -348,6 +349,14 @@ where r.user_id = (select auth.uid())
   and (p_project_id is null or r.project_id = p_project_id)
   and (p_folder_id is null or r.folder_id = p_folder_id)
   and (
+    (p_before_created_at is null and p_before_id is null)
+    or (
+      p_before_created_at is not null
+      and p_before_id is not null
+      and (r.created_at, r.id) < (p_before_created_at, p_before_id)
+    )
+  )
+  and (
     cardinality(tf.tag_ids) = 0
     or (
       select count(distinct rtl.tag_id)
@@ -358,8 +367,7 @@ where r.user_id = (select auth.uid())
     ) = cardinality(tf.tag_ids)
   )
 order by r.created_at desc, r.id desc
-limit greatest(1, least(coalesce(p_limit, 100), 1000))
-offset greatest(coalesce(p_offset, 0), 0);
+limit greatest(1, least(coalesce(p_limit, 100), 1000));
 $list$;
 
 revoke all on function public.assign_recording_organization_v1(uuid,uuid,uuid,uuid,uuid[])
@@ -367,7 +375,7 @@ from public, anon;
 grant execute on function public.assign_recording_organization_v1(uuid,uuid,uuid,uuid,uuid[])
 to authenticated;
 
-revoke all on function public.list_own_recordings_v1(uuid,uuid,uuid,uuid[],integer,integer)
+revoke all on function public.list_own_recordings_v1(uuid,uuid,uuid,uuid[],timestamptz,uuid,integer)
 from public, anon;
-grant execute on function public.list_own_recordings_v1(uuid,uuid,uuid,uuid[],integer,integer)
+grant execute on function public.list_own_recordings_v1(uuid,uuid,uuid,uuid[],timestamptz,uuid,integer)
 to authenticated;

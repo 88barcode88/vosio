@@ -1,21 +1,23 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import {
+  canonicalizeRecordingOrganizationFilters,
+  createRecordingSearchParams,
+  type RecordingSearchParamsInput
+} from "@/lib/recording-organization/filters";
 import { listRecordings, normalizeRecordingSearchQuery } from "@/lib/recordings/queries";
 import { listRecordingOrganizationOptions } from "@/lib/recording-organization/queries";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
 
 type RecordingsPageProps = {
-  searchParams: Promise<{
-    error?: string;
-    q?: string;
-  }>;
+  searchParams: Promise<RecordingSearchParamsInput>;
 };
 
 // RecordingsPage renders the protected recordings workspace list entry point.
 export default async function RecordingsPage({ searchParams }: RecordingsPageProps) {
   const params = await searchParams;
-  const searchQuery = normalizeRecordingSearchQuery(params.q);
+  const searchQuery = normalizeRecordingSearchQuery(Array.isArray(params.q) ? params.q[0] : params.q);
   const supabase = await createClient();
   const {
     data: { user }
@@ -25,17 +27,27 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
     redirect("/login?next=/recordings");
   }
 
-  const [recordings, organizationOptions] = await Promise.all([
-    listRecordings(supabase, { searchQuery }),
-    listRecordingOrganizationOptions(supabase)
-  ]);
+  const organizationOptions = await listRecordingOrganizationOptions(supabase);
+  const canonical = canonicalizeRecordingOrganizationFilters(
+    createRecordingSearchParams(params),
+    organizationOptions
+  );
+  if (canonical.changed) {
+    const queryString = canonical.searchParams.toString();
+    redirect(queryString ? `/recordings?${queryString}` : "/recordings");
+  }
+  const recordings = await listRecordings(supabase, {
+    organizationFilters: canonical.filters,
+    searchQuery
+  });
 
   return (
     <VosioWorkspace
       aiOutputs={[]}
       recordings={recordings}
-      recordingsError={params.error ?? null}
+      recordingsError={(Array.isArray(params.error) ? params.error[0] : params.error) ?? null}
       recordingOrganizationOptions={organizationOptions}
+      recordingOrganizationFilters={canonical.filters}
       recordingsSearchQuery={searchQuery}
       transcripts={[]}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}

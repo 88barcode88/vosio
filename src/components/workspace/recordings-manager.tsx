@@ -3,8 +3,16 @@ import Link from "next/link";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { LiveRecordingRecoveryPanel } from "@/components/live-recording-recovery-panel";
 import { RecordingTitleEditor } from "@/components/workspace/recording-title-editor";
-import { OrganizationManager } from "@/components/workspace/organization-manager";
+import {
+  OrganizationManager,
+  type OrganizationManagerActions
+} from "@/components/workspace/organization-manager";
+import { RecordingFilters } from "@/components/workspace/recording-filters";
 import { getRecordingCounts, getSourceTypeLabel } from "@/components/workspace/utils";
+import {
+  groupRecordingsByClient,
+  type RecordingOrganizationFilters
+} from "@/lib/recording-organization/filters";
 import {
   formatFileSize,
   formatRecordingDate,
@@ -25,21 +33,36 @@ function getRecordingsErrorMessage(errorCode: string | null) {
   return errorCode ? messages[errorCode] ?? "Akce nad nahrávkou se nepodařila." : null;
 }
 
+// formatRecordingResultCount keeps the filtered result status grammatically compact.
+function formatRecordingResultCount(count: number) {
+  if (count === 1) return "1 nahrávka";
+  if (count >= 2 && count <= 4) return `${count} nahrávky`;
+  return `${count} nahrávek`;
+}
+
 // RecordingsManager renders the compact inbox-style all-recordings workspace.
 export function RecordingsManager({
   errorCode,
+  filters,
+  organizationActions,
   organizationOptions,
   recordings,
   searchQuery
 }: {
   errorCode: string | null;
+  filters: RecordingOrganizationFilters;
+  organizationActions?: OrganizationManagerActions;
   organizationOptions: RecordingOrganizationOptions;
   recordings: RecordingRow[];
   searchQuery: string;
 }) {
   const counts = getRecordingCounts(recordings);
-  const hasSearch = Boolean(searchQuery);
+  const hasActiveQuery = Boolean(
+    searchQuery || filters.clientId || filters.projectId || filters.folderId || filters.tagIds.length
+  );
   const errorMessage = getRecordingsErrorMessage(errorCode);
+  const clientGroups = groupRecordingsByClient(recordings, organizationOptions);
+  const filterKey = JSON.stringify([searchQuery, filters.clientId, filters.projectId, filters.folderId, filters.tagIds]);
 
   return (
     <section className="recordings-inbox" aria-label="Správa nahrávek">
@@ -61,25 +84,17 @@ export function RecordingsManager({
           {errorMessage}
         </p>
       ) : null}
-      <OrganizationManager options={organizationOptions} />
+      <OrganizationManager actions={organizationActions} options={organizationOptions} />
       <LiveRecordingRecoveryPanel />
-      <form action="/recordings" className="recordings-search">
-        <label>
-          <span>Hledat</span>
-          <input
-            defaultValue={searchQuery}
-            maxLength={120}
-            name="q"
-            placeholder="Název, stav, zdroj nebo typ souboru"
-            type="search"
-          />
-        </label>
-        <button type="submit">Hledat</button>
-        {hasSearch ? <Link href="/recordings">Vyčistit</Link> : null}
-      </form>
-      {hasSearch ? (
+      <RecordingFilters
+        filters={filters}
+        key={filterKey}
+        options={organizationOptions}
+        searchQuery={searchQuery}
+      />
+      {hasActiveQuery ? (
         <p className="recordings-search-status">
-          Výsledky pro "{searchQuery}": {recordings.length} nahrávek.
+          Filtrovaný výsledek: {formatRecordingResultCount(recordings.length)}.
         </p>
       ) : null}
       <div className="recordings-inbox-stats" aria-label="Stavy nahrávek">
@@ -98,29 +113,41 @@ export function RecordingsManager({
               <span>Akce</span>
               <span />
             </div>
-            {recordings.map((recording) => (
-              <article className="recordings-row" key={recording.id}>
-                <Link
-                  aria-label={`Detail nahrávky ${recording.title}`}
-                  className="recordings-row-main"
-                  href={`/recordings/${recording.id}`}
-                >
-                  <div className="recordings-row-title">
-                    <strong>{recording.title}</strong>
-                    <span>{formatRecordingDate(recording.created_at)} · {getSourceTypeLabel(recording.source_type)}</span>
-                  </div>
-                  <span>{getStatusLabel(recording.status)}</span>
-                  <span>{formatFileSize(recording.file_size_bytes)}</span>
-                </Link>
-                <RecordingTitleEditor recordingId={recording.id} title={recording.title} />
-                <DeleteRecordingForm recordingId={recording.id} />
-              </article>
+            {clientGroups.map((group) => (
+              <section className="recording-client-group" key={group.clientId ?? "unclassified"}>
+                <h2>
+                  {group.label}
+                  <span>{group.recordings.length}</span>
+                </h2>
+                {group.recordings.map((recording) => (
+                  <article className="recordings-row" key={recording.id}>
+                    <Link
+                      aria-label={`Detail nahrávky ${recording.title}`}
+                      className="recordings-row-main"
+                      href={`/recordings/${recording.id}`}
+                    >
+                      <div className="recordings-row-title">
+                        <strong>{recording.title}</strong>
+                        <span>{formatRecordingDate(recording.created_at)} · {getSourceTypeLabel(recording.source_type)}</span>
+                      </div>
+                      <span>{getStatusLabel(recording.status)}</span>
+                      <span>{formatFileSize(recording.file_size_bytes)}</span>
+                    </Link>
+                    <RecordingTitleEditor recordingId={recording.id} title={recording.title} />
+                    <DeleteRecordingForm recordingId={recording.id} />
+                  </article>
+                ))}
+              </section>
             ))}
           </>
         ) : (
           <article className="utility-empty">
-            <strong>Zatím žádné nahrávky</strong>
-            <p>První položka se objeví po live nahrávání nebo uploadu souboru.</p>
+            <strong>{hasActiveQuery ? "Žádné odpovídající nahrávky" : "Zatím žádné nahrávky"}</strong>
+            <p>
+              {hasActiveQuery
+                ? "Upravte hledání nebo vyčistěte filtry."
+                : "První položka se objeví po live nahrávání nebo uploadu souboru."}
+            </p>
           </article>
         )}
       </div>

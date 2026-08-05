@@ -198,7 +198,7 @@ const expectedPolicies: PolicyDefinition[] = organizationTables.flatMap((table) 
 }).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
 
 const assignSignature = "public.assign_recording_organization_v1(uuid,uuid,uuid,uuid,uuid[])";
-const listSignature = "public.list_own_recordings_v1(uuid,uuid,uuid,uuid[],integer,integer)";
+const listSignature = "public.list_own_recordings_v1(uuid,uuid,uuid,uuid[],timestamptz,uuid,integer)";
 const expectedFunctionAccess: AccessStatement[] = [assignSignature, listSignature].flatMap((target) => [
   {
     grantees: ["anon", "public"],
@@ -528,7 +528,7 @@ describe("recording organization schema migration", () => {
     const normalized = normalizeSql(organizationMigration);
 
     expect(normalized).toContain(
-      "create or replace function public.list_own_recordings_v1( p_client_id uuid default null, p_project_id uuid default null, p_folder_id uuid default null, p_tag_ids uuid[] default '{}'::uuid[], p_limit integer default 100, p_offset integer default 0 ) returns setof public.recordings language sql stable security invoker set search_path = public, pg_temp"
+      "create or replace function public.list_own_recordings_v1( p_client_id uuid default null, p_project_id uuid default null, p_folder_id uuid default null, p_tag_ids uuid[] default '{}'::uuid[], p_before_created_at timestamptz default null, p_before_id uuid default null, p_limit integer default 100 ) returns setof public.recordings language sql stable security invoker set search_path = public, pg_temp"
     );
     expect(normalized).toContain("from unnest(coalesce(p_tag_ids, '{}'::uuid[])) as requested(tag_id)");
     expect(normalized).toContain("filter (where requested.tag_id is not null)");
@@ -537,8 +537,11 @@ describe("recording organization schema migration", () => {
       "count(distinct rtl.tag_id) from public.recording_tag_links rtl where rtl.recording_id = r.id and rtl.user_id = (select auth.uid()) and rtl.tag_id = any(tf.tag_ids) ) = cardinality(tf.tag_ids)"
     );
     expect(normalized).toContain("order by r.created_at desc, r.id desc");
+    expect(normalized).toContain(
+      "and ( (p_before_created_at is null and p_before_id is null) or ( p_before_created_at is not null and p_before_id is not null and (r.created_at, r.id) < (p_before_created_at, p_before_id) ) )"
+    );
     expect(normalized).toContain("limit greatest(1, least(coalesce(p_limit, 100), 1000))");
-    expect(normalized).toContain("offset greatest(coalesce(p_offset, 0), 0)");
+    expect(normalized).not.toContain("p_offset");
   });
 
   it("uses exact invoker RPC signatures and execute grants", () => {
