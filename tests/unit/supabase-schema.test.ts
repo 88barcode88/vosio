@@ -18,6 +18,10 @@ const recordingMarkersMigration = readFileSync(
   join(process.cwd(), "supabase", "migrations", "20260804120000_add_recording_markers.sql"),
   "utf8"
 );
+const transcriptSearchMigration = readFileSync(
+  join(process.cwd(), "supabase", "migrations", "20260804130000_add_transcript_fulltext_search.sql"),
+  "utf8"
+);
 
 describe("Supabase schema migrations", () => {
   it("adds ownership and forced RLS for structured AI tables", () => {
@@ -117,6 +121,27 @@ describe("Supabase schema migrations", () => {
     );
     expect(normalizedMigration).toContain(
       "create or replace function public.list_own_recordings_v1("
+    );
+  });
+
+  it("adds owner-safe indexed transcript search after recording organization", () => {
+    const normalizedMigration = transcriptSearchMigration.replace(/\s+/g, " ");
+
+    expect(normalizedMigration).toContain(
+      "constraint transcripts_id_recording_id_user_id_unique unique (id, recording_id, user_id)"
+    );
+    expect(transcriptSearchMigration).toContain("create table public.transcript_search_chunks");
+    expect(normalizedMigration).toContain(
+      "foreign key (transcript_id, recording_id, user_id) references public.transcripts(id, recording_id, user_id) on delete cascade"
+    );
+    expect(normalizedMigration).toContain(
+      "create or replace function public.search_own_recordings_v1("
+    );
+    expect(normalizedMigration).toContain(
+      "create or replace function public.replace_transcript_search_chunks_v1("
+    );
+    expect(normalizedMigration).toContain(
+      "create trigger transcripts_refresh_search_fallback"
     );
   });
 
