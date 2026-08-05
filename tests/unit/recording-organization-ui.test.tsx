@@ -5,7 +5,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OrganizationManager } from "@/components/workspace/organization-manager";
+import {
+  OrganizationManager,
+  type OrganizationManagerActions
+} from "@/components/workspace/organization-manager";
 import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
 import { createSaveError, createSaveSuccess, type SaveAction, type SaveActionState } from "@/lib/forms/save-action-state";
 import type {
@@ -67,6 +70,32 @@ function createDeferred<T>(): Deferred<T> {
     resolve = settle;
   });
   return { promise, resolve };
+}
+
+// createManagerActions supplies a complete non-production action bundle for manager override tests.
+function createManagerActions(
+  overrides: Partial<OrganizationManagerActions> = {}
+): OrganizationManagerActions {
+  const succeed: SaveAction = async (state, formData) => createSaveSuccess(
+    state.revision,
+    String(formData.get("scopeKey")),
+    "Uloženo."
+  );
+  return {
+    createClient: succeed,
+    createFolder: succeed,
+    createProject: succeed,
+    createTag: succeed,
+    deleteClient: succeed,
+    deleteFolder: succeed,
+    deleteProject: succeed,
+    deleteTag: succeed,
+    renameClient: succeed,
+    renameFolder: succeed,
+    renameProject: succeed,
+    renameTag: succeed,
+    ...overrides
+  };
 }
 
 // createRecording builds the minimal real RecordingRow used by the editor.
@@ -380,7 +409,7 @@ describe("OrganizationManager", () => {
     );
     await act(async () => root.render(
       <OrganizationManager
-        actions={{ createClient: createAction, renameClient: renameAction }}
+        actions={createManagerActions({ createClient: createAction, renameClient: renameAction })}
         options={options}
       />
     ));
@@ -410,7 +439,7 @@ describe("OrganizationManager", () => {
     );
     const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
     await act(async () => root.render(
-      <OrganizationManager actions={{ deleteClient }} options={options} />
+      <OrganizationManager actions={createManagerActions({ deleteClient })} options={options} />
     ));
     await clickButton("Smazat Acme");
     expect(deleteClient).not.toHaveBeenCalled();
@@ -434,7 +463,10 @@ describe("OrganizationManager", () => {
     );
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     await act(async () => root.render(
-      <OrganizationManager actions={{ deleteProject, renameProject }} options={duplicateOptions} />
+      <OrganizationManager
+        actions={createManagerActions({ deleteProject, renameProject })}
+        options={duplicateOptions}
+      />
     ));
 
     expect(container.textContent).toContain("Společný projekt · Acme");

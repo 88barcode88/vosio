@@ -31,7 +31,7 @@ import {
 } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
 
-export type OrganizationManagerActions = Partial<{
+export type OrganizationManagerActions = {
   createClient: SaveAction;
   createFolder: SaveAction;
   createProject: SaveAction;
@@ -44,7 +44,7 @@ export type OrganizationManagerActions = Partial<{
   renameFolder: SaveAction;
   renameProject: SaveAction;
   renameTag: SaveAction;
-}>;
+};
 
 type OrganizationRow = RecordingClientRow | RecordingProjectRow | RecordingFolderRow | RecordingTagRow;
 
@@ -75,7 +75,7 @@ type DismissedSaveError = {
   scopeKey: string;
 };
 
-const defaultActions: Required<OrganizationManagerActions> = {
+const defaultActions: OrganizationManagerActions = {
   createClient: createRecordingClientAction,
   createFolder: createRecordingFolderAction,
   createProject: createRecordingProjectAction,
@@ -327,7 +327,7 @@ export function OrganizationManager({
   actions?: OrganizationManagerActions;
   options: RecordingOrganizationOptions;
 }) {
-  const resolvedActions = { ...defaultActions, ...actions };
+  const resolvedActions = actions ?? defaultActions;
   const groups: ManagerGroup[] = [
     {
       createAction: resolvedActions.createClient,
