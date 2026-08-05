@@ -167,4 +167,52 @@ describe("transcript speaker helpers", () => {
       "transcript-at-1200-3"
     ]);
   });
+
+  it("keeps UI timestamps safe when later tokens contain malformed offsets", () => {
+    const blocks = getTranscriptSpeakerBlocks(
+      [
+        { end_ms: -1, speaker: 1, start_ms: Number.NaN, text: "První " },
+        { end_ms: 2_100, speaker: 1, start_ms: 1_200, text: "druhý " },
+        { end_ms: Number.POSITIVE_INFINITY, speaker: 1, start_ms: 2_200, text: "třetí." }
+      ],
+      []
+    );
+
+    expect(blocks[0]).toMatchObject({
+      anchorId: "transcript-at-1200",
+      endMs: 2_100,
+      label: "00:01",
+      startMs: 1_200,
+      text: "První druhý třetí."
+    });
+  });
+
+  it("resolves duplicate stored speaker metadata deterministically", () => {
+    const speakerBase = {
+      firstStartMs: 100,
+      id: "1",
+      label: "Mluvčí 1",
+      lastEndMs: 400,
+      role: "unknown",
+      roleLabel: "Nepřiřazeno",
+      source: "manual",
+      tokenCount: 1
+    };
+    const blocks = getTranscriptSpeakerBlocks(
+      [{ end_ms: 400, speaker: 1, start_ms: 100, text: "Text." }],
+      [
+        { ...speakerBase, name: "První jméno" },
+        { ...speakerBase, name: "Poslední jméno" }
+      ]
+    );
+
+    expect(blocks[0]?.speakerLabel).toBe("Poslední jméno");
+  });
+
+  it("keeps the existing raw-text UI fallback when no token has a speaker", () => {
+    expect(getTranscriptSpeakerBlocks(
+      [{ end_ms: 900, start_ms: 100, text: "Bez mluvčího." }],
+      []
+    )).toEqual([]);
+  });
 });

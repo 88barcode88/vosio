@@ -1,17 +1,11 @@
 import { speakerClassNames } from "@/components/transcript-tabs/constants";
 import type { TranscriptSpeakerBlock } from "@/components/transcript-tabs/types";
-import {
-  flattenTranscriptTokens,
-  getStoredTranscriptSpeakerSummaries,
-  getTranscriptSpeakerDisplayName,
-  getTranscriptSpeakerLabel,
-  getTranscriptTokenEndMs,
-  getTranscriptTokenSpeakerId,
-  getTranscriptTokenStartMs,
-  getTranscriptTokenText,
-  type TranscriptSpeakerSummary
-} from "@/lib/transcripts/speakers";
 import { getTranscriptAnchorId } from "@/lib/transcripts/navigation";
+import {
+  getConsecutiveTranscriptSpeakerGroups,
+  hasRenderableSpeakerGroups
+} from "@/lib/transcripts/search-chunks";
+import type { TranscriptSpeakerSummary } from "@/lib/transcripts/speakers";
 
 // formatTokenTimestamp renders provider millisecond offsets for transcript blocks.
 export function formatTokenTimestamp(startMs: number | null, fallbackIndex: number) {
@@ -40,69 +34,36 @@ export function getSpeakerClassName(speaker: string | null) {
   return speakerClassNames[classIndex % speakerClassNames.length];
 }
 
-// getSpeakerSummaryById creates a lookup for manual speaker labels in transcript blocks.
-function getSpeakerSummaryById(speakers: TranscriptSpeakerSummary[]) {
-  return new Map(speakers.map((speaker) => [speaker.id, speaker]));
-}
-
 // getTranscriptSpeakerBlocks groups consecutive Soniox tokens by diarized speaker.
 export function getTranscriptSpeakerBlocks(segments: unknown, speakers: unknown): TranscriptSpeakerBlock[] {
-  const tokens = flattenTranscriptTokens(segments);
-  const speakerSummaryById = getSpeakerSummaryById(getStoredTranscriptSpeakerSummaries(speakers, segments));
+  const groups = getConsecutiveTranscriptSpeakerGroups(segments, speakers);
 
-  if (!tokens.some((token) => getTranscriptTokenSpeakerId(token))) {
+  if (!hasRenderableSpeakerGroups(groups)) {
     return [];
   }
 
   const startMsOccurrences = new Map<number, number>();
 
-  return tokens.reduce<TranscriptSpeakerBlock[]>((blocks, token) => {
-    const text = getTranscriptTokenText(token);
-
-    if (!text.trim()) {
-      return blocks;
-    }
-
-    const speaker = getTranscriptTokenSpeakerId(token);
-    const speakerSummary = speaker ? speakerSummaryById.get(speaker) : null;
-    const speakerLabel = speakerSummary ? getTranscriptSpeakerDisplayName(speakerSummary) : getTranscriptSpeakerLabel(speaker);
-    const previous = blocks.at(-1);
-
-    if (previous?.speakerId === speaker) {
-      return [
-        ...blocks.slice(0, -1),
-        {
-          ...previous,
-          endMs: getTranscriptTokenEndMs(token),
-          text: `${previous.text}${text}`
-        }
-      ];
-    }
-
-    const startMs = getTranscriptTokenStartMs(token);
-    const fallbackIndex = blocks.length;
-    const timestampOccurrence = startMs === null
+  return groups.map((group, fallbackIndex) => {
+    const timestampOccurrence = group.startMs === null
       ? 1
-      : (startMsOccurrences.get(startMs) ?? 0) + 1;
+      : (startMsOccurrences.get(group.startMs) ?? 0) + 1;
 
-    if (startMs !== null) {
-      startMsOccurrences.set(startMs, timestampOccurrence);
+    if (group.startMs !== null) {
+      startMsOccurrences.set(group.startMs, timestampOccurrence);
     }
 
-    return [
-      ...blocks,
-      {
-        anchorId: getTranscriptAnchorId(startMs, fallbackIndex, timestampOccurrence),
-        endMs: getTranscriptTokenEndMs(token),
-        label: formatTokenTimestamp(startMs, fallbackIndex),
-        speakerId: speaker,
-        speakerClassName: getSpeakerClassName(speaker),
-        speakerLabel,
-        startMs,
-        text
-      }
-    ];
-  }, []);
+    return {
+      anchorId: getTranscriptAnchorId(group.startMs, fallbackIndex, timestampOccurrence),
+      endMs: group.endMs,
+      label: formatTokenTimestamp(group.startMs, fallbackIndex),
+      speakerId: group.speakerId,
+      speakerClassName: getSpeakerClassName(group.speakerId),
+      speakerLabel: group.speakerLabel,
+      startMs: group.startMs,
+      text: group.text
+    };
+  });
 }
 
 // getSpeakerSummaryMeta renders compact evidence for one detected speaker.
