@@ -11,6 +11,7 @@ type CapturedBoundary = {
   markerRequests: RecordingMarkerRequest[];
   markerResponseMode?: "fail-first" | "hold-first";
   releaseHeldMarker?: () => void;
+  heldMarkerResponseSettled?: Promise<void>;
   recordingUpdates: unknown[];
 };
 
@@ -165,9 +166,26 @@ async function installHttpBoundaries(page: Page, boundary: CapturedBoundary) {
     }
 
     if (boundary.markerResponseMode === "hold-first" && requestIndex === 0) {
+      let resolveHeldMarkerResponse!: () => void;
+      boundary.heldMarkerResponseSettled = new Promise<void>((resolve) => {
+        resolveHeldMarkerResponse = resolve;
+      });
+
       await new Promise<void>((resolve) => {
         boundary.releaseHeldMarker = resolve;
       });
+
+      try {
+        await route.fulfill({
+          contentType: "application/json",
+          json: { marker: createSavedMarkerRow(request, requestIndex) },
+          status: 201
+        });
+      } finally {
+        resolveHeldMarkerResponse();
+      }
+
+      return;
     }
 
     await route.fulfill({
@@ -336,14 +354,16 @@ test("resets the count for a new session and ignores a stale marker response", a
   const marker = page.getByRole("button", { name: "Označit moment" });
   await expect(marker).toBeEnabled();
   await marker.click();
-  await expect.poll(() => boundary.markerRequests.length).toBe(1);
+  await expect.poll(() => Boolean(boundary.releaseHeldMarker && boundary.heldMarkerResponseSettled)).toBe(true);
 
   await page.getByRole("button", { name: "Zastavit" }).click();
   await expect(page.getByRole("button", { name: "Nahrávat live" })).toBeVisible();
   await page.getByRole("button", { name: "Nahrávat live" }).click();
   await expect(page.getByText("Označené momenty: 0")).toBeVisible();
 
-  boundary.releaseHeldMarker?.();
-  await expect.poll(() => boundary.markerRequests.length).toBe(1);
+  expect(boundary.releaseHeldMarker).toBeDefined();
+  expect(boundary.heldMarkerResponseSettled).toBeDefined();
+  boundary.releaseHeldMarker!();
+  await boundary.heldMarkerResponseSettled!;
   await expect(page.getByText("Označené momenty: 0")).toBeVisible();
 });
