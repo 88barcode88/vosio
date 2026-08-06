@@ -562,8 +562,12 @@ describe("organization UI integration", () => {
     expect(recordingStyles).toMatch(/\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
     expect(responsiveStyles).toMatch(/@media \(max-width: 1180px\)\s*\{[\s\S]*?\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
     expect(responsiveStyles).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr/);
-    expect(recordingStyles).toMatch(/\.organization-create-form,[\s\S]*?\.organization-rename-form\s*\{[\s\S]*?width:\s*min\(280px, calc\(100vw - 52px\), 100%\)/);
-    expect(recordingStyles).toMatch(/\.organization-save-editor\s*\{[\s\S]*?min-width:\s*0/);
+    expect(recordingStyles).toMatch(/\.organization-create-form,[\s\S]*?\.organization-rename-form\s*\{[\s\S]*?box-sizing:\s*border-box/);
+    expect(recordingStyles).toMatch(/\.organization-manager-group > header\s*\{[\s\S]*?position:\s*relative/);
+    expect(recordingStyles).toMatch(/\.organization-manager-group > header \.organization-save-editor,[\s\S]*?\.organization-manager-row-actions \.organization-save-editor\s*\{[\s\S]*?position:\s*static/);
+    expect(recordingStyles).toMatch(/\.organization-manager-group li\s*\{[\s\S]*?position:\s*relative/);
+    expect(recordingStyles).toMatch(/\.organization-create-form\s*\{[\s\S]*?position:\s*absolute[\s\S]*?width:\s*min\(280px, 100%, calc\(100vw - 52px\)\)/);
+    expect(recordingStyles).toMatch(/\.organization-rename-form\s*\{[\s\S]*?width:\s*min\(280px, 100%, calc\(100vw - 52px\)\)[\s\S]*?top:\s*calc\(100% \+ 6px\)/);
   });
 
   it("keeps the existing title editor and loads organization data outside recording row loops", () => {

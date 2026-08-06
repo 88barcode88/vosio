@@ -231,6 +231,9 @@
   justify-content: space-between;
   gap: 7px;
 }
+.organization-manager-group > header {
+  position: relative;
+}
 .organization-manager-group h3 {
   margin: 0;
   font-size: 13px;
@@ -243,6 +246,7 @@
   list-style: none;
 }
 .organization-manager-group li {
+  position: relative;
   align-items: flex-start;
   border-top: 1px solid var(--border);
   padding-top: 6px;
@@ -276,6 +280,10 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+.organization-manager-group > header .organization-save-editor,
+.organization-manager-row-actions .organization-save-editor {
+  position: static;
+}
 .organization-save-editor {
   position: relative;
   min-width: 0;
@@ -301,9 +309,10 @@
 .organization-rename-form {
   position: relative;
   z-index: 2;
+  box-sizing: border-box;
   display: grid;
   gap: 7px;
-  width: min(280px, calc(100vw - 52px), 100%);
+  width: min(280px, calc(100vw - 52px));
   border: 1px solid var(--border-strong);
   border-radius: 9px;
   background: var(--panel);
@@ -313,6 +322,14 @@
 }
 .organization-rename-form {
   position: absolute;
+  width: min(280px, 100%, calc(100vw - 52px));
+  top: calc(100% + 6px);
+  right: 0;
+}
+.organization-create-form {
+  position: absolute;
+  width: min(280px, 100%, calc(100vw - 52px));
+  top: calc(100% + 6px);
   right: 0;
 }
 .organization-create-form label,
