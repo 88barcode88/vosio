@@ -20,10 +20,12 @@ vi.mock("@/components/browser-recorder", async () => {
   return {
     BrowserRecorder: ({
       compact,
-      onStatusChange
+      onStatusChange,
+      realtimeLanguage
     }: {
       compact?: boolean;
       onStatusChange?: (status: "idle" | "starting" | "recording" | "saving") => void;
+      realtimeLanguage?: string;
     }) => {
       const [instance] = React.useState(() => {
         recorderLifecycle.nextInstance += 1;
@@ -38,7 +40,11 @@ vi.mock("@/components/browser-recorder", async () => {
       }, []);
 
       return (
-        <div data-compact={compact ? "true" : "false"} data-instance={instance}>
+        <div
+          data-compact={compact ? "true" : "false"}
+          data-instance={instance}
+          data-realtime-language={realtimeLanguage}
+        >
           <button onClick={() => onStatusChange?.("recording")} type="button">
             Spustit testovací záznam
           </button>
@@ -65,6 +71,7 @@ const recorderProps = {
   allowTranscriptOnly: true,
   captionMode: true,
   maxAudioFileSizeBytes: 128 * 1024 * 1024,
+  realtimeLanguage: "de" as const,
   realtimeModel: "stt-rt-v5",
   redirectAfterSave: "detail" as const
 };
@@ -102,6 +109,7 @@ describe("persistent recording session", () => {
     await act(async () => root.render(renderSession(true)));
     const fullRecorder = document.querySelector<HTMLElement>("[data-instance]");
     expect(fullRecorder?.dataset.compact).toBe("false");
+    expect(fullRecorder?.dataset.realtimeLanguage).toBe("de");
     const instance = fullRecorder?.dataset.instance;
 
     await act(async () => {
@@ -119,6 +127,7 @@ describe("persistent recording session", () => {
     const returnedRecorder = document.querySelector<HTMLElement>("[data-instance]");
     expect(returnedRecorder?.dataset.instance).toBe(instance);
     expect(returnedRecorder?.dataset.compact).toBe("false");
+    expect(returnedRecorder?.dataset.realtimeLanguage).toBe("de");
     expect(recorderLifecycle.mounts).toBe(1);
 
     await act(async () => root.unmount());

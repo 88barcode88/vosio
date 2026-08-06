@@ -93,13 +93,24 @@ describe("browser recorder helpers", () => {
     );
   });
 
-  it("uses long-running realtime options for live call capture", () => {
-    expect(getRealtimeRecordingOptions("stt-rt-v5")).toMatchObject({
+  it("uses automatic language detection without language hints", () => {
+    expect(getRealtimeRecordingOptions("stt-rt-v5", "auto")).toMatchObject({
       auto_reconnect: true,
       enable_endpoint_detection: false,
       enable_language_identification: true,
       enable_speaker_diarization: true,
-      language_hints: ["cs"],
+      model: "stt-rt-v5"
+    });
+    expect(getRealtimeRecordingOptions("stt-rt-v5", "auto")).not.toHaveProperty("language_hints");
+    expect(getRealtimeRecordingOptions("stt-rt-v5", "auto")).not.toHaveProperty("language_hints_strict");
+  });
+
+  it("passes one strict language hint for a fixed live language", () => {
+    expect(getRealtimeRecordingOptions("stt-rt-v5", "de")).toMatchObject({
+      enable_language_identification: true,
+      enable_speaker_diarization: true,
+      language_hints: ["de"],
+      language_hints_strict: true,
       model: "stt-rt-v5"
     });
   });

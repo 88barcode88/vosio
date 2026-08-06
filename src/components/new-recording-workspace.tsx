@@ -53,6 +53,7 @@ export function NewRecordingWorkspace({
               allowTranscriptOnly
               captionMode
               maxAudioFileSizeBytes={liveAudioMaxFileSizeBytes}
+              realtimeLanguage={userSettings.sonioxRealtimeLanguage}
               realtimeModel={userSettings.sonioxRealtimeModel}
               redirectAfterSave="detail"
             />

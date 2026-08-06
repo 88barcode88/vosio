@@ -123,6 +123,7 @@ export function BrowserRecorder({
   developmentRecordingFactory,
   maxAudioFileSizeBytes,
   onStatusChange,
+  realtimeLanguage = "auto",
   redirectAfterSave,
   realtimeModel = "stt-rt-v5"
 }: BrowserRecorderProps) {
@@ -943,7 +944,7 @@ export function BrowserRecorder({
     setRecorderFeedback("Připravuji mikrofon a live přepis...", "working");
 
     try {
-      const recordingOptions = getRealtimeRecordingOptions(realtimeModel);
+      const recordingOptions = getRealtimeRecordingOptions(realtimeModel, realtimeLanguage);
       recording = developmentRecordingFactory
         ? developmentRecordingFactory(recordingOptions)
         : new SonioxClient({

@@ -1,4 +1,5 @@
 import type { RecordOptions, Recording } from "@soniox/client";
+import type { SonioxRealtimeLanguageId } from "@/lib/soniox/languages";
 
 export type RecorderStatus = "idle" | "starting" | "recording" | "saving";
 export type LiveSaveMode = "audio_and_transcript" | "transcript_only";
@@ -26,6 +27,7 @@ export type BrowserRecorderProps = {
   developmentRecordingFactory?: DevelopmentRecordingFactory;
   maxAudioFileSizeBytes: number | null;
   onStatusChange?: (status: RecorderStatus) => void;
+  realtimeLanguage?: SonioxRealtimeLanguageId;
   redirectAfterSave?: "detail" | "list";
   realtimeModel?: string;
 };

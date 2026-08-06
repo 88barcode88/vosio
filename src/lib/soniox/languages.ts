@@ -32,12 +32,12 @@ export const sonioxRealtimeLanguageOptions: ReadonlyArray<{
 // getSonioxRealtimeLanguageConfig maps the selected live language to provider hints.
 export function getSonioxRealtimeLanguageConfig(language: SonioxRealtimeLanguageId) {
   if (language === "auto") {
-    return { enable_language_identification: true } as const;
+    return { enable_language_identification: true };
   }
 
   return {
     enable_language_identification: true,
     language_hints: [language],
     language_hints_strict: true
-  } as const;
+  };
 }
