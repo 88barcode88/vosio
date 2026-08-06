@@ -9,6 +9,10 @@
   box-shadow: none;
   padding: 12px;
 }
+.content-area-recordings-list {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
 .top-bar {
   justify-content: space-between;
   gap: 18px;

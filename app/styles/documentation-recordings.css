@@ -1285,8 +1285,7 @@
 [data-theme="light"] .settings-alert-error,
 [data-theme="light"] .template-status-error,
 [data-theme="light"] .upload-error,
-[data-theme="light"] .delete-recording-button,
-[data-theme="light"] .delete-recording-icon,
+[data-theme="light"] .delete-recording-form button,
 [data-theme="light"] .purge-recording-form button,
 [data-theme="light"] .ai-output-delete-form button,
 [data-theme="light"] .sign-out-form button:hover {

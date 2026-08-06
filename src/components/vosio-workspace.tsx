@@ -61,6 +61,21 @@ type VosioWorkspaceProps = {
   view?: WorkspaceView;
 };
 
+// getContentAreaClassName keeps the recordings list scrollable without changing the fixed detail workbench boundary.
+export function getContentAreaClassName({
+  hasActiveRecording,
+  isCreatingRecording,
+  view
+}: {
+  hasActiveRecording: boolean;
+  isCreatingRecording: boolean;
+  view: WorkspaceView;
+}) {
+  return view === "recordings" && !hasActiveRecording && !isCreatingRecording
+    ? "content-area content-area-recordings-list"
+    : "content-area";
+}
+
 // VosioWorkspace composes the workspace shell and routes each view into its working area.
 export function VosioWorkspace({
   activeRecordingId,
@@ -119,7 +134,13 @@ export function VosioWorkspace({
     <main className="workspace-shell">
       <WorkspaceSidebar activeView={view} userEmail={userEmail} />
 
-      <section className="content-area">
+      <section
+        className={getContentAreaClassName({
+          hasActiveRecording: activeRecording !== null,
+          isCreatingRecording,
+          view
+        })}
+      >
         {transcriptSearchWarning ? <TranscriptSearchWarningNotice /> : null}
         <div className="workspace-grid workspace-grid-wide">
           {isCreatingRecording ? (

@@ -570,6 +570,18 @@ describe("organization UI integration", () => {
     expect(recordingStyles).toMatch(/\.organization-rename-form\s*\{[\s\S]*?width:\s*min\(280px, 100%, calc\(100vw - 52px\)\)[\s\S]*?top:\s*calc\(100% \+ 6px\)/);
   });
 
+  it("targets the actual recording delete button in the light theme", () => {
+    const recordingStyles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+
+    expect(recordingStyles).toMatch(/\[data-theme="light"\] \.delete-recording-form button/);
+    expect(recordingStyles).toContain("color: #7f2020;");
+    expect(recordingStyles).not.toMatch(/\[data-theme="light"\] \.delete-recording-button/);
+    expect(recordingStyles).not.toMatch(/\[data-theme="light"\] \.delete-recording-icon,/);
+  });
+
   it("keeps the existing title editor and loads organization data outside recording row loops", () => {
     const workbenchSource = readFileSync(
       join(process.cwd(), "src", "components", "workspace", "recording-workbench.tsx"),
