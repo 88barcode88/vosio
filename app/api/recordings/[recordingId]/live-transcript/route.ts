@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { buildLiveTranscriptSuccessPayload } from "@/lib/live-recording/live-transcript-response";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
 import { extractTranscriptSpeakerSummaries } from "@/lib/transcripts/speakers";
 
 const routeParamsSchema = z.object({
@@ -81,7 +83,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       })
       .eq("id", existingTranscript.id)
       .eq("user_id", user.id)
-      .select("id")
+      .select("id,recording_id,user_id,raw_text,segments,speakers")
       .single()
     : await admin
       .from("transcripts")
@@ -93,12 +95,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         transcription_job_id: null,
         user_id: user.id
       })
-      .select("id")
+      .select("id,recording_id,user_id,raw_text,segments,speakers")
       .single();
 
   if (transcriptWrite.error || !transcriptWrite.data) {
     return NextResponse.json({ error: "Nepodařilo se uložit live přepis." }, { status: 500 });
   }
+
+  const indexResult = await replaceTranscriptSearchChunks(admin, transcriptWrite.data);
 
   const audioSource =
     body.data.audioStorage === "transcript_only"
@@ -142,5 +146,5 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Nepodařilo se aktualizovat stav live nahrávky." }, { status: 500 });
   }
 
-  return NextResponse.json({ transcript: transcriptWrite.data });
+  return NextResponse.json(buildLiveTranscriptSuccessPayload(transcriptWrite.data, indexResult));
 }

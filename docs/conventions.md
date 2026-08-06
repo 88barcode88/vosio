@@ -50,6 +50,9 @@
 - Používej pojmenovaný `<progress>` a úsporné `role=status` zprávy jen při změně fáze, ne při každém upload chunku. Dlouhé názvy souborů musí na mobilu zůstat čitelné s bezpečným zkrácením.
 - Manuální upload respektuje celý runtime limit bucketu. Live audio používá `min(limit bucketu, 128 MiB)` a bezpečnostní rezervu před finalizací; nepopisuj tento limit jako ochranu paměti prohlížeče.
 - Search v běžných seznamech drž lehký a URL řízený. Pokud má hledat v celém transcriptu, přidej nejdřív index/RPC a netahej `raw_text` do shell listu.
+- Kompaktní editor existující hodnoty nesmí zavřít plochu už při raw `submit`. Používá controlled draft, scope-keyed `SaveActionState`, `runSaveActionSafely` a `useCloseOnSuccessfulSave`; během pending blokuje všechny dismiss cesty i další submit, po matching-scope success se zavře a vrátí focus na trigger, po error zůstane otevřený s hodnotami a alertem.
+- Success status kompaktního editoru drž v persistentním `aria-live="polite"` mimo zavíranou plochu. Inline feedback má rezervovaný slot, aby error a pending retry neposouvaly layout. Manuálně dismissed error revision se při znovuotevření neukazuje, ale vyšší revision ano.
+- Full-page formuláře, login, import, search, read-only disclosures a destruktivní potvrzení automaticky nesbaluj. U úspěšného delete zmizí samotná položka, takže success-only collapse kontrakt nedává smysl.
 
 ## Kód
 

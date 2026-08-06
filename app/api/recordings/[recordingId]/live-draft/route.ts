@@ -3,6 +3,8 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getLiveDraftAutosavePayload } from "@/lib/live-recording/recovery";
+import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
+import { getTranscriptSearchWarningPayload } from "@/lib/transcripts/search-warning";
 import { extractTranscriptSpeakerSummaries } from "@/lib/transcripts/speakers";
 
 const routeParamsSchema = z.object({
@@ -58,6 +60,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
   const payload = getLiveDraftAutosavePayload(body.data);
   const admin = createAdminClient();
+  let indexWarningPayload = {};
   const { data: existingTranscript, error: existingTranscriptError } = await admin
     .from("transcripts")
     .select("id")
@@ -82,6 +85,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         })
         .eq("id", existingTranscript.id)
         .eq("user_id", user.id)
+        .select("id,recording_id,user_id,raw_text,segments,speakers")
+        .single()
       : await admin
         .from("transcripts")
         .insert({
@@ -91,11 +96,16 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           speakers,
           transcription_job_id: null,
           user_id: user.id
-        });
+        })
+        .select("id,recording_id,user_id,raw_text,segments,speakers")
+        .single();
 
-    if (transcriptWrite.error) {
+    if (transcriptWrite.error || !transcriptWrite.data) {
       return NextResponse.json({ error: "Nepodařilo se uložit koncept přepisu." }, { status: 500 });
     }
+
+    const indexResult = await replaceTranscriptSearchChunks(admin, transcriptWrite.data);
+    indexWarningPayload = getTranscriptSearchWarningPayload(indexResult);
   }
 
   const { error: recordingUpdateError } = await admin
@@ -108,5 +118,5 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Nepodařilo se uložit délku live nahrávky." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...indexWarningPayload });
 }

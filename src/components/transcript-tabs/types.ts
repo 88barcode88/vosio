@@ -3,11 +3,23 @@ import type { AiOutputView } from "@/lib/ai/types";
 export type TranscriptTab = "transcript" | "ai" | "timeline" | "files";
 
 export type TranscriptSpeakerBlock = {
+  anchorId: string;
+  endMs: number | null;
   label: string;
   speakerId: string | null;
   speakerClassName: string;
   speakerLabel: string;
+  startMs: number | null;
   text: string;
+};
+
+export type TranscriptTarget = {
+  anchorId?: string;
+  endMs?: number | null;
+  highlightText?: string | null;
+  playback: "none" | "play" | "seek";
+  startMs: number | null;
+  transcriptId: string;
 };
 
 export type TimelineChapter = {

@@ -1,5 +1,6 @@
 import type { AiOutputView } from "@/lib/ai/types";
-import { isSegmentedRecordingStoragePath, type RecordingRow } from "@/lib/recordings/types";
+import type { RecordingClientView } from "@/lib/recordings/client-view";
+import type { RecordingRow } from "@/lib/recordings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 
 // getAiOutputTitle maps AI processing types into compact Czech UI labels for workspace lists.
@@ -98,13 +99,13 @@ export function getTranscriptAvailabilityLabel(activeTranscript: TranscriptRow |
 }
 
 // getStorageAvailabilityLabel describes whether the recording has an audio object behind it.
-export function getStorageAvailabilityLabel(activeRecording: RecordingRow | null) {
+export function getStorageAvailabilityLabel(activeRecording: RecordingClientView | null) {
   if (!activeRecording) {
     return "Bez souboru";
   }
 
-  if (activeRecording.storage_path) {
-    return isSegmentedRecordingStoragePath(activeRecording.storage_path)
+  if (activeRecording.audioAvailability !== "none") {
+    return activeRecording.audioAvailability === "segmented"
       ? "Audio po částech"
       : "Audio uložené";
   }
@@ -114,7 +115,7 @@ export function getStorageAvailabilityLabel(activeRecording: RecordingRow | null
 
 // getRecordingNextStepLabel gives the right rail a compact next-action hint.
 export function getRecordingNextStepLabel(
-  activeRecording: RecordingRow | null,
+  activeRecording: RecordingClientView | null,
   activeTranscript: TranscriptRow | null
 ) {
   if (!activeRecording) {
@@ -131,8 +132,7 @@ export function getRecordingNextStepLabel(
 
   if (
     !activeTranscript &&
-    activeRecording.storage_path &&
-    !isSegmentedRecordingStoragePath(activeRecording.storage_path)
+    activeRecording.audioAvailability === "single"
   ) {
     return "Spusťte Soniox přepis.";
   }

@@ -69,18 +69,46 @@ export type RecordingStatus =
   | "deleted";
 
 export type RecordingRow = {
+  client_id: string | null;
   id: string;
   created_at: string;
   duration_seconds: number | null;
   error_message: string | null;
   file_size_bytes: number | null;
+  folder_id: string | null;
   mime_type: string | null;
+  project_id: string | null;
   source_type: "upload" | "in_app_recording" | "realtime";
   status: RecordingStatus;
   storage_path: string | null;
   title: string;
   updated_at: string;
   user_id: string;
+};
+
+export type RecordingSearchResult = {
+  clientId: string | null;
+  createdAt: string;
+  durationSeconds: number | null;
+  fileSizeBytes: number | null;
+  folderId: string | null;
+  id: string;
+  matchedExcerpt: string | null;
+  matchEndMs: number | null;
+  matchStartMs: number | null;
+  mimeType: string | null;
+  projectId: string | null;
+  sourceType: RecordingRow["source_type"];
+  status: RecordingStatus;
+  title: string;
+  updatedAt: string;
+};
+
+export type RecordingSearchPage = {
+  page: number;
+  pageSize: number;
+  results: RecordingSearchResult[];
+  totalCount: number;
 };
 
 // isSegmentedRecordingStoragePath detects live audio archives stored as multiple objects.

@@ -26,11 +26,18 @@ import type {
   StructuredRiskRow,
   StructuredTaskRow
 } from "@/lib/ai/structured-types";
+import type { TranscriptTarget } from "@/components/transcript-tabs/types";
 
 const ownerOrder: StructuredOwnerCategory[] = ["Moje práce", "Klient", "Nejasné"];
 
 // StructuredItemsContent renders normalized AI rows as actionable workspace data.
-export function StructuredItemsContent({ items }: { items: StructuredAiItems }) {
+export function StructuredItemsContent({
+  items,
+  onOpenEvidence
+}: {
+  items: StructuredAiItems;
+  onOpenEvidence: (target: TranscriptTarget) => void;
+}) {
   const [checklistMessage, setChecklistMessage] = useState<string | null>(null);
   const hasStructuredItems = items.tasks.length > 0 || items.decisions.length > 0 || items.risks.length > 0;
   const pathname = usePathname();
@@ -89,7 +96,11 @@ export function StructuredItemsContent({ items }: { items: StructuredAiItems }) 
                 </header>
                 <div className="structured-task-list">
                   {group.tasks.map((task) => (
-                    <StructuredTaskRowView key={task.id ?? `${task.ai_output_id}-${task.position}`} task={task} />
+                    <StructuredTaskRowView
+                      key={task.id ?? `${task.ai_output_id}-${task.position}`}
+                      onOpenEvidence={onOpenEvidence}
+                      task={task}
+                    />
                   ))}
                 </div>
               </section>
@@ -97,8 +108,12 @@ export function StructuredItemsContent({ items }: { items: StructuredAiItems }) 
           </div>
         </div>
       ) : null}
-      {items.decisions.length > 0 ? <StructuredDecisionList decisions={items.decisions} /> : null}
-      {items.risks.length > 0 ? <StructuredRiskList risks={items.risks} /> : null}
+      {items.decisions.length > 0 ? (
+        <StructuredDecisionList decisions={items.decisions} onOpenEvidence={onOpenEvidence} />
+      ) : null}
+      {items.risks.length > 0 ? (
+        <StructuredRiskList onOpenEvidence={onOpenEvidence} risks={items.risks} />
+      ) : null}
     </section>
   );
 }
@@ -119,7 +134,13 @@ function groupTasksByOwner(tasks: StructuredTaskRow[]) {
 }
 
 // StructuredTaskRowView renders one persisted task with an optimistic status toggle.
-function StructuredTaskRowView({ task }: { task: StructuredTaskRow }) {
+function StructuredTaskRowView({
+  onOpenEvidence,
+  task
+}: {
+  onOpenEvidence: (target: TranscriptTarget) => void;
+  task: StructuredTaskRow;
+}) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [localStatus, setLocalStatus] = useState(task.status);
@@ -182,12 +203,13 @@ function StructuredTaskRowView({ task }: { task: StructuredTaskRow }) {
           </div>
         ) : null}
         {task.description ? <p>{task.description}</p> : null}
-        {task.evidence_quote ? (
-          <details className="structured-evidence structured-evidence-compact">
-            <summary aria-label={`Zobrazit důkaz k úkolu ${task.title}`}>Důkaz</summary>
-            <p>"{task.evidence_quote}"</p>
-          </details>
-        ) : null}
+        <StructuredEvidence
+          evidenceEndMs={task.evidence_end_ms}
+          evidenceQuote={task.evidence_quote}
+          evidenceStartMs={task.evidence_start_ms}
+          onOpenEvidence={onOpenEvidence}
+          transcriptId={task.transcript_id}
+        />
         {errorMessage ? (
           <p className="structured-task-status-message" role="status">
             {errorMessage}
@@ -224,7 +246,13 @@ function getTaskStatusLabel(status: StructuredTaskRow["status"]) {
 }
 
 // StructuredDecisionList renders confirmations separately from already agreed decisions.
-function StructuredDecisionList({ decisions }: { decisions: StructuredDecisionRow[] }) {
+function StructuredDecisionList({
+  decisions,
+  onOpenEvidence
+}: {
+  decisions: StructuredDecisionRow[];
+  onOpenEvidence: (target: TranscriptTarget) => void;
+}) {
   return (
     <div className="structured-ai-block structured-ai-compact-block">
       <header>
@@ -238,7 +266,13 @@ function StructuredDecisionList({ decisions }: { decisions: StructuredDecisionRo
             <span>
               <strong>{decision.title}</strong>
               <small>{getDecisionLabel(decision)}</small>
-              {decision.evidence_quote ? <em>"{decision.evidence_quote}"</em> : null}
+              <StructuredEvidence
+                evidenceEndMs={decision.evidence_end_ms}
+                evidenceQuote={decision.evidence_quote}
+                evidenceStartMs={decision.evidence_start_ms}
+                onOpenEvidence={onOpenEvidence}
+                transcriptId={decision.transcript_id}
+              />
             </span>
           </li>
         ))}
@@ -293,7 +327,13 @@ function getDecisionIcon(decision: StructuredDecisionRow) {
 }
 
 // StructuredRiskList renders compact risks and blockers with impact details.
-function StructuredRiskList({ risks }: { risks: StructuredRiskRow[] }) {
+function StructuredRiskList({
+  onOpenEvidence,
+  risks
+}: {
+  onOpenEvidence: (target: TranscriptTarget) => void;
+  risks: StructuredRiskRow[];
+}) {
   return (
     <div className="structured-ai-block structured-ai-compact-block">
       <header>
@@ -308,10 +348,91 @@ function StructuredRiskList({ risks }: { risks: StructuredRiskRow[] }) {
               <strong>{risk.title}</strong>
               {risk.impact ? <small>Dopad: {risk.impact}</small> : null}
               {risk.mitigation ? <em>Další krok: {risk.mitigation}</em> : null}
+              <StructuredEvidence
+                evidenceEndMs={risk.evidence_end_ms}
+                evidenceQuote={risk.evidence_quote}
+                evidenceStartMs={risk.evidence_start_ms}
+                onOpenEvidence={onOpenEvidence}
+                transcriptId={risk.transcript_id}
+              />
             </span>
           </li>
         ))}
       </ul>
     </div>
   );
+}
+
+// StructuredEvidence renders a quote and exposes navigation only for a complete safe range.
+function StructuredEvidence({
+  evidenceEndMs,
+  evidenceQuote,
+  evidenceStartMs,
+  onOpenEvidence,
+  transcriptId
+}: {
+  evidenceEndMs: number | null;
+  evidenceQuote: string | null;
+  evidenceStartMs: number | null;
+  onOpenEvidence: (target: TranscriptTarget) => void;
+  transcriptId: string;
+}) {
+  if (!evidenceQuote) {
+    return null;
+  }
+
+  const evidenceTarget = getEvidenceTarget({
+    evidenceEndMs,
+    evidenceQuote,
+    evidenceStartMs,
+    transcriptId
+  });
+
+  return (
+    <div className="structured-evidence structured-evidence-compact">
+      <p>"{evidenceQuote}"</p>
+      {evidenceTarget ? (
+        <button
+          className="structured-evidence-action"
+          data-evidence-action="true"
+          onClick={() => onOpenEvidence(evidenceTarget)}
+          type="button"
+        >
+          Otevřít v přepisu
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+// getEvidenceTarget rejects incomplete or invalid ranges before exposing a navigation action.
+function getEvidenceTarget({
+  evidenceEndMs,
+  evidenceQuote,
+  evidenceStartMs,
+  transcriptId
+}: {
+  evidenceEndMs: number | null;
+  evidenceQuote: string;
+  evidenceStartMs: number | null;
+  transcriptId: string;
+}): TranscriptTarget | null {
+  if (
+    evidenceStartMs === null ||
+    evidenceEndMs === null ||
+    !Number.isSafeInteger(evidenceStartMs) ||
+    !Number.isSafeInteger(evidenceEndMs) ||
+    evidenceStartMs < 0 ||
+    evidenceEndMs < evidenceStartMs
+  ) {
+    return null;
+  }
+
+  return {
+    endMs: evidenceEndMs,
+    highlightText: evidenceQuote,
+    playback: "play",
+    startMs: evidenceStartMs,
+    transcriptId
+  };
 }

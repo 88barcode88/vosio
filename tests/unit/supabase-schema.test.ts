@@ -6,6 +6,22 @@ const baselineMigration = readFileSync(
   join(process.cwd(), "supabase", "migrations", "20260617000000_initial_schema.sql"),
   "utf8"
 );
+const evidenceLocationMigration = readFileSync(
+  join(process.cwd(), "supabase", "migrations", "20260804100000_add_evidence_locations.sql"),
+  "utf8"
+);
+const recordingOrganizationMigration = readFileSync(
+  join(process.cwd(), "supabase", "migrations", "20260804110000_add_recording_organization.sql"),
+  "utf8"
+);
+const recordingMarkersMigration = readFileSync(
+  join(process.cwd(), "supabase", "migrations", "20260804120000_add_recording_markers.sql"),
+  "utf8"
+);
+const transcriptSearchMigration = readFileSync(
+  join(process.cwd(), "supabase", "migrations", "20260804130000_add_transcript_fulltext_search.sql"),
+  "utf8"
+);
 
 describe("Supabase schema migrations", () => {
   it("adds ownership and forced RLS for structured AI tables", () => {
@@ -41,6 +57,92 @@ describe("Supabase schema migrations", () => {
     expect(baselineMigration).not.toContain("transcript chapters update own");
     expect(baselineMigration).not.toContain("transcript decisions delete own");
     expect(baselineMigration).not.toContain("transcript risks insert own");
+  });
+
+  it("adds nullable evidence ranges without changing grants or policies", () => {
+    const normalizedMigration = evidenceLocationMigration.replace(/\s+/g, " ");
+
+    for (const tableName of ["transcript_tasks", "transcript_decisions", "transcript_risks"]) {
+      expect(evidenceLocationMigration).toContain(`alter table public.${tableName}`);
+      expect(evidenceLocationMigration).toContain("add column evidence_start_ms bigint");
+      expect(evidenceLocationMigration).toContain("add column evidence_end_ms bigint");
+      expect(evidenceLocationMigration).toContain(`constraint ${tableName}_evidence_range_check check`);
+      expect(normalizedMigration).toContain(
+        `constraint ${tableName}_evidence_range_check check ( `
+        + "(evidence_start_ms is null and evidence_end_ms is null) or ( "
+        + "evidence_start_ms is not null and evidence_end_ms is not null "
+        + "and evidence_start_ms >= 0 and evidence_end_ms >= evidence_start_ms ) )"
+      );
+    }
+
+    expect(evidenceLocationMigration).toContain("alter table public.transcript_risks\n  add column evidence_quote text");
+    expect(evidenceLocationMigration.match(/evidence_start_ms >= 0/g)).toHaveLength(3);
+    expect(evidenceLocationMigration.match(/evidence_end_ms >= evidence_start_ms/g)).toHaveLength(3);
+    expect(evidenceLocationMigration).not.toMatch(/or\s*\(\s*evidence_start_ms\s*>=\s*0/i);
+    expect(evidenceLocationMigration).not.toMatch(/\bgrant\b/i);
+    expect(evidenceLocationMigration).not.toMatch(/\bpolicy\b/i);
+    expect(baselineMigration.match(/grant update \(status\) on public\.transcript_tasks to authenticated;/g)).toHaveLength(1);
+  });
+
+  it("adds the owner-safe recording marker forward migration", () => {
+    const normalizedMigration = recordingMarkersMigration.replace(/\s+/g, " ");
+
+    expect(recordingMarkersMigration).toContain("create table public.recording_markers");
+    expect(normalizedMigration).toContain(
+      "foreign key (recording_id, user_id) references public.recordings(id, user_id) on delete cascade"
+    );
+    expect(normalizedMigration).toContain(
+      "alter table public.recording_markers force row level security"
+    );
+    expect(recordingMarkersMigration.match(/create policy "recording markers [^"]+"/g)).toHaveLength(4);
+  });
+
+  it("adds the owner-safe recording organization forward migration", () => {
+    const normalizedMigration = recordingOrganizationMigration.replace(/\s+/g, " ");
+
+    for (const tableName of [
+      "recording_clients",
+      "recording_projects",
+      "recording_folders",
+      "recording_tags",
+      "recording_tag_links"
+    ]) {
+      expect(recordingOrganizationMigration).toContain(`create table public.${tableName}`);
+      expect(normalizedMigration).toContain(
+        `alter table public.${tableName} force row level security`
+      );
+    }
+
+    expect(normalizedMigration).toContain(
+      "foreign key (project_id, client_id, user_id) references public.recording_projects(id, client_id, user_id) on delete set null (project_id)"
+    );
+    expect(normalizedMigration).toContain(
+      "create or replace function public.assign_recording_organization_v1("
+    );
+    expect(normalizedMigration).toContain(
+      "create or replace function public.list_own_recordings_v1("
+    );
+  });
+
+  it("adds owner-safe indexed transcript search after recording organization", () => {
+    const normalizedMigration = transcriptSearchMigration.replace(/\s+/g, " ");
+
+    expect(normalizedMigration).toContain(
+      "constraint transcripts_id_recording_id_user_id_unique unique (id, recording_id, user_id)"
+    );
+    expect(transcriptSearchMigration).toContain("create table public.transcript_search_chunks");
+    expect(normalizedMigration).toContain(
+      "foreign key (transcript_id, recording_id, user_id) references public.transcripts(id, recording_id, user_id) on delete cascade"
+    );
+    expect(normalizedMigration).toContain(
+      "create or replace function public.search_own_recordings_v1("
+    );
+    expect(normalizedMigration).toContain(
+      "create or replace function public.replace_transcript_search_chunks_v1("
+    );
+    expect(normalizedMigration).toContain(
+      "create trigger transcripts_refresh_search_fallback"
+    );
   });
 
   it("keeps the baseline aligned with current provider and storage requirements", () => {

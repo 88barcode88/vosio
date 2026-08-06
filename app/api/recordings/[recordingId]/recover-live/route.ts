@@ -3,6 +3,8 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { RECORDINGS_BUCKET } from "@/lib/recordings/types";
+import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
+import { getTranscriptSearchWarningPayload } from "@/lib/transcripts/search-warning";
 import {
   getRecoveredLiveRecordingUpdate,
   getLiveStorageListPrefix,
@@ -78,16 +80,19 @@ async function summarizeSegments(input: {
 }
 
 // getTranscriptSummary checks whether a recoverable recording has a saved transcript draft.
-async function getTranscriptSummary(input: {
+export async function getTranscriptSummary(input: {
   admin: ReturnType<typeof createAdminClient>;
   recordingId: string;
   userId: string;
 }) {
   const { data, error } = await input.admin
     .from("transcripts")
-    .select("id,raw_text")
+    .select("id,recording_id,user_id,raw_text,segments,speakers")
     .eq("recording_id", input.recordingId)
     .eq("user_id", input.userId)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error) {
@@ -96,7 +101,7 @@ async function getTranscriptSummary(input: {
 
   return {
     hasTranscript: Boolean(data?.raw_text?.trim()),
-    transcriptId: data?.id ?? null
+    transcript: data ?? null
   };
 }
 
@@ -171,12 +176,17 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Obnova nahrávky selhala." }, { status: 500 });
     }
 
+    const indexResult = transcript.transcript
+      ? await replaceTranscriptSearchChunks(admin, transcript.transcript)
+      : null;
+
     return NextResponse.json({
       recording: {
         id: recoverableRecording.id,
         status: recordingUpdate.status,
-        transcriptId: transcript.transcriptId
-      }
+        transcriptId: transcript.transcript?.id ?? null
+      },
+      ...(indexResult ? getTranscriptSearchWarningPayload(indexResult) : {})
     });
   } catch {
     return NextResponse.json({ error: "Obnova nahrávky selhala." }, { status: 500 });

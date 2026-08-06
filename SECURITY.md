@@ -4,7 +4,7 @@
 
 If you discover a security vulnerability in Vosio, please report it privately:
 
-- Open a [GitHub private security advisory](https://github.com/88barcode88/vosio-app/security/advisories/new), or
+- Open a [GitHub private security advisory](https://github.com/88barcode88/vosio/security/advisories/new), or
 - Contact the maintainer through GitHub ([@88barcode88](https://github.com/88barcode88)).
 
 Please do not open public issues for security problems. Include steps to reproduce,

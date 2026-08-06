@@ -6,9 +6,12 @@ import { SettingsPanel } from "@/components/settings-panel";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { PromptTemplateRow } from "@/lib/prompt-templates/types";
 import {
+  getRecordingAudioAvailabilityLabel,
+  type RecordingClientView
+} from "@/lib/recordings/client-view";
+import {
   formatFileSize,
-  formatRecordingDate,
-  type RecordingRow
+  formatRecordingDate
 } from "@/lib/recordings/types";
 import type { UserSettings } from "@/lib/settings/types";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
@@ -31,7 +34,7 @@ export function UtilityWorkspaceView({
   view
 }: {
   aiOutputs: AiOutputView[];
-  deletedRecordings: RecordingRow[];
+  deletedRecordings: RecordingClientView[];
   promptTemplates: PromptTemplateRow[];
   settings: UserSettings;
   settingsStatus: "error" | "saved" | null;
@@ -109,7 +112,7 @@ export function UtilityWorkspaceView({
                 <span>{formatRecordingDate(recording.updated_at)}</span>
               </div>
               <p>
-                {formatFileSize(recording.file_size_bytes)} · {recording.storage_path ?? "bez souboru"}
+                {formatFileSize(recording.file_size_bytes)} · {getRecordingAudioAvailabilityLabel(recording.audioAvailability)} · {recording.mime_type ?? "neznámý typ"}
               </p>
               <PurgeRecordingForm recordingId={recording.id} />
             </article>

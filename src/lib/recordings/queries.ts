@@ -1,10 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getStatusLabel, type RecordingRow } from "@/lib/recordings/types";
+import type { RecordingOrganizationFilters } from "@/lib/recording-organization/filters";
+import type { RecordingRow } from "@/lib/recordings/types";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 
 const recordingColumns = `
   id,
   user_id,
+  client_id,
+  project_id,
+  folder_id,
   title,
   source_type,
   storage_path,
@@ -17,61 +21,76 @@ const recordingColumns = `
   updated_at
 `;
 
-const sourceSearchLabels: Record<RecordingRow["source_type"], string> = {
-  in_app_recording: "nahrano v aplikaci live zaznam live nahravka",
-  realtime: "realtime live prepis zivy prepis hotovy text vlozeny prepis",
-  upload: "upload soubor nahrany soubor"
+const ORGANIZATION_RECORDING_PAGE_SIZE = 1000;
+
+type RecordingCursor = {
+  createdAt: string;
+  id: string;
 };
 
-// normalizeRecordingSearchQuery prepares user search input for recordings list filtering.
-export function normalizeRecordingSearchQuery(value: string | null | undefined) {
-  return (value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
-}
-
-// recordingMatchesSearch checks lightweight recording fields for the list page search.
-export function recordingMatchesSearch(
-  recording: RecordingRow,
-  normalizedQuery: string
-) {
-  if (!normalizedQuery) {
-    return true;
+// recordingCursorFromRow validates and returns the stable tuple used by keyset pagination.
+function recordingCursorFromRow(recording: RecordingRow): RecordingCursor {
+  if (!recording.id || !Number.isFinite(Date.parse(recording.created_at))) {
+    throw new Error("Unable to load recordings: invalid pagination cursor");
   }
 
-  const needle = normalizedQuery.toLocaleLowerCase("cs-CZ");
-  const haystack = [
-    recording.title,
-    recording.status,
-    getStatusLabel(recording.status),
-    recording.source_type,
-    sourceSearchLabels[recording.source_type],
-    recording.mime_type ?? ""
-  ].join(" ").toLocaleLowerCase("cs-CZ");
-
-  return haystack.includes(needle);
+  return { createdAt: recording.created_at, id: recording.id };
 }
 
-// listRecordings loads and optionally filters the current user's recordings through Supabase RLS.
+// listRecordings loads the current user's ordinary organization list through Supabase RLS.
 export async function listRecordings(
   supabase: SupabaseClient,
-  options: { searchQuery?: string | null } = {}
+  options: {
+    organizationFilters?: RecordingOrganizationFilters;
+  } = {}
 ) {
-  const normalizedQuery = normalizeRecordingSearchQuery(options.searchQuery);
-  const recordings = await fetchAllRows<RecordingRow>("Unable to load recordings", (from, to) =>
-    supabase
-      .from("recordings")
-      .select(recordingColumns)
-      .neq("status", "deleted")
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(from, to)
-      .returns<RecordingRow[]>()
-  );
+  const filters = options.organizationFilters ?? {
+    clientId: null,
+    folderId: null,
+    projectId: null,
+    tagIds: []
+  };
+  const recordings: RecordingRow[] = [];
+  const seenRecordingIds = new Set<string>();
+  const seenCursorKeys = new Set<string>();
+  let cursor: RecordingCursor | null = null;
 
-  if (!normalizedQuery) {
-    return recordings;
+  for (;;) {
+    const { data, error } = await supabase.rpc("list_own_recordings_v1", {
+      p_before_created_at: cursor?.createdAt ?? null,
+      p_before_id: cursor?.id ?? null,
+      p_client_id: filters.clientId,
+      p_folder_id: filters.folderId,
+      p_limit: ORGANIZATION_RECORDING_PAGE_SIZE,
+      p_project_id: filters.projectId,
+      p_tag_ids: filters.tagIds
+    });
+
+    if (error) {
+      throw new Error(`Unable to load recordings: ${error.message}`);
+    }
+    if (!Array.isArray(data)) {
+      throw new Error("Unable to load recordings: invalid paginated response");
+    }
+
+    const page = data as RecordingRow[];
+    for (const recording of page) {
+      if (seenRecordingIds.has(recording.id)) continue;
+      seenRecordingIds.add(recording.id);
+      recordings.push(recording);
+    }
+
+    if (page.length < ORGANIZATION_RECORDING_PAGE_SIZE) break;
+    const nextCursor = recordingCursorFromRow(page[page.length - 1]);
+    const nextCursorKey = `${nextCursor.createdAt}\u0000${nextCursor.id}`;
+    if (seenCursorKeys.has(nextCursorKey)) {
+      throw new Error("Unable to load recordings: recording pagination cursor did not advance");
+    }
+    seenCursorKeys.add(nextCursorKey);
+    cursor = nextCursor;
   }
 
-  return recordings.filter((recording) => recordingMatchesSearch(recording, normalizedQuery));
+  return recordings;
 }
 
 // getRecordingById loads one recording for a detail route through Supabase RLS.

@@ -5,6 +5,11 @@ import { RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatDuration } from "@/components/workspace/utils";
 import { formatFileSize } from "@/lib/recordings/types";
+import {
+  TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE,
+  addTranscriptSearchIndexWarningToPath,
+  hasTranscriptSearchIndexWarning
+} from "@/lib/transcripts/search-warning";
 
 type RecoverableRecording = {
   created_at: string;
@@ -51,14 +56,23 @@ export function LiveRecordingRecoveryPanel() {
 
     try {
       const response = await fetch(`/api/recordings/${recordingId}/recover-live`, { method: "POST" });
-      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; warnings?: unknown }
+        | null;
 
       if (!response.ok) {
         setMessage(payload?.error ?? "Obnova nahrávky selhala.");
         return;
       }
 
-      router.push(`/recordings/${recordingId}`);
+      const hasSearchWarning = hasTranscriptSearchIndexWarning(payload);
+      const path = `/recordings/${recordingId}`;
+
+      if (hasSearchWarning) {
+        setMessage(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
+      }
+
+      router.push(hasSearchWarning ? addTranscriptSearchIndexWarningToPath(path) : path);
       router.refresh();
     } catch {
       setMessage("Obnova nahrávky selhala. Zkontrolujte připojení a zkuste to znovu.");
@@ -77,7 +91,7 @@ export function LiveRecordingRecoveryPanel() {
         <RotateCcw size={16} />
         <strong>Nedokončené live nahrávky</strong>
       </div>
-      {message ? <p>{message}</p> : null}
+      {message ? <p aria-live="polite" role="status">{message}</p> : null}
       {recordings.map((recording) => (
         <article key={recording.id}>
           <div>

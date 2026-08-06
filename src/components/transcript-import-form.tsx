@@ -9,6 +9,11 @@ import {
   getImportedTranscriptValidationError,
   normalizeImportedTranscriptText
 } from "@/lib/transcripts/manual-import";
+import {
+  TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE,
+  addTranscriptSearchIndexWarningToPath,
+  hasTranscriptSearchIndexWarning
+} from "@/lib/transcripts/search-warning";
 
 type ImportState = {
   message: string;
@@ -106,21 +111,31 @@ export function TranscriptImportForm({ redirectAfterImport = "detail" }: Transcr
         method: "POST"
       });
       const payload = (await response.json().catch(() => null)) as
-        | { error?: string; recordingId?: string }
+        | { error?: string; recordingId?: string; warnings?: unknown }
         | null;
 
       if (!response.ok || !payload?.recordingId) {
         throw new Error(payload?.error ?? "Import přepisu selhal.");
       }
 
-      setImportState({ message: "Přepis je uložený.", tone: "success" });
+      const hasSearchWarning = hasTranscriptSearchIndexWarning(payload);
+
+      setImportState({
+        message: hasSearchWarning
+          ? TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
+          : "Přepis je uložený.",
+        tone: "success"
+      });
 
       if (redirectAfterImport === "detail") {
-        router.push(`/recordings/${payload.recordingId}`);
+        const path = `/recordings/${payload.recordingId}`;
+        router.push(hasSearchWarning ? addTranscriptSearchIndexWarningToPath(path) : path);
         return;
       }
 
-      router.push("/recordings");
+      router.push(hasSearchWarning
+        ? addTranscriptSearchIndexWarningToPath("/recordings")
+        : "/recordings");
     } catch (error) {
       setImportState({
         message: error instanceof Error ? error.message : "Import přepisu selhal.",

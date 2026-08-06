@@ -6,7 +6,7 @@ import type {
   StructuredRiskRow,
   StructuredTaskRow
 } from "@/lib/ai/structured-types";
-import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingClientView } from "@/lib/recordings/client-view";
 import { formatFileSize, formatRecordingDate } from "@/lib/recordings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { ExportTarget } from "@/components/transcript-tabs/types";
@@ -164,7 +164,7 @@ export function buildStructuredWorkspaceMarkdown(items: StructuredAiItems) {
 
 // buildRecordingExportMarkdown combines recording metadata, transcript, and AI outputs.
 export function buildRecordingExportMarkdown(
-  activeRecording: RecordingRow | null,
+  activeRecording: RecordingClientView | null,
   activeTranscript: TranscriptRow | null,
   aiOutputs: AiOutputView[]
 ) {
@@ -187,7 +187,7 @@ export function buildRecordingExportMarkdown(
 
 // buildWorkspaceExportMarkdown creates a complete working package for handoff or review.
 export function buildWorkspaceExportMarkdown(
-  activeRecording: RecordingRow | null,
+  activeRecording: RecordingClientView | null,
   activeTranscript: TranscriptRow | null,
   aiOutputs: AiOutputView[],
   structuredItems: StructuredAiItems
@@ -224,7 +224,7 @@ export function getExportTargets(
 // getExportMarkdown resolves the selected export choice into markdown text.
 export function getExportMarkdown(
   target: ExportTarget,
-  activeRecording: RecordingRow | null,
+  activeRecording: RecordingClientView | null,
   activeTranscript: TranscriptRow | null,
   aiOutputs: AiOutputView[],
   structuredItems: StructuredAiItems

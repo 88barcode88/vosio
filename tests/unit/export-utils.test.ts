@@ -7,24 +7,22 @@ import {
 } from "@/components/transcript-tabs/export-utils";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
-import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingClientView } from "@/lib/recordings/client-view";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 
 const createdAt = "2026-05-24T09:00:00.000Z";
 
-const recording: RecordingRow = {
+const recording: RecordingClientView = {
+  audioAvailability: "single",
   created_at: createdAt,
   duration_seconds: 120,
-  error_message: null,
   file_size_bytes: 1024,
   id: "recording-1",
   mime_type: "audio/mp4",
   source_type: "upload",
   status: "completed",
-  storage_path: "user/recording/file.m4a",
   title: "Call s klientem",
   updated_at: createdAt,
-  user_id: "user-1"
 };
 
 const transcript: TranscriptRow = {
@@ -82,6 +80,8 @@ const structuredItems: StructuredAiItems = {
       ai_output_id: "output-2",
       evidence_quote: "půjdeme tímto směrem",
       id: "decision-1",
+      evidence_end_ms: null,
+      evidence_start_ms: null,
       owner_category: "Moje práce",
       owner_role: "delivery_team",
       position: 1,
@@ -98,6 +98,9 @@ const structuredItems: StructuredAiItems = {
     {
       ai_output_id: "output-2",
       id: "risk-1",
+      evidence_end_ms: null,
+      evidence_quote: null,
+      evidence_start_ms: null,
       impact: "Zdržení předání",
       mitigation: "Doplnit chybějící data",
       owner_category: "Klient",
@@ -120,6 +123,8 @@ const structuredItems: StructuredAiItems = {
       description: "Klient má dodat vstupní soubory.",
       evidence_quote: "pošlete nám podklady",
       id: "task-1",
+      evidence_end_ms: null,
+      evidence_start_ms: null,
       owner_category: "Klient",
       owner_name: "Klient",
       position: 1,
@@ -139,6 +144,8 @@ const structuredItems: StructuredAiItems = {
       description: null,
       evidence_quote: "připravíme export",
       id: "task-2",
+      evidence_end_ms: null,
+      evidence_start_ms: null,
       owner_category: "Moje práce",
       owner_name: "Míra",
       position: 2,

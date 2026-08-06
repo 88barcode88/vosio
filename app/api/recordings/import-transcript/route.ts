@@ -3,6 +3,8 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { extractImportedTranscriptFromFile } from "@/lib/transcripts/import-file";
+import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
+import { getTranscriptSearchWarningPayload } from "@/lib/transcripts/search-warning";
 import {
   getImportedTranscriptValidationError,
   normalizeImportedTranscriptText,
@@ -113,7 +115,7 @@ export async function POST(request: NextRequest) {
       transcription_job_id: null,
       user_id: user.id
     })
-    .select("id")
+    .select("id,recording_id,user_id,raw_text,segments,speakers")
     .single();
 
   if (transcriptError || !transcript) {
@@ -121,5 +123,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Nepodařilo se uložit přepis." }, { status: 500 });
   }
 
-  return NextResponse.json({ recordingId: recording.id, transcriptId: transcript.id });
+  const indexResult = await replaceTranscriptSearchChunks(admin, transcript);
+
+  return NextResponse.json({
+    recordingId: recording.id,
+    transcriptId: transcript.id,
+    ...getTranscriptSearchWarningPayload(indexResult)
+  });
 }

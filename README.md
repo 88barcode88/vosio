@@ -2,7 +2,7 @@
 
 Vosio is a Next.js PWA for recording or uploading audio, storing recordings in Supabase, transcribing with Soniox, and generating AI outputs from saved transcripts.
 
-This is the canonical public source repository. It contains source code, documentation, tests, CI, and a fresh Supabase baseline migration, but no real API keys or production data.
+This is the canonical public source repository. It contains source code, documentation, tests, CI, and the complete fresh-project Supabase migration chain, but no real API keys or production data.
 
 ## Stack
 
@@ -47,7 +47,7 @@ supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-The baseline migration creates the application schema, RLS policies, private `recordings` Storage bucket settings, indexes, and system prompt templates.
+The timestamp-ordered migration chain creates the application schema, RLS policies, private `recordings` Storage bucket settings, indexes, and system prompt templates.
 
 The app expects:
 

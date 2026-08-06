@@ -6,6 +6,8 @@ import { z } from "zod";
 import { getSafeNextPath } from "@/lib/auth/redirects";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
+import { addTranscriptSearchIndexWarningToPath } from "@/lib/transcripts/search-warning";
 import { updateTranscriptSpeakerSummary } from "@/lib/transcripts/speakers";
 
 const speakerRoleSchema = z.enum(["client_customer", "delivery_team", "unknown"]);
@@ -65,7 +67,7 @@ export async function updateTranscriptSpeakerAction(formData: FormData) {
 
   const { data: transcript, error: transcriptError } = await supabase
     .from("transcripts")
-    .select("id,recording_id,segments,speakers,user_id")
+    .select("id,recording_id,user_id,raw_text,segments,speakers")
     .eq("id", parsed.transcriptId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -84,18 +86,26 @@ export async function updateTranscriptSpeakerAction(formData: FormData) {
     }
   );
   const admin = createAdminClient();
-  const { error: updateError } = await admin
+  const { data: savedTranscript, error: updateError } = await admin
     .from("transcripts")
     .update({ speakers: nextSpeakers })
     .eq("id", transcript.id)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("id,recording_id,user_id,raw_text,segments,speakers")
+    .single();
 
-  if (updateError) {
+  if (updateError || !savedTranscript) {
     redirect(`${nextPath}?error=speaker_update_failed`);
   }
+
+  const indexResult = await replaceTranscriptSearchChunks(admin, savedTranscript);
 
   revalidatePath("/");
   revalidatePath("/recordings");
   revalidatePath(`/recordings/${transcript.recording_id}`);
   revalidatePath(nextPath);
+
+  if (indexResult.status === "incomplete") {
+    redirect(addTranscriptSearchIndexWarningToPath(nextPath));
+  }
 }

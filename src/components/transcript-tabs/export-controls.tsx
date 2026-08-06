@@ -11,7 +11,7 @@ import {
 } from "@/components/transcript-tabs/export-utils";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
-import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingClientView } from "@/lib/recordings/client-view";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 
 // ExportControls lets users copy or download the recording, transcript, or selected AI output.
@@ -22,7 +22,7 @@ export function ExportControls({
   activeTranscript
 }: {
   activeAiOutputs: AiOutputView[];
-  activeRecording: RecordingRow | null;
+  activeRecording: RecordingClientView | null;
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
 }) {

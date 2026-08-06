@@ -135,6 +135,7 @@ export function PersistentRecorderSlot(config: PersistentRecorderConfig) {
   const {
     allowTranscriptOnly,
     captionMode,
+    developmentRecordingFactory,
     maxAudioFileSizeBytes,
     realtimeModel,
     redirectAfterSave
@@ -158,6 +159,7 @@ export function PersistentRecorderSlot(config: PersistentRecorderConfig) {
     return attachRecorderSlot(element, {
       allowTranscriptOnly,
       captionMode,
+      developmentRecordingFactory,
       maxAudioFileSizeBytes,
       realtimeModel,
       redirectAfterSave
@@ -166,6 +168,7 @@ export function PersistentRecorderSlot(config: PersistentRecorderConfig) {
     allowTranscriptOnly,
     attachRecorderSlot,
     captionMode,
+    developmentRecordingFactory,
     maxAudioFileSizeBytes,
     realtimeModel,
     redirectAfterSave

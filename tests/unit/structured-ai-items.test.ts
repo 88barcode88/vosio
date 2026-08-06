@@ -110,6 +110,63 @@ describe("structured AI item extraction", () => {
     expect(result.risks.map((risk) => risk.title)).toEqual(["Nejasná data", "Chybí přístup"]);
   });
 
+  it("stores only evidence locations resolved uniquely from saved transcript tokens", () => {
+    const transcriptSegments = [
+      { end_ms: 1_400, start_ms: 1_000, text: "Posleme" },
+      { end_ms: 1_800, start_ms: 1_400, text: " podklady." },
+      { end_ms: 2_400, start_ms: 2_000, text: "Schvalili" },
+      { end_ms: 2_900, start_ms: 2_400, text: " jsme termin." },
+      { end_ms: 3_400, start_ms: 3_000, text: "Chybi" },
+      { end_ms: 3_900, start_ms: 3_400, text: " pristup." }
+    ];
+    const result = buildStructuredAiItems({ ...context, transcriptSegments }, {
+      data: {
+        action_items: [{
+          evidence_end_ms: 99_999,
+          evidence_quote: "POSLEME podklady",
+          evidence_start_ms: 99_000,
+          task: "Poslat podklady"
+        }],
+        decisions: [{
+          decision: "Potvrdit termin",
+          evidence_quote: "schvalili jsme termin",
+          start_ms: 88_000
+        }],
+        risks: [{
+          end_ms: 77_999,
+          evidence_quote: "chybi pristup",
+          risk: "Chybejici pristup"
+        }]
+      }
+    });
+
+    expect(result.tasks[0]).toMatchObject({ evidence_end_ms: 1_800, evidence_start_ms: 1_000 });
+    expect(result.decisions[0]).toMatchObject({ evidence_end_ms: 2_900, evidence_start_ms: 2_000 });
+    expect(result.risks[0]).toMatchObject({
+      evidence_end_ms: 3_900,
+      evidence_quote: "chybi pristup",
+      evidence_start_ms: 3_000
+    });
+  });
+
+  it("ignores provider evidence times when its quote is not uniquely verified", () => {
+    const result = buildStructuredAiItems({
+      ...context,
+      transcriptSegments: [{ end_ms: 1_800, start_ms: 1_000, text: "Jiny text" }]
+    }, {
+      data: {
+        action_items: [{
+          evidence_end_ms: 20_000,
+          evidence_quote: "nenalezeny dukaz",
+          evidence_start_ms: 10_000,
+          task: "Ukol"
+        }]
+      }
+    });
+
+    expect(result.tasks[0]).toMatchObject({ evidence_end_ms: null, evidence_start_ms: null });
+  });
+
   it("separates pending confirmations from already agreed decisions", () => {
     const result = buildStructuredAiItems(context, {
       data: {

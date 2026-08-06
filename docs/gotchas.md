@@ -10,6 +10,14 @@ Audio soubory mohou být velké a dlouhé zpracování nepatří do jednoho Verc
 
 Manuální vícesouborový upload běží sekvenčně. Průběh celé fronty se počítá z odeslaných bytů, ne z průměru procent jednotlivých souborů; nesmí klesnout při přechodu na další soubor. Zrušení musí ukončit aktivní TUS upload a zapsat `recordings.status = failed`. Když selže i tento zápis, UI musí ukázat tuto skutečnou chybu místo falešného tvrzení, že zrušení proběhlo čistě.
 
+## Playback signed URL není veřejný ani trvalý odkaz
+
+`GET /api/recordings/{recordingId}/audio` smí podepsat jen jeden konkrétní objekt vlastněný aktuálním Supabase Auth uživatelem. Route filtruje současně `recordings.id` i `user_id` a vrací signed URL na 300 sekund. Raw DB `storage_path` se neposílá jako samostatné pole ani metadata, Supabase signed URL však encoded cestu objektu obsahuje. Bezpečnost stojí na auth a ownership kontrole, private bucketu, signed tokenu a expiraci, ne na path secrecy; opaque cesta by vyžadovala media proxy. Do klienta nesmí uniknout service role ani provider error detail. `storage_path = null` znamená `none`; prefix končící `/live/` znamená legacy `segmented`; player je eligible pouze pro `single` objekt.
+
+`Cache-Control: private, no-store` patří JSON envelope audio API, ne Storage media response nebo cache metadata média. Upload má aktuálně `cacheControl = 3600`; TTL signed tokenu 300 sekund neznamená zákaz cache již staženého audia.
+
+Načtení playeru, signed URL nebo změna tabu nesmí samo vytvořit play intent. Intent s `play: true` smí vzniknout jen z přímého uživatelského kliknutí. Pokud metadata ještě nejsou připravená, skutečné `play()` může tento uložený explicitní intent flushnout až po `loadedmetadata`; stále nejde o autoplay. Akce transcriptu bez single audia dál scrolluje/highlightuje, pokud existuje renderovatelný block, ale nesmí zkoušet audio fetch/seek ani předstírat anchor, který v transcriptu není.
+
 ## Realtime není jen UI funkce
 
 Realtime přepis ovlivňuje credentials, storage průběžných segmentů, reconnect logiku, mobilní uspávání a stavový model. I když nebude implementovaný první, datový model a UI stavy s ním musí počítat.
@@ -70,7 +78,7 @@ Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI 
 
 `transcripts.segments` může obsahovat token-level Soniox JSON s časem a speaker id pro každé slovo. U delších callů to může vytvořit stovky tisíc až milion tokenů, pokud se JSON pošle přímo do AI promptu. AI endpoint proto před renderem promptu používá kompaktní speaker utterances a do metadat přidává, jestli byly segmenty zkrácené. Plný token-level JSON zůstává v DB pro UI přepis, ale providerům se neposílá celý.
 
-Nový Supabase projekt musí vycházet z baseline migrace `20260617000000_initial_schema.sql`, která už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
+Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a pokračuje přes evidence `20260804100000`, organization `20260804110000`, markers `20260804120000` a transcript search `20260804130000`. Samotná baseline není celý aktuální bootstrap ani kompletní source of truth; tím je pouze celý timestampově seřazený řetězec. Veřejný repozitář stav konkrétní runtime databáze neeviduje, proto před deployem ověř skutečné schema i migration history targetu. Baseline už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
 
 ## Strukturované AI tabulky jsou odvozené projekce
 
@@ -82,13 +90,55 @@ Checklist v AI zpracování může být hluboko ve scrollovatelném detailu. Pok
 
 Opakované AI generování zůstává auditovatelné přes více `ai_outputs`, ale pracovní checklist v UI nesmí slepě zobrazit každou opakovanou projekci. Aplikace deduplikuje strukturované řádky pro zobrazení podle normalizovaného obsahu a u checklistu preferuje uživatelsky změněný stav (`done`, `in_progress`, `waiting`) před čerstvým duplicitním `new` řádkem.
 
+## Evidence quote není důvěryhodný čas
+
+AI provider může poslat quote i milisekundy, ale autoritativní čas vzniká jen unique exact contiguous whole-token matchem quote proti plným uloženým `transcripts.segments`. Normalizace používá NFC, český locale case, whitespace a Unicode punctuation. Nesmí používat NFKC, odstraňovat Unicode symboly ani odstraňovat diakritiku: `C++` nesmí odpovídat `C`, `①` nesmí odpovídat `1` a `pátek` nesmí odpovídat `patek`. Repeated/ambiguous quote musí skončit `null`, ne prvním náhodným výskytem.
+
+Legacy task/decision/risk časy se při renderu jen odvozují do nové kopie; nic se nepersistuje a risk bez quote žádný fallback nedostane. Pro cross-speaker rozsah se preferuje block obsahující celý range, potom block vlastnící start v intervalu `[start, end)`. Díky tomu předchozí block s `endMs === evidence.startMs` nevyhraje nad novým blockem. Když žádný renderovatelný block neexistuje, exact seek single audia může proběhnout bez anchoru, ale UI nesmí předstírat scroll/highlight.
+
+## Marker UUID představuje neměnný pokus
+
+`client_marker_id` není jen náhodné ID řádku. Browser ho vytvoří jednou spolu s přesným offsetem, typem a poznámkou. Když marker request selže, retry musí poslat stejný payload; nesmí přepočítat `performance.now()` ani vytvořit nové UUID, jinak může nejistý první request vytvořit duplicitní moment. Server vrátí existující řádek jen při přesné shodě všech polí. Stejné UUID s jiným recordingem, offsetem, typem nebo poznámkou je konflikt `409`, ne idempotentní úspěch.
+
+Marker clock může začít až po současné připravenosti aktuálního capture a uloženého draftu. Používá monotónní `performance.now()`, ne `Date.now()`, text timeru nebo Soniox timestamp. Offset se ukládá jako integer včetně hranic `0..86400000` ms. Chyba markeru je izolovaná od recorder lifecycle: nesmí volat stop, čistit stream, měnit session generation ani zastavit přepis.
+
+## Organizace nahrávek není strom
+
+`recording_clients` představuje klienta/firmu, `recording_projects` vždy patří jednomu klientovi, ale `recording_folders` jsou záměrně ploché a globální pro daného uživatele. Nepřidávej parent folder ani odvozenou vazbu složky na klienta/projekt bez nového produktového a migračního rozhodnutí. Nahrávka má nejvýše jednoho klienta, projekt a složku, zatímco štítky jsou many-to-many.
+
+Owner bezpečnost nestojí jen na RLS. Každá organizační FK nese i `user_id` a projektová vazba nese `(project_id, client_id, user_id)`, takže projekt jiného klienta nebo vlastníka nesmí projít přímým zápisem. Case-insensitive unikátnost používá funkční indexy nad `lower(btrim(name))`; prostý `unique(name)` by dovolil vizuální duplicity.
+
+Klientské FK mají deferred `NO ACTION`, ne cascade. To záměrně blokuje běžné smazání používaného klienta, ale odklad má umožnit úplné smazání `auth.users`, při kterém se potomci odstraní v téže transakci. Projektová vazba používá PostgreSQL 15 column-list `ON DELETE SET NULL (project_id)`, aby po smazání projektu zůstal `client_id`; složka vynuluje jen `folder_id` a tag links se při smazání nahrávky nebo štítku mažou kaskádou. Tyto dvě citlivé PostgreSQL cesty musí před live apply projít skutečným PG15 parse/runtime testem, nelze je potvrdit regex testem SQL source.
+
+`assign_recording_organization_v1` nahrazuje klienta, projekt, složku i kompletní tag set v jedné transakci. Nerozděluj assignment do více browser zápisů, protože chyba u cizího štítku nebo neodpovídajícího projektu by mohla zanechat částečný stav. Forced RLS, owner policies a přesné grants musí být ověřené i dvěma reálnými uživateli; textový security test není runtime důkaz.
+
+Filtr více štítků znamená ALL, nikoli ANY. Bez `q` používá seznam `list_own_recordings_v1`, řadí `created_at desc, id desc` a další stránku omezuje tuple cursorem `(created_at, id)`, protože offset při souběžném insert/delete může řádky přeskočit nebo zopakovat. Všechny keyset stránky musí používat stejné organizační filtry a opakovaný cursor je chyba. Každé neprázdné `q` jde místo tohoto list flow přes samostatné indexed `search_own_recordings_v1`, které používá vlastní `limit/offset` stránkování a stejné organizační filtry. Kanonizace `client/project/folder/tag` nesmí zahodit `q` ani nesouvisející URL parametry; same-URL navigace nesmí vytvořit trvalý loading lock.
+
+## Forward migrace jsou release blocker
+
+Pořadí releasu je evidence `10000`, organization `11000`, markers `12000`, search `13000`, DB postflight každé cílové databáze a teprve potom deploy aplikace. Veřejný Git stav není důkazem, že konkrétní target migrace aplikoval. U neověřeného targetu musí postflight zkontrolovat skutečné sloupce/tabulky/funkce/trigger, PostgreSQL syntaxi, GIN index a authenticated `EXPLAIN`, constrainty, grants, forced RLS, anon-vs-auth a dvouuživatelskou izolaci, current-vs-old transcript výběr, manual/raw/deleted search, runtime keyset/offset stránkování a potřebný backfill. Nikdy nezaměňuj `npm test`, `check` nebo `build` za důkaz stavu vzdálené databáze.
+
 ## License marker není tracking
 
 Vosio obsahuje pasivní `vosio-license-marker` v HTML metadatech pro rozpoznání nezměněných nasazení. Marker se nikam neposílá, neidentifikuje uživatele a nesmí se měnit na skrytý phone-home beacon bez výslovného produktového a právního rozhodnutí.
 
-## Search přes transcript potřebuje index
+## Search přes transcript je odvozený index
 
-Stránka `/recordings` umí lehké hledání přes metadata nahrávek. Nepřidávej neindexované `ilike` hledání nad `transcripts.raw_text` jako rychlý fix, protože dlouhé přepisy by zpomalily DB a mohly by lákat k tahání velkých payloadů do shellu. Fulltext v obsahu transcriptů patří do samostatné migrace s FTS/trigram indexem nebo RPC a do UI se má vracet jen seznam odpovídajících nahrávek.
+`20260804130000_add_transcript_fulltext_search.sql` přidává stored `tsvector` a GIN indexy; nepřidávej vedle nich neindexované `ilike` nad `transcripts.raw_text` ani netahej celé transcripty do list shellu. `search_own_recordings_v1` používá `websearch_to_tsquery('simple', ...)`, hledá pouze v nejnovějším transcriptu podle `created_at desc, id desc`, vylučuje deleted rows a před rankingem aplikuje owner i organizační filtry. UI posílá jen normalizovaný text do 120 znaků, ne ručně sestavenou SQL/tsquery syntaxi.
+
+`transcript_search_chunks` musí být synchronizované se stejnými renderovatelnými speaker bloky jako UI. Bez speaker bloků patří do indexu jeden raw/manual fallback bez času; trigger ho zapíše v transcript transakci a service-only replace ho při úspěchu atomicky nahradí přesnými chunks. Když přesné indexování selže, uložený transcript se nesmí rollbacknout ani smazat. Zůstane raw fallback a uživatel dostane one-shot warning. Warning se z URL odstraňuje pouze přes `history.replaceState`; nesmí zahodit jiné query parametry ani vytvořit novou history položku.
+
+Vyhledávání s `q` stránkuje po 25 výsledcích pomocí bounded page + RPC offsetu. Běžný seznam bez `q` dál používá keyset `(created_at, id)`. Backfill používá třetí, vzestupný keyset podle transcript UUID. `npm run search:backfill` vyžaduje explicitní environment a live guard; v tomto plánu ho **nespouštět**, protože nebyl schválen žádný DB zápis.
+
+Deep link z výsledku má tvar `tab=transcript&at&highlight`. Čas vybírá obsahující blok, potom následující a až nakonec předchozí; raw transcript může použít vlastní anchor. Highlight-only odkaz je bezpečný jen při jediném výskytu v celém renderovatelném transcriptu. Nejednoznačnost nebo chybějící text musí skončit bez highlightu, ne prvním náhodným výskytem. URL deep link nikdy nevytváří autoplay: `single` audio smí dostat nejvýše jeden seek bez play, `none` a `segmented` pouze scroll/highlight. Po spotřebování se mažou jen `at` a `highlight`, `tab`, ostatní query a browser history state zůstávají.
+
+## Development E2E patří do izolovaného runneru
+
+Playwright nespouštěj přímo. `npm run test:e2e` vytvoří jeden hlídaný temp workspace pod repo `.tmp`, kopíruje jen explicitní allowlist a spustí vlastní Next server s `reuseExistingServer: false`. Config bez runner guardu záměrně selže. Cleanup smí odstranit pouze přesně ověřený přímý temp child; runner nesmí hledat, přebírat ani ukončovat cizí PID nebo listener na portu.
+
+## Submit není potvrzené uložení
+
+Client `onSubmit` proběhne dřív, než server action potvrdí validaci, auth a databázový zápis. Zavření popoveru nebo disclosure přímo v `onSubmit` proto schová chybu a může působit jako falešný úspěch. Kompaktní editory názvu i organizace, včetně create/rename klienta, projektu, složky, štítku a assignmentu nahrávky, se zavírají jen po nové success revision pro vlastní scope; transport rejection se převádí na error state. Při přepnutí záznamu musí settlement starého scope zůstat ignorovaný. Po ručním zavření erroru si editor pamatuje dismissed scope/revision, aby stejný alert po reopen neožil, ale nový vyšší error se zobrazil.
 
 ## Mazání je potvrzené a optimistické
 
@@ -107,6 +157,16 @@ PWA veřejné assety (`/manifest.webmanifest`, `/sw.js`, ikony) musí být vyjmu
 ## Ochrana opuštění aktivního capture workflow má záměrnou hranici
 
 Aktivní live rekordér je připojený v root layoutu přes `PersistentRecordingSessionProvider`, ne uvnitř route `/recordings/new`. Běžné Next.js přechody, včetně Back/Forward mezi stránkami aplikace, proto zachovají stejnou instanci MediaRecorderu a Soniox session; mimo capture stránku se ovládání přesune do fixed mini panelu. Live blocker dovoluje interní odkazy, ale dál chrání označený navigační submit (zejména odhlášení) a browserové zavření či reload přes `beforeunload`. Souborový upload persistentní není a jeho samostatný token dál blokuje i interní odkazy. Více operací musí používat vlastní tokeny, aby cleanup jedné z nich ochranu druhé omylem nevypnul.
+
+## Stop musí patřit přesné recorder session
+
+Nestačí kontrolovat jen React `status`. BrowserRecorder drží generation pro start session, samostatnou result session a stop ownera tvořeného recording instancí a stop generation. Soniox může při graceful `stop()` dodat poslední result tokeny, proto se jejich okno zavírá až po stopu, ale starší callback už potom nesmí změnit text nové session. Stejnou kontrolu ownera musí dělat upload, metadata update, transcript save, error fallback i `finally`; jinak pozdní promise starého stopu vyčistí nový stream nebo draft.
+
+Draft může při stopu stále vznikat. Recorder na přesně spárovaný pending draft čeká nejvýše 5 sekund. Po timeoutu se audio-backed pozdní řádek failne jen přes jeho původní id/user data. Transcript-only cesta s již dostupným textem dokončí přesný pozdní draft jednou na pozadí a nesmí současně založit fallback řádek. Cleanup nebo settlement jiné generation se ignoruje.
+
+## Development recording factory nesmí být produkční cesta
+
+`developmentRecordingFactory` existuje jen jako úzký seam pro browser E2E skutečného `BrowserRecorder` a `PersistentRecordingSessionProvider`; nahrazuje pouze externí Soniox Recording factory/events. Komponenta factory tvrdě odmítne, pokud `NODE_ENV` není `development`, a route `/login/live-marker-e2e` v produkci volá `notFound()`. E2E dál mockuje pouze MediaDevices/MediaRecorder a HTTP hranice. Nepoužívej tento prop k přepínání provideru, bypassu auth/RLS nebo fake produkčnímu ukládání.
 
 ## Next.js public env v client bundle
 

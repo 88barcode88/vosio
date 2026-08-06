@@ -8,19 +8,33 @@ import {
 import { listAiOutputsForTranscripts } from "@/lib/ai/queries";
 import { listStructuredAiItemsForTranscripts } from "@/lib/ai/structured-queries";
 import { getRecordingById } from "@/lib/recordings/queries";
+import { listRecordingMarkers } from "@/lib/recording-markers/queries";
+import {
+  getRecordingOrganization,
+  listRecordingOrganizationOptions
+} from "@/lib/recording-organization/queries";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { listTranscriptsForRecording } from "@/lib/transcripts/queries";
+import {
+  parseTranscriptDeepLink,
+  resolveTranscriptDeepLink
+} from "@/lib/transcripts/deep-link";
+import { getTranscriptSpeakerBlocks } from "@/components/transcript-tabs/speaker-blocks";
 import { createClient } from "@/lib/supabase/server";
+import { isTranscriptSearchIndexWarningCode } from "@/lib/transcripts/search-warning";
 
 type RecordingDetailPageProps = {
   params: Promise<{
     recordingId: string;
   }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 // RecordingDetailPage renders the workspace with a URL-selected active recording.
-export default async function RecordingDetailPage({ params }: RecordingDetailPageProps) {
+export default async function RecordingDetailPage({ params, searchParams }: RecordingDetailPageProps) {
   const { recordingId } = await params;
+  const query = await searchParams;
+  const parsedDeepLink = parseTranscriptDeepLink(query);
   const cookieStore = await cookies();
   const persistedTranscriptTab = parseTranscriptTabCookieValue(
     recordingId,
@@ -35,9 +49,11 @@ export default async function RecordingDetailPage({ params }: RecordingDetailPag
     redirect(`/login?next=/recordings/${recordingId}`);
   }
 
-  const [recording, transcripts] = await Promise.all([
+  const [recording, recordingMarkers, transcripts, organizationOptions] = await Promise.all([
     getRecordingById(supabase, recordingId),
-    listTranscriptsForRecording(supabase, recordingId)
+    listRecordingMarkers(supabase, recordingId),
+    listTranscriptsForRecording(supabase, recordingId),
+    listRecordingOrganizationOptions(supabase)
   ]);
 
   if (!recording) {
@@ -45,20 +61,42 @@ export default async function RecordingDetailPage({ params }: RecordingDetailPag
   }
 
   const transcriptIds = transcripts.map((transcript) => transcript.id);
-  const [aiOutputs, structuredItems] = await Promise.all([
+  const currentTranscript = transcripts[0] ?? null;
+  const initialDeepLink = parsedDeepLink.request && currentTranscript
+    ? resolveTranscriptDeepLink({
+        rawText: currentTranscript.raw_text,
+        recordingId,
+        request: parsedDeepLink.request,
+        speakerBlocks: getTranscriptSpeakerBlocks(
+          currentTranscript.segments,
+          currentTranscript.speakers
+        ),
+        transcriptId: currentTranscript.id
+      })
+    : null;
+  const [aiOutputs, structuredItems, recordingOrganization] = await Promise.all([
     listAiOutputsForTranscripts(supabase, transcriptIds),
-    listStructuredAiItemsForTranscripts(supabase, transcriptIds)
+    listStructuredAiItemsForTranscripts(supabase, transcriptIds),
+    getRecordingOrganization(supabase, recording)
   ]);
 
   return (
     <VosioWorkspace
       activeRecordingId={recordingId}
       aiOutputs={aiOutputs}
-      initialTranscriptTab={persistedTranscriptTab ?? "transcript"}
-      initialTranscriptTabFromCookie={Boolean(persistedTranscriptTab)}
+      initialTranscriptDeepLink={initialDeepLink}
+      initialTranscriptTab={parsedDeepLink.explicitTranscriptTab
+        ? "transcript"
+        : persistedTranscriptTab ?? "transcript"}
+      initialTranscriptTabFromCookie={!parsedDeepLink.explicitTranscriptTab && Boolean(persistedTranscriptTab)}
+      initialTranscriptTabFromUrl={parsedDeepLink.explicitTranscriptTab}
       recordings={[recording]}
+      recordingMarkers={recordingMarkers}
+      recordingOrganization={recordingOrganization}
+      recordingOrganizationOptions={organizationOptions}
       structuredItems={structuredItems}
       transcripts={transcripts}
+      transcriptSearchWarning={isTranscriptSearchIndexWarningCode(query.warning)}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}
       userEmail={user.email ?? "uzivatel@vosio.local"}
       view="recordings"

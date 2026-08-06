@@ -9,16 +9,79 @@ import {
   getSpeakerSummaryMeta,
   getTranscriptSpeakerBlocks
 } from "@/components/transcript-tabs/speaker-blocks";
-import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingClientView } from "@/lib/recordings/client-view";
 import { updateTranscriptSpeakerAction } from "@/lib/transcripts/actions";
 import {
   getStoredTranscriptSpeakerSummaries,
   getTranscriptSpeakerDisplayName
 } from "@/lib/transcripts/speakers";
 import type { TranscriptRow } from "@/lib/transcripts/types";
+import type { TranscriptSpeakerBlock, TranscriptTarget } from "@/components/transcript-tabs/types";
+import {
+  splitTranscriptHighlight,
+  TRANSCRIPT_RAW_ANCHOR_ID
+} from "@/lib/transcripts/deep-link";
+
+// blockContainsEvidenceStart uses a half-open range so a boundary belongs to the new block.
+function blockContainsEvidenceStart(block: TranscriptSpeakerBlock, evidenceStartMs: number) {
+  if (block.startMs === null) {
+    return false;
+  }
+
+  if (block.startMs === evidenceStartMs) {
+    return block.endMs === null || evidenceStartMs < block.endMs;
+  }
+
+  return block.endMs !== null &&
+    block.startMs < evidenceStartMs &&
+    evidenceStartMs < block.endMs;
+}
+
+// getPreferredTranscriptBlock prefers full containment, then the block owning the evidence start.
+export function getPreferredTranscriptBlock(
+  speakerBlocks: TranscriptSpeakerBlock[],
+  target: TranscriptTarget
+) {
+  const { endMs, startMs } = target;
+
+  if (startMs === null || endMs === null || typeof endMs === "undefined") {
+    return null;
+  }
+
+  const containingBlock = speakerBlocks.find((block) =>
+    blockContainsEvidenceStart(block, startMs) &&
+    block.endMs !== null &&
+    block.endMs >= endMs
+  );
+
+  return containingBlock
+    ?? speakerBlocks.find((block) => blockContainsEvidenceStart(block, startMs))
+    ?? null;
+}
+
+// getNearestTranscriptBlock resolves a point marker to one deterministic renderable block.
+export function getNearestTranscriptBlock(
+  speakerBlocks: TranscriptSpeakerBlock[],
+  startMs: number
+) {
+  const containingBlock = speakerBlocks.find((block) => blockContainsEvidenceStart(block, startMs));
+
+  if (containingBlock) {
+    return containingBlock;
+  }
+
+  return speakerBlocks
+    .filter((block) => block.startMs !== null)
+    .map((block) => ({ block, distance: Math.abs((block.startMs ?? 0) - startMs) }))
+    .sort((left, right) =>
+      left.distance - right.distance
+      || (left.block.startMs ?? 0) - (right.block.startMs ?? 0)
+      || left.block.anchorId.localeCompare(right.block.anchorId)
+    )[0]?.block ?? null;
+}
 
 // getPendingTranscriptTitle returns the main empty-state title for the transcript tab.
-function getPendingTranscriptTitle(activeRecording: RecordingRow | null) {
+function getPendingTranscriptTitle(activeRecording: RecordingClientView | null) {
   if (!activeRecording) {
     return "Nahrajte první nahrávku";
   }
@@ -35,7 +98,7 @@ function getPendingTranscriptTitle(activeRecording: RecordingRow | null) {
 }
 
 // getPendingTranscriptDescription explains what the user should expect for the current state.
-function getPendingTranscriptDescription(activeRecording: RecordingRow | null) {
+function getPendingTranscriptDescription(activeRecording: RecordingClientView | null) {
   if (!activeRecording) {
     return "Po uploadu se tady objeví stav přepisu a později samotný transcript.";
   }
@@ -109,13 +172,34 @@ function SpeakerSummary({ activeTranscript }: { activeTranscript: TranscriptRow 
   );
 }
 
+// HighlightedTranscriptText renders one validated text match without interpreting it as markup.
+function HighlightedTranscriptText({
+  highlightText,
+  text
+}: {
+  highlightText: string | null;
+  text: string;
+}) {
+  return splitTranscriptHighlight(text, highlightText).map((part, index) =>
+    part.highlighted
+      ? <mark key={`${index}-${part.text}`}>{part.text}</mark>
+      : part.text
+  );
+}
+
 // TranscriptContent renders saved transcript blocks or the pending transcription empty state.
 export function TranscriptContent({
+  activeBlockAnchorId = null,
+  activeHighlightText = null,
   activeRecording,
-  activeTranscript
+  activeTranscript,
+  onOpenTime
 }: {
-  activeRecording: RecordingRow | null;
+  activeBlockAnchorId?: string | null;
+  activeHighlightText?: string | null;
+  activeRecording: RecordingClientView | null;
   activeTranscript: TranscriptRow | null;
+  onOpenTime?: (startMs: number, anchorId: string) => void;
 }) {
   const speakerBlocks = useMemo(
     () => activeTranscript ? getTranscriptSpeakerBlocks(activeTranscript.segments, activeTranscript.speakers) : [],
@@ -134,15 +218,35 @@ export function TranscriptContent({
                 <span role="columnheader">Mluvčí</span>
                 <span role="columnheader">Text</span>
               </div>
-              {speakerBlocks.map((block, index) => (
+              {speakerBlocks.map((block) => (
                 <div
-                  className="transcript-table-row"
-                  key={`${block.label}-${block.speakerLabel}-${index}`}
+                  aria-current={activeBlockAnchorId === block.anchorId ? "true" : undefined}
+                  className={activeBlockAnchorId === block.anchorId
+                    ? "transcript-table-row transcript-table-row-highlighted"
+                    : "transcript-table-row"}
+                  id={block.anchorId}
+                  key={block.anchorId}
                   role="row"
+                  tabIndex={-1}
                 >
-                  <time role="cell">{block.label}</time>
+                  <time role="cell">
+                    {block.startMs !== null && onOpenTime ? (
+                      <button
+                        aria-label={`Otevřít přepis od ${block.label}`}
+                        onClick={() => onOpenTime(block.startMs as number, block.anchorId)}
+                        type="button"
+                      >
+                        {block.label}
+                      </button>
+                    ) : block.label}
+                  </time>
                   <span className={`speaker ${block.speakerClassName}`} role="cell">{block.speakerLabel}</span>
-                  <p role="cell">{block.text.trim()}</p>
+                  <p role="cell">
+                    <HighlightedTranscriptText
+                      highlightText={activeBlockAnchorId === block.anchorId ? activeHighlightText : null}
+                      text={block.text.trim()}
+                    />
+                  </p>
                 </div>
               ))}
             </div>
@@ -154,9 +258,22 @@ export function TranscriptContent({
     return (
       <div className="transcript-list transcript-list-scroll">
         <SpeakerSummary activeTranscript={activeTranscript} />
-        <section className="transcript-raw-block" aria-label="Soniox přepis">
+        <section
+          aria-current={activeBlockAnchorId === TRANSCRIPT_RAW_ANCHOR_ID ? "true" : undefined}
+          aria-label="Soniox přepis"
+          className={activeBlockAnchorId === TRANSCRIPT_RAW_ANCHOR_ID
+            ? "transcript-raw-block transcript-raw-block-highlighted"
+            : "transcript-raw-block"}
+          id={TRANSCRIPT_RAW_ANCHOR_ID}
+          tabIndex={-1}
+        >
           <strong>Soniox přepis</strong>
-          <p>{activeTranscript.raw_text}</p>
+          <p>
+            <HighlightedTranscriptText
+              highlightText={activeBlockAnchorId === TRANSCRIPT_RAW_ANCHOR_ID ? activeHighlightText : null}
+              text={activeTranscript.raw_text}
+            />
+          </p>
         </section>
       </div>
     );

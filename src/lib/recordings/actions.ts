@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getSafeNextPath } from "@/lib/auth/redirects";
+import {
+  createSaveError,
+  createSaveSuccess,
+  type SaveActionState
+} from "@/lib/forms/save-action-state";
 import { RECORDINGS_BUCKET, isSegmentedRecordingStoragePath } from "@/lib/recordings/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -34,20 +39,6 @@ function getOptionalString(formData: FormData, name: string) {
   const value = formData.get(name);
 
   return typeof value === "string" && value ? value : undefined;
-}
-
-// parseRecordingTitleForm validates the recording rename form payload.
-function parseRecordingTitleForm(formData: FormData) {
-  const parsed = recordingTitleFormSchema.safeParse({
-    recordingId: getRequiredString(formData, "recordingId"),
-    title: getRequiredString(formData, "title")
-  });
-
-  if (!parsed.success) {
-    redirect("/recordings?error=invalid_title");
-  }
-
-  return parsed.data;
 }
 
 // parseRecordingDeleteForm validates the soft-delete recording form payload.
@@ -113,35 +104,73 @@ async function removeRecordingStorageObjects(
   }
 }
 
-// updateRecordingTitleAction updates the user-owned recording title through Supabase RLS.
-export async function updateRecordingTitleAction(formData: FormData) {
-  const parsed = parseRecordingTitleForm(formData);
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: userError
-  } = await supabase.auth.getUser();
+// Updates a user-owned recording title and returns a scoped editor settlement.
+export async function updateRecordingTitleStateAction(
+  previousState: SaveActionState,
+  formData: FormData
+): Promise<SaveActionState> {
+  const submittedRecordingId = getRequiredString(formData, "recordingId");
+  const parsed = recordingTitleFormSchema.safeParse({
+    recordingId: submittedRecordingId,
+    title: getRequiredString(formData, "title")
+  });
 
-  if (userError || !user) {
-    redirect("/login?next=/recordings");
+  if (!parsed.success) {
+    return createSaveError(
+      previousState.revision,
+      submittedRecordingId || null,
+      "Zkontrolujte název nahrávky."
+    );
   }
 
-  const { data, error } = await supabase
-    .from("recordings")
-    .update({ title: parsed.title })
-    .eq("id", parsed.recordingId)
-    .eq("user_id", user.id)
-    .neq("status", "deleted")
-    .select("id")
-    .maybeSingle();
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: userError
+    } = await supabase.auth.getUser();
 
-  if (error || !data) {
-    redirect("/recordings?error=title_update_failed");
+    if (userError || !user) {
+      return createSaveError(
+        previousState.revision,
+        parsed.data.recordingId,
+        "Přihlášení vypršelo. Přihlaste se a zkuste to znovu."
+      );
+    }
+
+    const result = await supabase
+      .from("recordings")
+      .update({ title: parsed.data.title })
+      .eq("id", parsed.data.recordingId)
+      .eq("user_id", user.id)
+      .neq("status", "deleted")
+      .select("id,title")
+      .maybeSingle();
+
+    if (result.error || !result.data) {
+      return createSaveError(
+        previousState.revision,
+        parsed.data.recordingId,
+        "Název se nepodařilo uložit."
+      );
+    }
+
+    revalidatePath("/");
+    revalidatePath("/recordings");
+    revalidatePath(`/recordings/${parsed.data.recordingId}`);
+
+    return createSaveSuccess(
+      previousState.revision,
+      parsed.data.recordingId,
+      "Název byl uložen."
+    );
+  } catch {
+    return createSaveError(
+      previousState.revision,
+      parsed.data.recordingId,
+      "Název se nepodařilo uložit. Zkuste to znovu."
+    );
   }
-
-  revalidatePath("/");
-  revalidatePath("/recordings");
-  revalidatePath(`/recordings/${parsed.recordingId}`);
 }
 
 // deleteRecordingAction soft-deletes a user-owned recording so it appears in Trash.

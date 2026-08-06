@@ -57,6 +57,26 @@
     right: auto;
     width: min(320px, calc(100vw - 40px));
   }
+  .recording-organization-fields,
+  .recording-organization-tags,
+  .organization-manager-grid {
+    grid-template-columns: 1fr;
+  }
+  .recording-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .organization-manager-header,
+  .organization-manager-group li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .organization-manager-row-actions {
+    justify-content: flex-start;
+  }
+  .organization-rename-form {
+    right: auto;
+    left: 0;
+  }
   .delete-recording-icon {
     min-height: 48px;
     border-left: 0;
@@ -182,6 +202,29 @@
   .recordings-search {
     grid-template-columns: 1fr;
   }
+  .recording-filter-grid {
+    grid-template-columns: 1fr;
+  }
+  .recording-filter-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .recording-filter-actions button {
+    width: 100%;
+  }
+  .recording-search-result header,
+  .recording-search-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .recording-search-result-meta {
+    display: grid;
+    gap: 4px;
+  }
+  .recording-search-pagination a,
+  .recording-search-pagination > span {
+    width: 100%;
+  }
   .recordings-inbox-header,
   .recording-detail-main {
     display: grid;
@@ -229,7 +272,7 @@
   }
   .persistent-recorder-dock {
     right: 12px;
-    bottom: 72px;
+    bottom: calc(94px + env(safe-area-inset-bottom));
     width: calc(100vw - 24px);
     padding: 12px;
   }
@@ -237,6 +280,13 @@
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;
+  }
+  .live-marker-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .live-marker-button {
+    width: 100%;
   }
   .ghost-action,
   .danger-action,

@@ -1,20 +1,36 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
-import { listRecordings, normalizeRecordingSearchQuery } from "@/lib/recordings/queries";
+import {
+  canonicalizeRecordingOrganizationFilters,
+  createRecordingSearchParams,
+  type RecordingSearchParamsInput
+} from "@/lib/recording-organization/filters";
+import { listRecordings } from "@/lib/recordings/queries";
+import {
+  RECORDING_SEARCH_MAX_PAGE,
+  RECORDING_SEARCH_PAGE_SIZE,
+  buildRecordingSearchPageHref,
+  canonicalizeRecordingSearchParams,
+  normalizeRecordingSearchQuery,
+  searchOwnRecordings
+} from "@/lib/recordings/search";
+import { listRecordingOrganizationOptions } from "@/lib/recording-organization/queries";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
+import type { RecordingSearchPage, RecordingRow } from "@/lib/recordings/types";
+import {
+  TRANSCRIPT_SEARCH_INDEX_WARNING,
+  isTranscriptSearchIndexWarningCode
+} from "@/lib/transcripts/search-warning";
 
 type RecordingsPageProps = {
-  searchParams: Promise<{
-    error?: string;
-    q?: string;
-  }>;
+  searchParams: Promise<RecordingSearchParamsInput>;
 };
 
 // RecordingsPage renders the protected recordings workspace list entry point.
 export default async function RecordingsPage({ searchParams }: RecordingsPageProps) {
   const params = await searchParams;
-  const searchQuery = normalizeRecordingSearchQuery(params.q);
+  const searchQuery = normalizeRecordingSearchQuery(Array.isArray(params.q) ? params.q[0] : params.q);
   const supabase = await createClient();
   const {
     data: { user }
@@ -24,15 +40,73 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
     redirect("/login?next=/recordings");
   }
 
-  const recordings = await listRecordings(supabase, { searchQuery });
+  const organizationOptions = await listRecordingOrganizationOptions(supabase);
+  const canonical = canonicalizeRecordingOrganizationFilters(
+    createRecordingSearchParams(params),
+    organizationOptions
+  );
+  const canonicalSearch = canonicalizeRecordingSearchParams(canonical.searchParams, searchQuery);
+  if (canonical.changed || canonicalSearch.changed) {
+    const queryString = canonicalSearch.searchParams.toString();
+    redirect(queryString ? `/recordings?${queryString}` : "/recordings");
+  }
+  let recordings: RecordingRow[] = [];
+  let recordingSearchError: string | null = null;
+  let recordingSearchPage: RecordingSearchPage | null = searchQuery ? {
+    page: canonicalSearch.page,
+    pageSize: RECORDING_SEARCH_PAGE_SIZE,
+    results: [],
+    totalCount: 0
+  } : null;
+
+  if (searchQuery) {
+    try {
+      recordingSearchPage = await searchOwnRecordings(supabase, {
+        organizationFilters: canonical.filters,
+        page: canonicalSearch.page,
+        searchQuery
+      });
+    } catch {
+      recordingSearchError = "Hledání se nepodařilo načíst. Zkuste to znovu.";
+    }
+
+    if (!recordingSearchError
+      && canonicalSearch.page > 1
+      && recordingSearchPage?.results.length === 0) {
+      redirect(buildRecordingSearchPageHref(canonicalSearch.searchParams, 1));
+    }
+  } else {
+    recordings = await listRecordings(supabase, {
+      organizationFilters: canonical.filters
+    });
+  }
+
+  const paginationParams = new URLSearchParams(canonicalSearch.searchParams);
+  paginationParams.delete("warning", TRANSCRIPT_SEARCH_INDEX_WARNING);
+  const recordingSearchPreviousHref = searchQuery && canonicalSearch.page > 1
+    ? buildRecordingSearchPageHref(paginationParams, canonicalSearch.page - 1)
+    : null;
+  const recordingSearchNextHref = searchQuery
+    && recordingSearchPage
+    && canonicalSearch.page < RECORDING_SEARCH_MAX_PAGE
+    && canonicalSearch.page * recordingSearchPage.pageSize < recordingSearchPage.totalCount
+    ? buildRecordingSearchPageHref(paginationParams, canonicalSearch.page + 1)
+    : null;
 
   return (
     <VosioWorkspace
       aiOutputs={[]}
       recordings={recordings}
-      recordingsError={params.error ?? null}
+      recordingsError={(Array.isArray(params.error) ? params.error[0] : params.error) ?? null}
+      recordingOrganizationOptions={organizationOptions}
+      recordingOrganizationFilters={canonical.filters}
       recordingsSearchQuery={searchQuery}
+      recordingSearchError={recordingSearchError}
+      recordingSearchNextHref={recordingSearchNextHref}
+      recordingSearchPage={recordingSearchPage}
+      recordingSearchPreviousHref={recordingSearchPreviousHref}
       transcripts={[]}
+      transcriptSearchWarning={isTranscriptSearchIndexWarningCode(params.warning)}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}
       userEmail={user.email ?? "uzivatel@vosio.local"}
       view="recordings"

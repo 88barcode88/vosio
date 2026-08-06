@@ -11,7 +11,9 @@ export type StructuredTaskRow = {
   deadline_confidence: string | null;
   deadline_normalized: string | null;
   description: string | null;
+  evidence_end_ms: number | null;
   evidence_quote: string | null;
+  evidence_start_ms: number | null;
   id?: string;
   owner_category: StructuredOwnerCategory;
   owner_name: string | null;
@@ -50,7 +52,9 @@ export type StructuredChapterRow = {
 export type StructuredDecisionRow = {
   ai_output_id: string;
   created_at?: string;
+  evidence_end_ms: number | null;
   evidence_quote: string | null;
+  evidence_start_ms: number | null;
   id?: string;
   owner_category: StructuredOwnerCategory | null;
   owner_role: "client_customer" | "delivery_team" | "unknown" | null;
@@ -68,6 +72,9 @@ export type StructuredDecisionRow = {
 export type StructuredRiskRow = {
   ai_output_id: string;
   created_at?: string;
+  evidence_end_ms: number | null;
+  evidence_quote: string | null;
+  evidence_start_ms: number | null;
   id?: string;
   impact: string | null;
   mitigation: string | null;

@@ -1,6 +1,6 @@
 import { transcriptTabIds } from "@/components/transcript-tabs/constants";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
-import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingClientView } from "@/lib/recordings/client-view";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 
 export const VOSIO_ACTIVE_RECORDING_TAB_COOKIE = "vosio-active-recording-tab";
@@ -11,7 +11,7 @@ export function isTranscriptTab(value: string | null): value is TranscriptTab {
 }
 
 // getTranscriptTabStorageKey scopes browser tab memory to one recording detail.
-export function getTranscriptTabStorageKey(activeRecording: RecordingRow | null) {
+export function getTranscriptTabStorageKey(activeRecording: RecordingClientView | null) {
   return activeRecording ? `vosio:recording:${activeRecording.id}:active-tab` : "vosio:recording:new:active-tab";
 }
 
@@ -51,7 +51,7 @@ function decodeCookieValue(value: string | null | undefined) {
 
 // getTranscriptStatusLabel describes the current transcription state in the tab footer.
 export function getTranscriptStatusLabel(
-  activeRecording: RecordingRow | null,
+  activeRecording: RecordingClientView | null,
   activeTranscript: TranscriptRow | null
 ) {
   if (activeTranscript) {
@@ -62,7 +62,7 @@ export function getTranscriptStatusLabel(
     return "Bez aktivní nahrávky";
   }
 
-  const labels: Record<RecordingRow["status"], string> = {
+  const labels: Record<RecordingClientView["status"], string> = {
     completed: "Přepis se načítá",
     created: "Nahrávka se připravuje",
     deleted: "Nahrávka je v koši",

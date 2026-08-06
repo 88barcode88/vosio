@@ -15,6 +15,58 @@
 .timeline-list-rich {
   gap: 8px;
 }
+.timeline-marker-section,
+.timeline-chapter-section,
+.timeline-marker-list {
+  display: grid;
+  gap: 8px;
+}
+.timeline-marker-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.timeline-marker-row {
+  width: 100%;
+  min-height: 66px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.timeline-marker-row:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: rgba(37, 189, 180, 0.08);
+}
+.timeline-marker-row:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.timeline-marker-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+}
+.timeline-marker-row time {
+  color: var(--teal);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+.timeline-marker-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.timeline-marker-copy > span,
+.timeline-marker-copy small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.timeline-list-header > svg {
+  flex: 0 0 auto;
+  color: var(--teal);
+}
 .file-details {
   gap: 0;
   align-content: start;
@@ -35,7 +87,9 @@
   gap: 2px;
   min-width: 0;
 }
+.timeline-list-header h3,
 .timeline-list-header strong {
+  margin: 0;
   color: var(--text);
   font-size: 13px;
 }
@@ -491,7 +545,7 @@
 .structured-task-row[data-task-status="done"] {
   opacity: 0.72;
 }
-.structured-task-row button {
+.structured-task-row > button {
   display: grid;
   place-items: center;
   width: 26px;
@@ -502,7 +556,7 @@
   background: transparent;
   cursor: pointer;
 }
-.structured-task-row button:disabled {
+.structured-task-row > button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -540,12 +594,6 @@
 .structured-evidence {
   margin-top: 6px;
 }
-.structured-evidence summary {
-  display: inline-flex;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 11px;
-}
 .structured-evidence p {
   margin-top: 5px;
   border-left: 2px solid rgba(37, 189, 180, 0.45);
@@ -553,26 +601,37 @@
   padding-left: 8px;
 }
 .structured-evidence-compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
   margin-top: 5px;
 }
-.structured-evidence-compact summary {
-  align-items: center;
-  min-height: 22px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel-soft);
-  line-height: 1;
-  padding: 0 8px;
-}
-.structured-evidence-compact[open] summary {
-  color: var(--text);
-  border-color: var(--border-strong);
-}
 .structured-evidence-compact p {
+  flex: 1 1 260px;
   max-width: 68ch;
   margin-top: 6px;
   font-size: 12px;
   line-height: 1.45;
+}
+.structured-evidence-action {
+  min-height: 28px;
+  border: 1px solid rgba(37, 189, 180, 0.45);
+  border-radius: 999px;
+  color: var(--teal);
+  background: rgba(37, 189, 180, 0.08);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  padding: 0 10px;
+}
+.structured-evidence-action:hover {
+  background: rgba(37, 189, 180, 0.15);
+}
+.structured-evidence-action:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
 }
 .structured-task-status-message {
   margin-top: 5px;

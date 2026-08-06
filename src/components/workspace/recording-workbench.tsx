@@ -2,19 +2,29 @@ import { AudioLines, CheckCircle2 } from "lucide-react";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import { TranscriptionControls } from "@/components/transcription-controls";
+import { RecordingDetailTitleEditor } from "@/components/workspace/recording-detail-title-editor";
+import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
-import { updateRecordingTitleAction } from "@/lib/recordings/actions";
+import {
+  toRecordingClientView,
+  type RecordingClientView
+} from "@/lib/recordings/client-view";
 import {
   formatFileSize,
   formatRecordingDate,
   getStatusLabel,
-  isSegmentedRecordingStoragePath,
   type RecordingRow
 } from "@/lib/recordings/types";
 import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
+import type { ResolvedTranscriptDeepLink } from "@/lib/transcripts/deep-link";
+import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
+import type {
+  RecordingOrganization,
+  RecordingOrganizationOptions
+} from "@/lib/recording-organization/types";
 import {
   formatDuration,
   getRecordingDotClassName,
@@ -28,38 +38,59 @@ import {
 export function RecordingWorkbench({
   activeAiOutputs,
   activeRecording,
+  activeRecordingMarkers,
+  activeRecordingOrganization,
   activeStructuredItems,
   activeTranscript,
+  initialDeepLink,
   initialTab,
   initialTabFromCookie,
+  initialTabFromUrl,
+  recordingOrganizationOptions,
   userSettings
 }: {
   activeAiOutputs: AiOutputView[];
   activeRecording: RecordingRow | null;
+  activeRecordingMarkers: RecordingMarkerRow[];
+  activeRecordingOrganization: RecordingOrganization;
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
+  initialDeepLink: ResolvedTranscriptDeepLink | null;
   initialTab: TranscriptTab;
   initialTabFromCookie: boolean;
+  initialTabFromUrl: boolean;
+  recordingOrganizationOptions: RecordingOrganizationOptions;
   userSettings: UserSettings;
 }) {
+  const activeRecordingView = activeRecording
+    ? toRecordingClientView(activeRecording)
+    : null;
+
   return (
     <section className="recording-workbench" aria-label="Aktuální nahrávka">
-      <RecordingCard activeRecording={activeRecording} />
+      <RecordingCard
+        activeRecording={activeRecording}
+        activeRecordingOrganization={activeRecordingOrganization}
+        recordingOrganizationOptions={recordingOrganizationOptions}
+      />
       <div className="recording-workbench-grid">
         <TranscriptPanel
           activeAiOutputs={activeAiOutputs}
-          activeRecording={activeRecording}
+          activeRecording={activeRecordingView}
+          activeRecordingMarkers={activeRecordingMarkers}
           activeStructuredItems={activeStructuredItems}
           activeTranscript={activeTranscript}
+          initialDeepLink={initialDeepLink}
           initialTab={initialTab}
           initialTabFromCookie={initialTabFromCookie}
+          initialTabFromUrl={initialTabFromUrl}
           userSettings={userSettings}
         />
         <aside className="recording-rail" aria-label="Pracovní stav nahrávky">
-          <CommandBar activeRecording={activeRecording} activeTranscript={activeTranscript} />
+          <CommandBar activeRecording={activeRecordingView} activeTranscript={activeTranscript} />
           <RecordingRail
             activeAiOutputs={activeAiOutputs}
-            activeRecording={activeRecording}
+            activeRecording={activeRecordingView}
             activeStructuredItems={activeStructuredItems}
             activeTranscript={activeTranscript}
           />
@@ -70,7 +101,17 @@ export function RecordingWorkbench({
 }
 
 // RecordingCard shows the compact selected-recording header, metadata and title actions.
-function RecordingCard({ activeRecording }: { activeRecording: RecordingRow | null }) {
+function RecordingCard({
+  activeRecording: activeRecordingRow,
+  activeRecordingOrganization,
+  recordingOrganizationOptions
+}: {
+  activeRecording: RecordingRow | null;
+  activeRecordingOrganization: RecordingOrganization;
+  recordingOrganizationOptions: RecordingOrganizationOptions;
+}) {
+  const activeRecording = activeRecordingRow ? toRecordingClientView(activeRecordingRow) : null;
+
   return (
     <section className="recording-object-header">
       <div className="recording-detail-main">
@@ -101,34 +142,30 @@ function RecordingCard({ activeRecording }: { activeRecording: RecordingRow | nu
             </dl>
           </div>
         </div>
-        {activeRecording ? (
+        {activeRecordingRow ? (
           <div className="recording-detail-actions">
-            <details className="recording-inline-edit">
-              <summary>Upravit název</summary>
-              <form action={updateRecordingTitleAction} className="recording-title-form">
-                <input defaultValue={activeRecording.id} name="recordingId" type="hidden" />
-                <label>
-                  <span>Název</span>
-                  <input
-                    aria-label={`Název nahrávky ${activeRecording.title}`}
-                    defaultValue={activeRecording.title}
-                    maxLength={160}
-                    name="title"
-                    required
-                  />
-                </label>
-                <button type="submit">Uložit</button>
-              </form>
-            </details>
+            <RecordingDetailTitleEditor
+              key={activeRecordingRow.id}
+              recordingId={activeRecordingRow.id}
+              title={activeRecordingRow.title}
+            />
             <DeleteRecordingForm
               label="Smazat nahrávku"
               next="/recordings"
-              recordingId={activeRecording.id}
+              recordingId={activeRecordingRow.id}
               variant="danger"
             />
           </div>
         ) : null}
       </div>
+      {activeRecordingRow ? (
+        <RecordingOrganizationEditor
+          key={`organization-${activeRecordingRow.id}`}
+          options={recordingOrganizationOptions}
+          organization={activeRecordingOrganization}
+          recording={activeRecordingRow}
+        />
+      ) : null}
     </section>
   );
 }
@@ -141,7 +178,7 @@ function RecordingRail({
   activeTranscript
 }: {
   activeAiOutputs: AiOutputView[];
-  activeRecording: RecordingRow | null;
+  activeRecording: RecordingClientView | null;
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
 }) {
@@ -202,18 +239,24 @@ function RecordingRail({
 function TranscriptPanel({
   activeAiOutputs,
   activeRecording,
+  activeRecordingMarkers,
   activeStructuredItems,
   activeTranscript,
+  initialDeepLink,
   initialTab,
   initialTabFromCookie,
+  initialTabFromUrl,
   userSettings
 }: {
   activeAiOutputs: AiOutputView[];
-  activeRecording: RecordingRow | null;
+  activeRecording: RecordingClientView | null;
+  activeRecordingMarkers: RecordingMarkerRow[];
   activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
+  initialDeepLink: ResolvedTranscriptDeepLink | null;
   initialTab: TranscriptTab;
   initialTabFromCookie: boolean;
+  initialTabFromUrl: boolean;
   userSettings: UserSettings;
 }) {
   return (
@@ -221,10 +264,13 @@ function TranscriptPanel({
       <TranscriptTabs
         activeAiOutputs={activeAiOutputs}
         activeRecording={activeRecording}
+        activeRecordingMarkers={activeRecordingMarkers}
         activeStructuredItems={activeStructuredItems}
         activeTranscript={activeTranscript}
+        initialDeepLink={initialDeepLink}
         initialTab={initialTab}
         initialTabFromCookie={initialTabFromCookie}
+        initialTabFromUrl={initialTabFromUrl}
         userSettings={userSettings}
       />
     </section>
@@ -236,14 +282,12 @@ function CommandBar({
   activeRecording,
   activeTranscript
 }: {
-  activeRecording: RecordingRow | null;
+  activeRecording: RecordingClientView | null;
   activeTranscript: TranscriptRow | null;
 }) {
-  const storedAudioMode = activeRecording?.storage_path
-    ? isSegmentedRecordingStoragePath(activeRecording.storage_path)
-      ? "segments"
-      : "single"
-    : "none";
+  const storedAudioMode = activeRecording?.audioAvailability === "segmented"
+    ? "segments"
+    : activeRecording?.audioAvailability ?? "none";
 
   return (
     <div className="command-bar">
