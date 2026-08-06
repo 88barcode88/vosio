@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
+import type { AiOutputView } from "@/lib/ai/types";
 import type { RecordingClientView } from "@/lib/recordings/client-view";
+import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import { defaultUserSettings } from "@/lib/settings/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
@@ -17,6 +19,27 @@ const emptyStructuredItems: StructuredAiItems = {
   risks: [],
   tasks: []
 };
+const fixtureAiOutputs: AiOutputView[] = [{
+  created_at: "2026-08-06T10:00:00.000Z",
+  id: "00000000-0000-4000-8000-000000000304",
+  output_json: { markdown: "E2E AI SENTINEL" },
+  output_text: null,
+  processing_job_id: "00000000-0000-4000-8000-000000000305",
+  processing_type: "summary",
+  transcript_id: transcriptId,
+  user_id: userId
+}];
+const fixtureMarkers: RecordingMarkerRow[] = [{
+  client_marker_id: "e2e-marker-1",
+  created_at: "2026-08-06T10:00:00.000Z",
+  id: "00000000-0000-4000-8000-000000000306",
+  marker_type: "important",
+  note: "E2E TIMELINE SENTINEL",
+  offset_ms: 120_000,
+  recording_id: recordingId,
+  updated_at: "2026-08-06T10:00:00.000Z",
+  user_id: userId
+}];
 const fixtureScopePattern = /^[0-9a-f]{12}$/;
 const fixtureModes = ["blocks", "raw", "ai", "timeline", "files"] as const;
 type FixtureMode = (typeof fixtureModes)[number];
@@ -65,7 +88,7 @@ function createFixtureRecording(): RecordingClientView {
     duration_seconds: 2_700,
     file_size_bytes: 1_024,
     id: recordingId,
-    mime_type: "audio/wav",
+    mime_type: "audio/e2e-sentinel",
     source_type: "upload",
     status: "completed",
     title: "Dlouhý testovací hovor",
@@ -111,8 +134,9 @@ export default async function RecordingLayoutE2EPage({
       <div className="recording-workbench-grid">
         <section className="transcript-panel">
           <TranscriptTabs
-            activeAiOutputs={[]}
+            activeAiOutputs={fixtureAiOutputs}
             activeRecording={createFixtureRecording()}
+            activeRecordingMarkers={fixtureMarkers}
             activeStructuredItems={emptyStructuredItems}
             activeTranscript={createFixtureTranscript(fixtureMode)}
             initialTab={getFixtureInitialTab(mode)}

@@ -64,6 +64,28 @@ for (const [mode, tabName] of fixtureTabs) {
     await expect(page.getByRole("tab", { name: tabName })).toHaveAttribute("aria-selected", "true");
     await expect(page.locator(`.tab-panel-${mode === "blocks" || mode === "raw" ? "transcript" : mode}`)).toBeVisible();
     await expect(page.locator(".recording-audio-player audio")).toBeVisible();
+
+    if (mode === "ai") {
+      await expect(page.locator(".ai-markdown-preview")).toContainText("E2E AI SENTINEL");
+    }
+
+    if (mode === "timeline") {
+      await expect(page.locator(".timeline-list")).toContainText("E2E TIMELINE SENTINEL");
+    }
+
+    if (mode === "files") {
+      await expect(page.locator(".file-details")).toContainText("audio/e2e-sentinel");
+    }
+
+    if (mode === "ai" || mode === "timeline" || mode === "files") {
+      const content = page.locator(`.tab-panel-${mode}`);
+      const player = page.locator(".recording-audio-player");
+      const [contentBox, playerBox] = await Promise.all([content.boundingBox(), player.boundingBox()]);
+
+      expect(contentBox).not.toBeNull();
+      expect(playerBox).not.toBeNull();
+      expect(contentBox!.y + contentBox!.height).toBeLessThanOrEqual(playerBox!.y);
+    }
   });
 }
 

@@ -440,8 +440,16 @@
     overflow: visible;
   }
   .tab-panel {
+    height: auto;
+    flex: 0 1 auto;
     min-height: 0;
     overflow: visible;
+  }
+  .tab-panel > * {
+    flex: 0 1 auto;
+  }
+  .transcript-content {
+    grid-template-rows: auto auto;
   }
   .transcript-table-head {
     display: none;
