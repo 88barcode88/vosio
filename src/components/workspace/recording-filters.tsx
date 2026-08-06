@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import {
   buildRecordingFilterSearchParams,
   type RecordingOrganizationFilters
@@ -40,7 +40,10 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
   }, [committedLocation, navigationTarget]);
 
   // navigate applies one canonical filter snapshot while retaining unrelated URL parameters.
-  function navigate(nextFilters: RecordingOrganizationFilters, nextQuery: string) {
+  const navigate = useCallback((
+    nextFilters: RecordingOrganizationFilters,
+    nextQuery = currentSearchParams.get("q") ?? ""
+  ) => {
     const next = buildRecordingFilterSearchParams(
       new URLSearchParams(currentSearchParams.toString()),
       nextFilters
@@ -56,26 +59,37 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
     startTransition(async () => {
       await router.push(target);
     });
-  }
+  }, [committedLocation, currentSearchParams, pathname, router]);
 
   // currentDraft returns all controlled organization values in URL order.
-  function currentDraft(): RecordingOrganizationFilters {
-    return {
+  const currentDraft = useCallback((): RecordingOrganizationFilters => ({
       clientId: clientId || null,
       folderId: folderId || null,
       projectId: projectId || null,
       tagIds: Array.from(tagIds)
-    };
-  }
+  }), [clientId, folderId, projectId, tagIds]);
+
+  // Deferred search navigates only for a cleared query or a useful three-character query.
+  useEffect(() => {
+    const normalizedQuery = normalizeRecordingSearchQuery(query);
+    const committedQuery = normalizeRecordingSearchQuery(currentSearchParams.get("q"));
+
+    if ((normalizedQuery && normalizedQuery.length < 3) || normalizedQuery === committedQuery) return;
+
+    const timeoutId = window.setTimeout(() => {
+      navigate(currentDraft(), normalizedQuery);
+    }, 350);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [currentDraft, currentSearchParams, navigate, query]);
 
   // toggleTag updates the repeatable URL filter without mutating prior state.
   function toggleTag(tagId: string) {
-    setTagIds((current) => {
-      const next = new Set(current);
-      if (next.has(tagId)) next.delete(tagId);
-      else next.add(tagId);
-      return next;
-    });
+    const next = new Set(tagIds);
+    if (next.has(tagId)) next.delete(tagId);
+    else next.add(tagId);
+    setTagIds(next);
+    navigate({ ...currentDraft(), tagIds: Array.from(next) });
   }
 
   // clearFilters resets the controlled draft and removes only organization parameters from the URL.
@@ -85,7 +99,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
     setFolderId("");
     setTagIds(new Set());
     if (hasFilters) {
-      navigate({ clientId: null, folderId: null, projectId: null, tagIds: [] }, query);
+      navigate({ clientId: null, folderId: null, projectId: null, tagIds: [] });
     }
   }
 
@@ -94,10 +108,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
       aria-busy={isNavigationPending}
       aria-label="Filtrování nahrávek"
       className="recording-filters"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!isNavigationPending) navigate(currentDraft(), query);
-      }}
+      onSubmit={(event) => event.preventDefault()}
     >
       <div className="recording-filter-grid">
         <label className="recording-filter-search">
@@ -119,10 +130,16 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
             name="client"
             onChange={(event) => {
               const nextClientId = event.target.value;
-              setClientId(nextClientId);
-              if (!options.projects.some((project) =>
+              const nextProjectId = options.projects.some((project) =>
                 project.id === projectId && project.client_id === nextClientId
-              )) setProjectId("");
+              ) ? projectId : "";
+              setClientId(nextClientId);
+              setProjectId(nextProjectId);
+              navigate({
+                ...currentDraft(),
+                clientId: nextClientId || null,
+                projectId: nextProjectId || null
+              });
             }}
             value={clientId}
           >
@@ -135,7 +152,11 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
           <select
             disabled={isNavigationPending || !clientId}
             name="project"
-            onChange={(event) => setProjectId(event.target.value)}
+            onChange={(event) => {
+              const nextProjectId = event.target.value;
+              setProjectId(nextProjectId);
+              navigate({ ...currentDraft(), projectId: nextProjectId || null });
+            }}
             value={projectId}
           >
             <option value="">Všechny projekty</option>
@@ -147,7 +168,11 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
           <select
             disabled={isNavigationPending}
             name="folder"
-            onChange={(event) => setFolderId(event.target.value)}
+            onChange={(event) => {
+              const nextFolderId = event.target.value;
+              setFolderId(nextFolderId);
+              navigate({ ...currentDraft(), folderId: nextFolderId || null });
+            }}
             value={folderId}
           >
             <option value="">Všechny složky</option>
@@ -172,9 +197,6 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
         )) : <span className="recording-filter-empty">Zatím bez štítků</span>}
       </fieldset>
       <div className="recording-filter-actions">
-        <button disabled={isNavigationPending} type="submit">
-          {isNavigationPending ? "Načítám…" : "Použít filtry"}
-        </button>
         <button
           disabled={isNavigationPending || (!hasFilters && !hasDraftFilters)}
           onClick={clearFilters}
@@ -182,8 +204,8 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
         >
           Vyčistit filtry
         </button>
-        {searchQuery ? (
-          <button disabled={isNavigationPending} onClick={() => navigate(currentDraft(), "")} type="button">
+        {query ? (
+          <button disabled={isNavigationPending} onClick={() => setQuery("")} type="button">
             Vyčistit hledání
           </button>
         ) : null}

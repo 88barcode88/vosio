@@ -71,15 +71,21 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
   const filters = page.getByRole("form", { name: "Filtrování nahrávek" });
   await expect(filters.getByLabel("Projekt")).toBeDisabled();
   await filters.getByLabel("Klient").selectOption({ label: "Acme" });
+  await expect(page).toHaveURL((url) => url.searchParams.get("scope") === scope
+    && url.searchParams.get("q") === "call"
+    && Boolean(url.searchParams.get("client"))
+    && !url.searchParams.has("project"));
   await filters.getByLabel("Projekt").selectOption({ label: "Project X" });
+  await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("project")));
   await filters.getByLabel("Klient").selectOption("");
   await expect(filters.getByLabel("Projekt")).toBeDisabled();
   await expect(filters.getByLabel("Projekt")).toHaveValue("");
   await filters.getByLabel("Klient").selectOption({ label: "Acme" });
   await filters.getByLabel("Projekt").selectOption({ label: "Project X" });
   await checkedTag(filters, "Important").check();
+  await expect(page).toHaveURL((url) => url.searchParams.getAll("tag").length === 1);
   await checkedTag(filters, "Follow-up").check();
-  await filters.getByRole("button", { name: "Použít filtry" }).click();
+  await expect(page).toHaveURL((url) => url.searchParams.getAll("tag").length === 2);
 
   await expect(page).toHaveURL((url) => {
     const params = url.searchParams;
