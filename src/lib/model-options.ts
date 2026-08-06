@@ -15,6 +15,11 @@ export type AiModelOption = {
 
 export const DEFAULT_AI_MODEL_ID = "gpt-5.6-terra";
 export const DEFAULT_GEMINI_MODEL_ID = "gemini-3.6-flash";
+
+// AI_MODEL_QUALITY_GUIDANCE explains the practical quality and review tradeoff shared by AI surfaces.
+export const AI_MODEL_QUALITY_GUIDANCE =
+  "Silnější modely obvykle zachytí více souvislostí. Menším a levnějším modelům může uniknout více detailů, úkolů nebo důkazů; žádný model nezaručuje úplnost.";
+
 export const aiModelIds = [
   "gpt-5.6-sol",
   "gpt-5.6-terra",

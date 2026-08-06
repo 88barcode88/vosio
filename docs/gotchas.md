@@ -76,9 +76,9 @@ Nový systémový prompt nestačí vložit jen do databáze, pokud používá no
 
 Gemini modely jsou v UI běžné AI modely vedle OpenAI, ale backend je směruje na Google Gemini API podle `ai_processing_jobs.provider`. Pokud uživatel vybere Gemini model a ve Vercelu není `GEMINI_API_KEY`, AI processing selže na server-side konfiguraci. Gemini Free tier podle Google pricing tabulky používá obsah ke zlepšování produktů; pro produkční call obsah používej placený Gemini API režim nebo OpenAI.
 
-## Reasoning modely a temperature
+## Reasoning modely, ceny a úplnost výstupu
 
-Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI Responses API dostává pro `gpt-5.6-terra` reasoning `high` a pro `gpt-5.6-luna` `xhigh`; Gemini `generateContent` dostává pro `gemini-3.6-flash` thinking `medium`. Staré hodnoty modelu v user metadata se při načtení bezpečně normalizují na aktuální model stejné provider rodiny. Pokud provider vrátí chybu modelu, API endpoint ji vrací jako bezpečný `detail`, aby UI neukazovalo jen obecné selhání.
+Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI Responses API dostává pro `gpt-5.6-sol` reasoning `xhigh`, pro `gpt-5.6-terra` `high` a pro `gpt-5.6-luna` `xhigh`; Gemini `generateContent` dostává pro `gemini-3.6-flash` thinking `medium`. Katalogové ceny jsou pouze orientační: Sol $5/$30, Terra $2.50/$15, Luna $1/$6 a Gemini $1.50/$7.50 za 1M vstupních/výstupních tokenů; fakturaci potvrzuje provider dashboard. Silnější modely obvykle zachytí více souvislostí, ale menším a levnějším modelům může uniknout více detailů, úkolů nebo důkazů. Evidence pole zůstávají povinnou součástí strukturovaného kontraktu, nezaručují však, že model najde každý relevantní úsek. Pro složité nebo důležité cally preferuj Sol/Terra a výstup zkontroluj proti přepisu. Staré hodnoty modelu v user metadata se při načtení bezpečně normalizují na aktuální model stejné provider rodiny. Pokud provider vrátí chybu modelu, API endpoint ji vrací jako bezpečný `detail`, aby UI neukazovalo jen obecné selhání.
 
 ## AI prompt nesmí obsahovat plné Soniox tokeny
 

@@ -1,6 +1,7 @@
 import { CheckCircle2, LockKeyhole, Settings2 } from "lucide-react";
 import { updateUserSettingsAction } from "@/lib/settings/actions";
 import {
+  AI_MODEL_QUALITY_GUIDANCE,
   aiModelOptions,
   getAiModelDescription,
   sonioxRealtimeModelOptions
@@ -275,6 +276,7 @@ export function SettingsPanel({ settings, status, usageState }: SettingsPanelPro
                 ))}
               </select>
               <small>{getAiModelDescription(settings.defaultOpenaiModel)}</small>
+              <small>{AI_MODEL_QUALITY_GUIDANCE}</small>
             </label>
             <label>
               <span>Jazyk výstupu</span>

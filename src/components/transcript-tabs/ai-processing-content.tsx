@@ -21,6 +21,7 @@ import { getAiOutputMarkdownLines } from "@/components/transcript-tabs/markdown-
 import { StructuredItemsContent } from "@/components/transcript-tabs/structured-items-content";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
+import { AI_MODEL_QUALITY_GUIDANCE } from "@/lib/model-options";
 import { formatRecordingDate } from "@/lib/recordings/types";
 import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
@@ -56,6 +57,7 @@ export function AiProcessingContent({
           <div className="ai-tab-actions-title">
             <strong>Co z nahrávky vytěžit</strong>
             <span>Model s pevnou reasoning nebo thinking úrovní a typ výstupu pro tento přepis.</span>
+            <small>{AI_MODEL_QUALITY_GUIDANCE}</small>
           </div>
           <AiProcessingControls
             settings={userSettings}
@@ -85,6 +87,7 @@ export function AiProcessingContent({
         <div className="ai-tab-actions-title">
           <strong>Co z nahrávky vytěžit</strong>
           <span>Nový výstup se uloží pod tuto nahrávku.</span>
+          <small>{AI_MODEL_QUALITY_GUIDANCE}</small>
         </div>
         <AiProcessingControls
           settings={userSettings}

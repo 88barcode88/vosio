@@ -171,10 +171,13 @@ Má obsahovat:
   - `CRM poznámka`,
   - `E-mail po hovoru`,
 - nastavení aktuálního modelu a jeho pevné reasoning/thinking úrovně,
+- viditelné stručné upozornění, že silnější modely obvykle zachytí více souvislostí, ale žádný model nezaručuje úplnost; menší model může vynechat detaily, úkoly nebo důkazy,
 - seznam již vytvořených AI výstupů jako kompaktní rozbalovací řádky,
 - detail vybraného výstupu otevřený až po kliknutí.
 
 AI výstupy mají být uložené a znovu otevřitelné. Nemají být jen dočasná odpověď v panelu.
+
+Pro složité nebo důležité cally má UI doporučit Sol nebo Terra a připomenout kontrolu úkolů a evidence proti přepisu. Toto doporučení je praktická pomůcka, ne příslib deterministicky lepšího výsledku; ceny v pickeru jsou orientační odhady podle lokálního katalogu a skutečná fakturace patří providerovi.
 
 ## Časová osa
 

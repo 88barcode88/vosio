@@ -92,14 +92,14 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 - Required only for AI processing.
 - Server-only OpenAI API key.
 - Used for OpenAI AI processing.
-- App model options include `gpt-5.6-terra` with reasoning `high` and `gpt-5.6-luna` with reasoning `xhigh`; the selected model is stored as a safe user preference and sent only server-side.
+- App model options include `gpt-5.6-sol` with reasoning `xhigh`, `gpt-5.6-terra` with reasoning `high` and `gpt-5.6-luna` with reasoning `xhigh`; the selected model is stored as a safe user preference and sent only server-side. Indicative prices are $5/$30, $2.50/$15 and $1/$6 per 1M input/output tokens respectively; provider billing remains the source of truth. For complex calls prefer Sol or Terra and review generated tasks/evidence against the transcript because smaller, cheaper models can miss details even with the same prompt and schema.
 
 `GEMINI_API_KEY`
 
 - Optional.
 - Required only when users select Gemini models in `/settings` or the recording AI tab.
 - Server-only Google Gemini API key.
-- Current Gemini option is `gemini-3.6-flash` with thinking level `medium`.
+- Current Gemini option is `gemini-3.6-flash` with thinking level `medium` and an indicative price of $1.50/$7.50 per 1M input/output tokens; provider billing remains the source of truth.
 - Paid Gemini API content is not used to improve Google's products according to the current Google AI pricing/data-use table; do not use Gemini Free tier for sensitive production call content.
 
 ### App-managed model preferences

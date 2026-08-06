@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  AI_MODEL_QUALITY_GUIDANCE,
   aiModelOptions,
   DEFAULT_AI_MODEL_ID,
   getAiModelOption,
@@ -76,6 +78,15 @@ describe("AI display helpers", () => {
     });
     expect(supportsModelTemperature("gpt-5.6-terra")).toBe(false);
     expect(supportsModelTemperature("gemini-3.6-flash")).toBe(false);
+  });
+
+  it("keeps model-quality guidance shared across settings and the recording AI panel", () => {
+    expect(AI_MODEL_QUALITY_GUIDANCE).toContain(
+      "Menším a levnějším modelům může uniknout více detailů, úkolů nebo důkazů"
+    );
+    expect(readFileSync("src/components/settings-panel.tsx", "utf8")).toContain("AI_MODEL_QUALITY_GUIDANCE");
+    expect(readFileSync("src/components/transcript-tabs/ai-processing-content.tsx", "utf8"))
+      .toContain("AI_MODEL_QUALITY_GUIDANCE");
   });
 
   it("has enough distinct speaker classes before colors repeat for larger meetings", () => {
