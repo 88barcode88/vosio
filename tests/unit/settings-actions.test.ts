@@ -10,7 +10,7 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 
-import { parseSettingsForm } from "@/lib/settings/actions";
+import { parseSettingsForm } from "@/lib/settings/form";
 
 describe("settings form", () => {
   it("parses the selected Soniox live language", () => {
