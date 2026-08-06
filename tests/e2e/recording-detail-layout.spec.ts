@@ -22,6 +22,19 @@ async function stubSignedAudioUrl(page: Page) {
   });
 }
 
+// scrollDetailTabToEnd moves the active tab and any nested overflow regions to their final position.
+async function scrollDetailTabToEnd(page: Page, selector: string) {
+  const scrollRoot = page.locator(selector);
+
+  await scrollRoot.evaluate((element) => {
+    const elements = [element, ...Array.from(element.querySelectorAll<HTMLElement>("*"))];
+
+    for (const candidate of elements) {
+      candidate.scrollTop = candidate.scrollHeight;
+    }
+  });
+}
+
 test("the layout fixture rejects missing scope", async ({ request }) => {
   const response = await request.get("/login/recording-layout-e2e");
   expect(response.status()).toBe(404);
@@ -80,11 +93,30 @@ for (const [mode, tabName] of fixtureTabs) {
     if (mode === "ai" || mode === "timeline" || mode === "files") {
       const content = page.locator(`.tab-panel-${mode}`);
       const player = page.locator(".recording-audio-player");
-      const [contentBox, playerBox] = await Promise.all([content.boundingBox(), player.boundingBox()]);
+      const scrollSelector = {
+        ai: ".tab-panel-ai > .ai-tab-layout",
+        timeline: ".tab-panel-timeline > .timeline-list",
+        files: ".tab-panel-files > .file-details"
+      }[mode];
+      const sentinel = {
+        ai: page.getByText("E2E AI SENTINEL", { exact: true }).last(),
+        timeline: page.getByText("E2E TIMELINE SENTINEL", { exact: true }),
+        files: page.getByText("audio/e2e-sentinel", { exact: true })
+      }[mode];
+
+      await scrollDetailTabToEnd(page, scrollSelector);
+      await expect(sentinel).toBeInViewport();
+
+      const [sentinelBox, playerBox] = await Promise.all([sentinel.boundingBox(), player.boundingBox()]);
+      expect(sentinelBox).not.toBeNull();
+      expect(playerBox).not.toBeNull();
+      expect(sentinelBox!.y + sentinelBox!.height).toBeLessThanOrEqual(playerBox!.y);
+
+      const [contentBox, contentPlayerBox] = await Promise.all([content.boundingBox(), player.boundingBox()]);
 
       expect(contentBox).not.toBeNull();
-      expect(playerBox).not.toBeNull();
-      expect(contentBox!.y + contentBox!.height).toBeLessThanOrEqual(playerBox!.y);
+      expect(contentPlayerBox).not.toBeNull();
+      expect(contentBox!.y + contentBox!.height).toBeLessThanOrEqual(contentPlayerBox!.y);
     }
   });
 }
