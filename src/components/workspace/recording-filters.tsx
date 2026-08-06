@@ -39,7 +39,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
     if (navigationTarget === committedLocation) setNavigationTarget(null);
   }, [committedLocation, navigationTarget]);
 
-  // navigate applies one canonical filter snapshot while retaining unrelated URL parameters.
+  // navigate applies one canonical filter snapshot and skips committed or pending URL targets.
   const navigate = useCallback((
     nextFilters: RecordingOrganizationFilters,
     nextQuery = currentSearchParams.get("q") ?? ""
@@ -54,12 +54,12 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
     next.delete("page");
     const queryString = next.toString();
     const target = queryString ? `${pathname}?${queryString}` : pathname;
-    if (target === committedLocation) return;
+    if (target === committedLocation || target === navigationTarget) return;
     setNavigationTarget(target);
     startTransition(async () => {
       await router.push(target);
     });
-  }, [committedLocation, currentSearchParams, pathname, router]);
+  }, [committedLocation, currentSearchParams, navigationTarget, pathname, router]);
 
   // currentDraft returns all controlled organization values in URL order.
   const currentDraft = useCallback((): RecordingOrganizationFilters => ({
@@ -89,17 +89,17 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
     if (next.has(tagId)) next.delete(tagId);
     else next.add(tagId);
     setTagIds(next);
-    navigate({ ...currentDraft(), tagIds: Array.from(next) });
+    navigate({ ...currentDraft(), tagIds: Array.from(next) }, query);
   }
 
-  // clearFilters resets the controlled draft and removes only organization parameters from the URL.
+  // clearFilters resets organization choices while preserving the current search draft.
   function clearFilters() {
     setClientId("");
     setProjectId("");
     setFolderId("");
     setTagIds(new Set());
     if (hasFilters) {
-      navigate({ clientId: null, folderId: null, projectId: null, tagIds: [] });
+      navigate({ clientId: null, folderId: null, projectId: null, tagIds: [] }, query);
     }
   }
 
@@ -138,7 +138,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
                 ...currentDraft(),
                 clientId: nextClientId || null,
                 projectId: nextProjectId || null
-              });
+              }, query);
             }}
             value={clientId}
           >
@@ -154,7 +154,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
             onChange={(event) => {
               const nextProjectId = event.target.value;
               setProjectId(nextProjectId);
-              navigate({ ...currentDraft(), projectId: nextProjectId || null });
+              navigate({ ...currentDraft(), projectId: nextProjectId || null }, query);
             }}
             value={projectId}
           >
@@ -170,7 +170,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
             onChange={(event) => {
               const nextFolderId = event.target.value;
               setFolderId(nextFolderId);
-              navigate({ ...currentDraft(), folderId: nextFolderId || null });
+              navigate({ ...currentDraft(), folderId: nextFolderId || null }, query);
             }}
             value={folderId}
           >
