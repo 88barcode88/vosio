@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getUserSettingsFromMetadata, USER_SETTINGS_METADATA_KEY } from "@/lib/settings/metadata";
+import { DEFAULT_AI_MODEL_ID } from "@/lib/model-options";
 
 describe("settings metadata", () => {
   it("defaults live language detection for legacy metadata", () => {
@@ -40,8 +41,18 @@ describe("settings metadata", () => {
   });
 
   it("migrates removed AI models to the new provider defaults", () => {
+    expect(DEFAULT_AI_MODEL_ID).toBe("gpt-5.6-terra");
+
     expect(getUserSettingsFromMetadata({
       [USER_SETTINGS_METADATA_KEY]: { defaultOpenaiModel: "gpt-4.1-mini" }
+    }).defaultOpenaiModel).toBe("gpt-5.6-terra");
+
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { defaultOpenaiModel: "gpt-5.4" }
+    }).defaultOpenaiModel).toBe("gpt-5.6-terra");
+
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { defaultOpenaiModel: "gpt-5.4-mini" }
     }).defaultOpenaiModel).toBe("gpt-5.6-terra");
 
     expect(getUserSettingsFromMetadata({

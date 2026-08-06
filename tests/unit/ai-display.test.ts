@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { aiModelOptions, getAiModelOption, supportsModelTemperature } from "@/lib/model-options";
+import {
+  aiModelOptions,
+  DEFAULT_AI_MODEL_ID,
+  getAiModelOption,
+  normalizeAiModelId,
+  supportsModelTemperature
+} from "@/lib/model-options";
 import { getAiOutputMarkdownLines } from "@/components/transcript-tabs/markdown-utils";
 import { speakerClassNames } from "@/components/transcript-tabs/constants";
 
@@ -25,6 +31,7 @@ describe("AI display helpers", () => {
 
   it("exposes only the requested current AI models", () => {
     expect(aiModelOptions.map((option) => option.id)).toEqual([
+      "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
       "gemini-3.6-flash"
@@ -32,18 +39,33 @@ describe("AI display helpers", () => {
   });
 
   it("stores the requested reasoning level with current OpenAI pricing", () => {
+    expect(getAiModelOption("gpt-5.6-sol")).toMatchObject({
+      inputUsdPerMillionTokens: 5,
+      outputUsdPerMillionTokens: 30,
+      provider: "openai",
+      reasoningEffort: "xhigh",
+      supportsTemperature: false
+    });
     expect(getAiModelOption("gpt-5.6-terra")).toMatchObject({
-      inputUsdPerMillionTokens: 2,
-      outputUsdPerMillionTokens: 12,
+      inputUsdPerMillionTokens: 2.5,
+      outputUsdPerMillionTokens: 15,
       provider: "openai",
       reasoningEffort: "high",
       supportsTemperature: false
     });
     expect(getAiModelOption("gpt-5.6-luna")).toMatchObject({
-      inputUsdPerMillionTokens: 0.2,
-      outputUsdPerMillionTokens: 1.2,
+      inputUsdPerMillionTokens: 1,
+      outputUsdPerMillionTokens: 6,
       reasoningEffort: "xhigh"
     });
+  });
+
+  it("keeps Terra as the default and normalizes legacy OpenAI models to it", () => {
+    expect(DEFAULT_AI_MODEL_ID).toBe("gpt-5.6-terra");
+    expect(normalizeAiModelId("gpt-4.1-mini")).toBe("gpt-5.6-terra");
+    expect(normalizeAiModelId("gpt-5.4")).toBe("gpt-5.6-terra");
+    expect(normalizeAiModelId("gpt-5.4-mini")).toBe("gpt-5.6-terra");
+    expect(normalizeAiModelId("gpt-5.6-sol")).toBe("gpt-5.6-sol");
   });
 
   it("configures Gemini 3.6 Flash with explicit thinking and no deprecated temperature", () => {

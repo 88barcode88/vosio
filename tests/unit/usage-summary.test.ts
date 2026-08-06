@@ -11,6 +11,22 @@ import {
 const createdAt = "2026-05-24T10:00:00.000Z";
 
 describe("usage summary calculations", () => {
+  it.each([
+    ["gpt-5.6-sol", 35],
+    ["gpt-5.6-terra", 17.5],
+    ["gpt-5.6-luna", 7]
+  ])("prices %s from the current catalog", (model, expectedCost) => {
+    const summary = summarizeAiUsageRows([{
+      created_at: createdAt,
+      input_token_count: 1_000_000,
+      model,
+      output_token_count: 1_000_000,
+      status: "done"
+    }]);
+
+    expect(summary.estimatedCostUsd).toBe(expectedCost);
+  });
+
   it("prices known AI models and reports missing usage metadata", () => {
     const rows: AiUsageRow[] = [
       {
