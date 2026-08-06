@@ -491,6 +491,24 @@
 .browser-recorder-compact .live-marker-actions {
   grid-column: 1 / -1;
 }
+.live-language-select {
+  display: grid;
+  gap: 5px;
+  max-width: 320px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.live-language-select span {
+  font-weight: 700;
+}
+.live-language-select select {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--panel);
+  padding: 0 10px;
+}
 .live-save-mode {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

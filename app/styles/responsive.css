@@ -297,6 +297,10 @@
     align-items: stretch;
     flex-direction: column;
   }
+  .live-language-select {
+    max-width: none;
+    width: 100%;
+  }
   .live-marker-button {
     width: 100%;
   }

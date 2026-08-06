@@ -238,6 +238,18 @@ test("actual persistent recorder saves two markers and opens both from timeline"
   await expect(page.locator('[data-e2e-live-marker-state="full"]')).toBeVisible();
 
   await page.getByRole("button", { name: "Nahrávat live" }).click();
+  const recordingOptions = page.locator("[data-e2e-recording-options]");
+  await expect(recordingOptions).not.toHaveAttribute("data-e2e-recording-options", "");
+  const defaultOptions = JSON.parse(
+    await recordingOptions.getAttribute("data-e2e-recording-options")
+      ?? "null"
+  );
+  expect(defaultOptions).toMatchObject({
+    enable_language_identification: true,
+    enable_speaker_diarization: true
+  });
+  expect(defaultOptions).not.toHaveProperty("language_hints");
+  expect(defaultOptions).not.toHaveProperty("language_hints_strict");
   const fullMarker = page.getByRole("button", { name: "Označit moment" });
   await expect(fullMarker).toBeEnabled();
   await expect(page.getByText("Označené momenty: 0")).toBeVisible();
@@ -307,6 +319,44 @@ test("actual persistent recorder saves two markers and opens both from timeline"
   await page.locator(".timeline-marker-row").nth(1).click();
   await expect(page.locator("#transcript-at-1000")).toHaveAttribute("aria-current", "true");
   await expect(page.locator("audio")).toHaveCount(0);
+});
+
+test("passes the selected live language only at the recording start boundary", async ({ page }) => {
+  const boundary: CapturedBoundary = {
+    liveTranscriptRequests: [],
+    markerRequests: [],
+    recordingUpdates: []
+  };
+  const scope = createFixtureScope();
+
+  await installBrowserMediaBoundaries(page);
+  await installHttpBoundaries(page, boundary);
+  await page.goto(`/login/live-marker-e2e?scope=${scope}`);
+
+  const languageSelect = page.getByLabel("Jazyk live přepisu");
+  await expect(languageSelect).toHaveValue("auto");
+  await languageSelect.selectOption("de");
+  await page.getByRole("button", { name: "Nahrávat live" }).click();
+
+  const recordingOptions = page.locator("[data-e2e-recording-options]");
+  await expect(recordingOptions).not.toHaveAttribute("data-e2e-recording-options", "");
+  const selectedOptions = JSON.parse(
+    await recordingOptions.getAttribute("data-e2e-recording-options")
+      ?? "null"
+  );
+  expect(selectedOptions).toMatchObject({
+    enable_language_identification: true,
+    enable_speaker_diarization: true,
+    language_hints: ["de"],
+    language_hints_strict: true
+  });
+  await expect(languageSelect).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Zastavit" }).click();
+  await expect(recordingOptions).toHaveAttribute(
+    "data-e2e-recording-options",
+    /language_hints/
+  );
 });
 
 test("counts only a marker that succeeds after a failed retry", async ({ page }) => {
