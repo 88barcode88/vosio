@@ -111,6 +111,16 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 - Current default is `stt-rt-v5`.
 - Soniox async transcription remains on the current `stt-async-v5` model.
 
+`sonioxRealtimeLanguage` (app-managed preference)
+
+- Not a runtime environment variable and must not contain a provider key.
+- Stored in Supabase Auth `user_metadata.vosio_settings` with `auto` as the fallback default.
+- Supported live values are `auto`, `cs`, `en`, `de`, `es`, `it`, `sk`, `sl`, `hu` and `pl`.
+- `auto` enables Soniox language identification and omits language hints. A fixed value sends one strict hint for that language.
+- The full recorder offers an idle-only per-recording override; it is captured at start and does not mutate an active session.
+- This preference applies only to live microphone recording. Manual file uploads keep the existing async Soniox configuration.
+- Speaker diarization remains enabled in both automatic and fixed-language live modes.
+
 ### App behavior constants
 
 `RECORDINGS_BUCKET`

@@ -54,6 +54,16 @@ When the user records live in the browser:
 6. If live audio reaches the detected limit, or the user selects `Jen live přepis`, the app continues realtime transcription and saves the final transcript without a Storage audio object.
 7. The final live transcript is stored in `transcripts` and linked to a realtime `transcription_jobs` row. The job `provider_config.storage` records whether the source was `supabase_recording_upload` or `transcript_only`.
 
+Live language selection is separate from audio retention and speaker identification:
+
+- The supported live options are `auto`, `cs`, `en`, `de`, `es`, `it`, `sk`, `sl`, `hu`, and `pl`.
+- `auto` enables Soniox language identification and omits both `language_hints` and `language_hints_strict`.
+- A selected language sends one matching `language_hints` value with `language_hints_strict = true`.
+- `enable_speaker_diarization` stays enabled in both modes. Language hints are provider guidance/best effort, not an absolute guarantee that every token uses the selected language.
+- The default is stored in `user_metadata.vosio_settings.sonioxRealtimeLanguage`, with `auto` as the fallback for legacy or invalid metadata.
+- The full recorder can override the default while idle before a call starts. The selected value is fixed for that capture session; changing the setting later applies to a future call.
+- This contract is live-only. Manual audio uploads and their async Soniox transcription continue using the existing async configuration and do not inherit the live override.
+
 The root `PersistentRecordingSessionProvider` owns the real `BrowserRecorder`. Leaving `/recordings/new` through an internal Next.js navigation removes only the full slot and moves the same recorder instance into the compact dock; capture, Soniox, MediaRecorder, marker clock and stop ownership continue without restart. On mobile the dock must stay above the actual `MobileNav`, and its stop and marker controls must remain separately clickable.
 
 ## Live Recording Markers
@@ -142,7 +152,7 @@ The URL target never creates autoplay. With `single` audio it performs at most o
 
 The action-items prompt treats `decisions_to_confirm` as unresolved confirmations only. Already agreed choices belong to `decided_items`, tasks or risks so the UI can show them as agreed decisions instead of open confirmations. The prompt explicitly checks short mentions of Customer Portal, permissions, documents, email templates and process-stage decisions because these often create product follow-up items.
 
-Live recording uses the Soniox realtime model stored in app settings. The current selectable realtime STT model is `stt-rt-v5`.
+Live recording uses the Soniox realtime model and default language stored in app settings. The current selectable realtime STT model is `stt-rt-v5`; the live language contract is documented above. No setting for warning after a number of recording minutes is part of the active recorder lifecycle.
 
 The settings screen shows a compact read-only usage summary for the current month. It counts AI processing jobs from `ai_processing_jobs`, sums stored input/output token counts, estimates AI cost from the stored model id and the app's local model price map, and counts recordings from `recordings`. Total recording duration and file size are displayed only from rows that have `duration_seconds` or `file_size_bytes`; missing metadata is shown as incomplete coverage, not inferred. Soniox cost is an approximate app-side estimate from completed Soniox STT jobs and known recording durations: async transcription uses roughly `$0.10/h`, realtime uses roughly `$0.12/h`. Jobs without known duration are excluded from the estimate and shown as incomplete coverage. Provider dashboards remain the source of truth for billing.
 

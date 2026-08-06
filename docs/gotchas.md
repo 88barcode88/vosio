@@ -54,7 +54,13 @@ Soniox temporary API key musí vzniknout ve stejné regionální REST API domén
 
 ## Auth metadata jen pro preference
 
-Vosio používá `user_metadata.vosio_settings` pro netajné uživatelské preference, například výchozí AI model a Soniox realtime model. Tato metadata jsou uživatelsky editovatelná a nesmí se používat pro autorizaci, RLS rozhodnutí, role ani bezpečnostní limity.
+Vosio používá `user_metadata.vosio_settings` pro netajné uživatelské preference, například výchozí AI model, Soniox realtime model a výchozí jazyk live přepisu. Tato metadata jsou uživatelsky editovatelná a nesmí se používat pro autorizaci, RLS rozhodnutí, role ani bezpečnostní limity.
+
+## Soniox live jazyk a diarizace
+
+Live jazykový katalog používá kódy `auto`, `cs`, `en`, `de`, `es`, `it`, `sk`, `sl`, `hu` a `pl`. Automatický režim posílá `enable_language_identification = true` bez `language_hints`; pevná volba posílá právě jeden hint a `language_hints_strict = true`. Sonioxu tím dáváme preferenci nebo omezení, ale výsledek není absolutní garance pro každý zvukový úsek. `enable_speaker_diarization` zůstává zapnuté v obou režimech, protože jazyk a rozpoznání mluvčích jsou nezávislé volby.
+
+Výchozí jazyk je uložený v uživatelských Auth metadata a lze ho před konkrétním startem přepsat v idle rekordéru. Po zahájení se hodnota pro danou relaci nemění. Tato volba se týká jen live mikrofonu; ruční soubory se přepisují stávající async konfigurací. Nastavení upozornění na dlouhou nahrávku není aktivní lifecycle kontrola a nemá zastavovat ani prodlužovat záznam. Live nahrávání nemá tichý ani časový auto-stop.
 
 ## Theme se musí znát už na serveru
 
