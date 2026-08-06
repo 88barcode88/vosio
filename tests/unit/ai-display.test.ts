@@ -89,6 +89,13 @@ describe("AI display helpers", () => {
       .toContain("AI_MODEL_QUALITY_GUIDANCE");
   });
 
+  it("wraps model-quality guidance onto its own row in the recording AI panel", () => {
+    const styles = readFileSync("app/styles/timeline-ai-output.css", "utf8");
+
+    expect(styles).toMatch(/\.ai-tab-actions-title\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
+    expect(styles).toMatch(/\.ai-tab-actions-title small\s*\{[\s\S]*?flex-basis:\s*100%;/);
+  });
+
   it("has enough distinct speaker classes before colors repeat for larger meetings", () => {
     expect(speakerClassNames.length).toBeGreaterThanOrEqual(10);
   });
