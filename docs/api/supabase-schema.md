@@ -14,7 +14,9 @@ Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, pri
 
 Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby skutečné schema odpovídalo explicitně schválené a aplikované části aktuálního řetězce; produkční DB se kvůli baseline neresetuje.
 
-Budoucí schema změny se přidávají jako nové timestampové migrace na konec řetězce a po schválení se aplikují do obou Supabase projektů stejně.
+Budoucí schema změny se přidávají jako nové timestampové migrace na konec řetězce a po schválení se aplikují do každého cílového Supabase projektu stejně.
+
+Tento veřejný repozitář je zdrojový kontrakt, nikoli deployment ledger. Uvedené release blokery proto platí pro každý target, jehož skutečné schema, grants, RLS a migration history nebyly samostatně ověřeny. Stav privátních ani cizích Supabase projektů se zde neeviduje.
 
 Systémové prompt templates jsou seedované stabilními UUID a aktuálním kontraktem JSON + `markdown`. Prompty používají vstupní model `raw_text` + `segments` + `speakers`, obsahují pravidla pro speaker role a zahrnují typy `summary`, `action_items`, `meeting_minutes`, `crm_note`, `follow_up_email`, `custom_prompt` a `timeline_chapters`.
 
@@ -39,17 +41,11 @@ Ověřeno v source a automatických testech:
 3. raw `ai_outputs` se ukládá před odvozenými projekcemi a AI job přejde do `done` až po pokusu o jejich uložení,
 4. component/E2E kontrakt navigace pro single audio, transcript-only a legacy segmented záznam.
 
-Neověřeno a neprovedeno:
-
-1. SQL parse migrace v reálném Postgres/Supabase prostředí,
-2. aplikace migrace do disposable, staging nebo live Supabase,
-3. postflight skutečných sloupců/constraintů, nezměněných grants, forced RLS a two-user cross-tenant čtení.
-
-Release je proto blokovaný: aplikační kód očekávající evidence sloupce se nesmí deploynout před schválenou aplikací migrace a úspěšným postflightem. Tato hranice má přednost před starším tvrzením níže, že core baseline už byla aplikovaná; to tvrzení se vztahuje pouze k baseline, ne k této forward migraci.
+Source testy nejsou runtime důkazem konkrétního targetu. Před deployem aplikačního kódu očekávajícího evidence sloupce musí daný target projít schváleným apply a postflightem skutečných sloupců, constraintů, nezměněných grants, forced RLS a two-user cross-tenant čtení.
 
 ## Recording organization forward migrace
 
-Soubor `supabase/migrations/20260804110000_add_recording_organization.sql` je source-only forward migrace mezi evidence a marker migrací. Přidává:
+Soubor `supabase/migrations/20260804110000_add_recording_organization.sql` je forward migrace mezi evidence a marker migrací. Přidává:
 
 - `recording_clients`: uživatelský klient/firma,
 - `recording_projects`: projekt povinně patřící jednomu klientovi,
@@ -74,11 +70,11 @@ Unikátní funkční indexy nad `lower(btrim(name))` zajišťují case-insensiti
 
 ### Stav ověření organizační migrace
 
-Source testy ověřují textový schema/security kontrakt a aplikační testy canonical URL, transakční assignment kontrakt, ALL-tag filtrování a keyset klienta. Nebyl proveden skutečný SQL parse ani apply. Neověřený zůstává zejména PostgreSQL 15 parse column-list `ON DELETE SET NULL`, odložený client `NO ACTION` během úplné `auth.users` cascade, skutečná case-insensitive uniqueness, RLS/grant/anon chování se dvěma uživateli a runtime keyset nad reálným RPC.
+Source testy ověřují textový schema/security kontrakt a aplikační testy canonical URL, transakční assignment kontrakt, ALL-tag filtrování a keyset klienta. Pro každý target je stále nutný runtime postflight PostgreSQL syntaxe column-list `ON DELETE SET NULL`, odloženého client `NO ACTION` během úplné `auth.users` cascade, skutečné case-insensitive uniqueness, RLS/grant/anon chování se dvěma uživateli a keysetu nad reálným RPC.
 
 ## Recording markers forward migrace
 
-Soubor `supabase/migrations/20260804120000_add_recording_markers.sql` je navazující forward migrace pouze ve zdrojovém stromu. Přidává tabulku `recording_markers`:
+Soubor `supabase/migrations/20260804120000_add_recording_markers.sql` je navazující forward migrace. Přidává tabulku `recording_markers`:
 
 - `id uuid` s výchozím `gen_random_uuid()`,
 - `client_marker_id uuid` pro retry-safe klientský pokus,
@@ -96,11 +92,11 @@ První úspěšný insert vrací `201`. Konflikt unikátního `(user_id, client_
 
 ### Stav ověření marker migrace
 
-Source a automatické testy ověřují textový SQL contract, validaci route, přesný retry konflikt, pořadí dotazu a aplikační full/compact/timeline chování. Nebyl proveden skutečný SQL parse ani apply v disposable, staging nebo live Supabase. Nebyl proveden postflight tabulky, constraintů, indexu, FK/cascade, grantů, forced RLS ani dvouuživatelský cross-tenant integration test.
+Source a automatické testy ověřují textový SQL contract, validaci route, přesný retry konflikt, pořadí dotazu a aplikační full/compact/timeline chování. Každý target musí samostatně prokázat runtime postflight tabulky, constraintů, indexu, FK/cascade, grantů, forced RLS a dvouuživatelský cross-tenant integration test.
 
 ## Transcript fulltext search forward migrace
 
-Soubor `supabase/migrations/20260804130000_add_transcript_fulltext_search.sql` je čtvrtá source-only forward migrace. Přidává:
+Soubor `supabase/migrations/20260804130000_add_transcript_fulltext_search.sql` je čtvrtá forward migrace. Přidává:
 
 - unikátní `(id, recording_id, user_id)` na `transcripts` a index `(user_id, recording_id, created_at desc, id desc)` pro přesný latest-transcript výběr,
 - `transcript_search_chunks` s primárním klíčem `(transcript_id, position)`, owner-safe kompozitním FK, volitelnými časy, speaker labelem, textem, stored `tsvector` a GIN indexem,
@@ -118,15 +114,15 @@ Search UI používá bounded `page` a `limit/offset` stránkování po 25 výsle
 
 Tabulka `transcript_search_chunks` má enabled i forced RLS. `authenticated` má pouze `select` vlastních řádků, `anon` nemá grant, `service_role` má plný grant. Search RPC je invoker a executable jen pro `authenticated`; replace RPC je executable jen pro `service_role`. Triggerová funkce je `SECURITY DEFINER`, ale není executable pro `public`, `anon` ani `authenticated`.
 
-Repo obsahuje servisní příkaz `npm run search:backfill`. Vyžaduje explicitní `--environment=disposable|live`; live navíc `--allow-live`, podporuje `--dry-run` a bounded batch `1..500`. V tomto plánu ho **nespouštět**. Neproběhl ani dry-run, ani skutečný backfill v žádné databázi.
+Repo obsahuje servisní příkaz `npm run search:backfill`. Vyžaduje explicitní `--environment=disposable|live`; live navíc `--allow-live`, podporuje `--dry-run` a bounded batch `1..500`. Jeho spuštění proti live targetu je samostatné provozní rozhodnutí. Migrace `13000` už obsahuje inline raw-text fallback backfill.
 
 ### Stav ověření search migrace
 
-Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivaci, latest pořadí, query parsing, owner/deleted/organization filtry, stránkování, deep-link resolvery, raw/manual fallback, ambiguity/no-false-highlight, one-shot warning a single/none/segmented playback chování. Nejde však o DB runtime důkaz. Nebyl proveden skutečný SQL parse nebo apply, postflight tabulky/funkcí/triggeru/indexů, GIN `EXPLAIN`, anon-vs-auth ani dvouuživatelský RLS test, current-vs-old transcript integration test, manual/raw/deleted integration test, runtime stránkování, backfill ani deploy.
+Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivaci, latest pořadí, query parsing, owner/deleted/organization filtry, stránkování, deep-link resolvery, raw/manual fallback, ambiguity/no-false-highlight, one-shot warning a single/none/segmented playback chování. Nejde však o DB runtime důkaz. Každý target musí samostatně projít postflightem tabulky, funkcí, triggeru, indexů, authenticated GIN `EXPLAIN`, anon-vs-auth a dvouuživatelským RLS testem, current-vs-old transcript integration testem, manual/raw/deleted integration testem a runtime stránkováním.
 
 ## Forward migrations release gate
 
-Všechny čtyři forward migrace jsou source-only a unapplied. Release pořadí je závazné: (1) `20260804100000_add_evidence_locations.sql`, (2) `20260804110000_add_recording_organization.sql`, (3) `20260804120000_add_recording_markers.sql`, (4) `20260804130000_add_transcript_fulltext_search.sql`, (5) úspěšný DB postflight každé cílové databáze a teprve (6) deploy aplikace. Deploy kódu, který kterýkoli nový kontrakt čte či zapisuje, je blokovaný do explicitně schváleného apply a úspěšného postflightu všech cílových DB. `npm test`, `npm run check` ani `npm run build` nejsou důkazem stavu vzdálené databáze.
+Pro každý target bez samostatně ověřeného deployment ledgeru se forward migrace považují za neaplikované. Release pořadí je závazné: (1) `20260804100000_add_evidence_locations.sql`, (2) `20260804110000_add_recording_organization.sql`, (3) `20260804120000_add_recording_markers.sql`, (4) `20260804130000_add_transcript_fulltext_search.sql`, (5) úspěšný DB postflight cílové databáze a teprve (6) deploy aplikace. `npm test`, `npm run check` ani `npm run build` nejsou důkazem stavu vzdálené databáze.
 
 ## Public tabulky
 
@@ -140,13 +136,13 @@ Všechny čtyři forward migrace jsou source-only a unapplied. Release pořadí 
 - `transcript_chapters`
 - `transcript_decisions`
 - `transcript_risks`
-- `recording_clients` po aplikaci source-only forward migrace `20260804110000`
-- `recording_projects` po aplikaci source-only forward migrace `20260804110000`
-- `recording_folders` po aplikaci source-only forward migrace `20260804110000`
-- `recording_tags` po aplikaci source-only forward migrace `20260804110000`
-- `recording_tag_links` po aplikaci source-only forward migrace `20260804110000`
-- `recording_markers` po aplikaci source-only forward migrace `20260804120000`
-- `transcript_search_chunks` po aplikaci source-only forward migrace `20260804130000`
+- `recording_clients` po aplikaci forward migrace `20260804110000`
+- `recording_projects` po aplikaci forward migrace `20260804110000`
+- `recording_folders` po aplikaci forward migrace `20260804110000`
+- `recording_tags` po aplikaci forward migrace `20260804110000`
+- `recording_tag_links` po aplikaci forward migrace `20260804110000`
+- `recording_markers` po aplikaci forward migrace `20260804120000`
+- `transcript_search_chunks` po aplikaci forward migrace `20260804130000`
 - `audit_logs`
 
 ## Enumy
@@ -241,27 +237,16 @@ Nová live nahrávka pod limitem používá jeden finální objekt:
 
 `recordings.storage_path` ukazuje přímo na tento objekt. Pro kompatibilitu aplikace stále rozpozná starší segmentovaný prefix `{user_id}/{recording_id}/live/`; u takového záznamu vytvoří async znovupřepis jeden řádek v `transcription_jobs` pro každý nalezený objekt, se společným `provider_config.batch_id` a `provider_config.audio_source = supabase_recording_segment`.
 
-## Aplikace migrace
+## Ověření cílového prostředí
 
-Core baseline migrace už byla aplikovaná přes MCP server `supabase-vosio`. Jde pouze o historické ověření baseline, ne o potvrzení úplného aktuálního source kontraktu. Nezahrnuje source-only forward migrace `20260804100000_add_evidence_locations.sql`, `20260804110000_add_recording_organization.sql`, `20260804120000_add_recording_markers.sql` ani `20260804130000_add_transcript_fulltext_search.sql` popsané výše.
+Veřejný repozitář nepotvrzuje stav žádné konkrétní vzdálené databáze. Před deployem aplikace ověř na každém targetu alespoň:
 
-Ověřeno:
+1. timestampově seřazený migrační řetězec a jeho skutečnou migration history,
+2. očekávané tabulky, sloupce, constrainty, funkce, triggery a validní indexy,
+3. enabled a forced RLS, přesné grants a anon-vs-auth chování,
+4. cross-tenant izolaci dvěma reálnými uživateli,
+5. private bucket `recordings`, jeho MIME allowlist a efektivní file-size limit,
+6. runtime zápis nahrávky, přepisu, AI projekcí, markerů, organizace a search chunks,
+7. latest-transcript, raw/manual fallback a deleted-recording search chování.
 
-1. public tabulky existují,
-2. RLS je zapnuté a forced na všech uživatelských public tabulkách,
-3. bucket `recordings` existuje a je private,
-4. globální Storage file size limit je nejméně tak vysoký jako explicitní `recordings.file_size_limit`, který aplikace používá jako runtime limit,
-5. bucket má audio MIME allowlist,
-6. enum `ai_processing_type` obsahuje `timeline_chapters`,
-7. systémová šablona `System timeline chapters` existuje jako globální `prompt_templates` řádek,
-8. role `anon` nemá granty na uživatelské public tabulky.
-
-Runtime chování s reálným authenticated uživatelem:
-
-1. user vidí jen vlastní řádky,
-2. storage upload funguje pouze do složky vlastního `user_id`,
-3. frontend umí vytvořit `recordings` řádek a nahrát soubor do private bucketu,
-4. server-side service role vytváří Soniox `transcription_jobs`,
-5. polling endpoint ukládá hotový text do `transcripts`,
-6. AI output ukládání je navázané na `ai_processing_jobs` a `ai_outputs`,
-7. strukturované AI projekce se ukládají do `transcript_tasks`, `transcript_chapters`, `transcript_decisions` a `transcript_risks`.
+Produkční databázi kvůli srovnání s fresh baseline neresetuj. U existujícího projektu nejdřív odděleně vyhodnoť shodu schématu a shodu migration history.
