@@ -18,7 +18,7 @@ const emptyStructuredItems: StructuredAiItems = {
   tasks: []
 };
 const fixtureScopePattern = /^[0-9a-f]{12}$/;
-const fixtureModes = ["transcript", "raw", "ai", "timeline", "files"] as const;
+const fixtureModes = ["blocks", "raw", "ai", "timeline", "files"] as const;
 type FixtureMode = (typeof fixtureModes)[number];
 
 // createFixtureSegments produces alternating speaker blocks that overflow the detail viewport.
@@ -78,9 +78,9 @@ function isFixtureMode(value: string | undefined): value is FixtureMode {
   return fixtureModes.some((mode) => mode === value);
 }
 
-// getFixtureInitialTab keeps raw transcript content in the transcript tab.
+// getFixtureInitialTab maps transcript-content fixture modes to the transcript tab.
 function getFixtureInitialTab(mode: FixtureMode): TranscriptTab {
-  return mode === "raw" ? "transcript" : mode;
+  return mode === "blocks" || mode === "raw" ? "transcript" : mode;
 }
 
 // RecordingLayoutE2EPage exposes the real detail hierarchy only on the local dev server.

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 
-type FixtureMode = "transcript" | "raw" | "ai" | "timeline" | "files";
+type FixtureMode = "blocks" | "raw" | "ai" | "timeline" | "files";
 
 // createFixtureScope supplies the exact twelve-hex token required by the guarded fixture route.
 function createFixtureScope() {
@@ -28,7 +28,7 @@ test("the layout fixture rejects missing scope", async ({ request }) => {
 });
 
 test("the layout fixture rejects malformed scope and mode", async ({ request }) => {
-  const malformedScope = await request.get("/login/recording-layout-e2e?scope=not-a-token&mode=transcript");
+  const malformedScope = await request.get("/login/recording-layout-e2e?scope=not-a-token&mode=blocks");
   expect(malformedScope.status()).toBe(404);
 
   const malformedMode = await request.get(
@@ -39,7 +39,7 @@ test("the layout fixture rejects malformed scope and mode", async ({ request }) 
 
 test("the layout fixture renders the guarded detail grid and audio element", async ({ page }) => {
   await stubSignedAudioUrl(page);
-  await page.goto(`/login/recording-layout-e2e?scope=${createFixtureScope()}&mode=transcript`);
+  await page.goto(`/login/recording-layout-e2e?scope=${createFixtureScope()}&mode=blocks`);
 
   await expect(page.locator(".recording-workbench")).toBeVisible();
   await expect(page.locator(".recording-workbench-grid")).toBeVisible();
@@ -49,7 +49,7 @@ test("the layout fixture renders the guarded detail grid and audio element", asy
 });
 
 const fixtureTabs: ReadonlyArray<readonly [FixtureMode, string]> = [
-  ["transcript", "Přepis"],
+  ["blocks", "Přepis"],
   ["raw", "Přepis"],
   ["ai", "AI zpracování"],
   ["timeline", "Časová osa"],
@@ -62,7 +62,7 @@ for (const [mode, tabName] of fixtureTabs) {
     await page.goto(`/login/recording-layout-e2e?scope=${createFixtureScope()}&mode=${mode}`);
 
     await expect(page.getByRole("tab", { name: tabName })).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(`.tab-panel-${mode === "raw" ? "transcript" : mode}`)).toBeVisible();
+    await expect(page.locator(`.tab-panel-${mode === "blocks" || mode === "raw" ? "transcript" : mode}`)).toBeVisible();
     await expect(page.locator(".recording-audio-player audio")).toBeVisible();
   });
 }
@@ -70,7 +70,7 @@ for (const [mode, tabName] of fixtureTabs) {
 test("the final transcript row scrolls fully above the audio player", async ({ page }) => {
   await stubSignedAudioUrl(page);
   const scope = createFixtureScope();
-  await page.goto(`/login/recording-layout-e2e?scope=${scope}&mode=transcript`);
+  await page.goto(`/login/recording-layout-e2e?scope=${scope}&mode=blocks`);
 
   await expect(page.locator(".recording-workbench")).toBeVisible();
   await expect(page.locator(".recording-workbench-grid > .transcript-panel")).toBeVisible();
