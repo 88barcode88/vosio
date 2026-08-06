@@ -1,4 +1,5 @@
 import { CheckCircle2, LockKeyhole, Settings2 } from "lucide-react";
+import { APP_VERSION } from "@/lib/app-version";
 import { updateUserSettingsAction } from "@/lib/settings/actions";
 import {
   AI_MODEL_QUALITY_GUIDANCE,
@@ -359,6 +360,10 @@ export function SettingsPanel({ settings, status, usageState }: SettingsPanelPro
             <h2>Systémové hranice</h2>
           </div>
           <dl>
+            <div>
+              <dt>Verze aplikace</dt>
+              <dd>{APP_VERSION}</dd>
+            </div>
             <div>
               <dt>Soniox region</dt>
               <dd>Řízeno server env podle Soniox projektu</dd>
