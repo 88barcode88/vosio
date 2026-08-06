@@ -148,6 +148,30 @@ describe("RecordingFilters URL navigation", () => {
     expect(container.querySelector('button[type="submit"]')).toBeNull();
   });
 
+  it("immediately changes projects and skips a duplicate push for the committed URL", async () => {
+    const filters = { clientId: clientA, folderId: null, projectId: null, tagIds: [] };
+    navigation.currentSearch = `scope=fixture&client=${clientA}`;
+    await act(async () => root.render(
+      <RecordingFilters filters={filters} options={options} searchQuery="" />
+    ));
+
+    await setSelect("project", projectA);
+    const target = navigation.push.mock.calls[0]?.[0] as string;
+    expect(new URL(target, "https://example.test").searchParams.get("project")).toBe(projectA);
+
+    navigation.currentSearch = target.split("?")[1] ?? "";
+    navigation.push.mockClear();
+    await act(async () => root.render(
+      <RecordingFilters
+        filters={{ clientId: clientA, folderId: null, projectId: projectA, tagIds: [] }}
+        options={options}
+        searchQuery=""
+      />
+    ));
+    await setSelect("project", projectA);
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+
   it("debounces only empty or three-character normalized searches", async () => {
     vi.useFakeTimers();
     navigation.currentSearch = "scope=fixture&q=call&page=2";
@@ -175,7 +199,25 @@ describe("RecordingFilters URL navigation", () => {
     expect(target.searchParams.has("q")).toBe(false);
   });
 
-  it("locks every filter control during an immediate filter navigation", async () => {
+  it("clears search through the same debounced URL contract", async () => {
+    vi.useFakeTimers();
+    navigation.currentSearch = "scope=fixture&q=call";
+    await act(async () => root.render(
+      <RecordingFilters filters={emptyFilters} options={options} searchQuery="call" />
+    ));
+
+    const clearSearchButton = Array.from(container.querySelectorAll<HTMLButtonElement>(
+      ".recording-filter-actions button"
+    )).at(-1);
+    await act(async () => clearSearchButton?.click());
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+
+    const target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
+    expect(target.searchParams.has("q")).toBe(false);
+    expect(target.searchParams.get("scope")).toBe("fixture");
+  });
+
+  it("keeps search usable while locking organization controls during immediate navigation", async () => {
     const navigationRequest = createDeferred();
     navigation.push.mockImplementationOnce(() => navigationRequest.promise);
     await act(async () => root.render(
@@ -186,8 +228,11 @@ describe("RecordingFilters URL navigation", () => {
 
     const form = container.querySelector<HTMLFormElement>("form.recording-filters");
     expect(form?.getAttribute("aria-busy")).toBe("true");
+    expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.disabled).toBe(false);
+    await setInput("q", "draft call");
+    expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("draft call");
     for (const control of container.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>(
-      "form.recording-filters input, form.recording-filters select, form.recording-filters button"
+      'form.recording-filters input[name="tag"], form.recording-filters select, form.recording-filters button'
     )) {
       expect(control.disabled, control.outerHTML).toBe(true);
     }

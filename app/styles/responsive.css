@@ -207,12 +207,19 @@
   .recording-filter-grid {
     grid-template-columns: 1fr;
   }
+  .recording-filter-tag-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
   .organization-manager-grid {
     grid-template-columns: 1fr;
   }
   .recording-filter-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+  .recording-filter-tag-row .recording-filter-actions {
+    margin-left: 0;
   }
   .recording-filter-actions button {
     width: 100%;

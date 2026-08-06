@@ -657,11 +657,24 @@
 .recording-filter-empty {
   font-weight: 500;
 }
+.recording-filter-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.recording-filter-tag-row .recording-filter-tags {
+  flex: 1 1 auto;
+}
 .recording-filter-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+.recording-filter-tag-row .recording-filter-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  margin-left: auto;
 }
 .recording-filter-actions button {
   min-height: 34px;

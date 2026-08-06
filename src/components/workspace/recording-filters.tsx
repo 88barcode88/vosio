@@ -63,10 +63,10 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
 
   // currentDraft returns all controlled organization values in URL order.
   const currentDraft = useCallback((): RecordingOrganizationFilters => ({
-      clientId: clientId || null,
-      folderId: folderId || null,
-      projectId: projectId || null,
-      tagIds: Array.from(tagIds)
+    clientId: clientId || null,
+    folderId: folderId || null,
+    projectId: projectId || null,
+    tagIds: Array.from(tagIds)
   }), [clientId, folderId, projectId, tagIds]);
 
   // Deferred search navigates only for a cleared query or a useful three-character query.
@@ -114,7 +114,6 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
         <label className="recording-filter-search">
           <span>Hledat</span>
           <input
-            disabled={isNavigationPending}
             maxLength={120}
             name="q"
             onChange={(event) => setQuery(event.target.value)}
@@ -180,35 +179,37 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
           </select>
         </label>
       </div>
-      <fieldset className="recording-filter-tags">
-        <legend>Štítky <small>Vybrané štítky platí současně</small></legend>
-        {options.tags.length > 0 ? options.tags.map((tag) => (
-          <label key={tag.id}>
-            <input
-              checked={tagIds.has(tag.id)}
-              disabled={isNavigationPending}
-              name="tag"
-              onChange={() => toggleTag(tag.id)}
-              type="checkbox"
-              value={tag.id}
-            />
-            <span>{tag.name}</span>
-          </label>
-        )) : <span className="recording-filter-empty">Zatím bez štítků</span>}
-      </fieldset>
-      <div className="recording-filter-actions">
-        <button
-          disabled={isNavigationPending || (!hasFilters && !hasDraftFilters)}
-          onClick={clearFilters}
-          type="button"
-        >
-          Vyčistit filtry
-        </button>
-        {query ? (
-          <button disabled={isNavigationPending} onClick={() => setQuery("")} type="button">
-            Vyčistit hledání
+      <div className="recording-filter-tag-row">
+        <fieldset className="recording-filter-tags">
+          <legend>Štítky <small>Vybrané štítky platí současně</small></legend>
+          {options.tags.length > 0 ? options.tags.map((tag) => (
+            <label key={tag.id}>
+              <input
+                checked={tagIds.has(tag.id)}
+                disabled={isNavigationPending}
+                name="tag"
+                onChange={() => toggleTag(tag.id)}
+                type="checkbox"
+                value={tag.id}
+              />
+              <span>{tag.name}</span>
+            </label>
+          )) : <span className="recording-filter-empty">Zatím bez štítků</span>}
+        </fieldset>
+        <div className="recording-filter-actions">
+          <button
+            disabled={isNavigationPending || (!hasFilters && !hasDraftFilters)}
+            onClick={clearFilters}
+            type="button"
+          >
+            Vyčistit filtry
           </button>
-        ) : null}
+          {query ? (
+            <button disabled={isNavigationPending} onClick={() => setQuery("")} type="button">
+              Vyčistit hledání
+            </button>
+          ) : null}
+        </div>
       </div>
       <span aria-live="polite" className="visually-hidden">
         {isNavigationPending ? "Aktualizuji seznam nahrávek." : ""}
