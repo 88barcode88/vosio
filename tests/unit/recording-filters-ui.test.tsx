@@ -205,6 +205,34 @@ describe("RecordingFilters URL navigation", () => {
     expect(navigation.push).not.toHaveBeenCalled();
   });
 
+  it("syncs controls to an external browser history location without pushing the stale draft", async () => {
+    vi.useFakeTimers();
+    navigation.currentSearch = `scope=fixture&q=old&client=${clientA}`;
+    await act(async () => root.render(
+      <RecordingFilters
+        filters={{ clientId: clientA, folderId: null, projectId: null, tagIds: [] }}
+        options={options}
+        searchQuery="old"
+      />
+    ));
+    await setInput("q", "stale draft");
+    navigation.push.mockClear();
+
+    navigation.currentSearch = `scope=fixture&q=new&client=${clientB}`;
+    await act(async () => root.render(
+      <RecordingFilters
+        filters={{ clientId: clientB, folderId: null, projectId: null, tagIds: [] }}
+        options={options}
+        searchQuery="new"
+      />
+    ));
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+
+    expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("new");
+    expect(container.querySelector<HTMLSelectElement>('select[name="client"]')?.value).toBe(clientB);
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+
   it("debounces only empty or three-character normalized searches", async () => {
     vi.useFakeTimers();
     navigation.currentSearch = "scope=fixture&q=call&page=2";

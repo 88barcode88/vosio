@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   buildRecordingFilterSearchParams,
   type RecordingOrganizationFilters
@@ -27,6 +27,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
   const [projectId, setProjectId] = useState(filters.projectId ?? "");
   const [folderId, setFolderId] = useState(filters.folderId ?? "");
   const [tagIds, setTagIds] = useState(() => new Set(filters.tagIds));
+  const previousCommittedLocationRef = useRef<string | null>(null);
   const committedQueryString = currentSearchParams.toString();
   const committedLocation = committedQueryString ? `${pathname}?${committedQueryString}` : pathname;
   const projects = options.projects.filter((project) => project.client_id === clientId);
@@ -38,6 +39,20 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
   useEffect(() => {
     if (navigationTarget === committedLocation) setNavigationTarget(null);
   }, [committedLocation, navigationTarget]);
+
+  // syncExternalLocation adopts browser history changes without overwriting ordinary local drafts.
+  useEffect(() => {
+    const previousLocation = previousCommittedLocationRef.current;
+    previousCommittedLocationRef.current = committedLocation;
+    if (previousLocation === null || previousLocation === committedLocation) return;
+    if (navigationTarget === committedLocation) return;
+
+    setQuery(searchQuery);
+    setClientId(filters.clientId ?? "");
+    setProjectId(filters.projectId ?? "");
+    setFolderId(filters.folderId ?? "");
+    setTagIds(new Set(filters.tagIds));
+  }, [committedLocation, filters.clientId, filters.folderId, filters.projectId, filters.tagIds, navigationTarget, searchQuery]);
 
   // navigate applies one canonical filter snapshot and skips committed or pending URL targets.
   const navigate = useCallback((
