@@ -57,9 +57,11 @@
     right: auto;
     width: min(320px, calc(100vw - 40px));
   }
-  .recording-organization-fields,
-  .recording-organization-tags,
   .organization-manager-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .recording-organization-fields,
+  .recording-organization-tags {
     grid-template-columns: 1fr;
   }
   .recording-filter-grid {
@@ -203,6 +205,9 @@
     grid-template-columns: 1fr;
   }
   .recording-filter-grid {
+    grid-template-columns: 1fr;
+  }
+  .organization-manager-grid {
     grid-template-columns: 1fr;
   }
   .recording-filter-actions {

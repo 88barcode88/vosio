@@ -552,6 +552,19 @@ describe("OrganizationManager", () => {
 });
 
 describe("organization UI integration", () => {
+  it("keeps organization cards compact without overflowing the responsive layout", () => {
+    const recordingStyles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+    const responsiveStyles = readFileSync(join(process.cwd(), "app", "styles", "responsive.css"), "utf8");
+
+    expect(recordingStyles).toMatch(/\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
+    expect(responsiveStyles).toMatch(/@media \(max-width: 1180px\)\s*\{[\s\S]*?\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+    expect(responsiveStyles).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr/);
+    expect(recordingStyles).toContain("width: min(280px, calc(100vw - 52px))");
+  });
+
   it("keeps the existing title editor and loads organization data outside recording row loops", () => {
     const workbenchSource = readFileSync(
       join(process.cwd(), "src", "components", "workspace", "recording-workbench.tsx"),
