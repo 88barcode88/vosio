@@ -114,3 +114,45 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
   await expect(page.getByText("Call jen jeden štítek", { exact: true })).toBeVisible();
   await expect(page.getByText("Filtrovaný výsledek: 2 nahrávky.")).toBeVisible();
 });
+
+test("uses native color selection, neutral reset and color-mixed manager badges in both themes", async ({ page }) => {
+  await page.goto(`/login/recording-organization-e2e?scope=${fixtureScope}`);
+  await expect(page.getByRole("heading", { name: "Recording organization E2E fixture" })).toBeVisible();
+
+  await createManagerEntity(page, "Přidat klienta", "Neutral");
+  await page.getByRole("button", { name: "Přidat klienta", exact: true }).click();
+  const colorPicker = page.getByLabel("Barva Přidat klienta");
+  const hiddenColor = page.locator('input[type="hidden"][name="color"]');
+  await expect(colorPicker).toHaveAttribute("type", "color");
+  await colorPicker.evaluate((input, color) => {
+    input.value = color;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, "#224466");
+  await expect(hiddenColor).toHaveValue("#224466");
+  await page.getByRole("textbox", { name: "Název" }).fill("Palette");
+  await page.getByRole("button", { name: "Uložit" }).click();
+  await expect(page.getByRole("textbox", { name: "Název" })).toHaveCount(0);
+
+  const badge = page.getByText("Palette", { exact: true });
+  const neutralBadge = page.getByText("Neutral", { exact: true });
+  await expect(badge).toBeVisible();
+  await expect(neutralBadge).toBeVisible();
+  await expect(badge).toHaveClass(/organization-manager-badge-colored/);
+  await expect(neutralBadge).not.toHaveClass(/organization-manager-badge-colored/);
+  await expect(badge).toHaveCSS("--organization-color", "#224466");
+  for (const theme of ["dark", "light"] as const) {
+    await page.locator("html").evaluate((element, nextTheme) => { element.dataset.theme = nextTheme; }, theme);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    const coloredBackground = await badge.evaluate((element) => getComputedStyle(element).backgroundColor);
+    const neutralBackground = await neutralBadge.evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(coloredBackground).not.toBe(neutralBackground);
+  }
+
+  await page.getByRole("button", { name: "Přejmenovat Palette", exact: true }).click();
+  await page.getByRole("button", { name: "Bez barvy" }).click();
+  await expect(page.locator('input[type="hidden"][name="color"]')).toHaveValue("");
+  await page.getByRole("button", { name: "Uložit" }).click();
+  await expect(page.getByRole("button", { name: "Bez barvy" })).toHaveCount(0);
+  await expect(badge).not.toHaveClass(/organization-manager-badge-colored/);
+});
