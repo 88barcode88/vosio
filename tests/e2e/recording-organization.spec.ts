@@ -125,7 +125,7 @@ test("uses native color selection, neutral reset and color-mixed manager badges 
   const hiddenColor = page.locator('input[type="hidden"][name="color"]');
   await expect(colorPicker).toHaveAttribute("type", "color");
   await colorPicker.evaluate((input, color) => {
-    input.value = color;
+    (input as HTMLInputElement).value = color;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, "#224466");
