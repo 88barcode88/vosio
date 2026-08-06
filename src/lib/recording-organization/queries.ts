@@ -122,10 +122,10 @@ export async function getRecordingOrganization(
       recording.user_id,
       "Unable to load recording client"
     ),
-    getOwnedOrganizationRow<Pick<RecordingProjectPicker, "id" | "name">>(
+    getOwnedOrganizationRow<Pick<RecordingProjectPicker, "color" | "id" | "name">>(
       supabase,
       "recording_projects",
-      "id,name",
+      "id,name,color",
       recording.project_id,
       recording.user_id,
       "Unable to load recording project"
@@ -133,7 +133,7 @@ export async function getRecordingOrganization(
     getOwnedOrganizationRow<RecordingFolderPicker>(
       supabase,
       "recording_folders",
-      "id,name",
+      "id,name,color",
       recording.folder_id,
       recording.user_id,
       "Unable to load recording folder"

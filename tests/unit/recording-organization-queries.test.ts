@@ -103,8 +103,8 @@ describe("recording organization queries", () => {
 
   it("maps owned lookup rows and tags into a separate projection", async () => {
     const clientQuery = createMaybeSingleQuery({ color: "#112233", id: "client-1", name: "Acme" });
-    const projectQuery = createMaybeSingleQuery({ id: "project-1", name: "Web" });
-    const folderQuery = createMaybeSingleQuery({ id: "folder-1", name: "Calls" });
+    const projectQuery = createMaybeSingleQuery({ color: "#445566", id: "project-1", name: "Web" });
+    const folderQuery = createMaybeSingleQuery({ color: null, id: "folder-1", name: "Calls" });
     const linksQuery = createListQuery([
       { recording_tags: { color: null, id: "tag-2", name: "B" }, tag_id: "tag-2" },
       { recording_tags: { color: "#ABCDEF", id: "tag-1", name: "A" }, tag_id: "tag-1" }
@@ -124,8 +124,8 @@ describe("recording organization queries", () => {
 
     await expect(getRecordingOrganization({ from } as never, recording)).resolves.toEqual({
       client: { color: "#112233", id: "client-1", name: "Acme" },
-      folder: { id: "folder-1", name: "Calls" },
-      project: { id: "project-1", name: "Web" },
+      folder: { color: null, id: "folder-1", name: "Calls" },
+      project: { color: "#445566", id: "project-1", name: "Web" },
       tags: [
         { color: "#ABCDEF", id: "tag-1", name: "A" },
         { color: null, id: "tag-2", name: "B" }
@@ -134,6 +134,8 @@ describe("recording organization queries", () => {
     for (const query of [clientQuery, projectQuery, folderQuery]) {
       expect(query.eq).toHaveBeenCalledWith("user_id", userId);
     }
+    expect(projectQuery.select).toHaveBeenCalledWith("id,name,color");
+    expect(folderQuery.select).toHaveBeenCalledWith("id,name,color");
   });
 
   it("throws a clear table-specific error without exposing a select-star fallback", async () => {

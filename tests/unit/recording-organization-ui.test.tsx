@@ -58,8 +58,8 @@ const options: RecordingOrganizationOptions = {
 
 const organization: RecordingOrganization = {
   client: { color: "#112233", id: clientA, name: "Acme" },
-  folder: { id: folderId, name: "Obchod" },
-  project: { id: projectA, name: "Projekt A" },
+  folder: { color: null, id: folderId, name: "Obchod" },
+  project: { color: null, id: projectA, name: "Projekt A" },
   tags: [{ color: "#ABCDEF", id: tagA, name: "Priorita" }]
 };
 
@@ -312,7 +312,7 @@ describe("RecordingOrganizationEditor", () => {
     const betaOrganization: RecordingOrganization = {
       client: { color: null, id: clientB, name: "Beta" },
       folder: null,
-      project: { id: projectB, name: "Projekt B" },
+      project: { color: null, id: projectB, name: "Projekt B" },
       tags: [{ color: null, id: tagB, name: "Follow-up" }]
     };
     const betaRecording = {
