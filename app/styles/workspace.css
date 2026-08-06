@@ -610,6 +610,12 @@
   font-size: 12px;
   line-height: 1.4;
 }
+.live-marker-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .live-marker-feedback[role="alert"] {
   color: var(--red);
 }

@@ -373,12 +373,96 @@ describe("BrowserRecorder live markers", () => {
       id: clientMarkerId,
       offsetMs: 12_000
     }));
+    expect(document.querySelector(".live-marker-count")?.textContent)
+      .toContain("Označené momenty: 0");
     await act(async () => {
       document.querySelector<HTMLButtonElement>(".live-marker-button")?.click();
+      await Promise.resolve();
       await Promise.resolve();
     });
 
     expect(JSON.parse(mocks.fetch.mock.calls[0]?.[1]?.body as string).offsetMs).toBe(12_000);
+    expect(document.querySelector(".live-marker-count")?.textContent)
+      .toContain("Označené momenty: 1");
+  });
+
+  it("counts only a validated retry response after a failed marker save", async () => {
+    const { realtime } = await startReadyRecorder();
+    mocks.randomUUID.mockReturnValue(clientMarkerId);
+    mocks.fetch
+      .mockResolvedValueOnce({ ok: false })
+      .mockResolvedValueOnce(createSavedMarkerResponse({
+        id: clientMarkerId,
+        offsetMs: 0
+      }));
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".live-marker-button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector(".live-marker-count")?.textContent)
+      .toContain("Označené momenty: 0");
+    expect(document.querySelector<HTMLButtonElement>(".live-marker-button")?.textContent)
+      .toContain("Zkusit moment znovu");
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".live-marker-button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    expect(document.querySelector(".live-marker-count")?.textContent)
+      .toContain("Označené momenty: 1");
+    expect(realtime.recording.cancel).not.toHaveBeenCalled();
+  });
+
+  it("resets the saved marker count when a new recording session starts", async () => {
+    const firstSession = await startReadyRecorder();
+    mocks.randomUUID.mockReturnValue(clientMarkerId);
+    mocks.fetch.mockResolvedValue(createSavedMarkerResponse({
+      id: clientMarkerId,
+      offsetMs: 0
+    }));
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".live-marker-button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(document.querySelector(".live-marker-count")?.textContent)
+      .toContain("Označené momenty: 1");
+
+    const nextDraft = createDeferred<{
+      data: { id: string } | null;
+      error: { message: string } | null;
+    }>();
+    const nextRealtime = createRealtimeRecordingMock();
+    mocks.createBrowserClient.mockReturnValue(createDraftClientMock(nextDraft.promise).client);
+    mocks.realtimeRecord.mockReturnValue(nextRealtime.recording);
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      nextRealtime.handlers.get("state_change")?.({ new_state: "recording" } as never);
+      nextDraft.resolve({ data: { id: recordingId }, error: null });
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector(".live-marker-count")?.textContent)
+      .toContain("Označené momenty: 0");
+    expect(firstSession.realtime.recording.cancel).not.toHaveBeenCalled();
   });
 
   it("ignores an old failed session event before the next capture becomes active", async () => {
@@ -501,12 +585,17 @@ describe("BrowserRecorder live markers", () => {
       await Promise.resolve();
     });
 
+    expect(document.querySelector(".live-marker-count")?.textContent)
+      .toContain("Označené momenty: 0");
+
     await act(async () => {
       markerResponse.resolve(createSavedMarkerResponse({ id: clientMarkerId, offsetMs: 0 }));
       await Promise.resolve();
     });
 
     expect(document.querySelector(".live-marker-feedback")).toBeNull();
+    expect(document.querySelector(".live-marker-count")?.textContent)
+      .toContain("Označené momenty: 0");
     expect(document.querySelector<HTMLButtonElement>(".live-marker-button")?.disabled).toBe(false);
     expect(firstSession.realtime.recording.cancel).not.toHaveBeenCalled();
   });

@@ -164,6 +164,7 @@ export function BrowserRecorder({
   const [liveTranscript, setLiveTranscript] = useState("");
   const [liveMarkerFeedback, setLiveMarkerFeedback] = useState<LiveMarkerFeedback | null>(null);
   const [liveMarkerPending, setLiveMarkerPending] = useState(false);
+  const [savedLiveMarkerCount, setSavedLiveMarkerCount] = useState(0);
   const [markerReady, setMarkerReady] = useState(false);
   const [feedback, setFeedback] = useState<RecorderFeedback | null>(null);
   const [realtimeWarning, setRealtimeWarning] = useState<string | null>(null);
@@ -354,6 +355,7 @@ export function BrowserRecorder({
     liveRecordingStartedAtMsRef.current = null;
     setLiveMarkerFeedback(null);
     setLiveMarkerPending(false);
+    setSavedLiveMarkerCount(0);
     setMarkerReady(false);
   }
 
@@ -448,6 +450,7 @@ export function BrowserRecorder({
       }
 
       liveMarkerAttemptRef.current = null;
+      setSavedLiveMarkerCount((count) => count + 1);
       setLiveMarkerFeedback({
         message: `Důležitý moment ${timestamp} je uložený.`,
         offsetMs: attempt.offsetMs,
@@ -1738,6 +1741,9 @@ export function BrowserRecorder({
                 ? "Zkusit moment znovu"
                 : "Označit moment"}
           </button>
+          <span aria-live="polite" className="live-marker-count">
+            Označené momenty: {savedLiveMarkerCount}
+          </span>
           {liveMarkerFeedback ? (
             <p
               aria-live={liveMarkerFeedback.tone === "error" ? "assertive" : "polite"}
