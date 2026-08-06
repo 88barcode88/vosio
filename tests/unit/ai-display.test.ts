@@ -49,15 +49,17 @@ describe("AI display helpers", () => {
       supportsTemperature: false
     });
     expect(getAiModelOption("gpt-5.6-terra")).toMatchObject({
-      inputUsdPerMillionTokens: 2.5,
-      outputUsdPerMillionTokens: 15,
+      inputUsdPerMillionTokens: 2,
+      outputUsdPerMillionTokens: 12,
+      price: "$2.00 input / $12.00 output za 1M tokenů",
       provider: "openai",
       reasoningEffort: "high",
       supportsTemperature: false
     });
     expect(getAiModelOption("gpt-5.6-luna")).toMatchObject({
-      inputUsdPerMillionTokens: 1,
-      outputUsdPerMillionTokens: 6,
+      inputUsdPerMillionTokens: 0.2,
+      outputUsdPerMillionTokens: 1.2,
+      price: "$0.20 input / $1.20 output za 1M tokenů",
       reasoningEffort: "xhigh"
     });
   });

@@ -42,10 +42,10 @@ export const aiModelOptions = [
   {
     description: "Vyvážený GPT-5.6 model pro kvalitní zápisy a složitější práci s dlouhými přepisy; používá reasoning High.",
     id: "gpt-5.6-terra",
-    inputUsdPerMillionTokens: 2.5,
+    inputUsdPerMillionTokens: 2,
     label: "GPT-5.6 Terra · High",
-    outputUsdPerMillionTokens: 15,
-    price: "$2.50 input / $15.00 output za 1M tokenů",
+    outputUsdPerMillionTokens: 12,
+    price: "$2.00 input / $12.00 output za 1M tokenů",
     provider: "openai",
     reasoningEffort: "high",
     supportsTemperature: false
@@ -53,10 +53,10 @@ export const aiModelOptions = [
   {
     description: "Úsporný GPT-5.6 model pro strukturované výstupy a vysoký objem; používá reasoning XHigh.",
     id: "gpt-5.6-luna",
-    inputUsdPerMillionTokens: 1,
+    inputUsdPerMillionTokens: 0.2,
     label: "GPT-5.6 Luna · XHigh",
-    outputUsdPerMillionTokens: 6,
-    price: "$1.00 input / $6.00 output za 1M tokenů",
+    outputUsdPerMillionTokens: 1.2,
+    price: "$0.20 input / $1.20 output za 1M tokenů",
     provider: "openai",
     reasoningEffort: "xhigh",
     supportsTemperature: false

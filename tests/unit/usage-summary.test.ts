@@ -13,8 +13,8 @@ const createdAt = "2026-05-24T10:00:00.000Z";
 describe("usage summary calculations", () => {
   it.each([
     ["gpt-5.6-sol", 35],
-    ["gpt-5.6-terra", 17.5],
-    ["gpt-5.6-luna", 7]
+    ["gpt-5.6-terra", 14],
+    ["gpt-5.6-luna", 1.4]
   ])("prices %s from the current catalog", (model, expectedCost) => {
     const summary = summarizeAiUsageRows([{
       created_at: createdAt,
