@@ -36,7 +36,7 @@ function getProcessingTypes(formData: FormData) {
 }
 
 // parseSettingsForm converts the settings form into a validated user settings object.
-function parseSettingsForm(formData: FormData): UserSettings {
+export function parseSettingsForm(formData: FormData): UserSettings {
   const parsed = userSettingsSchema.safeParse({
     aiTemperature: getNumberField(formData, "aiTemperature", 0.2),
     audioRetentionPolicy: getStringField(formData, "audioRetentionPolicy", "keep_audio"),
@@ -47,8 +47,12 @@ function parseSettingsForm(formData: FormData): UserSettings {
       "defaultOpenaiModel",
       defaultUserSettings.defaultOpenaiModel
     ),
-    longRecordingWarningMinutes: getNumberField(formData, "longRecordingWarningMinutes", 60),
     outputLanguage: getStringField(formData, "outputLanguage", "call_language"),
+    sonioxRealtimeLanguage: getStringField(
+      formData,
+      "sonioxRealtimeLanguage",
+      defaultUserSettings.sonioxRealtimeLanguage
+    ),
     sonioxRealtimeModel: getStringField(formData, "sonioxRealtimeModel", "stt-rt-v5")
   });
 

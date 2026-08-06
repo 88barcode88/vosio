@@ -5,6 +5,7 @@ import {
   getAiModelDescription,
   sonioxRealtimeModelOptions
 } from "@/lib/model-options";
+import { sonioxRealtimeLanguageOptions } from "@/lib/soniox/languages";
 import {
   audioRetentionPolicies,
   outputLanguages,
@@ -297,15 +298,18 @@ export function SettingsPanel({ settings, status, usageState }: SettingsPanelPro
               <small>{sonioxRealtimeModel.description}</small>
             </label>
             <label>
-              <span>Upozornit na dlouhou nahrávku po minutách</span>
-              <input
-                defaultValue={settings.longRecordingWarningMinutes}
-                max="1440"
-                min="5"
-                name="longRecordingWarningMinutes"
-                step="5"
-                type="number"
-              />
+              <span>Výchozí jazyk live přepisu</span>
+              <select name="sonioxRealtimeLanguage" defaultValue={settings.sonioxRealtimeLanguage}>
+                {sonioxRealtimeLanguageOptions.map((language) => (
+                  <option key={language.id} value={language.id}>
+                    {language.label}
+                  </option>
+                ))}
+              </select>
+              <small>
+                Automaticky rozpozná jazyk. Pevná volba pomůže Sonioxu držet se jednoho jazyka;
+                rozpoznávání mluvčích zůstává zapnuté.
+              </small>
             </label>
           </div>
           <label className="settings-check">

@@ -5,6 +5,7 @@ import {
   normalizeAiModelId,
   sonioxRealtimeModelIds
 } from "@/lib/model-options";
+import { sonioxRealtimeLanguageIds } from "@/lib/soniox/languages";
 
 export const settingsProcessingTypes = [
   "summary",
@@ -34,8 +35,8 @@ export const defaultUserSettings = {
   autoProcessAfterTranscription: false,
   autoProcessingTypes: ["summary"],
   defaultOpenaiModel: DEFAULT_AI_MODEL_ID,
-  longRecordingWarningMinutes: 60,
   outputLanguage: "call_language",
+  sonioxRealtimeLanguage: "auto",
   sonioxRealtimeModel: "stt-rt-v5"
 } satisfies UserSettings;
 
@@ -45,8 +46,8 @@ export const userSettingsSchema = z.object({
   autoProcessAfterTranscription: z.boolean(),
   autoProcessingTypes: z.array(z.enum(settingsProcessingTypes)),
   defaultOpenaiModel: aiModelSchema,
-  longRecordingWarningMinutes: z.number().int().min(5).max(24 * 60),
   outputLanguage: z.enum(outputLanguages),
+  sonioxRealtimeLanguage: z.enum(sonioxRealtimeLanguageIds),
   sonioxRealtimeModel: sonioxRealtimeModelSchema
 });
 

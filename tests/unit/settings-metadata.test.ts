@@ -2,6 +2,31 @@ import { describe, expect, it } from "vitest";
 import { getUserSettingsFromMetadata, USER_SETTINGS_METADATA_KEY } from "@/lib/settings/metadata";
 
 describe("settings metadata", () => {
+  it("defaults live language detection for legacy metadata", () => {
+    expect(getUserSettingsFromMetadata({} as never).sonioxRealtimeLanguage).toBe("auto");
+  });
+
+  it("keeps a valid default Soniox live language", () => {
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { sonioxRealtimeLanguage: "de" }
+    }).sonioxRealtimeLanguage).toBe("de");
+  });
+
+  it("rejects an invalid live language and falls back to safe defaults", () => {
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { sonioxRealtimeLanguage: "xx" }
+    }).sonioxRealtimeLanguage).toBe("auto");
+  });
+
+  it("ignores the removed long-recording warning preference", () => {
+    const settings = getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { longRecordingWarningMinutes: 60 }
+    });
+
+    expect(settings.sonioxRealtimeLanguage).toBe("auto");
+    expect(settings).not.toHaveProperty("longRecordingWarningMinutes");
+  });
+
   it("upgrades legacy Soniox realtime model metadata without dropping other settings", () => {
     const settings = getUserSettingsFromMetadata({
       [USER_SETTINGS_METADATA_KEY]: {
