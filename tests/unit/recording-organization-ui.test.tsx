@@ -562,7 +562,8 @@ describe("organization UI integration", () => {
     expect(recordingStyles).toMatch(/\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
     expect(responsiveStyles).toMatch(/@media \(max-width: 1180px\)\s*\{[\s\S]*?\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
     expect(responsiveStyles).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr/);
-    expect(recordingStyles).toContain("width: min(280px, calc(100vw - 52px))");
+    expect(recordingStyles).toMatch(/\.organization-create-form,[\s\S]*?\.organization-rename-form\s*\{[\s\S]*?width:\s*min\(280px, calc\(100vw - 52px\), 100%\)/);
+    expect(recordingStyles).toMatch(/\.organization-save-editor\s*\{[\s\S]*?min-width:\s*0/);
   });
 
   it("keeps the existing title editor and loads organization data outside recording row loops", () => {

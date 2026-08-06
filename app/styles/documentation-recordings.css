@@ -278,6 +278,7 @@
 }
 .organization-save-editor {
   position: relative;
+  min-width: 0;
 }
 .organization-save-editor > button,
 .organization-delete-action > button,
@@ -302,7 +303,7 @@
   z-index: 2;
   display: grid;
   gap: 7px;
-  width: min(280px, calc(100vw - 52px));
+  width: min(280px, calc(100vw - 52px), 100%);
   border: 1px solid var(--border-strong);
   border-radius: 9px;
   background: var(--panel);
