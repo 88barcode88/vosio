@@ -251,15 +251,23 @@
   gap: 6px;
   min-width: 0;
 }
-.organization-manager-row-label > span {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
+.organization-manager-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid var(--border);
   border-radius: 999px;
-}
-.organization-manager-row-label strong {
+  color: var(--text);
+  background: var(--panel-soft);
+  padding: 2px 8px;
   overflow-wrap: anywhere;
   font-size: 12px;
+}
+.organization-manager-badge-colored,
+.organization-chip-colored {
+  border-color: color-mix(in srgb, var(--organization-color) 45%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--organization-color) 18%, var(--panel-soft));
 }
 .organization-manager-row-actions {
   align-items: flex-start;
@@ -323,6 +331,34 @@
   color: var(--text);
   background: var(--panel-soft);
   padding: 0 8px;
+}
+.organization-color-field > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.organization-color-field input[type="color"] {
+  width: 36px;
+  min-width: 36px;
+  height: 32px;
+  min-height: 32px;
+  cursor: pointer;
+  padding: 3px;
+}
+.organization-color-field button {
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--panel-soft);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+}
+.organization-color-field button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--muted) 55%, var(--border));
+  color: var(--muted);
 }
 .organization-save-feedback {
   min-height: 18px;

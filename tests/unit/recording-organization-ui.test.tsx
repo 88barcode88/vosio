@@ -167,6 +167,20 @@ afterEach(async () => {
 });
 
 describe("RecordingOrganizationEditor", () => {
+  it("renders colored detail chips while leaving neutral chips uncolored", async () => {
+    await act(async () => root.render(
+      <RecordingOrganizationEditor organization={organization} options={options} recording={createRecording()} saveAction={vi.fn()} />
+    ));
+
+    const clientChip = Array.from(container.querySelectorAll<HTMLElement>(".organization-chip"))
+      .find((chip) => chip.textContent === "Acme");
+    const folderChip = Array.from(container.querySelectorAll<HTMLElement>(".organization-chip"))
+      .find((chip) => chip.textContent === "Obchod");
+    expect(clientChip?.classList.contains("organization-chip-colored")).toBe(true);
+    expect(clientChip?.style.getPropertyValue("--organization-color")).toBe("#112233");
+    expect(folderChip?.classList.contains("organization-chip-colored")).toBe(false);
+  });
+
   it("shows current chips and enforces client-dependent project choices", async () => {
     await act(async () => root.render(
       <RecordingOrganizationEditor
@@ -431,6 +445,54 @@ describe("OrganizationManager", () => {
     const renameForm = container.querySelector<HTMLFormElement>("form.organization-rename-form");
     await act(async () => renameForm?.requestSubmit());
     expect(renameAction.mock.calls[0]?.[1].get("scopeKey")).toBe(clientA);
+  });
+
+  it("uses a visual color picker and submits a blank hidden color after choosing neutral", async () => {
+    const createAction = vi.fn(async (state: SaveActionState, formData: FormData) =>
+      createSaveSuccess(state.revision, String(formData.get("scopeKey")), "VytvoĹ™eno.")
+    );
+    await act(async () => root.render(
+      <OrganizationManager actions={createManagerActions({ createClient: createAction })} options={options} />
+    ));
+    const createClientButton = container.querySelector<HTMLButtonElement>(
+      ".organization-manager-group:first-child .organization-save-editor > button"
+    );
+    await act(async () => createClientButton?.click());
+
+    const form = container.querySelector<HTMLFormElement>("form.organization-create-form");
+    const picker = form?.querySelector<HTMLInputElement>('input[type="color"]');
+    const hiddenColor = form?.querySelector<HTMLInputElement>('input[type="hidden"][name="color"]');
+    const nameInput = form?.querySelector<HTMLInputElement>('input[name="name"]');
+    expect(picker).not.toBeNull();
+    expect(hiddenColor?.value).toBe("");
+    expect(form?.querySelector('input[type="text"][name="color"]')).toBeNull();
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(picker, "#224466");
+      picker?.dispatchEvent(new Event("input", { bubbles: true }));
+      picker?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(hiddenColor?.value).toBe("#224466");
+    await clickButton("Bez barvy");
+    expect(hiddenColor?.value).toBe("");
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(nameInput, "Nový klient");
+      nameInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await submitForm("organization-create-form");
+    expect(createAction.mock.calls[0]?.[1].get("color")).toBe("");
+  });
+
+  it("renders each manager row as one colored badge without a separate color dot", async () => {
+    await act(async () => root.render(<OrganizationManager options={options} />));
+    const badge = Array.from(container.querySelectorAll<HTMLElement>(".organization-manager-badge"))
+      .find((item) => item.textContent === "Acme");
+    expect(badge?.style.getPropertyValue("--organization-color")).toBe("#112233");
+    expect(container.querySelector(".organization-manager-row-label > span")).toBeNull();
   });
 
   it("requires destructive confirmation and explains client restrictions", async () => {

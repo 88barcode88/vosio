@@ -23,6 +23,7 @@ describe("recording organization validation", () => {
 
   it("normalizes blank colors to null and accepts only strict hex colors", () => {
     expect(parseOrganizationColor(undefined)).toBeNull();
+    expect(parseOrganizationColor("")).toBeNull();
     expect(parseOrganizationColor("  ")).toBeNull();
     expect(parseOrganizationColor(" #12aBcF ")).toBe("#12aBcF");
     expect(() => parseOrganizationColor("#fff")).toThrow();
