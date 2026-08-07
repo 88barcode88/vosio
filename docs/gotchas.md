@@ -232,7 +232,7 @@ Soniox API účtuje tokenově, ale veřejný pricing uvádí orientační hodino
 
 ## Live MediaRecorder WebM duration
 
-Browser `MediaRecorder.start(timeslice)` umí vrátit průběžné WebM bloky, které po slepení nemusí mít providerem čitelnou duration. Vosio proto pro nové live audio používá jeden MediaRecorder bez `timeslice` a soubor finalizuje přes `stop()`. Velikost během nahrávání odhaduje z bitrate; ještě před live limitem `min(bucket, 128 MiB)` audio zastaví s rezervou 5 %, maximálně 2 MiB, a pokračuje pouze realtime přepisem. Skutečná velikost finálního Blobu se před uploadem kontroluje znovu. Tento mechanismus nebrání MediaRecorderu držet Blob v paměti, takže ho nepopisuj jako RAM ochranu.
+Browser `MediaRecorder.start(timeslice)` umí vrátit průběžné WebM bloky, které po slepení nemusí mít providerem čitelnou duration. Vosio proto pro nové live audio používá jeden MediaRecorder bez `timeslice` a soubor finalizuje přes `stop()`. Velikost během nahrávání odhaduje z bitrate; ještě před live limitem `min(effective upload limit, 128 MiB)` audio zastaví s rezervou 5 %, maximálně 2 MiB, a pokračuje pouze realtime přepisem. Skutečná velikost finálního Blobu se před uploadem kontroluje znovu. Tento mechanismus nebrání MediaRecorderu držet Blob v paměti, takže ho nepopisuj jako RAM ochranu.
 
 ## Live timer musí skončit s nahrávkou
 
