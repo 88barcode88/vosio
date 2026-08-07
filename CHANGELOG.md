@@ -4,6 +4,22 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-07
+
+### Added
+
+- Per-user Supabase Storage preference `Auto`, `Free` nebo `Paid` v Nastavení.
+- Transparentní zobrazení bucketu, nezjištěného globálního limitu a efektivních limitů manuálního uploadu a live audia.
+
+### Changed
+
+- Upload limit používá nejpřísnější známé omezení a plan preference ho může pouze snížit.
+
+### Fixed
+
+- Placený plan hint už nemůže působit dojmem, že automaticky zvýšil skutečný Supabase bucket limit.
+- Uložení Nastavení zachová skrytou hodnotu AI temperature i ostatní nesouvisející metadata.
+
 ## [0.1.2] - 2026-08-06
 
 ### Added
