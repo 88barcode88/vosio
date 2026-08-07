@@ -3,11 +3,7 @@ import { PersistentRecorderSlot } from "@/components/persistent-recording-sessio
 import { RecordingUploadForm } from "@/components/recording-upload-form";
 import { TranscriptImportForm } from "@/components/transcript-import-form";
 import { getLiveAudioMaxFileSizeBytes } from "@/lib/recordings/live-audio-limit";
-import {
-  getLiveAudioStorageCopy,
-  getManualUploadStorageCopy,
-  getUnavailableRecordingStorageCopy
-} from "@/lib/recordings/storage-copy";
+import { getRecordingStorageLimitSummary } from "@/lib/recordings/storage-copy";
 import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 
@@ -23,6 +19,10 @@ export function NewRecordingWorkspace({
 }: NewRecordingWorkspaceProps) {
   const maxFileSizeBytes = recordingStorageConfig.maxFileSizeBytes;
   const liveAudioMaxFileSizeBytes = getLiveAudioMaxFileSizeBytes(maxFileSizeBytes);
+  const storageLimitSummary = getRecordingStorageLimitSummary(
+    recordingStorageConfig,
+    userSettings.supabaseStoragePlan
+  );
 
   return (
     <section className="new-recording-workspace" aria-label="Nová nahrávka">
@@ -33,11 +33,25 @@ export function NewRecordingWorkspace({
           <p>Live přepis, audio soubor a hotový přepis jsou rovnocenné cesty do stejného workflow.</p>
         </div>
       </div>
-      {maxFileSizeBytes === null ? (
+      {storageLimitSummary.warning ? (
         <p className="recording-storage-alert" role="alert">
-          {getUnavailableRecordingStorageCopy()}
+          {storageLimitSummary.warning}
         </p>
       ) : null}
+      <dl className="recording-storage-summary">
+        <div>
+          <dt>Bucket recordings</dt>
+          <dd>{storageLimitSummary.bucketLimit}</dd>
+        </div>
+        <div>
+          <dt>Globální limit</dt>
+          <dd>{storageLimitSummary.globalLimit}</dd>
+        </div>
+        <div>
+          <dt>Preference</dt>
+          <dd>{storageLimitSummary.planLabel}</dd>
+        </div>
+      </dl>
 
       <div className="capture-grid">
         <article className="capture-card capture-card-primary">
@@ -45,7 +59,7 @@ export function NewRecordingWorkspace({
             <Mic size={16} />
             <div>
               <strong>Nahrávat live</strong>
-              <span>{getLiveAudioStorageCopy(liveAudioMaxFileSizeBytes)}</span>
+              <span>Limit audia: {storageLimitSummary.liveAudioLimit}. Přepis se uloží vždy.</span>
             </div>
           </div>
           <div className="capture-card-body">
@@ -69,7 +83,7 @@ export function NewRecordingWorkspace({
             </div>
           </div>
           <div className="upload-console">
-            {maxFileSizeBytes !== null ? <p>{getManualUploadStorageCopy(maxFileSizeBytes)}</p> : null}
+            <p>Limit souboru: {storageLimitSummary.manualUploadLimit}.</p>
             <RecordingUploadForm
               maxFileSizeBytes={maxFileSizeBytes}
               redirectAfterUpload="detail"

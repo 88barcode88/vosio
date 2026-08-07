@@ -1,24 +1,26 @@
+import "server-only";
 import {
-  normalizeRecordingStorageLimit,
-  unavailableRecordingStorageConfig,
+  createUnavailableRecordingStorageConfig,
+  resolveRecordingStorageConfig,
   type RecordingStorageConfig
 } from "@/lib/recordings/storage-config";
 import { RECORDINGS_BUCKET } from "@/lib/recordings/types";
+import type { SupabaseStoragePlan } from "@/lib/settings/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-// getRecordingStorageConfig reads the effective app limit from the recordings bucket metadata.
-export async function getRecordingStorageConfig(): Promise<RecordingStorageConfig> {
+// getRecordingStorageConfig reads the bucket and applies a non-authoritative user plan ceiling.
+export async function getRecordingStorageConfig(
+  plan: SupabaseStoragePlan
+): Promise<RecordingStorageConfig> {
   try {
     const { data: bucket, error } = await createAdminClient().storage.getBucket(RECORDINGS_BUCKET);
 
     if (error || !bucket) {
-      return unavailableRecordingStorageConfig;
+      return createUnavailableRecordingStorageConfig(plan);
     }
 
-    return {
-      maxFileSizeBytes: normalizeRecordingStorageLimit(bucket.file_size_limit)
-    };
+    return resolveRecordingStorageConfig(bucket.file_size_limit, plan);
   } catch {
-    return unavailableRecordingStorageConfig;
+    return createUnavailableRecordingStorageConfig(plan);
   }
 }

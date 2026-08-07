@@ -1,28 +1,68 @@
 import { describe, expect, it } from "vitest";
-import {
-  getLiveAudioStorageCopy,
-  getManualUploadStorageCopy,
-  getUnavailableRecordingStorageCopy
-} from "@/lib/recordings/storage-copy";
+import { getRecordingStorageLimitSummary } from "@/lib/recordings/storage-copy";
+
+const MEBIBYTE = 1024 * 1024;
+const GIBIBYTE = 1024 * MEBIBYTE;
 
 describe("recording Storage copy", () => {
-  it("describes the live audio policy separately from the connected bucket limit", () => {
-    expect(getLiveAudioStorageCopy(128 * 1024 * 1024)).toBe(
-      "Audio se uloží do 128 MB. Přepis se uloží vždy."
-    );
+  it("shows that the Free preference tightens a larger configured bucket", () => {
+    expect(
+      getRecordingStorageLimitSummary(
+        {
+          bucketMaxFileSizeBytes: 100 * MEBIBYTE,
+          detectedGlobalMaxFileSizeBytes: null,
+          maxFileSizeBytes: 50 * MEBIBYTE,
+          planMaxFileSizeBytes: 50 * MEBIBYTE
+        },
+        "free"
+      )
+    ).toEqual({
+      bucketLimit: "100 MB",
+      globalLimit: "Nezjištěn",
+      liveAudioLimit: "50 MB",
+      manualUploadLimit: "50 MB",
+      planLabel: "Free",
+      warning: "Globální limit projektu nelze bezpečně zjistit. Preference Free proto upload zpřísňuje na 50 MB; Supabase konfiguraci nemění."
+    });
   });
 
-  it("uses the connected bucket limit for manually uploaded files", () => {
-    expect(getManualUploadStorageCopy(500 * 1024 * 1024)).toBe(
-      "Soubor můžete nahrát do 500 MB."
-    );
+  it("makes a low configured bucket visible for a paid preference", () => {
+    expect(
+      getRecordingStorageLimitSummary(
+        {
+          bucketMaxFileSizeBytes: 50 * MEBIBYTE,
+          detectedGlobalMaxFileSizeBytes: null,
+          maxFileSizeBytes: 50 * MEBIBYTE,
+          planMaxFileSizeBytes: 500 * GIBIBYTE
+        },
+        "paid"
+      )
+    ).toMatchObject({
+      bucketLimit: "50 MB",
+      liveAudioLimit: "50 MB",
+      manualUploadLimit: "50 MB",
+      planLabel: "Paid",
+      warning: "Je vybraný placený tarif, ale bucket recordings je omezený na 50 MB. Preference Supabase konfiguraci nezvyšuje."
+    });
   });
 
-  it("keeps transcript-only paths understandable when the limit is unavailable", () => {
-    expect(getLiveAudioStorageCopy(null)).toBe("Přepis se uloží vždy; audio se teď neukládá.");
-    expect(getManualUploadStorageCopy(null)).toBe(getUnavailableRecordingStorageCopy());
-    expect(getUnavailableRecordingStorageCopy()).toBe(
-      "Audio soubory teď nelze ukládat. Live přepis i vložení hotového přepisu fungují dál."
-    );
+  it("keeps unavailable automatic limits explicit and fail-closed", () => {
+    expect(
+      getRecordingStorageLimitSummary(
+        {
+          bucketMaxFileSizeBytes: null,
+          detectedGlobalMaxFileSizeBytes: null,
+          maxFileSizeBytes: null,
+          planMaxFileSizeBytes: null
+        },
+        "auto"
+      )
+    ).toMatchObject({
+      bucketLimit: "Nezjištěn",
+      globalLimit: "Nezjištěn",
+      liveAudioLimit: "Nedostupný",
+      manualUploadLimit: "Nedostupný",
+      planLabel: "Auto"
+    });
   });
 });

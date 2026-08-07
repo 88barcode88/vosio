@@ -15,7 +15,8 @@ export default async function NewRecordingPage() {
     redirect("/login?next=/recordings/new");
   }
 
-  const recordingStorageConfig = await getRecordingStorageConfig();
+  const userSettings = getUserSettingsFromMetadata(user.user_metadata);
+  const recordingStorageConfig = await getRecordingStorageConfig(userSettings.supabaseStoragePlan);
 
   return (
     <VosioWorkspace
@@ -24,7 +25,7 @@ export default async function NewRecordingPage() {
       recordingStorageConfig={recordingStorageConfig}
       recordings={[]}
       transcripts={[]}
-      userSettings={getUserSettingsFromMetadata(user.user_metadata)}
+      userSettings={userSettings}
       userEmail={user.email ?? "uzivatel@vosio.local"}
       view="recordings"
     />
