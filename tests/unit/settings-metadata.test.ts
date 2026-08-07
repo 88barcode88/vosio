@@ -3,6 +3,22 @@ import { getUserSettingsFromMetadata, USER_SETTINGS_METADATA_KEY } from "@/lib/s
 import { DEFAULT_AI_MODEL_ID } from "@/lib/model-options";
 
 describe("settings metadata", () => {
+  it("defaults legacy metadata to automatic Supabase plan detection", () => {
+    expect(getUserSettingsFromMetadata({} as never).supabaseStoragePlan).toBe("auto");
+  });
+
+  it("keeps a valid per-user Supabase storage plan", () => {
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { supabaseStoragePlan: "paid" }
+    }).supabaseStoragePlan).toBe("paid");
+  });
+
+  it("rejects an invalid Supabase storage plan and falls back safely", () => {
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { supabaseStoragePlan: "enterprise" }
+    }).supabaseStoragePlan).toBe("auto");
+  });
+
   it("defaults live language detection for legacy metadata", () => {
     expect(getUserSettingsFromMetadata({} as never).sonioxRealtimeLanguage).toBe("auto");
   });

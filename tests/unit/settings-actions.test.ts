@@ -13,6 +13,24 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 import { parseSettingsForm } from "@/lib/settings/form";
 
 describe("settings form", () => {
+  it("parses the selected Supabase storage plan", () => {
+    const formData = new FormData();
+    formData.set("supabaseStoragePlan", "free");
+
+    expect(parseSettingsForm(formData).supabaseStoragePlan).toBe("free");
+  });
+
+  it("defaults legacy form submissions to automatic Supabase plan detection", () => {
+    expect(parseSettingsForm(new FormData()).supabaseStoragePlan).toBe("auto");
+  });
+
+  it("rejects an unsupported Supabase storage plan", () => {
+    const formData = new FormData();
+    formData.set("supabaseStoragePlan", "team");
+
+    expect(() => parseSettingsForm(formData)).toThrow("Invalid settings form payload.");
+  });
+
   it("parses the selected Soniox live language", () => {
     const formData = new FormData();
     formData.set("sonioxRealtimeLanguage", "de");

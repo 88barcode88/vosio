@@ -47,7 +47,12 @@ export function parseSettingsForm(formData: FormData): UserSettings {
       "sonioxRealtimeLanguage",
       defaultUserSettings.sonioxRealtimeLanguage
     ),
-    sonioxRealtimeModel: getStringField(formData, "sonioxRealtimeModel", "stt-rt-v5")
+    sonioxRealtimeModel: getStringField(formData, "sonioxRealtimeModel", "stt-rt-v5"),
+    supabaseStoragePlan: getStringField(
+      formData,
+      "supabaseStoragePlan",
+      defaultUserSettings.supabaseStoragePlan
+    )
   });
 
   if (!parsed.success) {

@@ -22,6 +22,8 @@ export const audioRetentionPolicies = [
   "delete_audio_after_transcription"
 ] as const;
 
+export const supabaseStoragePlans = ["auto", "free", "paid"] as const;
+
 const sonioxRealtimeModelSchema = z.preprocess(
   (value) => value === "stt-rt-v4" ? "stt-rt-v5" : value,
   z.enum(sonioxRealtimeModelIds)
@@ -37,7 +39,8 @@ export const defaultUserSettings = {
   defaultOpenaiModel: DEFAULT_AI_MODEL_ID,
   outputLanguage: "call_language",
   sonioxRealtimeLanguage: "auto",
-  sonioxRealtimeModel: "stt-rt-v5"
+  sonioxRealtimeModel: "stt-rt-v5",
+  supabaseStoragePlan: "auto"
 } satisfies UserSettings;
 
 export const userSettingsSchema = z.object({
@@ -48,7 +51,9 @@ export const userSettingsSchema = z.object({
   defaultOpenaiModel: aiModelSchema,
   outputLanguage: z.enum(outputLanguages),
   sonioxRealtimeLanguage: z.enum(sonioxRealtimeLanguageIds),
-  sonioxRealtimeModel: sonioxRealtimeModelSchema
+  sonioxRealtimeModel: sonioxRealtimeModelSchema,
+  supabaseStoragePlan: z.enum(supabaseStoragePlans)
 });
 
+export type SupabaseStoragePlan = (typeof supabaseStoragePlans)[number];
 export type UserSettings = z.infer<typeof userSettingsSchema>;
