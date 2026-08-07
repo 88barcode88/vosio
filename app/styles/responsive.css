@@ -525,6 +525,9 @@
   .capture-grid {
     grid-template-columns: 1fr;
   }
+  .recording-storage-summary {
+    grid-template-columns: 1fr;
+  }
   .live-caption-line {
     grid-template-columns: 1fr;
   }
