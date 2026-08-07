@@ -10,6 +10,10 @@ import {
   type RecordingClientView
 } from "@/lib/recordings/client-view";
 import {
+  unavailableRecordingStorageConfig,
+  type RecordingStorageConfig
+} from "@/lib/recordings/storage-config";
+import {
   formatFileSize,
   formatRecordingDate
 } from "@/lib/recordings/types";
@@ -27,6 +31,7 @@ export function UtilityWorkspaceView({
   aiOutputs,
   deletedRecordings,
   promptTemplates,
+  recordingStorageConfig,
   settings,
   settingsStatus,
   templateStatus,
@@ -36,6 +41,7 @@ export function UtilityWorkspaceView({
   aiOutputs: AiOutputView[];
   deletedRecordings: RecordingClientView[];
   promptTemplates: PromptTemplateRow[];
+  recordingStorageConfig?: RecordingStorageConfig;
   settings: UserSettings;
   settingsStatus: "error" | "saved" | null;
   templateStatus: "created" | "duplicated" | "error" | "saved" | null;
@@ -43,7 +49,14 @@ export function UtilityWorkspaceView({
   view: "ai" | "templates" | "documentation" | "trash" | "settings";
 }) {
   if (view === "settings") {
-    return <SettingsPanel settings={settings} status={settingsStatus} usageState={usageState ?? unavailableUsageState} />;
+    return (
+      <SettingsPanel
+        recordingStorageConfig={recordingStorageConfig ?? unavailableRecordingStorageConfig}
+        settings={settings}
+        status={settingsStatus}
+        usageState={usageState ?? unavailableUsageState}
+      />
+    );
   }
 
   if (view === "documentation") {

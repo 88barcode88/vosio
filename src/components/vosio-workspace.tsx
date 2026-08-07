@@ -165,6 +165,7 @@ export function VosioWorkspace({
               aiOutputs={aiOutputs}
               deletedRecordings={deletedRecordingViews}
               promptTemplates={promptTemplates}
+              recordingStorageConfig={recordingStorageConfig}
               settings={userSettings}
               settingsStatus={settingsStatus}
               templateStatus={templateStatus}

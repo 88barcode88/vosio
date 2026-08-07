@@ -12,11 +12,15 @@ import {
   audioRetentionPolicies,
   outputLanguages,
   settingsProcessingTypes,
+  supabaseStoragePlans,
   type UserSettings
 } from "@/lib/settings/types";
+import { getRecordingStorageLimitSummary } from "@/lib/recordings/storage-copy";
+import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
 import type { CurrentMonthUsageState, CurrentMonthUsageSummary } from "@/lib/usage/summary";
 
 type SettingsPanelProps = {
+  recordingStorageConfig: RecordingStorageConfig;
   settings: UserSettings;
   status: "error" | "saved" | null;
   usageState: CurrentMonthUsageState;
@@ -31,6 +35,12 @@ const outputLanguageLabels: Record<(typeof outputLanguages)[number], string> = {
 const audioRetentionLabels: Record<(typeof audioRetentionPolicies)[number], string> = {
   delete_audio_after_transcription: "Smazat audio po přepisu",
   keep_audio: "Ponechat audio"
+};
+
+const supabaseStoragePlanLabels: Record<(typeof supabaseStoragePlans)[number], string> = {
+  auto: "Auto",
+  free: "Free",
+  paid: "Paid"
 };
 
 const processingTypeLabels: Record<(typeof settingsProcessingTypes)[number], string> = {
@@ -234,8 +244,12 @@ function UsageSection({ state }: { state: CurrentMonthUsageState }) {
 }
 
 // SettingsPanel renders safe user preferences, account usage, and read-only system boundaries.
-export function SettingsPanel({ settings, status, usageState }: SettingsPanelProps) {
+export function SettingsPanel({ recordingStorageConfig, settings, status, usageState }: SettingsPanelProps) {
   const modelOptions = aiModelOptions;
+  const storageLimitSummary = getRecordingStorageLimitSummary(
+    recordingStorageConfig,
+    settings.supabaseStoragePlan
+  );
   const sonioxRealtimeModel =
     sonioxRealtimeModelOptions.find((option) => option.id === settings.sonioxRealtimeModel)
     ?? sonioxRealtimeModelOptions[0];
@@ -351,6 +365,17 @@ export function SettingsPanel({ settings, status, usageState }: SettingsPanelPro
                 ))}
               </select>
             </label>
+            <label>
+              <span>Supabase tarif pro limity</span>
+              <select name="supabaseStoragePlan" defaultValue={settings.supabaseStoragePlan}>
+                {supabaseStoragePlans.map((plan) => (
+                  <option key={plan} value={plan}>
+                    {supabaseStoragePlanLabels[plan]}
+                  </option>
+                ))}
+              </select>
+              <small>Uživatelská preference pouze zpřísňuje upload v tomto účtu. Nemění Supabase projekt ani bucket.</small>
+            </label>
           </div>
         </section>
 
@@ -373,18 +398,27 @@ export function SettingsPanel({ settings, status, usageState }: SettingsPanelPro
               <dd>Pouze server-side ve Vercelu</dd>
             </div>
             <div>
-              <dt>Storage bucket</dt>
-              <dd>recordings</dd>
+              <dt>Supabase preference</dt>
+              <dd>{storageLimitSummary.planLabel}</dd>
             </div>
             <div>
-              <dt>Manuální upload</dt>
-              <dd>Limit se načítá z připojeného Storage bucketu při běhu aplikace</dd>
+              <dt>Globální limit projektu</dt>
+              <dd>{storageLimitSummary.globalLimit}</dd>
             </div>
             <div>
-              <dt>Live audio</dt>
-              <dd>Samostatná ochranná politika s rezervou před limitem audia</dd>
+              <dt>Bucket recordings</dt>
+              <dd>{storageLimitSummary.bucketLimit}</dd>
+            </div>
+            <div>
+              <dt>Efektivní limit manuálního uploadu</dt>
+              <dd>{storageLimitSummary.manualUploadLimit}</dd>
+            </div>
+            <div>
+              <dt>Efektivní limit live audia</dt>
+              <dd>{storageLimitSummary.liveAudioLimit}</dd>
             </div>
           </dl>
+          <p className="settings-limit-warning" role="status">{storageLimitSummary.warning}</p>
         </section>
 
         <button className="settings-save-button" type="submit">

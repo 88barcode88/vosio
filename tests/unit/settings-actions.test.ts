@@ -11,8 +11,41 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 
 import { parseSettingsForm } from "@/lib/settings/form";
+import { updateUserSettingsAction } from "@/lib/settings/actions";
 
 describe("settings form", () => {
+  it("persists the Supabase storage preference without dropping unrelated user metadata", async () => {
+    const updateUser = vi.fn().mockResolvedValue({ error: null });
+    mocks.createClient.mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: {
+            user: {
+              user_metadata: {
+                display_name: "Marie",
+                vosio_settings: { outputLanguage: "en" }
+              }
+            }
+          },
+          error: null
+        }),
+        updateUser
+      }
+    });
+
+    const formData = new FormData();
+    formData.set("supabaseStoragePlan", "free");
+
+    await updateUserSettingsAction(formData);
+
+    expect(updateUser).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        display_name: "Marie",
+        vosio_settings: expect.objectContaining({ supabaseStoragePlan: "free" })
+      })
+    });
+  });
+
   it("parses the selected Supabase storage plan", () => {
     const formData = new FormData();
     formData.set("supabaseStoragePlan", "free");
