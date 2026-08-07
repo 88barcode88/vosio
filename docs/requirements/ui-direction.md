@@ -97,7 +97,7 @@ Live karta musí po spuštění ukazovat:
 - timer,
 - stav mikrofonu,
 - stav Soniox realtime spojení,
-- režim ukládání `Audio do {aktuální limit bucketu} + přepis` / `Jen live přepis`,
+- režim ukládání s vyřešeným viditelným limitem, například `Audio do 128 MB + přepis` / `Jen live přepis`,
 - live titulky,
 - mluvčí, pokud je Soniox realtime vrací,
 - srozumitelnou chybu, pokud realtime přepis selže, ale lokální nahrávání pokračuje.
@@ -107,7 +107,8 @@ Upload karta musí ukazovat:
 - jasnou akci pro výběr souboru,
 - dropzone pro desktop,
 - podporované typy audio/MP4,
-- aktuální limit načtený z bucketu `recordings`,
+- výsledný limit aplikace podle Storage bucketu a volby tarifu Supabase `Auto`, `Free` nebo `Paid` v Nastavení,
+- globální projektový limit jako nezjištěný, protože ho aplikace neumí bezpečně detekovat,
 - stav uploadu a chybu před pokusem o upload, pokud je soubor moc velký.
 
 Po ukončení live nahrávání nebo dokončení uploadu má uživatel pokračovat na detail nahrávky.

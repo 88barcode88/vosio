@@ -50,8 +50,8 @@ When the user records live in the browser:
 2. The server issues a short-lived Soniox temporary API key for realtime websocket transcription.
 3. The browser streams microphone audio directly to Soniox through the Web SDK.
 4. The UI displays live transcript tokens.
-5. In `Audio do {aktuální limit bucketu} + přepis` mode, the browser records one local audio file and uploads it on stop only when the whole file stays within the detected `recordings.file_size_limit`.
-6. If live audio reaches the detected limit, or the user selects `Jen live přepis`, the app continues realtime transcription and saves the final transcript without a Storage audio object.
+5. In `Audio do {efektivní live limit} + přepis` mode, the browser records one local audio file. Its hard live limit is `min(effective manual upload limit, 128 MiB)`, and the finalized Blob is uploaded on stop only after validation against that hard limit.
+6. The browser estimates an earlier cutoff at `hard live limit - min(5% of hard live limit, 2 MiB)`. When the estimate reaches that cutoff, or the user selects `Jen live přepis`, local audio is discarded while realtime transcription continues and saves the final transcript without a Storage audio object.
 7. The final live transcript is stored in `transcripts` and linked to a realtime `transcription_jobs` row. The job `provider_config.storage` records whether the source was `supabase_recording_upload` or `transcript_only`.
 
 Live language selection is separate from audio retention and speaker identification:
@@ -108,7 +108,7 @@ Selected tags use ALL semantics: every returned recording must contain every sel
 - `video/x-ms-asf`
 - `video/mp4`
 
-Maximum file size is read from the explicit `file_size_limit` of the `recordings` bucket. The baseline migration uses `52428800` bytes for Free projects; paid projects may raise both the global Storage limit and the bucket limit. Audio paths fail closed when the bucket limit cannot be read.
+The effective manual upload limit is `min(recordings.file_size_limit, optional per-user plan cap)`. The baseline migration uses a `52428800`-byte (50 MiB) bucket limit; the `free` preference adds a 50 MiB cap, `paid` adds a 500 GiB cap and `auto` adds no cap. A preference can only lower the bucket limit, never raise it or authorize Storage. The global project limit cannot be detected safely and is displayed as unknown. Audio paths fail closed when a positive explicit bucket limit cannot be read. Live audio has a hard limit of `min(effective manual upload limit, 128 MiB)`, an estimated cutoff below it by `min(5% of the hard live limit, 2 MiB)`, and a final Blob validation against the full hard limit.
 
 ## AI Prompt Templates
 

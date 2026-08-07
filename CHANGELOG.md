@@ -18,7 +18,7 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 ### Fixed
 
 - Placený plan hint už nemůže působit dojmem, že automaticky zvýšil skutečný Supabase bucket limit.
-- Uložení Nastavení zachová skrytou hodnotu AI temperature i ostatní nesouvisející metadata.
+- Uložení Nastavení zachová skrytou hodnotu AI temperature i nesouvisející top-level Supabase Auth metadata.
 
 ## [0.1.2] - 2026-08-06
 
