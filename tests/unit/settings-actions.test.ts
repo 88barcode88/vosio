@@ -14,7 +14,7 @@ import { parseSettingsForm } from "@/lib/settings/form";
 import { updateUserSettingsAction } from "@/lib/settings/actions";
 
 describe("settings form", () => {
-  it("keeps the paid storage preference in a complete settings submission without dropping metadata", async () => {
+  it("updates a storage preference without dropping the saved temperature or unrelated metadata", async () => {
     const updateUser = vi.fn().mockResolvedValue({ error: null });
     mocks.createClient.mockResolvedValue({
       auth: {
@@ -25,8 +25,9 @@ describe("settings form", () => {
                 display_name: "Marie",
                 onboarding_complete: true,
                 vosio_settings: {
+                  aiTemperature: 0.7,
                   outputLanguage: "en",
-                  supabaseStoragePlan: "paid"
+                  supabaseStoragePlan: "free"
                 }
               }
             }
@@ -38,6 +39,7 @@ describe("settings form", () => {
     });
 
     const formData = new FormData();
+    formData.set("aiTemperature", "0.7");
     formData.set("audioRetentionPolicy", "delete_audio_after_transcription");
     formData.set("autoProcessAfterTranscription", "on");
     formData.append("autoProcessingTypes", "summary");
@@ -55,7 +57,7 @@ describe("settings form", () => {
         display_name: "Marie",
         onboarding_complete: true,
         vosio_settings: {
-          aiTemperature: 0,
+          aiTemperature: 0.7,
           audioRetentionPolicy: "delete_audio_after_transcription",
           autoProcessAfterTranscription: true,
           autoProcessingTypes: ["summary", "action_items"],
@@ -74,6 +76,10 @@ describe("settings form", () => {
     formData.set("supabaseStoragePlan", "free");
 
     expect(parseSettingsForm(formData).supabaseStoragePlan).toBe("free");
+  });
+
+  it("uses the default AI temperature when the field is missing", () => {
+    expect(parseSettingsForm(new FormData()).aiTemperature).toBe(0.2);
   });
 
   it("defaults legacy form submissions to automatic Supabase plan detection", () => {

@@ -12,11 +12,17 @@ function getStringField(formData: FormData, name: string, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-// getNumberField reads a numeric FormData field with bounded schema validation later.
+// getNumberField reads a finite number from a nonblank string and otherwise preserves its fallback.
 function getNumberField(formData: FormData, name: string, fallback: number) {
-  const value = Number(formData.get(name));
+  const value = formData.get(name);
 
-  return Number.isFinite(value) ? value : fallback;
+  if (typeof value !== "string" || !value.trim()) {
+    return fallback;
+  }
+
+  const parsedValue = Number(value);
+
+  return Number.isFinite(parsedValue) ? parsedValue : fallback;
 }
 
 // getProcessingTypes reads allowed automatic AI output types from checkboxes.

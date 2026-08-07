@@ -278,6 +278,7 @@ export function SettingsPanel({ recordingStorageConfig, settings, status, usageS
       <UsageSection state={usageState} />
 
       <form action={updateUserSettingsAction} className="settings-form">
+        <input name="aiTemperature" type="hidden" value={settings.aiTemperature} />
         <section className="settings-section">
           <h2>AI výstupy</h2>
           <div className="settings-grid">
