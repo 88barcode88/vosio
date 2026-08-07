@@ -14,7 +14,7 @@ import { parseSettingsForm } from "@/lib/settings/form";
 import { updateUserSettingsAction } from "@/lib/settings/actions";
 
 describe("settings form", () => {
-  it("persists the Supabase storage preference without dropping unrelated user metadata", async () => {
+  it("keeps the paid storage preference in a complete settings submission without dropping metadata", async () => {
     const updateUser = vi.fn().mockResolvedValue({ error: null });
     mocks.createClient.mockResolvedValue({
       auth: {
@@ -23,7 +23,11 @@ describe("settings form", () => {
             user: {
               user_metadata: {
                 display_name: "Marie",
-                vosio_settings: { outputLanguage: "en" }
+                onboarding_complete: true,
+                vosio_settings: {
+                  outputLanguage: "en",
+                  supabaseStoragePlan: "paid"
+                }
               }
             }
           },
@@ -34,15 +38,34 @@ describe("settings form", () => {
     });
 
     const formData = new FormData();
-    formData.set("supabaseStoragePlan", "free");
+    formData.set("audioRetentionPolicy", "delete_audio_after_transcription");
+    formData.set("autoProcessAfterTranscription", "on");
+    formData.append("autoProcessingTypes", "summary");
+    formData.append("autoProcessingTypes", "action_items");
+    formData.set("defaultOpenaiModel", "gpt-5.6-terra");
+    formData.set("outputLanguage", "cs");
+    formData.set("sonioxRealtimeLanguage", "de");
+    formData.set("sonioxRealtimeModel", "stt-rt-v5");
+    formData.set("supabaseStoragePlan", "paid");
 
     await updateUserSettingsAction(formData);
 
     expect(updateUser).toHaveBeenCalledWith({
-      data: expect.objectContaining({
+      data: {
         display_name: "Marie",
-        vosio_settings: expect.objectContaining({ supabaseStoragePlan: "free" })
-      })
+        onboarding_complete: true,
+        vosio_settings: {
+          aiTemperature: 0,
+          audioRetentionPolicy: "delete_audio_after_transcription",
+          autoProcessAfterTranscription: true,
+          autoProcessingTypes: ["summary", "action_items"],
+          defaultOpenaiModel: "gpt-5.6-terra",
+          outputLanguage: "cs",
+          sonioxRealtimeLanguage: "de",
+          sonioxRealtimeModel: "stt-rt-v5",
+          supabaseStoragePlan: "paid"
+        }
+      }
     });
   });
 

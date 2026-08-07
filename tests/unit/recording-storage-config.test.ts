@@ -46,6 +46,17 @@ describe("recording storage config", () => {
     });
   });
 
+  it("caps a larger paid bucket at the 500 GiB plan ceiling without changing the bucket value", () => {
+    const bucketLimit = 600 * GIBIBYTE;
+
+    expect(resolveRecordingStorageConfig(bucketLimit, "paid")).toEqual({
+      bucketMaxFileSizeBytes: bucketLimit,
+      detectedGlobalMaxFileSizeBytes: null,
+      maxFileSizeBytes: 500 * GIBIBYTE,
+      planMaxFileSizeBytes: 500 * GIBIBYTE
+    });
+  });
+
   it("uses the normalized bucket limit when the plan is automatic", () => {
     expect(resolveRecordingStorageConfig(80 * MEBIBYTE, "auto")).toEqual({
       bucketMaxFileSizeBytes: 80 * MEBIBYTE,

@@ -184,11 +184,11 @@ MP4 exporty z mobilu obvykle přijdou jako `video/mp4`, i když nás zajímá hl
 
 Mobilní file picker filtruj přes kombinaci MIME typů, wildcard `audio/*` a přípon souborů. Některé záznamníky v mobilu neposílají přesný MIME typ, ale soubor s příponou `.m4a`, `.amr` nebo podobně. Validace proto používá MIME typ i fallback podle přípony.
 
-## Storage limit se čte z bucketu, ne z tarifu
+## Supabase plan preference není konfigurace projektu
 
-Vosio neodhaduje Supabase tarif. Server při načtení `/recordings/new` čte explicitní `file_size_limit` bucketu `recordings`. Tato hodnota je plný limit manuálního uploadu: placený projekt ji může navýšit a aplikace pak větší ruční soubory povolí. Vyšší per-bucket limit nikdy neobejde nižší globální limit. Pokud bucket nebo kladný explicitní limit nelze načíst, aplikace fail-closed vypne audio upload a audio-backed live režim, zatímco text-only přepis zůstane dostupný.
+Každý uživatel může mít v `user_metadata.vosio_settings.supabaseStoragePlan` jinou volbu `auto`, `free` nebo `paid`. Nemění billing, globální limit projektu ani `recordings.file_size_limit` bucketu. Server čte explicitní bucket limit a aplikace použije pouze efektivní minimum `min(bucket, optional plan cap)`; volba jej může jen snížit, nikdy zvýšit nebo autorizovat Storage. Globální limit projektu se bezpečně nedetekuje, proto zůstává `unknown`, ne unlimited. Pokud bucket nebo kladný explicitní limit nelze načíst, aplikace fail-closed vypne audio upload a audio-backed live režim, zatímco text-only přepis zůstane dostupný. Vlastník týmu musí preference jednotlivých uživatelů s reálnou konfigurací projektu sladit ručně.
 
-Live audio má navíc samostatný produktový limit `min(file_size_limit bucketu, 128 MiB)`. Není to limit paměti prohlížeče: aktuální MediaRecorder drží jeden Blob až do `stop()`. Aplikace proto odhaduje velikost z bitrate a lokální audio zastaví s rezervou 5 %, nejvýše 2 MiB, aby se vyhnula překročení storage limitu. Před uploadem ještě kontroluje skutečnou velikost finalizovaného Blobu proti plnému live limitu. Přepis po odhození audia pokračuje.
+Live audio má navíc samostatný produktový limit `min(effective upload limit, 128 MiB)`. Není to limit paměti prohlížeče: aktuální MediaRecorder drží jeden Blob až do `stop()`. Aplikace proto odhaduje velikost z bitrate a lokální audio zastaví s rezervou 5 %, nejvýše 2 MiB, aby se vyhnula překročení storage limitu. Před uploadem ještě kontroluje skutečnou velikost finalizovaného Blobu proti plnému live limitu. Přepis po odhození audia pokračuje.
 
 ## Text-only live přepis nemá audio zálohu
 
