@@ -10,6 +10,7 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 - Per-user Supabase Storage preference `Auto`, `Free` nebo `Paid` v Nastavení.
 - Transparentní zobrazení bucketu, nezjištěného globálního limitu a efektivních limitů manuálního uploadu a live audia.
+- Veřejné README s tlačítkem pro Vercel nasazení a postupem pro vlastní Supabase a Soniox EU projekt.
 
 ### Changed
 

@@ -16,8 +16,7 @@ Version and changelog infrastructure was introduced in the historical local `0.1
 
 - `package.json` and `package-lock.json` contained version `0.1.2`,
 - `CHANGELOG.md` is tracked,
-- Settings displays the package-backed application version,
-- a private release checklist is present for release preflight.
+- Settings displays the package-backed application version.
 
 The current `0.1.3` source advances `package.json`, `package-lock.json`, the package-backed Settings version and `CHANGELOG.md` to `0.1.3`.
 
