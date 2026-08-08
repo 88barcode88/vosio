@@ -20,7 +20,7 @@ const documentationSections: DocumentationSection[] = [
   {
     body: [
       "Na stránce Nová nahrávka jsou dvě hlavní cesty: Nahrávat live a Nahrát soubor. Live režim ukládá audio a přepis, nebo jen textový live přepis bez audio zálohy; pro live audio platí samostatná ochranná politika.",
-      "Upload je určený pro existující audio a MP4 soubory podporované Sonioxem. Limit manuálního uploadu aplikace načítá za běhu z připojeného Storage bucketu a ověří jej ještě před uploadem."
+      "Upload je určený pro existující audio a MP4 soubory podporované Sonioxem. Výsledný limit aplikace vychází z limitu připojeného Storage bucketu a z volby tarifu Supabase Auto, Free nebo Paid v Nastavení. Live audio může mít nižší zobrazený limit, například Audio do 128 MB + přepis. Globální projektový limit nelze bezpečně zjistit, proto se zobrazuje jako Nezjištěn."
     ],
     id: "nova-nahravka",
     kicker: "Live záznam nebo soubor",
@@ -112,7 +112,7 @@ const documentationSections: DocumentationSection[] = [
   {
     body: [
       "Vosio je PWA, takže se na mobilu dá používat přes browser a instalovat jako aplikace. Mobilní režim je online-first, protože uploady, auth session a stavy přepisů musí být aktuální.",
-      "Praktické limity velikosti souborů se řídí aktuálně připojeným Storage bucketem a mohou se mezi nasazeními lišit. Live audio má samostatnou ochrannou politiku: při přiblížení limitu se ukládání audia zastaví s rezervou, zatímco přepis pokračuje."
+      "Výsledný limit aplikace vychází z limitu aktuálně připojeného Storage bucketu a z volby tarifu Supabase Auto, Free nebo Paid v Nastavení. U live audia aplikace ukazuje vyřešený limit, například Audio do 128 MB + přepis, a ukládání audia ukončí s bezpečnostní rezervou, zatímco přepis pokračuje. Globální projektový limit nelze bezpečně zjistit a aplikace ho zobrazuje jako Nezjištěn."
     ],
     id: "mobil-limity",
     kicker: "Telefon, PWA a limity",

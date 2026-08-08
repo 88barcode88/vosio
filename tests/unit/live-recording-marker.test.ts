@@ -41,4 +41,23 @@ describe("live recording marker helper", () => {
       { attempt, recordingId: "recording-1" }
     )).toBe(false);
   });
+
+  it("accepts the exact persisted marker response used to confirm the count", () => {
+    const attempt = {
+      clientMarkerId: "client-marker",
+      markerType: "important",
+      note: null,
+      offsetMs: 12_345
+    } as const;
+
+    expect(isLiveMarkerSaveResponse({
+      marker: {
+        client_marker_id: attempt.clientMarkerId,
+        marker_type: attempt.markerType,
+        note: attempt.note,
+        offset_ms: attempt.offsetMs,
+        recording_id: "recording-1"
+      }
+    }, { attempt, recordingId: "recording-1" })).toBe(true);
+  });
 });

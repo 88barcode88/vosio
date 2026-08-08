@@ -409,6 +409,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
 }
 .ai-tab-actions-title strong {
@@ -418,6 +419,12 @@
   color: var(--muted);
   font-size: 12px;
   text-align: right;
+}
+.ai-tab-actions-title small {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 .ai-tab-actions svg,
 .ai-empty-card svg {

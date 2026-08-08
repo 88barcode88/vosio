@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCloseOnSuccessfulSave } from "@/components/use-close-on-successful-save";
 import { createInitialSaveActionState, type SaveAction } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
@@ -212,17 +212,27 @@ export function RecordingOrganizationEditor({
   }
 
   const chips = [
-    organization.client ? { id: `client-${organization.client.id}`, label: organization.client.name } : null,
-    organization.project ? { id: `project-${organization.project.id}`, label: organization.project.name } : null,
-    organization.folder ? { id: `folder-${organization.folder.id}`, label: organization.folder.name } : null,
-    ...organization.tags.map((tag) => ({ id: `tag-${tag.id}`, label: tag.name }))
-  ].filter((chip): chip is { id: string; label: string } => chip !== null);
+    organization.client ? { color: organization.client.color, id: `client-${organization.client.id}`, label: organization.client.name } : null,
+    organization.project ? { color: organization.project.color, id: `project-${organization.project.id}`, label: organization.project.name } : null,
+    organization.folder ? { color: organization.folder.color, id: `folder-${organization.folder.id}`, label: organization.folder.name } : null,
+    ...organization.tags.map((tag) => ({ color: tag.color, id: `tag-${tag.id}`, label: tag.name }))
+  ].filter((chip): chip is { color: string | null; id: string; label: string } => chip !== null);
 
   return (
     <div className="recording-organization-editor" ref={containerRef}>
       <div className="recording-organization-summary" aria-label="Zařazení nahrávky">
         {chips.length > 0
-          ? chips.map((chip) => <span className="organization-chip" key={chip.id}>{chip.label}</span>)
+          ? chips.map((chip) => (
+            <span
+              className={`organization-chip${chip.color ? " organization-chip-colored" : ""}`}
+              key={chip.id}
+              style={chip.color
+                ? ({ "--organization-color": chip.color } as CSSProperties)
+                : undefined}
+            >
+              {chip.label}
+            </span>
+          ))
           : <span className="organization-chip organization-chip-muted">Bez zařazení</span>}
         <button
           aria-expanded={isOpen}

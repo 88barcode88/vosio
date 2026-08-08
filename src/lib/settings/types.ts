@@ -5,6 +5,7 @@ import {
   normalizeAiModelId,
   sonioxRealtimeModelIds
 } from "@/lib/model-options";
+import { sonioxRealtimeLanguageIds } from "@/lib/soniox/languages";
 
 export const settingsProcessingTypes = [
   "summary",
@@ -21,6 +22,8 @@ export const audioRetentionPolicies = [
   "delete_audio_after_transcription"
 ] as const;
 
+export const supabaseStoragePlans = ["auto", "free", "paid"] as const;
+
 const sonioxRealtimeModelSchema = z.preprocess(
   (value) => value === "stt-rt-v4" ? "stt-rt-v5" : value,
   z.enum(sonioxRealtimeModelIds)
@@ -34,9 +37,10 @@ export const defaultUserSettings = {
   autoProcessAfterTranscription: false,
   autoProcessingTypes: ["summary"],
   defaultOpenaiModel: DEFAULT_AI_MODEL_ID,
-  longRecordingWarningMinutes: 60,
   outputLanguage: "call_language",
-  sonioxRealtimeModel: "stt-rt-v5"
+  sonioxRealtimeLanguage: "auto",
+  sonioxRealtimeModel: "stt-rt-v5",
+  supabaseStoragePlan: "auto"
 } satisfies UserSettings;
 
 export const userSettingsSchema = z.object({
@@ -45,9 +49,11 @@ export const userSettingsSchema = z.object({
   autoProcessAfterTranscription: z.boolean(),
   autoProcessingTypes: z.array(z.enum(settingsProcessingTypes)),
   defaultOpenaiModel: aiModelSchema,
-  longRecordingWarningMinutes: z.number().int().min(5).max(24 * 60),
   outputLanguage: z.enum(outputLanguages),
-  sonioxRealtimeModel: sonioxRealtimeModelSchema
+  sonioxRealtimeLanguage: z.enum(sonioxRealtimeLanguageIds),
+  sonioxRealtimeModel: sonioxRealtimeModelSchema,
+  supabaseStoragePlan: z.enum(supabaseStoragePlans)
 });
 
+export type SupabaseStoragePlan = (typeof supabaseStoragePlans)[number];
 export type UserSettings = z.infer<typeof userSettingsSchema>;

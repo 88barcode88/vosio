@@ -54,7 +54,13 @@ Soniox temporary API key musí vzniknout ve stejné regionální REST API domén
 
 ## Auth metadata jen pro preference
 
-Vosio používá `user_metadata.vosio_settings` pro netajné uživatelské preference, například výchozí AI model a Soniox realtime model. Tato metadata jsou uživatelsky editovatelná a nesmí se používat pro autorizaci, RLS rozhodnutí, role ani bezpečnostní limity.
+Vosio používá `user_metadata.vosio_settings` pro netajné uživatelské preference, například výchozí AI model, Soniox realtime model a výchozí jazyk live přepisu. Tato metadata jsou uživatelsky editovatelná a nesmí se používat pro autorizaci, RLS rozhodnutí, role ani bezpečnostní limity.
+
+## Soniox live jazyk a diarizace
+
+Live jazykový katalog používá kódy `auto`, `cs`, `en`, `de`, `es`, `it`, `sk`, `sl`, `hu` a `pl`. Automatický režim posílá `enable_language_identification = true` bez `language_hints`; pevná volba posílá právě jeden hint a `language_hints_strict = true`. Sonioxu tím dáváme preferenci nebo omezení, ale výsledek není absolutní garance pro každý zvukový úsek. `enable_speaker_diarization` zůstává zapnuté v obou režimech, protože jazyk a rozpoznání mluvčích jsou nezávislé volby.
+
+Výchozí jazyk je uložený v uživatelských Auth metadata a lze ho před konkrétním startem přepsat v idle rekordéru. Po zahájení se hodnota pro danou relaci nemění. Tato volba se týká jen live mikrofonu; ruční soubory se přepisují stávající async konfigurací. Nastavení upozornění na dlouhou nahrávku není aktivní lifecycle kontrola a nemá zastavovat ani prodlužovat záznam. Live nahrávání nemá tichý ani časový auto-stop.
 
 ## Theme se musí znát už na serveru
 
@@ -70,9 +76,9 @@ Nový systémový prompt nestačí vložit jen do databáze, pokud používá no
 
 Gemini modely jsou v UI běžné AI modely vedle OpenAI, ale backend je směruje na Google Gemini API podle `ai_processing_jobs.provider`. Pokud uživatel vybere Gemini model a ve Vercelu není `GEMINI_API_KEY`, AI processing selže na server-side konfiguraci. Gemini Free tier podle Google pricing tabulky používá obsah ke zlepšování produktů; pro produkční call obsah používej placený Gemini API režim nebo OpenAI.
 
-## Reasoning modely a temperature
+## Reasoning modely, ceny a úplnost výstupu
 
-Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI Responses API dostává pro `gpt-5.6-terra` reasoning `high` a pro `gpt-5.6-luna` `xhigh`; Gemini `generateContent` dostává pro `gemini-3.6-flash` thinking `medium`. Staré hodnoty modelu v user metadata se při načtení bezpečně normalizují na aktuální model stejné provider rodiny. Pokud provider vrátí chybu modelu, API endpoint ji vrací jako bezpečný `detail`, aby UI neukazovalo jen obecné selhání.
+Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI Responses API dostává pro `gpt-5.6-sol` reasoning `xhigh`, pro `gpt-5.6-terra` `high` a pro `gpt-5.6-luna` `xhigh`; Gemini `generateContent` dostává pro `gemini-3.6-flash` thinking `medium`. Katalogové ceny jsou pouze orientační: Sol $5/$30, Terra $2/$12, Luna $0.20/$1.20 a Gemini $1.50/$7.50 za 1M vstupních/výstupních tokenů; fakturaci potvrzuje provider dashboard. Silnější modely obvykle zachytí více souvislostí, ale menším a levnějším modelům může uniknout více detailů, úkolů nebo důkazů. Evidence pole zůstávají povinnou součástí strukturovaného kontraktu, nezaručují však, že model najde každý relevantní úsek. Pro složité nebo důležité cally preferuj Sol/Terra a výstup zkontroluj proti přepisu. Staré hodnoty modelu v user metadata se při načtení bezpečně normalizují na aktuální model stejné provider rodiny. Pokud provider vrátí chybu modelu, API endpoint ji vrací jako bezpečný `detail`, aby UI neukazovalo jen obecné selhání.
 
 ## AI prompt nesmí obsahovat plné Soniox tokeny
 
@@ -178,11 +184,11 @@ MP4 exporty z mobilu obvykle přijdou jako `video/mp4`, i když nás zajímá hl
 
 Mobilní file picker filtruj přes kombinaci MIME typů, wildcard `audio/*` a přípon souborů. Některé záznamníky v mobilu neposílají přesný MIME typ, ale soubor s příponou `.m4a`, `.amr` nebo podobně. Validace proto používá MIME typ i fallback podle přípony.
 
-## Storage limit se čte z bucketu, ne z tarifu
+## Supabase plan preference není konfigurace projektu
 
-Vosio neodhaduje Supabase tarif. Server při načtení `/recordings/new` čte explicitní `file_size_limit` bucketu `recordings`. Tato hodnota je plný limit manuálního uploadu: placený projekt ji může navýšit a aplikace pak větší ruční soubory povolí. Vyšší per-bucket limit nikdy neobejde nižší globální limit. Pokud bucket nebo kladný explicitní limit nelze načíst, aplikace fail-closed vypne audio upload a audio-backed live režim, zatímco text-only přepis zůstane dostupný.
+Každý uživatel může mít v `user_metadata.vosio_settings.supabaseStoragePlan` jinou volbu `auto`, `free` nebo `paid`. Nemění billing, globální limit projektu ani `recordings.file_size_limit` bucketu. Server čte explicitní bucket limit a aplikace použije pouze efektivní minimum `min(bucket, optional plan cap)`; volba jej může jen snížit, nikdy zvýšit nebo autorizovat Storage. Globální limit projektu se bezpečně nedetekuje, proto zůstává `unknown`, ne unlimited. Pokud bucket nebo kladný explicitní limit nelze načíst, aplikace fail-closed vypne audio upload a audio-backed live režim, zatímco text-only přepis zůstane dostupný. Vlastník týmu musí preference jednotlivých uživatelů s reálnou konfigurací projektu sladit ručně.
 
-Live audio má navíc samostatný produktový limit `min(file_size_limit bucketu, 128 MiB)`. Není to limit paměti prohlížeče: aktuální MediaRecorder drží jeden Blob až do `stop()`. Aplikace proto odhaduje velikost z bitrate a lokální audio zastaví s rezervou 5 %, nejvýše 2 MiB, aby se vyhnula překročení storage limitu. Před uploadem ještě kontroluje skutečnou velikost finalizovaného Blobu proti plnému live limitu. Přepis po odhození audia pokračuje.
+Live audio má navíc samostatný produktový limit `min(effective upload limit, 128 MiB)`. Není to limit paměti prohlížeče: aktuální MediaRecorder drží jeden Blob až do `stop()`. Aplikace proto odhaduje velikost z bitrate a lokální audio zastaví s rezervou 5 %, nejvýše 2 MiB, aby se vyhnula překročení storage limitu. Před uploadem ještě kontroluje skutečnou velikost finalizovaného Blobu proti plnému live limitu. Přepis po odhození audia pokračuje.
 
 ## Text-only live přepis nemá audio zálohu
 
@@ -226,7 +232,7 @@ Soniox API účtuje tokenově, ale veřejný pricing uvádí orientační hodino
 
 ## Live MediaRecorder WebM duration
 
-Browser `MediaRecorder.start(timeslice)` umí vrátit průběžné WebM bloky, které po slepení nemusí mít providerem čitelnou duration. Vosio proto pro nové live audio používá jeden MediaRecorder bez `timeslice` a soubor finalizuje přes `stop()`. Velikost během nahrávání odhaduje z bitrate; ještě před live limitem `min(bucket, 128 MiB)` audio zastaví s rezervou 5 %, maximálně 2 MiB, a pokračuje pouze realtime přepisem. Skutečná velikost finálního Blobu se před uploadem kontroluje znovu. Tento mechanismus nebrání MediaRecorderu držet Blob v paměti, takže ho nepopisuj jako RAM ochranu.
+Browser `MediaRecorder.start(timeslice)` umí vrátit průběžné WebM bloky, které po slepení nemusí mít providerem čitelnou duration. Vosio proto pro nové live audio používá jeden MediaRecorder bez `timeslice` a soubor finalizuje přes `stop()`. Velikost během nahrávání odhaduje z bitrate; ještě před live limitem `min(effective upload limit, 128 MiB)` audio zastaví s rezervou 5 %, maximálně 2 MiB, a pokračuje pouze realtime přepisem. Skutečná velikost finálního Blobu se před uploadem kontroluje znovu. Tento mechanismus nebrání MediaRecorderu držet Blob v paměti, takže ho nepopisuj jako RAM ochranu.
 
 ## Live timer musí skončit s nahrávkou
 

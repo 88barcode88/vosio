@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useId, useRef, useState } from "react";
+import { type CSSProperties, useActionState, useCallback, useEffect, useId, useRef, useState } from "react";
 import { useCloseOnSuccessfulSave } from "@/components/use-close-on-successful-save";
 import {
   createRecordingClientAction,
@@ -235,16 +235,20 @@ function OrganizationSaveEditor({
               value={name}
             />
           </label>
-          <label>
+          <label className="organization-color-field">
             <span>Barva</span>
-            <input
-              aria-label={`Barva ${label}`}
-              name="color"
-              onChange={(event) => setColor(event.target.value)}
-              pattern="#[0-9A-Fa-f]{6}"
-              placeholder="#12ABCD"
-              value={color}
-            />
+            <div>
+              <input
+                aria-label={`Barva ${label}`}
+                onChange={(event) => setColor(event.target.value)}
+                type="color"
+                value={color || "#64748B"}
+              />
+              <button aria-pressed={color === ""} onClick={() => setColor("")} type="button">
+                Bez barvy
+              </button>
+            </div>
+            <input name="color" readOnly type="hidden" value={color} />
           </label>
           <div className="organization-save-feedback">
             {isCurrentSettlement && actionState.status === "error" && !isPending && !isDismissedError
@@ -404,8 +408,14 @@ export function OrganizationManager({
                   return (
                     <li key={row.id}>
                       <div className="organization-manager-row-label">
-                        {row.color ? <span aria-hidden="true" style={{ backgroundColor: row.color }} /> : null}
-                        <strong>{contextualName}</strong>
+                        <strong
+                          className={`organization-manager-badge${row.color ? " organization-manager-badge-colored" : ""}`}
+                          style={row.color
+                            ? ({ "--organization-color": row.color } as CSSProperties)
+                            : undefined}
+                        >
+                          {contextualName}
+                        </strong>
                       </div>
                       <div className="organization-manager-row-actions">
                         <OrganizationSaveEditor

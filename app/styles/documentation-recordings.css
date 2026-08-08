@@ -178,6 +178,7 @@
 .organization-manager {
   display: grid;
   gap: 10px;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--panel-soft);
@@ -207,8 +208,9 @@
 }
 .organization-manager-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+  min-width: 0;
 }
 .organization-manager-group {
   display: grid;
@@ -229,6 +231,9 @@
   justify-content: space-between;
   gap: 7px;
 }
+.organization-manager-group > header {
+  position: relative;
+}
 .organization-manager-group h3 {
   margin: 0;
   font-size: 13px;
@@ -241,6 +246,7 @@
   list-style: none;
 }
 .organization-manager-group li {
+  position: relative;
   align-items: flex-start;
   border-top: 1px solid var(--border);
   padding-top: 6px;
@@ -251,23 +257,36 @@
   gap: 6px;
   min-width: 0;
 }
-.organization-manager-row-label > span {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
+.organization-manager-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid var(--border);
   border-radius: 999px;
-}
-.organization-manager-row-label strong {
+  color: var(--text);
+  background: var(--panel-soft);
+  padding: 2px 8px;
   overflow-wrap: anywhere;
   font-size: 12px;
+}
+.organization-manager-badge-colored,
+.organization-chip-colored {
+  border-color: color-mix(in srgb, var(--organization-color) 45%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--organization-color) 18%, var(--panel-soft));
 }
 .organization-manager-row-actions {
   align-items: flex-start;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+.organization-manager-group > header .organization-save-editor,
+.organization-manager-row-actions .organization-save-editor {
+  position: static;
+}
 .organization-save-editor {
   position: relative;
+  min-width: 0;
 }
 .organization-save-editor > button,
 .organization-delete-action > button,
@@ -290,6 +309,7 @@
 .organization-rename-form {
   position: relative;
   z-index: 2;
+  box-sizing: border-box;
   display: grid;
   gap: 7px;
   width: min(280px, calc(100vw - 52px));
@@ -302,6 +322,14 @@
 }
 .organization-rename-form {
   position: absolute;
+  width: min(280px, 100%, calc(100vw - 52px));
+  top: calc(100% + 6px);
+  right: 0;
+}
+.organization-create-form {
+  position: absolute;
+  width: min(280px, 100%, calc(100vw - 52px));
+  top: calc(100% + 6px);
   right: 0;
 }
 .organization-create-form label,
@@ -323,6 +351,34 @@
   color: var(--text);
   background: var(--panel-soft);
   padding: 0 8px;
+}
+.organization-color-field > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.organization-color-field input[type="color"] {
+  width: 36px;
+  min-width: 36px;
+  height: 32px;
+  min-height: 32px;
+  cursor: pointer;
+  padding: 3px;
+}
+.organization-color-field button {
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--panel-soft);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+}
+.organization-color-field button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--muted) 55%, var(--border));
+  color: var(--muted);
 }
 .organization-save-feedback {
   min-height: 18px;
@@ -601,11 +657,24 @@
 .recording-filter-empty {
   font-weight: 500;
 }
+.recording-filter-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.recording-filter-tag-row .recording-filter-tags {
+  flex: 1 1 auto;
+}
 .recording-filter-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+.recording-filter-tag-row .recording-filter-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  margin-left: auto;
 }
 .recording-filter-actions button {
   min-height: 34px;
@@ -616,11 +685,6 @@
   padding: 0 11px;
   font-size: 11px;
   font-weight: 800;
-}
-.recording-filter-actions button[type="submit"] {
-  border-color: transparent;
-  color: var(--accent-text);
-  background: var(--accent-bg);
 }
 .recording-filter-actions button:disabled {
   cursor: wait;
@@ -1012,6 +1076,29 @@
   background: color-mix(in srgb, var(--red) 8%, var(--panel));
   padding: 10px 12px;
 }
+.recording-storage-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.recording-storage-summary div {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  padding: 9px 11px;
+}
+.recording-storage-summary dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.recording-storage-summary dd {
+  margin: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
 .capture-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1221,8 +1308,7 @@
 [data-theme="light"] .settings-alert-error,
 [data-theme="light"] .template-status-error,
 [data-theme="light"] .upload-error,
-[data-theme="light"] .delete-recording-button,
-[data-theme="light"] .delete-recording-icon,
+[data-theme="light"] .delete-recording-form button,
 [data-theme="light"] .purge-recording-form button,
 [data-theme="light"] .ai-output-delete-form button,
 [data-theme="light"] .sign-out-form button:hover {

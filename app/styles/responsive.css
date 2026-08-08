@@ -57,9 +57,11 @@
     right: auto;
     width: min(320px, calc(100vw - 40px));
   }
-  .recording-organization-fields,
-  .recording-organization-tags,
   .organization-manager-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .recording-organization-fields,
+  .recording-organization-tags {
     grid-template-columns: 1fr;
   }
   .recording-filter-grid {
@@ -205,9 +207,19 @@
   .recording-filter-grid {
     grid-template-columns: 1fr;
   }
+  .recording-filter-tag-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .organization-manager-grid {
+    grid-template-columns: 1fr;
+  }
   .recording-filter-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+  .recording-filter-tag-row .recording-filter-actions {
+    margin-left: 0;
   }
   .recording-filter-actions button {
     width: 100%;
@@ -284,6 +296,10 @@
   .live-marker-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+  .live-language-select {
+    max-width: none;
+    width: 100%;
   }
   .live-marker-button {
     width: 100%;
@@ -428,8 +444,16 @@
     overflow: visible;
   }
   .tab-panel {
+    height: auto;
+    flex: 0 1 auto;
     min-height: 0;
     overflow: visible;
+  }
+  .tab-panel > * {
+    flex: 0 1 auto;
+  }
+  .transcript-content {
+    grid-template-rows: auto auto;
   }
   .transcript-table-head {
     display: none;
@@ -499,6 +523,9 @@
     min-width: 0;
   }
   .capture-grid {
+    grid-template-columns: 1fr;
+  }
+  .recording-storage-summary {
     grid-template-columns: 1fr;
   }
   .live-caption-line {

@@ -232,6 +232,25 @@ describe("recording audio player", () => {
     expect(transcriptCss).not.toContain(".recording-audio-player-status:empty");
   });
 
+  it("keeps every detail tab bounded above the persistent audio player", () => {
+    const transcriptCss = readFileSync(join(process.cwd(), "app/styles/transcript.css"), "utf8");
+    const responsiveCss = readFileSync(join(process.cwd(), "app/styles/responsive.css"), "utf8");
+    const tabPanelBlock = transcriptCss.match(/\.tab-panel\s*\{([^}]*)\}/)?.[1] ?? "";
+    const responsiveTabPanelBlock = responsiveCss.match(/\.tab-panel\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    expect(tabPanelBlock).toMatch(/display:\s*flex;/);
+    expect(tabPanelBlock).toMatch(/flex-direction:\s*column;/);
+    expect(tabPanelBlock).toMatch(/min-height:\s*0;/);
+    expect(tabPanelBlock).not.toMatch(/height:\s*100%;/);
+    expect(transcriptCss).toContain(".tab-panel > * {");
+    expect(transcriptCss).toContain("flex: 1 1 auto;");
+    expect(transcriptCss).toContain("grid-template-rows: auto minmax(0, 1fr);");
+    expect(transcriptCss).toMatch(/\.transcript-table-scroll\s*\{[\s\S]*max-height:\s*none;/);
+    expect(responsiveCss).toMatch(/\.transcript-table-scroll\s*\{[\s\S]*max-height:\s*52vh;/);
+    expect(responsiveTabPanelBlock).toMatch(/height:\s*auto;/);
+    expect(responsiveTabPanelBlock).toMatch(/overflow:\s*visible;/);
+  });
+
   it("settles a queued play rejection and keeps its failure visible", async () => {
     const playerRef = createRef<RecordingAudioPlayerHandle>();
     const play = vi.spyOn(HTMLMediaElement.prototype, "play")

@@ -58,8 +58,8 @@ const options: RecordingOrganizationOptions = {
 
 const organization: RecordingOrganization = {
   client: { color: "#112233", id: clientA, name: "Acme" },
-  folder: { id: folderId, name: "Obchod" },
-  project: { id: projectA, name: "Projekt A" },
+  folder: { color: null, id: folderId, name: "Obchod" },
+  project: { color: null, id: projectA, name: "Projekt A" },
   tags: [{ color: "#ABCDEF", id: tagA, name: "Priorita" }]
 };
 
@@ -167,6 +167,20 @@ afterEach(async () => {
 });
 
 describe("RecordingOrganizationEditor", () => {
+  it("renders colored detail chips while leaving neutral chips uncolored", async () => {
+    await act(async () => root.render(
+      <RecordingOrganizationEditor organization={organization} options={options} recording={createRecording()} saveAction={vi.fn()} />
+    ));
+
+    const clientChip = Array.from(container.querySelectorAll<HTMLElement>(".organization-chip"))
+      .find((chip) => chip.textContent === "Acme");
+    const folderChip = Array.from(container.querySelectorAll<HTMLElement>(".organization-chip"))
+      .find((chip) => chip.textContent === "Obchod");
+    expect(clientChip?.classList.contains("organization-chip-colored")).toBe(true);
+    expect(clientChip?.style.getPropertyValue("--organization-color")).toBe("#112233");
+    expect(folderChip?.classList.contains("organization-chip-colored")).toBe(false);
+  });
+
   it("shows current chips and enforces client-dependent project choices", async () => {
     await act(async () => root.render(
       <RecordingOrganizationEditor
@@ -312,7 +326,7 @@ describe("RecordingOrganizationEditor", () => {
     const betaOrganization: RecordingOrganization = {
       client: { color: null, id: clientB, name: "Beta" },
       folder: null,
-      project: { id: projectB, name: "Projekt B" },
+      project: { color: null, id: projectB, name: "Projekt B" },
       tags: [{ color: null, id: tagB, name: "Follow-up" }]
     };
     const betaRecording = {
@@ -433,6 +447,54 @@ describe("OrganizationManager", () => {
     expect(renameAction.mock.calls[0]?.[1].get("scopeKey")).toBe(clientA);
   });
 
+  it("uses a visual color picker and submits a blank hidden color after choosing neutral", async () => {
+    const createAction = vi.fn(async (state: SaveActionState, formData: FormData) =>
+      createSaveSuccess(state.revision, String(formData.get("scopeKey")), "VytvoĹ™eno.")
+    );
+    await act(async () => root.render(
+      <OrganizationManager actions={createManagerActions({ createClient: createAction })} options={options} />
+    ));
+    const createClientButton = container.querySelector<HTMLButtonElement>(
+      ".organization-manager-group:first-child .organization-save-editor > button"
+    );
+    await act(async () => createClientButton?.click());
+
+    const form = container.querySelector<HTMLFormElement>("form.organization-create-form");
+    const picker = form?.querySelector<HTMLInputElement>('input[type="color"]');
+    const hiddenColor = form?.querySelector<HTMLInputElement>('input[type="hidden"][name="color"]');
+    const nameInput = form?.querySelector<HTMLInputElement>('input[name="name"]');
+    expect(picker).not.toBeNull();
+    expect(hiddenColor?.value).toBe("");
+    expect(form?.querySelector('input[type="text"][name="color"]')).toBeNull();
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(picker, "#224466");
+      picker?.dispatchEvent(new Event("input", { bubbles: true }));
+      picker?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(hiddenColor?.value).toBe("#224466");
+    await clickButton("Bez barvy");
+    expect(hiddenColor?.value).toBe("");
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(nameInput, "Nový klient");
+      nameInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await submitForm("organization-create-form");
+    expect(createAction.mock.calls[0]?.[1].get("color")).toBe("");
+  });
+
+  it("renders each manager row as one colored badge without a separate color dot", async () => {
+    await act(async () => root.render(<OrganizationManager options={options} />));
+    const badge = Array.from(container.querySelectorAll<HTMLElement>(".organization-manager-badge"))
+      .find((item) => item.textContent === "Acme");
+    expect(badge?.style.getPropertyValue("--organization-color")).toBe("#112233");
+    expect(container.querySelector(".organization-manager-row-label > span")).toBeNull();
+  });
+
   it("requires destructive confirmation and explains client restrictions", async () => {
     const deleteClient = vi.fn(async (state: SaveActionState) =>
       createSaveSuccess(state.revision, clientA, "Smazáno.")
@@ -490,6 +552,36 @@ describe("OrganizationManager", () => {
 });
 
 describe("organization UI integration", () => {
+  it("keeps organization cards compact without overflowing the responsive layout", () => {
+    const recordingStyles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+    const responsiveStyles = readFileSync(join(process.cwd(), "app", "styles", "responsive.css"), "utf8");
+
+    expect(recordingStyles).toMatch(/\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
+    expect(responsiveStyles).toMatch(/@media \(max-width: 1180px\)\s*\{[\s\S]*?\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+    expect(responsiveStyles).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.organization-manager-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr/);
+    expect(recordingStyles).toMatch(/\.organization-create-form,[\s\S]*?\.organization-rename-form\s*\{[\s\S]*?box-sizing:\s*border-box/);
+    expect(recordingStyles).toMatch(/\.organization-manager-group > header\s*\{[\s\S]*?position:\s*relative/);
+    expect(recordingStyles).toMatch(/\.organization-manager-group > header \.organization-save-editor,[\s\S]*?\.organization-manager-row-actions \.organization-save-editor\s*\{[\s\S]*?position:\s*static/);
+    expect(recordingStyles).toMatch(/\.organization-manager-group li\s*\{[\s\S]*?position:\s*relative/);
+    expect(recordingStyles).toMatch(/\.organization-create-form\s*\{[\s\S]*?position:\s*absolute[\s\S]*?width:\s*min\(280px, 100%, calc\(100vw - 52px\)\)/);
+    expect(recordingStyles).toMatch(/\.organization-rename-form\s*\{[\s\S]*?width:\s*min\(280px, 100%, calc\(100vw - 52px\)\)[\s\S]*?top:\s*calc\(100% \+ 6px\)/);
+  });
+
+  it("targets the actual recording delete button in the light theme", () => {
+    const recordingStyles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+
+    expect(recordingStyles).toMatch(/\[data-theme="light"\] \.delete-recording-form button/);
+    expect(recordingStyles).toContain("color: #7f2020;");
+    expect(recordingStyles).not.toMatch(/\[data-theme="light"\] \.delete-recording-button/);
+    expect(recordingStyles).not.toMatch(/\[data-theme="light"\] \.delete-recording-icon,/);
+  });
+
   it("keeps the existing title editor and loads organization data outside recording row loops", () => {
     const workbenchSource = readFileSync(
       join(process.cwd(), "src", "components", "workspace", "recording-workbench.tsx"),

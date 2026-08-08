@@ -2,6 +2,10 @@ import {
   LIVE_RECORDING_AUDIO_BITS_PER_SECOND,
   formatFileSize
 } from "@/lib/recordings/types";
+import {
+  getSonioxRealtimeLanguageConfig,
+  type SonioxRealtimeLanguageId
+} from "@/lib/soniox/languages";
 import type { Recording, RealtimeToken, RecordOptions } from "@soniox/client";
 import type { LiveCaptionBlock, LiveSaveMode, RealtimeConfigErrorCode } from "@/components/browser-recorder/types";
 
@@ -45,14 +49,16 @@ export function getSupportedMimeType() {
 }
 
 // getRealtimeRecordingOptions configures Soniox realtime for long-running live capture.
-export function getRealtimeRecordingOptions(realtimeModel: string): RecordOptions {
+export function getRealtimeRecordingOptions(
+  realtimeModel: string,
+  language: SonioxRealtimeLanguageId
+): RecordOptions {
   return {
     auto_reconnect: true,
     enable_endpoint_detection: false,
-    enable_language_identification: true,
     enable_speaker_diarization: true,
-    language_hints: ["cs"],
-    model: realtimeModel
+    model: realtimeModel,
+    ...getSonioxRealtimeLanguageConfig(language)
   };
 }
 

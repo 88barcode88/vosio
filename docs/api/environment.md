@@ -92,14 +92,14 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 - Required only for AI processing.
 - Server-only OpenAI API key.
 - Used for OpenAI AI processing.
-- App model options include `gpt-5.6-terra` with reasoning `high` and `gpt-5.6-luna` with reasoning `xhigh`; the selected model is stored as a safe user preference and sent only server-side.
+- App model options include `gpt-5.6-sol` with reasoning `xhigh`, `gpt-5.6-terra` with reasoning `high` and `gpt-5.6-luna` with reasoning `xhigh`; the selected model is stored as a safe user preference and sent only server-side. Indicative prices are $5/$30, $2/$12 and $0.20/$1.20 per 1M input/output tokens respectively; provider billing remains the source of truth. For complex calls prefer Sol or Terra and review generated tasks/evidence against the transcript because smaller, cheaper models can miss details even with the same prompt and schema.
 
 `GEMINI_API_KEY`
 
 - Optional.
 - Required only when users select Gemini models in `/settings` or the recording AI tab.
 - Server-only Google Gemini API key.
-- Current Gemini option is `gemini-3.6-flash` with thinking level `medium`.
+- Current Gemini option is `gemini-3.6-flash` with thinking level `medium` and an indicative price of $1.50/$7.50 per 1M input/output tokens; provider billing remains the source of truth.
 - Paid Gemini API content is not used to improve Google's products according to the current Google AI pricing/data-use table; do not use Gemini Free tier for sensitive production call content.
 
 ### App-managed model preferences
@@ -110,6 +110,16 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 - Realtime STT model is a safe user preference in `/settings`.
 - Current default is `stt-rt-v5`.
 - Soniox async transcription remains on the current `stt-async-v5` model.
+
+`sonioxRealtimeLanguage` (app-managed preference)
+
+- Not a runtime environment variable and must not contain a provider key.
+- Stored in Supabase Auth `user_metadata.vosio_settings` with `auto` as the fallback default.
+- Supported live values are `auto`, `cs`, `en`, `de`, `es`, `it`, `sk`, `sl`, `hu` and `pl`.
+- `auto` enables Soniox language identification and omits language hints. A fixed value sends one strict hint for that language.
+- The full recorder offers an idle-only per-recording override; it is captured at start and does not mutate an active session.
+- This preference applies only to live microphone recording. Manual file uploads keep the existing async Soniox configuration.
+- Speaker diarization remains enabled in both automatic and fixed-language live modes.
 
 ### App behavior constants
 
@@ -123,8 +133,9 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 
 - Not a runtime environment variable.
 - `/recordings/new` reads `file_size_limit` from the private Supabase Storage bucket `recordings` through the server-only admin client.
-- The detected positive integer is passed to the browser for UI copy, pre-upload validation and the live-audio cutoff. Supabase Storage remains the final enforcement boundary.
-- The baseline migration creates the bucket with `52428800` bytes (50 MB). A paid project can raise both its global Storage limit and this per-bucket limit; the application adopts the new bucket value after the page is refreshed.
+- The detected positive integer is combined with the optional per-user `auto`, `free` or `paid` plan cap. The effective manual upload limit is `min(bucket limit, optional user plan cap)` and is passed to the browser for UI copy and pre-upload validation. Supabase Storage remains the final enforcement boundary.
+- The global project limit cannot be detected safely and is displayed as unknown. The application never treats an unknown global limit as unlimited.
+- The baseline migration creates the bucket with `52428800` bytes (50 MiB). A paid project can change its global and per-bucket limits outside the application, but after refresh the app uses the bucket value only as one input to the effective minimum.
 - If the bucket or a positive explicit limit cannot be read, audio upload and audio-backed live mode are disabled. Live transcript-only and transcript import remain available.
 
 `LIVE_RECORDING_AUDIO_BITS_PER_SECOND`
@@ -132,7 +143,7 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 - Not a runtime environment variable.
 - The requested MediaRecorder bitrate is a code constant in `src/lib/recordings/types.ts`.
 - Current value: `128000` bits per second.
-- The browser uses the actual recorder bitrate to estimate when live audio reaches the limit read from `recordings.file_size_limit`. At that point audio capture is discarded while realtime transcription continues.
+- The hard live-audio limit is `min(effective manual upload limit, 128 MiB)`. The browser uses the actual recorder bitrate to estimate an earlier cutoff at `hard live limit - min(5% of hard live limit, 2 MiB)`; when that estimate reaches the cutoff, local audio capture is discarded while realtime transcription continues. After `stop()`, any finalized Blob is still validated against the full hard live limit before upload.
 
 ## Rules
 

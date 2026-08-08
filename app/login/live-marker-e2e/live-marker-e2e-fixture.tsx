@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import type { Recording } from "@soniox/client";
+import type { RecordOptions, Recording } from "@soniox/client";
 import { PersistentRecorderSlot } from "@/components/persistent-recording-session";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import { MobileNav } from "@/components/workspace-navigation";
@@ -157,6 +157,11 @@ function FixtureShell({ children }: { children: ReactNode }) {
 // LiveMarkerCaptureFixture prepares intercepted auth and mounts the actual persistent recorder slot.
 function LiveMarkerCaptureFixture({ scope }: { scope: string }) {
   const [authState, setAuthState] = useState<"error" | "loading" | "ready">("loading");
+  const [capturedOptions, setCapturedOptions] = useState<RecordOptions | null>(null);
+  const developmentRecordingFactory = useCallback((options: RecordOptions) => {
+    setCapturedOptions(options);
+    return createDevelopmentRecording();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -190,7 +195,7 @@ function LiveMarkerCaptureFixture({ scope }: { scope: string }) {
               <PersistentRecorderSlot
                 allowTranscriptOnly
                 captionMode
-                developmentRecordingFactory={createDevelopmentRecording}
+                developmentRecordingFactory={developmentRecordingFactory}
                 maxAudioFileSizeBytes={50 * 1024 * 1024}
               />
             ) : (
@@ -200,6 +205,10 @@ function LiveMarkerCaptureFixture({ scope }: { scope: string }) {
             )}
           </div>
         </article>
+        <output
+          data-e2e-recording-options={capturedOptions ? JSON.stringify(capturedOptions) : ""}
+          hidden
+        />
         <Link
           href={`/login/live-marker-e2e?scope=${scope}&view=away`}
           onClick={clearFixtureAuthCookies}

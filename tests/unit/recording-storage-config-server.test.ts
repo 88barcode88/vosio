@@ -12,31 +12,40 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 import { getRecordingStorageConfig } from "@/lib/recordings/storage-config.server";
 
+const MEBIBYTE = 1024 * 1024;
+const GIBIBYTE = 1024 * MEBIBYTE;
+
 describe("recording storage config server query", () => {
   beforeEach(() => {
     getBucket.mockReset();
   });
 
-  it("loads the current limit from the recordings bucket", async () => {
+  it("applies the Free ceiling to the recordings bucket limit", async () => {
     getBucket.mockResolvedValue({
-      data: { file_size_limit: 100 * 1024 * 1024 },
+      data: { file_size_limit: 100 * MEBIBYTE },
       error: null
     });
 
-    await expect(getRecordingStorageConfig()).resolves.toEqual({
-      maxFileSizeBytes: 100 * 1024 * 1024
+    await expect(getRecordingStorageConfig("free")).resolves.toEqual({
+      bucketMaxFileSizeBytes: 100 * MEBIBYTE,
+      detectedGlobalMaxFileSizeBytes: null,
+      maxFileSizeBytes: 50 * MEBIBYTE,
+      planMaxFileSizeBytes: 50 * MEBIBYTE
     });
     expect(getBucket).toHaveBeenCalledWith("recordings");
   });
 
-  it("does not guess a limit when the bucket query fails", async () => {
+  it("fails closed while retaining the paid-plan ceiling when the bucket query fails", async () => {
     getBucket.mockResolvedValue({
       data: null,
       error: new Error("bucket unavailable")
     });
 
-    await expect(getRecordingStorageConfig()).resolves.toEqual({
-      maxFileSizeBytes: null
+    await expect(getRecordingStorageConfig("paid")).resolves.toEqual({
+      bucketMaxFileSizeBytes: null,
+      detectedGlobalMaxFileSizeBytes: null,
+      maxFileSizeBytes: null,
+      planMaxFileSizeBytes: 500 * GIBIBYTE
     });
   });
 });

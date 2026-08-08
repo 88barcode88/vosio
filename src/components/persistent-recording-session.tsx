@@ -137,6 +137,7 @@ export function PersistentRecorderSlot(config: PersistentRecorderConfig) {
     captionMode,
     developmentRecordingFactory,
     maxAudioFileSizeBytes,
+    realtimeLanguage,
     realtimeModel,
     redirectAfterSave
   } = config;
@@ -161,6 +162,7 @@ export function PersistentRecorderSlot(config: PersistentRecorderConfig) {
       captionMode,
       developmentRecordingFactory,
       maxAudioFileSizeBytes,
+      realtimeLanguage,
       realtimeModel,
       redirectAfterSave
     });
@@ -170,6 +172,7 @@ export function PersistentRecorderSlot(config: PersistentRecorderConfig) {
     captionMode,
     developmentRecordingFactory,
     maxAudioFileSizeBytes,
+    realtimeLanguage,
     realtimeModel,
     redirectAfterSave
   ]);

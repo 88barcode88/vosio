@@ -27,4 +27,14 @@ describe("OpenAI client request body", () => {
     expect(body).not.toHaveProperty("temperature");
     expect(body).toHaveProperty("reasoning.effort", "xhigh");
   });
+
+  it("sends Sol with xhigh reasoning and omits temperature", () => {
+    const body = createOpenAIRequestBody({
+      ...baseInput,
+      model: "gpt-5.6-sol"
+    });
+
+    expect(body).not.toHaveProperty("temperature");
+    expect(body).toHaveProperty("reasoning.effort", "xhigh");
+  });
 });

@@ -23,13 +23,13 @@ export type RecordingTagRow = RecordingClientRow;
 
 export type RecordingClientPicker = Pick<RecordingClientRow, "color" | "id" | "name">;
 export type RecordingProjectPicker = Pick<RecordingProjectRow, "client_id" | "color" | "id" | "name">;
-export type RecordingFolderPicker = Pick<RecordingFolderRow, "id" | "name">;
+export type RecordingFolderPicker = Pick<RecordingFolderRow, "color" | "id" | "name">;
 export type RecordingTagPicker = Pick<RecordingTagRow, "color" | "id" | "name">;
 
 export type RecordingOrganization = {
   client: RecordingClientPicker | null;
   folder: RecordingFolderPicker | null;
-  project: Pick<RecordingProjectPicker, "id" | "name"> | null;
+  project: Pick<RecordingProjectPicker, "color" | "id" | "name"> | null;
   tags: RecordingTagPicker[];
 };
 

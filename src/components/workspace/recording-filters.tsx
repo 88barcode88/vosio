@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   buildRecordingFilterSearchParams,
   type RecordingOrganizationFilters
@@ -27,6 +27,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
   const [projectId, setProjectId] = useState(filters.projectId ?? "");
   const [folderId, setFolderId] = useState(filters.folderId ?? "");
   const [tagIds, setTagIds] = useState(() => new Set(filters.tagIds));
+  const previousCommittedLocationRef = useRef<string | null>(null);
   const committedQueryString = currentSearchParams.toString();
   const committedLocation = committedQueryString ? `${pathname}?${committedQueryString}` : pathname;
   const projects = options.projects.filter((project) => project.client_id === clientId);
@@ -39,8 +40,25 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
     if (navigationTarget === committedLocation) setNavigationTarget(null);
   }, [committedLocation, navigationTarget]);
 
-  // navigate applies one canonical filter snapshot while retaining unrelated URL parameters.
-  function navigate(nextFilters: RecordingOrganizationFilters, nextQuery: string) {
+  // syncExternalLocation adopts browser history changes without overwriting ordinary local drafts.
+  useEffect(() => {
+    const previousLocation = previousCommittedLocationRef.current;
+    previousCommittedLocationRef.current = committedLocation;
+    if (previousLocation === null || previousLocation === committedLocation) return;
+    if (navigationTarget === committedLocation) return;
+
+    setQuery(searchQuery);
+    setClientId(filters.clientId ?? "");
+    setProjectId(filters.projectId ?? "");
+    setFolderId(filters.folderId ?? "");
+    setTagIds(new Set(filters.tagIds));
+  }, [committedLocation, filters.clientId, filters.folderId, filters.projectId, filters.tagIds, navigationTarget, searchQuery]);
+
+  // navigate applies one canonical filter snapshot and skips committed or pending URL targets.
+  const navigate = useCallback((
+    nextFilters: RecordingOrganizationFilters,
+    nextQuery = currentSearchParams.get("q") ?? ""
+  ) => {
     const next = buildRecordingFilterSearchParams(
       new URLSearchParams(currentSearchParams.toString()),
       nextFilters
@@ -51,34 +69,45 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
     next.delete("page");
     const queryString = next.toString();
     const target = queryString ? `${pathname}?${queryString}` : pathname;
-    if (target === committedLocation) return;
+    if (target === committedLocation || target === navigationTarget) return;
     setNavigationTarget(target);
     startTransition(async () => {
       await router.push(target);
     });
-  }
+  }, [committedLocation, currentSearchParams, navigationTarget, pathname, router]);
 
   // currentDraft returns all controlled organization values in URL order.
-  function currentDraft(): RecordingOrganizationFilters {
-    return {
-      clientId: clientId || null,
-      folderId: folderId || null,
-      projectId: projectId || null,
-      tagIds: Array.from(tagIds)
-    };
-  }
+  const currentDraft = useCallback((): RecordingOrganizationFilters => ({
+    clientId: clientId || null,
+    folderId: folderId || null,
+    projectId: projectId || null,
+    tagIds: Array.from(tagIds)
+  }), [clientId, folderId, projectId, tagIds]);
+
+  // Deferred search navigates only for a cleared query or a useful three-character query.
+  useEffect(() => {
+    const normalizedQuery = normalizeRecordingSearchQuery(query);
+    const committedQuery = normalizeRecordingSearchQuery(currentSearchParams.get("q"));
+
+    if ((normalizedQuery && normalizedQuery.length < 3) || normalizedQuery === committedQuery) return;
+
+    const timeoutId = window.setTimeout(() => {
+      navigate(currentDraft(), normalizedQuery);
+    }, 350);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [currentDraft, currentSearchParams, navigate, query]);
 
   // toggleTag updates the repeatable URL filter without mutating prior state.
   function toggleTag(tagId: string) {
-    setTagIds((current) => {
-      const next = new Set(current);
-      if (next.has(tagId)) next.delete(tagId);
-      else next.add(tagId);
-      return next;
-    });
+    const next = new Set(tagIds);
+    if (next.has(tagId)) next.delete(tagId);
+    else next.add(tagId);
+    setTagIds(next);
+    navigate({ ...currentDraft(), tagIds: Array.from(next) }, query);
   }
 
-  // clearFilters resets the controlled draft and removes only organization parameters from the URL.
+  // clearFilters resets organization choices while preserving the current search draft.
   function clearFilters() {
     setClientId("");
     setProjectId("");
@@ -94,16 +123,12 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
       aria-busy={isNavigationPending}
       aria-label="Filtrování nahrávek"
       className="recording-filters"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!isNavigationPending) navigate(currentDraft(), query);
-      }}
+      onSubmit={(event) => event.preventDefault()}
     >
       <div className="recording-filter-grid">
         <label className="recording-filter-search">
           <span>Hledat</span>
           <input
-            disabled={isNavigationPending}
             maxLength={120}
             name="q"
             onChange={(event) => setQuery(event.target.value)}
@@ -119,10 +144,16 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
             name="client"
             onChange={(event) => {
               const nextClientId = event.target.value;
-              setClientId(nextClientId);
-              if (!options.projects.some((project) =>
+              const nextProjectId = options.projects.some((project) =>
                 project.id === projectId && project.client_id === nextClientId
-              )) setProjectId("");
+              ) ? projectId : "";
+              setClientId(nextClientId);
+              setProjectId(nextProjectId);
+              navigate({
+                ...currentDraft(),
+                clientId: nextClientId || null,
+                projectId: nextProjectId || null
+              }, query);
             }}
             value={clientId}
           >
@@ -135,7 +166,11 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
           <select
             disabled={isNavigationPending || !clientId}
             name="project"
-            onChange={(event) => setProjectId(event.target.value)}
+            onChange={(event) => {
+              const nextProjectId = event.target.value;
+              setProjectId(nextProjectId);
+              navigate({ ...currentDraft(), projectId: nextProjectId || null }, query);
+            }}
             value={projectId}
           >
             <option value="">Všechny projekty</option>
@@ -147,7 +182,11 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
           <select
             disabled={isNavigationPending}
             name="folder"
-            onChange={(event) => setFolderId(event.target.value)}
+            onChange={(event) => {
+              const nextFolderId = event.target.value;
+              setFolderId(nextFolderId);
+              navigate({ ...currentDraft(), folderId: nextFolderId || null }, query);
+            }}
             value={folderId}
           >
             <option value="">Všechny složky</option>
@@ -155,38 +194,37 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
           </select>
         </label>
       </div>
-      <fieldset className="recording-filter-tags">
-        <legend>Štítky <small>Vybrané štítky platí současně</small></legend>
-        {options.tags.length > 0 ? options.tags.map((tag) => (
-          <label key={tag.id}>
-            <input
-              checked={tagIds.has(tag.id)}
-              disabled={isNavigationPending}
-              name="tag"
-              onChange={() => toggleTag(tag.id)}
-              type="checkbox"
-              value={tag.id}
-            />
-            <span>{tag.name}</span>
-          </label>
-        )) : <span className="recording-filter-empty">Zatím bez štítků</span>}
-      </fieldset>
-      <div className="recording-filter-actions">
-        <button disabled={isNavigationPending} type="submit">
-          {isNavigationPending ? "Načítám…" : "Použít filtry"}
-        </button>
-        <button
-          disabled={isNavigationPending || (!hasFilters && !hasDraftFilters)}
-          onClick={clearFilters}
-          type="button"
-        >
-          Vyčistit filtry
-        </button>
-        {searchQuery ? (
-          <button disabled={isNavigationPending} onClick={() => navigate(currentDraft(), "")} type="button">
-            Vyčistit hledání
+      <div className="recording-filter-tag-row">
+        <fieldset className="recording-filter-tags">
+          <legend>Štítky <small>Vybrané štítky platí současně</small></legend>
+          {options.tags.length > 0 ? options.tags.map((tag) => (
+            <label key={tag.id}>
+              <input
+                checked={tagIds.has(tag.id)}
+                disabled={isNavigationPending}
+                name="tag"
+                onChange={() => toggleTag(tag.id)}
+                type="checkbox"
+                value={tag.id}
+              />
+              <span>{tag.name}</span>
+            </label>
+          )) : <span className="recording-filter-empty">Zatím bez štítků</span>}
+        </fieldset>
+        <div className="recording-filter-actions">
+          <button
+            disabled={isNavigationPending || (!hasFilters && !hasDraftFilters)}
+            onClick={clearFilters}
+            type="button"
+          >
+            Vyčistit filtry
           </button>
-        ) : null}
+          {query ? (
+            <button disabled={isNavigationPending} onClick={() => setQuery("")} type="button">
+              Vyčistit hledání
+            </button>
+          ) : null}
+        </div>
       </div>
       <span aria-live="polite" className="visually-hidden">
         {isNavigationPending ? "Aktualizuji seznam nahrávek." : ""}

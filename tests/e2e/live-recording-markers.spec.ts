@@ -9,6 +9,9 @@ const userId = "00000000-0000-4000-8000-000000000303";
 type CapturedBoundary = {
   liveTranscriptRequests: unknown[];
   markerRequests: RecordingMarkerRequest[];
+  markerResponseMode?: "fail-first" | "hold-first";
+  releaseHeldMarker?: () => void;
+  heldMarkerResponseSettled?: Promise<void>;
   recordingUpdates: unknown[];
 };
 
@@ -155,9 +158,39 @@ async function installHttpBoundaries(page: Page, boundary: CapturedBoundary) {
   await page.route(`**/api/recordings/${recordingId}/markers`, async (route) => {
     const request = route.request().postDataJSON() as RecordingMarkerRequest;
     boundary.markerRequests.push(request);
+    const requestIndex = boundary.markerRequests.length - 1;
+
+    if (boundary.markerResponseMode === "fail-first" && requestIndex === 0) {
+      await route.fulfill({ status: 500 });
+      return;
+    }
+
+    if (boundary.markerResponseMode === "hold-first" && requestIndex === 0) {
+      let resolveHeldMarkerResponse!: () => void;
+      boundary.heldMarkerResponseSettled = new Promise<void>((resolve) => {
+        resolveHeldMarkerResponse = resolve;
+      });
+
+      await new Promise<void>((resolve) => {
+        boundary.releaseHeldMarker = resolve;
+      });
+
+      try {
+        await route.fulfill({
+          contentType: "application/json",
+          json: { marker: createSavedMarkerRow(request, requestIndex) },
+          status: 201
+        });
+      } finally {
+        resolveHeldMarkerResponse();
+      }
+
+      return;
+    }
+
     await route.fulfill({
       contentType: "application/json",
-      json: { marker: createSavedMarkerRow(request, boundary.markerRequests.length - 1) },
+      json: { marker: createSavedMarkerRow(request, requestIndex) },
       status: 201
     });
   });
@@ -205,10 +238,24 @@ test("actual persistent recorder saves two markers and opens both from timeline"
   await expect(page.locator('[data-e2e-live-marker-state="full"]')).toBeVisible();
 
   await page.getByRole("button", { name: "Nahrávat live" }).click();
+  const recordingOptions = page.locator("[data-e2e-recording-options]");
+  await expect(recordingOptions).not.toHaveAttribute("data-e2e-recording-options", "");
+  const defaultOptions = JSON.parse(
+    await recordingOptions.getAttribute("data-e2e-recording-options")
+      ?? "null"
+  );
+  expect(defaultOptions).toMatchObject({
+    enable_language_identification: true,
+    enable_speaker_diarization: true
+  });
+  expect(defaultOptions).not.toHaveProperty("language_hints");
+  expect(defaultOptions).not.toHaveProperty("language_hints_strict");
   const fullMarker = page.getByRole("button", { name: "Označit moment" });
   await expect(fullMarker).toBeEnabled();
+  await expect(page.getByText("Označené momenty: 0")).toBeVisible();
   await fullMarker.click();
   await expect.poll(() => boundary.markerRequests.length).toBe(1);
+  await expect(page.getByText("Označené momenty: 1")).toBeVisible();
 
   await page.getByRole("link", { name: "Přejít na jinou stránku" }).click();
   await expect(page).toHaveURL(new RegExp(`scope=${scope}&view=away`));
@@ -241,6 +288,7 @@ test("actual persistent recorder saves two markers and opens both from timeline"
 
   await compactMarker.click();
   await expect.poll(() => boundary.markerRequests.length).toBe(2);
+  await expect(dock.getByText("Označené momenty: 2")).toBeVisible();
   await dock.getByRole("button", { name: "Zastavit" }).click();
   await expect(dock).toBeHidden();
   await expect.poll(() => boundary.liveTranscriptRequests.length).toBe(1);
@@ -271,4 +319,101 @@ test("actual persistent recorder saves two markers and opens both from timeline"
   await page.locator(".timeline-marker-row").nth(1).click();
   await expect(page.locator("#transcript-at-1000")).toHaveAttribute("aria-current", "true");
   await expect(page.locator("audio")).toHaveCount(0);
+});
+
+test("passes the selected live language only at the recording start boundary", async ({ page }) => {
+  const boundary: CapturedBoundary = {
+    liveTranscriptRequests: [],
+    markerRequests: [],
+    recordingUpdates: []
+  };
+  const scope = createFixtureScope();
+
+  await installBrowserMediaBoundaries(page);
+  await installHttpBoundaries(page, boundary);
+  await page.goto(`/login/live-marker-e2e?scope=${scope}`);
+
+  const languageSelect = page.getByLabel("Jazyk live přepisu");
+  await expect(languageSelect).toHaveValue("auto");
+  await languageSelect.selectOption("de");
+  await page.getByRole("button", { name: "Nahrávat live" }).click();
+
+  const recordingOptions = page.locator("[data-e2e-recording-options]");
+  await expect(recordingOptions).not.toHaveAttribute("data-e2e-recording-options", "");
+  const selectedOptions = JSON.parse(
+    await recordingOptions.getAttribute("data-e2e-recording-options")
+      ?? "null"
+  );
+  expect(selectedOptions).toMatchObject({
+    enable_language_identification: true,
+    enable_speaker_diarization: true,
+    language_hints: ["de"],
+    language_hints_strict: true
+  });
+  await expect(languageSelect).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Zastavit" }).click();
+  await expect(recordingOptions).toHaveAttribute(
+    "data-e2e-recording-options",
+    /language_hints/
+  );
+});
+
+test("counts only a marker that succeeds after a failed retry", async ({ page }) => {
+  const boundary: CapturedBoundary = {
+    liveTranscriptRequests: [],
+    markerRequests: [],
+    markerResponseMode: "fail-first",
+    recordingUpdates: []
+  };
+  const scope = createFixtureScope();
+
+  await installBrowserMediaBoundaries(page);
+  await installHttpBoundaries(page, boundary);
+  await page.goto(`/login/live-marker-e2e?scope=${scope}`);
+  await page.getByRole("button", { name: "Nahrávat live" }).click();
+
+  const marker = page.getByRole("button", { name: "Označit moment" });
+  await expect(marker).toBeEnabled();
+  await expect(page.getByText("Označené momenty: 0")).toBeVisible();
+  await marker.click();
+  await expect.poll(() => boundary.markerRequests.length).toBe(1);
+  await expect(page.getByText("Označené momenty: 0")).toBeVisible();
+
+  const retry = page.getByRole("button", { name: "Zkusit moment znovu" });
+  await expect(retry).toBeEnabled();
+  await retry.click();
+  await expect.poll(() => boundary.markerRequests.length).toBe(2);
+  await expect(page.getByText("Označené momenty: 1")).toBeVisible();
+});
+
+test("resets the count for a new session and ignores a stale marker response", async ({ page }) => {
+  const boundary: CapturedBoundary = {
+    liveTranscriptRequests: [],
+    markerRequests: [],
+    markerResponseMode: "hold-first",
+    recordingUpdates: []
+  };
+  const scope = createFixtureScope();
+
+  await installBrowserMediaBoundaries(page);
+  await installHttpBoundaries(page, boundary);
+  await page.goto(`/login/live-marker-e2e?scope=${scope}`);
+  await page.getByRole("button", { name: "Nahrávat live" }).click();
+
+  const marker = page.getByRole("button", { name: "Označit moment" });
+  await expect(marker).toBeEnabled();
+  await marker.click();
+  await expect.poll(() => Boolean(boundary.releaseHeldMarker && boundary.heldMarkerResponseSettled)).toBe(true);
+
+  await page.getByRole("button", { name: "Zastavit" }).click();
+  await expect(page.getByRole("button", { name: "Nahrávat live" })).toBeVisible();
+  await page.getByRole("button", { name: "Nahrávat live" }).click();
+  await expect(page.getByText("Označené momenty: 0")).toBeVisible();
+
+  expect(boundary.releaseHeldMarker).toBeDefined();
+  expect(boundary.heldMarkerResponseSettled).toBeDefined();
+  boundary.releaseHeldMarker!();
+  await boundary.heldMarkerResponseSettled!;
+  await expect(page.getByText("Označené momenty: 0")).toBeVisible();
 });

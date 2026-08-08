@@ -50,9 +50,19 @@ When the user records live in the browser:
 2. The server issues a short-lived Soniox temporary API key for realtime websocket transcription.
 3. The browser streams microphone audio directly to Soniox through the Web SDK.
 4. The UI displays live transcript tokens.
-5. In `Audio do {aktuální limit bucketu} + přepis` mode, the browser records one local audio file and uploads it on stop only when the whole file stays within the detected `recordings.file_size_limit`.
-6. If live audio reaches the detected limit, or the user selects `Jen live přepis`, the app continues realtime transcription and saves the final transcript without a Storage audio object.
+5. In `Audio do {efektivní live limit} + přepis` mode, the browser records one local audio file. Its hard live limit is `min(effective manual upload limit, 128 MiB)`, and the finalized Blob is uploaded on stop only after validation against that hard limit.
+6. The browser estimates an earlier cutoff at `hard live limit - min(5% of hard live limit, 2 MiB)`. When the estimate reaches that cutoff, or the user selects `Jen live přepis`, local audio is discarded while realtime transcription continues and saves the final transcript without a Storage audio object.
 7. The final live transcript is stored in `transcripts` and linked to a realtime `transcription_jobs` row. The job `provider_config.storage` records whether the source was `supabase_recording_upload` or `transcript_only`.
+
+Live language selection is separate from audio retention and speaker identification:
+
+- The supported live options are `auto`, `cs`, `en`, `de`, `es`, `it`, `sk`, `sl`, `hu`, and `pl`.
+- `auto` enables Soniox language identification and omits both `language_hints` and `language_hints_strict`.
+- A selected language sends one matching `language_hints` value with `language_hints_strict = true`.
+- `enable_speaker_diarization` stays enabled in both modes. Language hints are provider guidance/best effort, not an absolute guarantee that every token uses the selected language.
+- The default is stored in `user_metadata.vosio_settings.sonioxRealtimeLanguage`, with `auto` as the fallback for legacy or invalid metadata.
+- The full recorder can override the default while idle before a call starts. The selected value is fixed for that capture session; changing the setting later applies to a future call.
+- This contract is live-only. Manual audio uploads and their async Soniox transcription continue using the existing async configuration and do not inherit the live override.
 
 The root `PersistentRecordingSessionProvider` owns the real `BrowserRecorder`. Leaving `/recordings/new` through an internal Next.js navigation removes only the full slot and moves the same recorder instance into the compact dock; capture, Soniox, MediaRecorder, marker clock and stop ownership continue without restart. On mobile the dock must stay above the actual `MobileNav`, and its stop and marker controls must remain separately clickable.
 
@@ -76,7 +86,7 @@ The compact organization manager creates and renames the user's clients, project
 
 Deletion is explicit and constrained. A client cannot be deleted while it still owns projects or is assigned to recordings. Deleting a project keeps the client on each recording and clears only the project. Deleting a flat folder clears only the folder. Deleting a tag or recording removes its tag links. Names are trimmed and case-insensitively unique per user, with project names unique within their client.
 
-The recordings list exposes canonical URL filters `client`, `project`, `folder` and repeatable `tag` alongside `q`. Invalid, foreign, repeated single-value or client/project-mismatched values are removed from the canonical URL; repeated valid tags are deduplicated. Applying organization filters preserves `q` and unrelated URL parameters. Clearing search preserves the current organization draft, and clearing organization filters preserves the current `q` draft. During a navigation transition every filter control is disabled without discarding its draft; a committed canonical URL settles the transition on the same component instance, and an unchanged canonical target does not push another navigation.
+The recordings list exposes canonical URL filters `client`, `project`, `folder` and repeatable `tag` alongside `q`. Invalid, foreign, repeated single-value or client/project-mismatched values are removed from the canonical URL; repeated valid tags are deduplicated. Client, project, folder and tag choices navigate immediately while preserving `q` and unrelated URL parameters; changing the client clears an incompatible project. Search navigates after a 350 ms debounce only when its normalized value is empty or has at least three characters. During a navigation transition organization controls are disabled without discarding their draft, while the search field stays usable; a committed canonical URL settles the transition on the same component instance, and an unchanged canonical target does not push another navigation.
 
 Selected tags use ALL semantics: every returned recording must contain every selected tag. Without `q`, the list RPC returns only the current user's non-deleted rows in `created_at desc, id desc` order. The client reads all organization pages using the stable `(created_at, id)` keyset cursor with identical filters, deduplicates an overlapping boundary and rejects a stalled cursor or later-page error. With `q`, the separate indexed search RPC applies the same organization filters before ranking and uses its own bounded page/offset contract described below.
 
@@ -98,7 +108,7 @@ Selected tags use ALL semantics: every returned recording must contain every sel
 - `video/x-ms-asf`
 - `video/mp4`
 
-Maximum file size is read from the explicit `file_size_limit` of the `recordings` bucket. The baseline migration uses `52428800` bytes for Free projects; paid projects may raise both the global Storage limit and the bucket limit. Audio paths fail closed when the bucket limit cannot be read.
+The effective manual upload limit is `min(recordings.file_size_limit, optional per-user plan cap)`. The baseline migration uses a `52428800`-byte (50 MiB) bucket limit; the `free` preference adds a 50 MiB cap, `paid` adds a 500 GiB cap and `auto` adds no cap. A preference can only lower the bucket limit, never raise it or authorize Storage. The global project limit cannot be detected safely and is displayed as unknown. Audio paths fail closed when a positive explicit bucket limit cannot be read. Live audio has a hard limit of `min(effective manual upload limit, 128 MiB)`, an estimated cutoff below it by `min(5% of the hard live limit, 2 MiB)`, and a final Blob validation against the full hard limit.
 
 ## AI Prompt Templates
 
@@ -124,7 +134,7 @@ System prompts distinguish participant roles when the transcript or metadata sup
 
 The `/templates` workspace separates user-owned templates from the system library. User-owned templates are editable and update through RLS with `is_system = false` and the authenticated `user_id`. System templates are shown in read-only controls with a copy action; submitting the copy action inserts a new user-owned template with the same prompt data, which can then be edited as a custom template.
 
-AI processing lets the user choose one current AI model per run. The model selector includes model purpose, provider and indicative token pricing for `gpt-5.6-terra`, `gpt-5.6-luna` and `gemini-3.6-flash`. The selected model is stored in `ai_processing_jobs.model`, the selected provider in `ai_processing_jobs.provider`, and the effective `reasoning_effort` or `thinking_level` in `ai_processing_jobs.provider_config`. The current catalog does not expose temperature because these model configurations do not use it. When an AI run starts, the tab must show a visible running state. The same output type can be started again while an earlier run is still pending, because users may want another pass with different settings.
+AI processing lets the user choose one current AI model per run. The model selector includes model purpose, provider and indicative token pricing for `gpt-5.6-sol` (xhigh, $5/$30), `gpt-5.6-terra` (high, $2/$12), `gpt-5.6-luna` (xhigh, $0.20/$1.20) and `gemini-3.6-flash` (thinking medium, $1.50/$7.50) per 1M input/output tokens. The selected model is stored in `ai_processing_jobs.model`, the selected provider in `ai_processing_jobs.provider`, and the effective `reasoning_effort` or `thinking_level` in `ai_processing_jobs.provider_config`. The current catalog does not expose temperature because these model configurations do not use it. Model size and reasoning can affect extraction completeness even when the prompt and JSON schema are identical: smaller, cheaper models may miss details, tasks or evidence. Evidence fields remain required by the contract, but users should review important outputs against the transcript; Sol or Terra are preferred for complex calls. Prices are estimates and provider billing remains authoritative. When an AI run starts, the tab must show a visible running state. The same output type can be started again while an earlier run is still pending, because users may want another pass with different settings.
 
 Tasks extracted by AI are stored as checklist rows with owner category (`Moje práce`, `Klient`, `Nejasné`), optional owner name, deadline, status and evidence quote. Toggling a task updates `transcript_tasks.status` through a server action and RLS. The AI tab groups checklist rows by owner category, shows evidence quotes inline, and keeps raw markdown artifacts collapsed when normalized rows exist. The markdown output remains available for review/export, but task state belongs to the normalized table.
 
@@ -142,7 +152,7 @@ The URL target never creates autoplay. With `single` audio it performs at most o
 
 The action-items prompt treats `decisions_to_confirm` as unresolved confirmations only. Already agreed choices belong to `decided_items`, tasks or risks so the UI can show them as agreed decisions instead of open confirmations. The prompt explicitly checks short mentions of Customer Portal, permissions, documents, email templates and process-stage decisions because these often create product follow-up items.
 
-Live recording uses the Soniox realtime model stored in app settings. The current selectable realtime STT model is `stt-rt-v5`.
+Live recording uses the Soniox realtime model and default language stored in app settings. The current selectable realtime STT model is `stt-rt-v5`; the live language contract is documented above. No setting for warning after a number of recording minutes is part of the active recorder lifecycle.
 
 The settings screen shows a compact read-only usage summary for the current month. It counts AI processing jobs from `ai_processing_jobs`, sums stored input/output token counts, estimates AI cost from the stored model id and the app's local model price map, and counts recordings from `recordings`. Total recording duration and file size are displayed only from rows that have `duration_seconds` or `file_size_bytes`; missing metadata is shown as incomplete coverage, not inferred. Soniox cost is an approximate app-side estimate from completed Soniox STT jobs and known recording durations: async transcription uses roughly `$0.10/h`, realtime uses roughly `$0.12/h`. Jobs without known duration are excluded from the estimate and shown as incomplete coverage. Provider dashboards remain the source of truth for billing.
 

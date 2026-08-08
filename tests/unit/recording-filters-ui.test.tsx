@@ -22,7 +22,6 @@ const userId = "00000000-0000-4000-8000-000000000001";
 const clientA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const clientB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const projectA = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-const projectB = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const folderA = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const tagA = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
 const timestamp = "2026-08-05T10:00:00.000Z";
@@ -36,8 +35,7 @@ const options: RecordingOrganizationOptions = {
     { color: null, created_at: timestamp, id: folderA, name: "Calls", updated_at: timestamp, user_id: userId }
   ],
   projects: [
-    { client_id: clientA, color: null, created_at: timestamp, id: projectA, name: "Project X", updated_at: timestamp, user_id: userId },
-    { client_id: clientB, color: null, created_at: timestamp, id: projectB, name: "Project Y", updated_at: timestamp, user_id: userId }
+    { client_id: clientA, color: null, created_at: timestamp, id: projectA, name: "Project X", updated_at: timestamp, user_id: userId }
   ],
   tags: [
     { color: null, created_at: timestamp, id: tagA, name: "Important", updated_at: timestamp, user_id: userId }
@@ -63,7 +61,6 @@ async function setInput(name: string, value: string) {
     setter?.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  return input;
 }
 
 // setSelect changes a controlled select through React's native change path.
@@ -75,21 +72,17 @@ async function setSelect(name: string, value: string) {
     setter?.call(select, value);
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  return select;
 }
 
-// clickButton activates one filter action by exact visible text.
-async function clickButton(label: string) {
-  const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent === label);
-  if (!button) throw new Error(`Missing button ${label}`);
-  await act(async () => button.click());
-}
-
-// clickButtonDuringTransition starts an unresolved navigation without waiting for its action.
-function clickButtonDuringTransition(label: string) {
-  const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent === label);
-  if (!button) throw new Error(`Missing button ${label}`);
-  act(() => button.click());
+// changeSelectDuringTransition starts an unresolved navigation without awaiting it.
+function changeSelectDuringTransition(name: string, value: string) {
+  const select = container.querySelector<HTMLSelectElement>(`select[name="${name}"]`);
+  if (!select) throw new Error(`Missing select ${name}`);
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+    setter?.call(select, value);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
 }
 
 // createDeferred lets navigation tests control when a transition settles.
@@ -111,107 +104,229 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   await act(async () => root.unmount());
   document.body.replaceChildren();
 });
 
-describe("RecordingFilters draft composition", () => {
-  it("clears applied organization filters while preserving an unsaved q draft", async () => {
-    const filters = { clientId: clientA, folderId: null, projectId: projectA, tagIds: [tagA] };
-    navigation.currentSearch = `q=saved&client=${clientA}&project=${projectA}&tag=${tagA}`;
+describe("RecordingFilters URL navigation", () => {
+  it("immediately changes the client, clears an incompatible project and preserves unrelated URL parameters", async () => {
+    const filters = { clientId: clientA, folderId: null, projectId: projectA, tagIds: [] };
+    navigation.currentSearch = `scope=fixture&q=call&client=${clientA}&project=${projectA}&page=2`;
+    await act(async () => root.render(
+      <RecordingFilters filters={filters} options={options} searchQuery="call" />
+    ));
+
+    await setSelect("client", clientB);
+
+    const target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
+    expect(target.searchParams.get("scope")).toBe("fixture");
+    expect(target.searchParams.get("q")).toBe("call");
+    expect(target.searchParams.get("client")).toBe(clientB);
+    expect(target.searchParams.has("project")).toBe(false);
+    expect(target.searchParams.has("page")).toBe(false);
+    expect(container.querySelector<HTMLSelectElement>('select[name="project"]')?.value).toBe("");
+  });
+
+  it("preserves an uncommitted short search draft when organization filters change", async () => {
+    navigation.currentSearch = "scope=fixture";
+    await act(async () => root.render(
+      <RecordingFilters filters={emptyFilters} options={options} searchQuery="" />
+    ));
+
+    await setInput("q", "ab");
+    await setSelect("folder", folderA);
+
+    const target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
+    expect(target.searchParams.get("q")).toBe("ab");
+    expect(target.searchParams.get("folder")).toBe(folderA);
+    expect(target.searchParams.get("scope")).toBe("fixture");
+  });
+
+  it("clears organization filters while preserving the current search draft", async () => {
+    const filters = { clientId: clientA, folderId: null, projectId: projectA, tagIds: [] };
+    navigation.currentSearch = `scope=fixture&q=saved&client=${clientA}&project=${projectA}`;
     await act(async () => root.render(
       <RecordingFilters filters={filters} options={options} searchQuery="saved" />
     ));
 
-    await setInput("q", "draft query");
-    await clickButton("Vyčistit filtry");
+    await setInput("q", "ab");
+    const clearFiltersButton = container.querySelector<HTMLButtonElement>(".recording-filter-actions button");
+    await act(async () => clearFiltersButton?.click());
 
     const target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
-    expect(target.searchParams.get("q")).toBe("draft query");
+    expect(target.searchParams.get("q")).toBe("ab");
     expect(target.searchParams.has("client")).toBe(false);
     expect(target.searchParams.has("project")).toBe(false);
-    expect(target.searchParams.has("tag")).toBe(false);
+    expect(target.searchParams.get("scope")).toBe("fixture");
   });
 
-  it("clears q while preserving the current unsaved canonical organization draft", async () => {
-    navigation.currentSearch = "q=saved";
+  it("immediately changes folders and tags without rendering a submit action", async () => {
+    navigation.currentSearch = "scope=fixture&q=call";
     await act(async () => root.render(
-      <RecordingFilters filters={emptyFilters} options={options} searchQuery="saved" />
+      <RecordingFilters filters={emptyFilters} options={options} searchQuery="call" />
     ));
 
-    await setSelect("client", clientA);
-    await setSelect("project", projectA);
     await setSelect("folder", folderA);
+    let target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
+    expect(target.searchParams.get("folder")).toBe(folderA);
+    expect(target.searchParams.get("scope")).toBe("fixture");
+
+    navigation.push.mockClear();
     const tag = container.querySelector<HTMLInputElement>(`input[name="tag"][value="${tagA}"]`);
     await act(async () => tag?.click());
-    await clickButton("Vyčistit hledání");
+    target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
+    expect(target.searchParams.getAll("tag")).toEqual([tagA]);
+    expect(target.searchParams.get("q")).toBe("call");
+    expect(container.querySelector('button[type="submit"]')).toBeNull();
+  });
+
+  it("immediately changes projects and skips a duplicate push for the committed URL", async () => {
+    const filters = { clientId: clientA, folderId: null, projectId: null, tagIds: [] };
+    navigation.currentSearch = `scope=fixture&client=${clientA}`;
+    await act(async () => root.render(
+      <RecordingFilters filters={filters} options={options} searchQuery="" />
+    ));
+
+    await setSelect("project", projectA);
+    const target = navigation.push.mock.calls[0]?.[0] as string;
+    expect(new URL(target, "https://example.test").searchParams.get("project")).toBe(projectA);
+
+    navigation.currentSearch = target.split("?")[1] ?? "";
+    navigation.push.mockClear();
+    await act(async () => root.render(
+      <RecordingFilters
+        filters={{ clientId: clientA, folderId: null, projectId: projectA, tagIds: [] }}
+        options={options}
+        searchQuery=""
+      />
+    ));
+    await setSelect("project", projectA);
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+
+  it("syncs controls to an external browser history location without pushing the stale draft", async () => {
+    vi.useFakeTimers();
+    navigation.currentSearch = `scope=fixture&q=old&client=${clientA}`;
+    await act(async () => root.render(
+      <RecordingFilters
+        filters={{ clientId: clientA, folderId: null, projectId: null, tagIds: [] }}
+        options={options}
+        searchQuery="old"
+      />
+    ));
+    await setInput("q", "stale draft");
+    navigation.push.mockClear();
+
+    navigation.currentSearch = `scope=fixture&q=new&client=${clientB}`;
+    await act(async () => root.render(
+      <RecordingFilters
+        filters={{ clientId: clientB, folderId: null, projectId: null, tagIds: [] }}
+        options={options}
+        searchQuery="new"
+      />
+    ));
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+
+    expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("new");
+    expect(container.querySelector<HTMLSelectElement>('select[name="client"]')?.value).toBe(clientB);
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+
+  it("debounces only empty or three-character normalized searches", async () => {
+    vi.useFakeTimers();
+    navigation.currentSearch = "scope=fixture&q=call&page=2";
+    await act(async () => root.render(
+      <RecordingFilters filters={emptyFilters} options={options} searchQuery="call" />
+    ));
+
+    await setInput("q", "ab");
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+    expect(navigation.push).not.toHaveBeenCalled();
+
+    await setInput("q", "  call   notes  ");
+    await act(async () => { await vi.advanceTimersByTimeAsync(349); });
+    expect(navigation.push).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+
+    let target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
+    expect(target.searchParams.get("q")).toBe("call notes");
+    expect(target.searchParams.get("scope")).toBe("fixture");
+    expect(target.searchParams.has("page")).toBe(false);
+
+    await setInput("q", "   ");
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+    target = new URL(navigation.push.mock.calls[1]?.[0], "https://example.test");
+    expect(target.searchParams.has("q")).toBe(false);
+  });
+
+  it("does not push a duplicate target while a matching navigation is still pending", async () => {
+    vi.useFakeTimers();
+    const navigationRequest = createDeferred();
+    navigation.push.mockImplementation(() => navigationRequest.promise);
+    navigation.currentSearch = "scope=fixture";
+    await act(async () => root.render(
+      <RecordingFilters filters={emptyFilters} options={options} searchQuery="" />
+    ));
+
+    await setInput("q", "call");
+    changeSelectDuringTransition("client", clientA);
+    expect(navigation.push).toHaveBeenCalledTimes(1);
+    const target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
+    expect(target.searchParams.get("q")).toBe("call");
+    expect(target.searchParams.get("client")).toBe(clientA);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+    expect(navigation.push).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      navigationRequest.resolve();
+      await navigationRequest.promise;
+    });
+  });
+
+  it("clears search through the same debounced URL contract", async () => {
+    vi.useFakeTimers();
+    navigation.currentSearch = "scope=fixture&q=call";
+    await act(async () => root.render(
+      <RecordingFilters filters={emptyFilters} options={options} searchQuery="call" />
+    ));
+
+    const clearSearchButton = Array.from(container.querySelectorAll<HTMLButtonElement>(
+      ".recording-filter-actions button"
+    )).at(-1);
+    await act(async () => clearSearchButton?.click());
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
 
     const target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
     expect(target.searchParams.has("q")).toBe(false);
-    expect(target.searchParams.get("client")).toBe(clientA);
-    expect(target.searchParams.get("project")).toBe(projectA);
-    expect(target.searchParams.get("folder")).toBe(folderA);
-    expect(target.searchParams.getAll("tag")).toEqual([tagA]);
+    expect(target.searchParams.get("scope")).toBe("fixture");
   });
 
-  it("locks every control during navigation without losing the submitted draft", async () => {
+  it("keeps search usable while locking organization controls during immediate navigation", async () => {
     const navigationRequest = createDeferred();
     navigation.push.mockImplementationOnce(() => navigationRequest.promise);
     await act(async () => root.render(
       <RecordingFilters filters={emptyFilters} options={options} searchQuery="" />
     ));
-    await setInput("q", "draft call");
-    await setSelect("client", clientA);
-    await setSelect("project", projectA);
-    const tag = container.querySelector<HTMLInputElement>(`input[name="tag"][value="${tagA}"]`);
-    await act(async () => tag?.click());
-    clickButtonDuringTransition("Použít filtry");
+
+    changeSelectDuringTransition("client", clientA);
 
     const form = container.querySelector<HTMLFormElement>("form.recording-filters");
     expect(form?.getAttribute("aria-busy")).toBe("true");
+    expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.disabled).toBe(false);
+    await setInput("q", "draft call");
+    expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("draft call");
     for (const control of container.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>(
-      "form.recording-filters input, form.recording-filters select, form.recording-filters button"
+      'form.recording-filters input[name="tag"], form.recording-filters select, form.recording-filters button'
     )) {
       expect(control.disabled, control.outerHTML).toBe(true);
     }
-    expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("draft call");
-    expect(container.querySelector<HTMLSelectElement>('select[name="client"]')?.value).toBe(clientA);
-    expect(container.querySelector<HTMLSelectElement>('select[name="project"]')?.value).toBe(projectA);
-    expect(tag?.checked).toBe(true);
-    expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain("Aktualizuji");
 
     await act(async () => {
       navigationRequest.resolve();
       await navigationRequest.promise;
     });
     expect(form?.getAttribute("aria-busy")).toBe("false");
-    expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.disabled).toBe(false);
-  });
-
-  it("resets search pagination, settles the URL commit and skips a same-URL push", async () => {
-    const navigationRequest = createDeferred();
-    navigation.currentSearch = "q=%20%20call%20%20notes%20%20&q=ignored&page=2";
-    navigation.push.mockImplementationOnce(() => navigationRequest.promise);
-    await act(async () => root.render(
-      <RecordingFilters filters={emptyFilters} options={options} searchQuery="call notes" />
-    ));
-
-    clickButtonDuringTransition("Použít filtry");
-    const target = navigation.push.mock.calls[0]?.[0] as string;
-    expect(target).toBe("/recordings?q=call+notes");
-    expect(container.querySelector("form.recording-filters")?.getAttribute("aria-busy")).toBe("true");
-
-    await act(async () => {
-      navigation.currentSearch = target.split("?")[1] ?? "";
-      root.render(<RecordingFilters filters={emptyFilters} options={options} searchQuery="call notes" />);
-      navigationRequest.resolve();
-      await navigationRequest.promise;
-    });
-    expect(container.querySelector("form.recording-filters")?.getAttribute("aria-busy")).toBe("false");
-
-    navigation.push.mockClear();
-    await clickButton("Použít filtry");
-    expect(navigation.push).not.toHaveBeenCalled();
-    expect(container.querySelector("form.recording-filters")?.getAttribute("aria-busy")).toBe("false");
   });
 });

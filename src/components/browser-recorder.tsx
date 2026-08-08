@@ -72,6 +72,10 @@ import {
   addTranscriptSearchIndexWarningToPath,
   hasTranscriptSearchIndexWarning
 } from "@/lib/transcripts/search-warning";
+import {
+  sonioxRealtimeLanguageOptions,
+  type SonioxRealtimeLanguageId
+} from "@/lib/soniox/languages";
 
 type WakeLockSentinelLike = {
   addEventListener: (type: "release", listener: () => void, options?: AddEventListenerOptions) => void;
@@ -123,6 +127,7 @@ export function BrowserRecorder({
   developmentRecordingFactory,
   maxAudioFileSizeBytes,
   onStatusChange,
+  realtimeLanguage = "auto",
   redirectAfterSave,
   realtimeModel = "stt-rt-v5"
 }: BrowserRecorderProps) {
@@ -164,9 +169,11 @@ export function BrowserRecorder({
   const [liveTranscript, setLiveTranscript] = useState("");
   const [liveMarkerFeedback, setLiveMarkerFeedback] = useState<LiveMarkerFeedback | null>(null);
   const [liveMarkerPending, setLiveMarkerPending] = useState(false);
+  const [savedLiveMarkerCount, setSavedLiveMarkerCount] = useState(0);
   const [markerReady, setMarkerReady] = useState(false);
   const [feedback, setFeedback] = useState<RecorderFeedback | null>(null);
   const [realtimeWarning, setRealtimeWarning] = useState<string | null>(null);
+  const [selectedRealtimeLanguage, setSelectedRealtimeLanguage] = useState<SonioxRealtimeLanguageId>(realtimeLanguage);
   const [saveMode, setSaveMode] = useState<LiveSaveMode>(
     maxAudioFileSizeBytes === null && allowTranscriptOnly
       ? "transcript_only"
@@ -174,6 +181,13 @@ export function BrowserRecorder({
   );
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [wakeLockWarning, setWakeLockWarning] = useState<string | null>(null);
+
+  // syncSelectedRealtimeLanguage refreshes the per-call choice when the persisted default changes between sessions.
+  useEffect(() => {
+    if (status === "idle") {
+      setSelectedRealtimeLanguage(realtimeLanguage);
+    }
+  }, [realtimeLanguage, status]);
 
   // setRecorderFeedback keeps ordinary capture state separate from assertive errors and provider warnings.
   function setRecorderFeedback(message: string, tone: RecorderFeedbackTone = "status") {
@@ -354,6 +368,7 @@ export function BrowserRecorder({
     liveRecordingStartedAtMsRef.current = null;
     setLiveMarkerFeedback(null);
     setLiveMarkerPending(false);
+    setSavedLiveMarkerCount(0);
     setMarkerReady(false);
   }
 
@@ -448,6 +463,7 @@ export function BrowserRecorder({
       }
 
       liveMarkerAttemptRef.current = null;
+      setSavedLiveMarkerCount((count) => count + 1);
       setLiveMarkerFeedback({
         message: `Důležitý moment ${timestamp} je uložený.`,
         offsetMs: attempt.offsetMs,
@@ -940,7 +956,7 @@ export function BrowserRecorder({
     setRecorderFeedback("Připravuji mikrofon a live přepis...", "working");
 
     try {
-      const recordingOptions = getRealtimeRecordingOptions(realtimeModel);
+      const recordingOptions = getRealtimeRecordingOptions(realtimeModel, selectedRealtimeLanguage);
       recording = developmentRecordingFactory
         ? developmentRecordingFactory(recordingOptions)
         : new SonioxClient({
@@ -1682,6 +1698,20 @@ export function BrowserRecorder({
           <Link href="/recordings/new">Otevřít nahrávání</Link>
         </div>
       ) : null}
+      {!compact && status === "idle" ? (
+        <label className="live-language-select">
+          <span>Jazyk live přepisu</span>
+          <select
+            aria-label="Jazyk live přepisu"
+            onChange={(event) => setSelectedRealtimeLanguage(event.target.value as SonioxRealtimeLanguageId)}
+            value={selectedRealtimeLanguage}
+          >
+            {sonioxRealtimeLanguageOptions.map((language) => (
+              <option key={language.id} value={language.id}>{language.label}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       {allowTranscriptOnly && !compact ? (
         <fieldset className="live-save-mode" disabled={status !== "idle"}>
           <legend>Ukládání</legend>
@@ -1738,6 +1768,9 @@ export function BrowserRecorder({
                 ? "Zkusit moment znovu"
                 : "Označit moment"}
           </button>
+          <span aria-live="polite" className="live-marker-count">
+            Označené momenty: {savedLiveMarkerCount}
+          </span>
           {liveMarkerFeedback ? (
             <p
               aria-live={liveMarkerFeedback.tone === "error" ? "assertive" : "polite"}
