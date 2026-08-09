@@ -132,7 +132,7 @@ test("mobile More traps focus, restores it on every close, toggles theme and com
 });
 
 for (const width of [1024, 1440]) {
-  test(`desktop detail preserves exact shell and inner-scroll geometry at ${width}px`, async ({ page }, testInfo) => {
+  test(`desktop detail preserves exact shell and one document scroll at ${width}px`, async ({ page }, testInfo) => {
     const scope = createFixtureScope();
     await page.setViewportSize({ width, height: 760 });
     await page.goto(fixturePath("detail", scope));
@@ -141,13 +141,11 @@ for (const width of [1024, 1440]) {
     const content = page.locator(".content-area");
     const workbench = page.locator(".recording-workbench");
     const transcriptScroll = page.locator(".transcript-table-scroll");
-    const railEnd = page.locator(".rail-card-next-step");
     const sentinel = page.getByText("KONEC DLOUHÉHO DETAILU SHELLU", { exact: true });
-    const [sidebarBox, contentBox, workbenchBox, railEndBox] = await Promise.all([
+    const [sidebarBox, contentBox, workbenchBox] = await Promise.all([
       getBox(sidebar),
       getBox(content),
-      getBox(workbench),
-      getBox(railEnd)
+      getBox(workbench)
     ]);
 
     expect(sidebarBox.x).toBe(0);
@@ -172,8 +170,8 @@ for (const width of [1024, 1440]) {
     expect(contentBox.x).toBe(sidebarBox.x + sidebarBox.width);
     expect(contentBox.x + contentBox.width).toBeLessThanOrEqual(width);
     expect(contentBox.x + contentBox.width).toBeGreaterThanOrEqual(width - 0.5);
-    expect(workbenchBox.y + workbenchBox.height).toBeLessThanOrEqual(contentBox.y + contentBox.height);
-    expect(railEndBox.y + railEndBox.height).toBeLessThanOrEqual(contentBox.y + contentBox.height);
+    expect(workbenchBox.height).toBeGreaterThan(contentBox.height);
+    await expect(page.locator(".recording-rail")).toHaveCount(0);
 
     const scrollState = await page.evaluate(() => {
       const contentArea = document.querySelector<HTMLElement>(".content-area")!;
@@ -189,23 +187,23 @@ for (const width of [1024, 1440]) {
     });
     expect(scrollState.documentExtra).toBe(0);
     expect(scrollState.bodyExtra).toBe(0);
-    expect(scrollState.contentExtra).toBe(0);
-    expect(scrollState.contentOverflow).toBe("hidden");
-    expect(scrollState.transcriptExtra).toBeGreaterThan(0);
-    expect(scrollState.transcriptOverflow).toBe("auto");
+    expect(scrollState.contentExtra).toBeGreaterThan(0);
+    expect(scrollState.contentOverflow).toBe("auto");
+    expect(scrollState.transcriptExtra).toBe(0);
+    expect(scrollState.transcriptOverflow).toBe("visible");
 
     const sidebarBeforeScroll = await getBox(sidebar);
-    await transcriptScroll.evaluate((element) => {
+    await content.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
-    const [scrollBox, sentinelBox, sidebarAfterScroll] = await Promise.all([
-      getBox(transcriptScroll),
+    const [sentinelBox, sidebarAfterScroll] = await Promise.all([
       getBox(sentinel),
       getBox(sidebar)
     ]);
-    expect(sentinelBox.y).toBeGreaterThanOrEqual(scrollBox.y - 0.5);
-    expect(sentinelBox.y + sentinelBox.height).toBeLessThanOrEqual(scrollBox.y + scrollBox.height + 0.5);
+    expect(sentinelBox.y).toBeGreaterThanOrEqual(contentBox.y - 0.5);
+    expect(sentinelBox.y + sentinelBox.height).toBeLessThanOrEqual(contentBox.y + contentBox.height + 0.5);
     expect(sentinelBox.y + sentinelBox.height).toBeLessThanOrEqual(760);
+    expect(await transcriptScroll.evaluate((element) => element.scrollTop)).toBe(0);
 
     await page.evaluate(() => window.scrollTo(0, 500));
     expect(await page.evaluate(() => window.scrollY)).toBe(0);

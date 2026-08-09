@@ -98,6 +98,8 @@ Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a 
 
 Běžný authenticated uživatel nemá mít široký update/insert/delete grant nad odvozenými projekcemi. Checklist potřebuje pouze `update (status)` na `transcript_tasks`; ostatní změny obsahu mají vznikat z AI processing endpointu přes service role. Jinak by klient mohl přepsat auditovatelnou projekci bez nového AI jobu.
 
+Individuální smazání úkolu tento grant záměrně nerozšiřuje. Authenticated endpoint nejdřív ověří `auth.getUser()`, pak přes server-only admin klienta načítá i maže jen řádky vlastněné stejným `user_id`. Kvůli deduplikaci opakovaných generací odstraní všechny současné fyzické řádky se stejným owner/title/deadline klíčem v rámci vlastněné nahrávky, jinak by se po refreshi znovu ukázala starší kopie. Raw `ai_outputs` zůstává uložený a další AI generování může stejný úkol vytvořit znovu; trvalé potlačení budoucích generací by vyžadovalo samostatný tombstone kontrakt.
+
 Checklist v AI zpracování může být hluboko ve scrollovatelném detailu. Pokud změna stavu úkolu používá server action s `redirect(nextPath)`, browser po revalidaci skočí nahoru a akce působí pomalu. Interaktivní checklist proto používá optimistický client update a JSON endpoint bez redirectu; SQL grant `update(status)` jen povoluje zápis a sám o sobě scroll problém neřeší.
 
 Opakované AI generování zůstává auditovatelné přes více `ai_outputs`, ale pracovní checklist v UI nesmí slepě zobrazit každou opakovanou projekci. Aplikace deduplikuje strukturované řádky pro zobrazení podle normalizovaného obsahu a u checklistu preferuje uživatelsky změněný stav (`done`, `in_progress`, `waiting`) před čerstvým duplicitním `new` řádkem.

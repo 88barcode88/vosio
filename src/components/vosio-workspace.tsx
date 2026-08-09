@@ -83,6 +83,10 @@ export function getContentAreaClassName({
     return "content-area content-area-document";
   }
 
+  if (view === "recordings" && hasActiveRecording) {
+    return "content-area content-area-document";
+  }
+
   return view === "recordings" && !hasActiveRecording
     ? "content-area content-area-recordings-list"
     : "content-area";

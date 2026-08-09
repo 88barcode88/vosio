@@ -9,8 +9,8 @@
 .notes-list,
 .file-details,
 .ai-tab-layout {
-  max-height: 100%;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 .timeline-list-rich {
   gap: 8px;
@@ -288,8 +288,8 @@
   justify-content: flex-start;
   flex-direction: column;
   gap: 10px;
-  max-height: min(58vh, 720px);
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   border-top: 1px solid var(--border);
   margin-bottom: 0;
   padding: 12px;
@@ -542,7 +542,7 @@
 }
 .structured-task-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   gap: 9px;
   align-items: flex-start;
   border: 1px solid var(--border);
@@ -556,13 +556,28 @@
 .structured-task-row > button {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--teal);
   background: transparent;
   cursor: pointer;
+}
+.structured-task-row > .structured-task-delete {
+  width: 44px;
+  height: 44px;
+  margin: -5px -5px 0 0;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+.structured-task-row > .structured-task-delete:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 42%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+}
+.structured-task-delete-error {
+  color: var(--danger) !important;
 }
 .structured-task-row > button:disabled {
   cursor: not-allowed;

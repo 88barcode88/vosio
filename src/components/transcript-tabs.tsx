@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { AudioLines } from "lucide-react";
 import { AiProcessingContent } from "@/components/transcript-tabs/ai-processing-content";
-import { ExportControls } from "@/components/transcript-tabs/export-controls";
 import { FilesContent } from "@/components/transcript-tabs/files-content";
 import {
   RecordingAudioPlayer,
@@ -363,32 +363,54 @@ export function TranscriptTabs({
     }, { allowPlay: true });
   }
 
+  // handleTabKeyDown follows the horizontal WAI-ARIA tab keyboard pattern.
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const lastIndex = transcriptTabs.length - 1;
+    const targetIndex = event.key === "ArrowRight"
+      ? (index + 1) % transcriptTabs.length
+      : event.key === "ArrowLeft"
+        ? (index - 1 + transcriptTabs.length) % transcriptTabs.length
+        : event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? lastIndex
+            : null;
+
+    if (targetIndex === null) {
+      return;
+    }
+
+    event.preventDefault();
+    selectActiveTab(transcriptTabs[targetIndex]!.id);
+    const tabList = event.currentTarget.closest('[role="tablist"]');
+    const target = tabList?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[targetIndex];
+    target?.focus();
+  }
+
   return (
     <>
-      <div className="tabs-row">
-        <div className="tabs" role="tablist" aria-label="Detail nahrávky">
-          {transcriptTabs.map((tab) => (
-            <button
-              aria-controls={`recording-tab-panel-${tab.id}`}
-              aria-selected={activeTab === tab.id}
-              className={activeTab === tab.id ? "active-tab" : undefined}
-              id={`recording-tab-${tab.id}`}
-              key={tab.id}
-              onClick={() => selectActiveTab(tab.id)}
-              role="tab"
-              tabIndex={activeTab === tab.id ? 0 : -1}
-              type="button"
-            >
-              {tab.label}
-            </button>
-          ))}
+      <div className="recording-detail-sticky">
+        <RecordingAudioPlayer activeRecording={activeRecording} ref={playerRef} />
+        <div className="tabs-row">
+          <div className="tabs" role="tablist" aria-label="Detail nahrávky">
+            {transcriptTabs.map((tab, index) => (
+              <button
+                aria-controls={`recording-tab-panel-${tab.id}`}
+                aria-selected={activeTab === tab.id}
+                className={activeTab === tab.id ? "active-tab" : undefined}
+                id={`recording-tab-${tab.id}`}
+                key={tab.id}
+                onClick={() => selectActiveTab(tab.id)}
+                onKeyDown={(event) => handleTabKeyDown(event, index)}
+                role="tab"
+                tabIndex={activeTab === tab.id ? 0 : -1}
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <ExportControls
-          activeAiOutputs={activeAiOutputs}
-          activeRecording={activeRecording}
-          activeStructuredItems={runtimeStructuredItems}
-          activeTranscript={activeTranscript}
-        />
       </div>
       <div
         aria-labelledby={`recording-tab-${activeTab}`}
@@ -434,7 +456,6 @@ export function TranscriptTabs({
         ) : null}
         {activeTab === "files" ? <FilesContent activeRecording={activeRecording} /> : null}
       </div>
-      <RecordingAudioPlayer activeRecording={activeRecording} ref={playerRef} />
       <div className="live-transcript">
         <AudioLines size={18} />
         {getTranscriptStatusLabel(activeRecording, activeTranscript)}

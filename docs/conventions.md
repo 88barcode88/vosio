@@ -53,6 +53,8 @@
 - Kompaktní editor existující hodnoty nesmí zavřít plochu už při raw `submit`. Používá controlled draft, scope-keyed `SaveActionState`, `runSaveActionSafely` a `useCloseOnSuccessfulSave`; během pending blokuje všechny dismiss cesty i další submit, po matching-scope success se zavře a vrátí focus na trigger, po error zůstane otevřený s hodnotami a alertem.
 - Success status kompaktního editoru drž v persistentním `aria-live="polite"` mimo zavíranou plochu. Inline feedback má rezervovaný slot, aby error a pending retry neposouvaly layout. Manuálně dismissed error revision se při znovuotevření neukazuje, ale vyšší revision ano.
 - Full-page formuláře, login, import, search, read-only disclosures a destruktivní potvrzení automaticky nesbaluj. U úspěšného delete zmizí samotná položka, takže success-only collapse kontrakt nedává smysl.
+- Detail nahrávky používá jeden dokumentový scroll owner. Player a záložky drž dostupné sticky/fixed vrstvou, ale transcript, AI, časovou osu ani soubory nezavírej do druhého svislého scrolleru.
+- Mazání jednotlivého AI úkolu patří do úzkého authenticated endpointu, který po ověření uživatele používá server-only admin klienta vždy se scope `id` i `user_id`. UI má jen kompaktní ikonu koše u úkolu; celý AI artefakt se maže pouze na output card.
 
 ## Kód
 

@@ -147,6 +147,36 @@ describe("recording audio player", () => {
     expect(play).toHaveBeenCalledTimes(1);
   });
 
+  it("supports repeated progress seeks without requiring pointer movement or changing play state", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    fetchMock.mockResolvedValue(createAudioResponse("https://signed.example/audio"));
+
+    await act(async () => root?.render(createElement(RecordingAudioPlayer, {
+      activeRecording: createRecordingView()
+    })));
+    const audio = container?.querySelector("audio") as HTMLAudioElement;
+    const progress = container?.querySelector<HTMLInputElement>('input[type="range"]');
+    Object.defineProperty(audio, "duration", { configurable: true, value: 60 });
+    Object.defineProperty(audio, "readyState", { configurable: true, value: 1 });
+    await act(async () => audio.dispatchEvent(new Event("loadedmetadata")));
+
+    expect(progress).not.toBeNull();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(progress, "15");
+      progress?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(audio.currentTime).toBe(15);
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(progress, "42");
+      progress?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(audio.currentTime).toBe(42);
+    expect(play).not.toHaveBeenCalled();
+  });
+
   it("shows an immediate play rejection in the persistent live status", async () => {
     const playerRef = createRef<RecordingAudioPlayerHandle>();
     vi.spyOn(HTMLMediaElement.prototype, "play")
@@ -178,6 +208,31 @@ describe("recording audio player", () => {
     });
     expect(immediateError).toEqual(new Error("Audio playback failed."));
     expect(status?.textContent).toBe("Přehrávání se nepodařilo spustit.");
+  });
+
+  it("clears a stale playback failure after a later play succeeds", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockRejectedValueOnce(new Error("first attempt failed"))
+      .mockResolvedValueOnce(undefined);
+    fetchMock.mockResolvedValue(createAudioResponse("https://signed.example/audio"));
+
+    await act(async () => root?.render(createElement(RecordingAudioPlayer, {
+      activeRecording: createRecordingView()
+    })));
+    const audio = container?.querySelector("audio") as HTMLAudioElement;
+    const toggle = container?.querySelector<HTMLButtonElement>(".recording-audio-toggle");
+    const status = container?.querySelector('[role="status"]');
+
+    await act(async () => toggle?.click());
+    expect(status?.textContent).toBe("Přehrávání se nepodařilo spustit.");
+
+    await act(async () => {
+      toggle?.click();
+      await Promise.resolve();
+      audio.dispatchEvent(new Event("play"));
+    });
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(status?.textContent).toBe("");
   });
 
   it("does not let a late play rejection from recording A overwrite recording B status", async () => {
@@ -232,7 +287,7 @@ describe("recording audio player", () => {
     expect(transcriptCss).not.toContain(".recording-audio-player-status:empty");
   });
 
-  it("keeps every detail tab bounded above the persistent audio player", () => {
+  it("keeps every detail tab in the single detail document below the persistent player", () => {
     const transcriptCss = readFileSync(join(process.cwd(), "app/styles/transcript.css"), "utf8");
     const responsiveCss = readFileSync(join(process.cwd(), "app/styles/responsive.css"), "utf8");
     const tabPanelBlock = transcriptCss.match(/\.tab-panel\s*\{([^}]*)\}/)?.[1] ?? "";
@@ -243,10 +298,10 @@ describe("recording audio player", () => {
     expect(tabPanelBlock).toMatch(/min-height:\s*0;/);
     expect(tabPanelBlock).not.toMatch(/height:\s*100%;/);
     expect(transcriptCss).toContain(".tab-panel > * {");
-    expect(transcriptCss).toContain("flex: 1 1 auto;");
-    expect(transcriptCss).toContain("grid-template-rows: auto minmax(0, 1fr);");
-    expect(transcriptCss).toMatch(/\.transcript-table-scroll\s*\{[\s\S]*max-height:\s*none;/);
-    expect(responsiveCss).toMatch(/\.transcript-table-scroll\s*\{[\s\S]*max-height:\s*52vh;/);
+    expect(transcriptCss).toContain("flex: 0 1 auto;");
+    expect(transcriptCss).toContain("grid-template-rows: auto auto;");
+    expect(transcriptCss).toMatch(/\.transcript-table-scroll\s*\{[\s\S]*max-height:\s*none;[\s\S]*overflow:\s*visible;/);
+    expect(responsiveCss).toMatch(/\.transcript-table-scroll\s*\{[\s\S]*max-height:\s*none;/);
     expect(responsiveTabPanelBlock).toMatch(/height:\s*auto;/);
     expect(responsiveTabPanelBlock).toMatch(/overflow:\s*visible;/);
   });

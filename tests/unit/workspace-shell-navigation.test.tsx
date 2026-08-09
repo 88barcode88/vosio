@@ -226,7 +226,7 @@ describe("Notion Warm application shell navigation", () => {
     expect(responsiveStyles).not.toContain(".mobile-nav::-webkit-scrollbar");
   });
 
-  it("keeps desktop detail height and inner scrolling intact through 901px", () => {
+  it("switches the detail player at the 900px mobile boundary", () => {
     const responsiveStyles = readFileSync(resolve(process.cwd(), "app/styles/responsive.css"), "utf8");
     const intermediateStart = responsiveStyles.indexOf("@media (max-width: 1180px)");
     const mobileStart = responsiveStyles.indexOf("@media (max-width: 900px)");
@@ -235,8 +235,7 @@ describe("Notion Warm application shell navigation", () => {
 
     expect(intermediateStyles).not.toMatch(/\.recording-workbench(?:-grid)?\s*\{/u);
     expect(intermediateStyles).not.toMatch(/\.recording-rail\s*\{/u);
-    expect(mobileStyles).toMatch(/\.recording-workbench-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr;/u);
-    expect(mobileStyles).toMatch(/\.recording-workbench\s*\{[\s\S]*?height:\s*auto;/u);
-    expect(mobileStyles).toMatch(/\.recording-rail\s*\{[\s\S]*?position:\s*static;/u);
+    expect(mobileStyles).toMatch(/\.recording-workbench\s*\{[\s\S]*?padding-bottom:\s*104px;/u);
+    expect(mobileStyles).toMatch(/\.recording-detail-sticky \.recording-audio-player\s*\{[\s\S]*?position:\s*fixed;/u);
   });
 });

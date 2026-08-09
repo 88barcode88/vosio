@@ -225,15 +225,17 @@ export function TranscriptionControls({
 
   return (
     <>
-      <button
-        className="command-button command-primary"
-        disabled={!canStart || isWorking}
-        onClick={() => callTranscriptionEndpoint("POST")}
-        type="button"
-      >
-        <Sparkles size={18} />
-        {isWorking ? "Pracuji..." : "Spustit přepis"}
-      </button>
+      {!hasTranscript ? (
+        <button
+          className="command-button command-primary"
+          disabled={!canStart || isWorking}
+          onClick={() => callTranscriptionEndpoint("POST")}
+          type="button"
+        >
+          <Sparkles size={18} />
+          {isWorking ? "Pracuji..." : "Spustit přepis"}
+        </button>
+      ) : null}
       {hasTranscript ? (
         <button
           className="command-button command-warning"
@@ -248,15 +250,17 @@ export function TranscriptionControls({
           Přepsat znovu
         </button>
       ) : null}
-      <button
-        className="command-button"
-        disabled={!canCheck || isWorking}
-        onClick={() => callTranscriptionEndpoint("GET")}
-        type="button"
-      >
-        <Link2 size={18} />
-        Zkontrolovat přepis
-      </button>
+      {shouldPollTranscription ? (
+        <button
+          className="command-button"
+          disabled={!canCheck || isWorking}
+          onClick={() => callTranscriptionEndpoint("GET")}
+          type="button"
+        >
+          <Link2 size={18} />
+          Zkontrolovat přepis
+        </button>
+      ) : null}
       {shouldPollTranscription ? (
         <p className="command-state command-state-live">
           Soniox zpracovává přepis na pozadí.{" "}

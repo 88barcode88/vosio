@@ -1,18 +1,18 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
   Circle,
   Copy,
   Download,
+  Trash2,
   ShieldAlert,
   ShieldCheck,
   ShieldQuestion
 } from "lucide-react";
-import { DeleteAiOutputForm } from "@/components/delete-ai-output-form";
 import {
   buildStructuredChecklistMarkdown,
   copyTextToClipboard,
@@ -40,8 +40,6 @@ export function StructuredItemsContent({
 }) {
   const [checklistMessage, setChecklistMessage] = useState<string | null>(null);
   const hasStructuredItems = items.tasks.length > 0 || items.decisions.length > 0 || items.risks.length > 0;
-  const pathname = usePathname();
-  const taskOutputIds = getUniqueAiOutputIds(items.tasks);
 
   // copyChecklist copies the normalized task checklist as readable Markdown.
   async function copyChecklist() {
@@ -76,15 +74,6 @@ export function StructuredItemsContent({
                 MD
               </button>
             </div>
-            {taskOutputIds.length > 0 ? (
-              <DeleteAiOutputForm
-                confirmationMessage="Smazat checklist úkolů? Smažou se zdrojové AI výstupy pro tyto úkoly, přepis a nahrávka zůstanou uložené."
-                label="Smazat checklist"
-                next={pathname}
-                outputIds={taskOutputIds}
-                targetSelector=".structured-ai-section"
-              />
-            ) : null}
           </header>
           {checklistMessage ? <p className="structured-checklist-message">{checklistMessage}</p> : null}
           <div className="structured-task-groups">
@@ -118,11 +107,6 @@ export function StructuredItemsContent({
   );
 }
 
-// getUniqueAiOutputIds returns source AI output ids for deleting a structured projection from the workspace.
-function getUniqueAiOutputIds(rows: Array<{ ai_output_id: string }>) {
-  return Array.from(new Set(rows.map((row) => row.ai_output_id).filter(Boolean)));
-}
-
 // groupTasksByOwner keeps the checklist in predictable business buckets.
 function groupTasksByOwner(tasks: StructuredTaskRow[]) {
   return ownerOrder
@@ -142,8 +126,12 @@ function StructuredTaskRowView({
   task: StructuredTaskRow;
 }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleted, setIsDeleted] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [localStatus, setLocalStatus] = useState(task.status);
+  const router = useRouter();
   const isDone = localStatus === "done";
   const meta = getTaskMeta(task);
 
@@ -182,8 +170,44 @@ function StructuredTaskRowView({
     });
   }
 
+  // deleteTask removes only this logical task projection and restores it after a failed request.
+  async function deleteTask() {
+    if (!task.id || isDeleting || !window.confirm(
+      `Smazat úkol „${task.title}“? Původní AI výstup zůstane uložený.`
+    )) {
+      return;
+    }
+
+    setDeleteError(null);
+    setIsDeleting(true);
+    setIsDeleted(true);
+
+    try {
+      const response = await fetch(`/api/transcript-tasks/${task.id}`, {
+        credentials: "same-origin",
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        throw new Error("Task delete failed.");
+      }
+
+      router.refresh();
+    } catch {
+      setIsDeleted(false);
+      setDeleteError("Úkol se nepodařilo smazat. Zkuste to znovu.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   return (
-    <article className="structured-task-row" data-owner-category={task.owner_category} data-task-status={localStatus}>
+    <article
+      className="structured-task-row"
+      data-owner-category={task.owner_category}
+      data-task-status={localStatus}
+      hidden={isDeleted}
+    >
       <button
         aria-label={isDone ? "Označit úkol jako nedokončený" : "Označit úkol jako hotový"}
         aria-pressed={isDone}
@@ -193,7 +217,7 @@ function StructuredTaskRowView({
       >
         {isDone ? <CheckCircle2 size={15} /> : <Circle size={15} />}
       </button>
-      <div>
+      <div className="structured-task-copy">
         <strong>{task.title}</strong>
         {meta.length > 0 ? (
           <div className="structured-task-meta">
@@ -215,7 +239,18 @@ function StructuredTaskRowView({
             {errorMessage}
           </p>
         ) : null}
+        {deleteError ? <p className="structured-task-delete-error" role="alert">{deleteError}</p> : null}
       </div>
+      <button
+        aria-label={`Smazat úkol: ${task.title}`}
+        className="structured-task-delete"
+        disabled={!task.id || isDeleting}
+        onClick={deleteTask}
+        title={`Smazat úkol: ${task.title}`}
+        type="button"
+      >
+        <Trash2 aria-hidden="true" size={15} />
+      </button>
     </article>
   );
 }
