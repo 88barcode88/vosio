@@ -46,6 +46,12 @@ Trvalé mazání z Koše musí nejdřív ověřit vlastníka přes běžnou Supa
 
 MediaRecorder může vracet MIME typ ve tvaru `audio/webm;codecs=opus`. Supabase Storage bucket ale porovnává povolené MIME typy proti čistému typu jako `audio/webm`. Před validací, uložením metadat a uploadem do Storage je proto nutné MIME typ normalizovat odstraněním parametrů za středníkem.
 
+Mobilní nebo Windows picker může pro platné `.m4a` vrátit generický `application/octet-stream`. Takový typ nesmí automaticky znamenat odmítnutí ani univerzální povolení: fallback se smí použít jen pro příponu z nahrávacího allowlistu a musí ji převést na její známý Storage MIME (`.m4a` -> `audio/mp4`). Neznámá přípona s generickým MIME zůstává nepodporovaná. Hranice velikosti je inkluzivní (`size <= effective limit`); 33 MiB soubor proto při 50 MiB limitu projde lokální kontrolou.
+
+Upload chyby se do UI nesmí propouštět podle prefixu. Zobrazit se smí jen přesně povolené, délkově omezené lokální validační zprávy; provider detail, request id nebo tajný suffix za jinak známým začátkem se převádí na obecnou bezpečnou chybu. Výběr nového souboru musí před jeho validací vyčistit progress předchozího pokusu, jinak odmítnutý soubor zdědí zavádějící procenta.
+
+Vývojová route `new-recording-e2e` používá skutečný `VosioWorkspace`, ale live a importní capture sloty musí být inertní lokální prezentace. Fixture nesmí mountovat `PersistentRecorderSlot`, `BrowserRecorder` ani `TranscriptImportForm`; testovací kliknutí nesmí spustit Supabase, Soniox ani aplikační API mutaci. Produkční defaulty injekce nemění.
+
 ## Soniox realtime region není websocket URL
 
 Pro EU realtime Soniox konfiguraci používej ideálně `SONIOX_REGION=eu`. Pokud je kvůli zpětné kompatibilitě v `SONIOX_STT_WS_URL` hodnota `eu`, aplikace ji interpretuje jako region, ne jako URL. Plná URL má smysl jen ve tvaru `wss://...`.

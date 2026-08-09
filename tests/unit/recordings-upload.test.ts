@@ -34,6 +34,32 @@ describe("recording upload storage helpers", () => {
     expect(validateAudioFile(sixtyMegabyteFile, 100 * 1024 * 1024)).toBeNull();
   });
 
+  it("accepts a 33 MiB M4A at 50 MiB and rejects it against a smaller effective limit", () => {
+    const phoneRecording = {
+      name: "lucern-update-33mb.m4a",
+      size: 33 * 1024 * 1024,
+      type: "application/octet-stream"
+    } as File;
+
+    expect(validateAudioFile(phoneRecording, 50 * 1024 * 1024)).toBeNull();
+    expect(validateAudioFile(phoneRecording, 32 * 1024 * 1024)).toBe(
+      "Soubor je větší než 32 MB."
+    );
+  });
+
+  it("uses an inclusive maximum-size boundary", () => {
+    const boundaryFile = {
+      name: "call.m4a",
+      size: 50 * 1024 * 1024,
+      type: "audio/mp4"
+    } as File;
+
+    expect(validateAudioFile(boundaryFile, boundaryFile.size)).toBeNull();
+    expect(validateAudioFile({ ...boundaryFile, size: boundaryFile.size + 1 } as File, boundaryFile.size)).toBe(
+      "Soubor je větší než 50 MB."
+    );
+  });
+
   it("fails closed when the bucket limit is unavailable", () => {
     const file = {
       name: "call.webm",

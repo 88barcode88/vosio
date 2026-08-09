@@ -55,9 +55,6 @@
     border-left: 0;
     border-top: 1px solid var(--border);
   }
-  .capture-grid {
-    grid-template-columns: 1fr;
-  }
   .settings-grid,
   .settings-check-grid,
   .settings-readonly dl {
@@ -88,6 +85,17 @@
     border: 0;
     border-radius: 0;
     padding: 18px 16px calc(84px + env(safe-area-inset-bottom));
+  }
+  .capture-grid,
+  .transcript-import-card {
+    grid-template-columns: 1fr;
+  }
+  .upload-file-summary {
+    grid-template-columns: 1fr;
+  }
+  .upload-file-summary span,
+  .upload-file-summary span:last-child {
+    grid-column: 1;
   }
   .mobile-nav {
     position: fixed;

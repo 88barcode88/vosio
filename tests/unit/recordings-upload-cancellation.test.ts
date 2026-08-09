@@ -25,4 +25,17 @@ describe("cancelled recording upload result", () => {
       })
     ).toBe("Nahrávání bylo zrušeno. Záznam se nepodařilo označit jako neúspěšný.");
   });
+
+  it("does not expose unexpected cancellation details after a familiar prefix", () => {
+    const cancellation = new RecordingUploadCancelledError();
+    cancellation.message = "Nahrávání bylo zrušeno. request-id=secret-123";
+
+    expect(
+      getCancelledUploadMessage({
+        cancellationReason: cancellation,
+        succeededCount: 0,
+        totalCount: 1
+      })
+    ).toBe("Nahrávání bylo zrušeno.");
+  });
 });

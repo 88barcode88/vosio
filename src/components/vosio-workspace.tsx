@@ -1,4 +1,8 @@
-import { NewRecordingWorkspace } from "@/components/new-recording-workspace";
+import {
+  NewRecordingWorkspace,
+  type NewRecordingCaptureSlots
+} from "@/components/new-recording-workspace";
+import type { RecordingUploadTransport } from "@/components/recording-upload-form";
 import { MobileNav } from "@/components/workspace-navigation";
 import { RecordingWorkbench } from "@/components/workspace/recording-workbench";
 import { RecordingsManager } from "@/components/workspace/recordings-manager";
@@ -38,6 +42,9 @@ type VosioWorkspaceProps = {
   initialTranscriptTabFromCookie?: boolean;
   initialTranscriptTabFromUrl?: boolean;
   navigationHrefOverrides?: NavigationHrefOverrides;
+  newRecordingCaptureSlots?: NewRecordingCaptureSlots;
+  newRecordingUploadRedirectAfterSuccess?: "detail" | "list" | "stay";
+  newRecordingUploadTransport?: RecordingUploadTransport;
   promptTemplates?: PromptTemplateRow[];
   recordingStorageConfig?: RecordingStorageConfig;
   recordingMarkers?: RecordingMarkerRow[];
@@ -72,7 +79,11 @@ export function getContentAreaClassName({
   isCreatingRecording: boolean;
   view: WorkspaceView;
 }) {
-  return view === "recordings" && !hasActiveRecording && !isCreatingRecording
+  if (view === "recordings" && isCreatingRecording) {
+    return "content-area content-area-document";
+  }
+
+  return view === "recordings" && !hasActiveRecording
     ? "content-area content-area-recordings-list"
     : "content-area";
 }
@@ -88,6 +99,9 @@ export function VosioWorkspace({
   initialTranscriptTabFromCookie = false,
   initialTranscriptTabFromUrl = false,
   navigationHrefOverrides,
+  newRecordingCaptureSlots,
+  newRecordingUploadRedirectAfterSuccess,
+  newRecordingUploadTransport,
   promptTemplates = [],
   recordingStorageConfig = unavailableRecordingStorageConfig,
   recordingMarkers = [],
@@ -151,7 +165,10 @@ export function VosioWorkspace({
         <div className="workspace-grid workspace-grid-wide">
           {isCreatingRecording ? (
             <NewRecordingWorkspace
+              captureSlots={newRecordingCaptureSlots}
               recordingStorageConfig={recordingStorageConfig}
+              uploadRedirectAfterSuccess={newRecordingUploadRedirectAfterSuccess}
+              uploadTransport={newRecordingUploadTransport}
               userSettings={userSettings}
             />
           ) : view === "recordings" && !activeRecording ? (

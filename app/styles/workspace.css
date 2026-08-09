@@ -15,6 +15,11 @@
   overflow-y: auto;
   overscroll-behavior-y: contain;
 }
+.content-area-document {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
 .top-bar {
   justify-content: space-between;
   gap: 18px;
@@ -663,8 +668,8 @@
 }
 .real-upload {
   display: grid;
-  justify-items: end;
-  gap: 8px;
+  justify-items: stretch;
+  gap: 10px;
 }
 .real-upload-actions {
   display: flex;
@@ -674,11 +679,11 @@
 }
 .upload-progress {
   display: grid;
-  width: min(100%, 320px);
+  width: 100%;
   gap: 5px;
   color: var(--muted);
   font-size: 12px;
-  text-align: right;
+  text-align: left;
 }
 .upload-progress progress {
   width: 100%;
@@ -696,7 +701,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 38px;
+  min-height: 44px;
   border: 0;
   border-radius: 9px;
   color: var(--accent-text);
@@ -718,10 +723,11 @@
   opacity: 0.5;
 }
 .upload-state {
-  max-width: 320px;
+  max-width: none;
   margin: 0;
   font-size: 12px;
-  text-align: right;
+  line-height: 1.4;
+  text-align: left;
 }
 .upload-state-error {
   color: var(--red);
@@ -734,6 +740,8 @@
 }
 .visually-hidden {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   margin: -1px;

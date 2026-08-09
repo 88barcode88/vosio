@@ -26,7 +26,7 @@ describe("Vosio workspace content area", () => {
       hasActiveRecording: false,
       isCreatingRecording: true,
       view: "recordings"
-    })).toBe("content-area");
+    })).toBe("content-area content-area-document");
   });
 
   it("contains scrolling within the recordings list surface", () => {
@@ -34,5 +34,8 @@ describe("Vosio workspace content area", () => {
       /\.content-area-recordings-list\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overscroll-behavior-y:\s*contain;/
     );
     expect(layoutStyles).toContain("overflow: hidden;");
+    expect(layoutStyles).toMatch(
+      /\.content-area-document\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overscroll-behavior-y:\s*contain;/
+    );
   });
 });

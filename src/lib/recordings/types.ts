@@ -124,14 +124,13 @@ export function normalizeAudioMimeType(mimeType: string) {
 // getRecordingContentType returns a Storage-safe MIME type, falling back to extension when needed.
 export function getRecordingContentType(file: File) {
   const normalizedMimeType = normalizeAudioMimeType(file.type);
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
 
-  if (normalizedMimeType) {
+  if (normalizedMimeType && normalizedMimeType !== "application/octet-stream") {
     return normalizedMimeType;
   }
 
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-
-  return RECORDING_MIME_TYPE_BY_EXTENSION[extension] ?? "";
+  return RECORDING_MIME_TYPE_BY_EXTENSION[extension] ?? normalizedMimeType;
 }
 
 // formatFileSize renders storage byte counts for the recording workspace.

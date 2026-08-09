@@ -1685,6 +1685,7 @@ export function BrowserRecorder({
     <div
       aria-busy={status === "starting" || status === "saving"}
       className={compact ? "browser-recorder browser-recorder-compact" : "browser-recorder"}
+      data-recording-status={status}
     >
       {compact ? (
         <div className="persistent-recorder-summary">
