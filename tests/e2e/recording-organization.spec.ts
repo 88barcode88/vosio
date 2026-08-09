@@ -44,6 +44,7 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
   const scope = fixtureScope;
   await page.goto(`/login/recording-organization-e2e?scope=${scope}&q=call`);
   await expect(page.getByRole("heading", { name: "Recording organization E2E fixture" })).toBeVisible();
+  await page.getByRole("button", { name: "Spravovat" }).click();
 
   await createManagerEntity(page, "Přidat klienta", "Acme");
   await createManagerEntity(page, "Přidat projekt", "Project X", "Acme");
@@ -124,24 +125,22 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
 test("uses native color selection, neutral reset and color-mixed manager badges in both themes", async ({ page }) => {
   await page.goto(`/login/recording-organization-e2e?scope=${fixtureScope}`);
   await expect(page.getByRole("heading", { name: "Recording organization E2E fixture" })).toBeVisible();
+  await page.getByRole("button", { name: "Spravovat" }).click();
 
   await createManagerEntity(page, "Přidat klienta", "Neutral");
   await page.getByRole("button", { name: "Přidat klienta", exact: true }).click();
   const colorPicker = page.getByLabel("Barva Přidat klienta");
   const hiddenColor = page.locator('input[type="hidden"][name="color"]');
   await expect(colorPicker).toHaveAttribute("type", "color");
-  await colorPicker.evaluate((input, color) => {
-    (input as HTMLInputElement).value = color;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  }, "#224466");
+  await colorPicker.fill("#224466");
   await expect(hiddenColor).toHaveValue("#224466");
   await page.getByRole("textbox", { name: "Název" }).fill("Palette");
   await page.getByRole("button", { name: "Uložit" }).click();
   await expect(page.getByRole("textbox", { name: "Název" })).toHaveCount(0);
 
-  const badge = page.getByText("Palette", { exact: true });
-  const neutralBadge = page.getByText("Neutral", { exact: true });
+  const manager = page.getByRole("region", { name: "Správa organizace" });
+  const badge = manager.locator(".organization-manager-badge", { hasText: "Palette" });
+  const neutralBadge = manager.locator(".organization-manager-badge", { hasText: "Neutral" });
   await expect(badge).toBeVisible();
   await expect(neutralBadge).toBeVisible();
   await expect(badge).toHaveClass(/organization-manager-badge-colored/);

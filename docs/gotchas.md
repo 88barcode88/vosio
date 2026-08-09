@@ -120,6 +120,8 @@ Klientské FK mají deferred `NO ACTION`, ne cascade. To záměrně blokuje bě�
 
 Filtr více štítků znamená ALL, nikoli ANY. Bez `q` používá seznam `list_own_recordings_v1`, řadí `created_at desc, id desc` a další stránku omezuje tuple cursorem `(created_at, id)`, protože offset při souběžném insert/delete může řádky přeskočit nebo zopakovat. Všechny keyset stránky musí používat stejné organizační filtry a opakovaný cursor je chyba. Každé neprázdné `q` jde místo tohoto list flow přes samostatné indexed `search_own_recordings_v1`, které používá vlastní `limit/offset` stránkování a stejné organizační filtry. Kanonizace `client/project/folder/tag` nesmí zahodit `q` ani nesouvisející URL parametry; same-URL navigace nesmí vytvořit trvalý loading lock.
 
+Breakpoint viewportu sám nestačí pro geometrii inboxu uvnitř desktopového workspace. Například viewport 901 px nechá po 248px sidebaru a shell gutters panel široký jen přibližně 599 px, takže pevné desktopové metadata tracky by kolidovaly s akcemi. Řádky proto používají container query nad skutečnou šířkou `.recordings-inbox`: do 680 px obsahové šířky přecházejí na karty, zatímco 1024px a 1440px shell zůstává v desktopovém režimu. Browser regresi měř ve skutečném shellu a ověř zvlášť hlavní obsah, action track i pending/failure stav, ne pouze celkový `scrollWidth`.
+
 ## Forward migrace jsou release blocker
 
 Pořadí releasu je evidence `10000`, organization `11000`, markers `12000`, search `13000`, DB postflight každé cílové databáze a teprve potom deploy aplikace. Veřejný Git stav není důkazem, že konkrétní target migrace aplikoval. U neověřeného targetu musí postflight zkontrolovat skutečné sloupce/tabulky/funkce/trigger, PostgreSQL syntaxi, GIN index a authenticated `EXPLAIN`, constrainty, grants, forced RLS, anon-vs-auth a dvouuživatelskou izolaci, current-vs-old transcript výběr, manual/raw/deleted search, runtime keyset/offset stránkování a potřebný backfill. Nikdy nezaměňuj `npm test`, `check` nebo `build` za důkaz stavu vzdálené databáze.
@@ -148,7 +150,7 @@ Client `onSubmit` proběhne dřív, než server action potvrdí validaci, auth a
 
 ## Mazání je potvrzené a optimistické
 
-Destruktivní akce v UI musí mít potvrzovací dialog. Po potvrzení se položka ve frontendu schová okamžitě a server action doběhne na pozadí přes běžné revalidace/redirecty. Pokud server akci odmítne, další navigace nebo refresh ukáže stav podle databáze; optimistické schování nesmí nahrazovat server-side autorizaci ani RLS.
+Destruktivní akce v UI musí mít potvrzovací dialog. Po potvrzení se položka ve frontendu schová okamžitě a server action doběhne na pozadí přes běžné revalidace/redirecty. Neočekávaný client-action reject musí obnovit přesně označený řádek nebo kartu a ukázat sanitizovanou chybu v plnošířkovém druhém řádku běžného toku layoutu; rozšíření desktop action sloupce nebo absolutní feedback uvnitř tabulky může obsah přetéct, oříznout nebo překrýt s dalším řádkem. Next redirect se propouští beze změny a cílová stránka ukáže stav podle databáze. Optimistické schování nesmí nahrazovat server-side autorizaci ani RLS.
 
 ## Mailto není plná mail integrace
 

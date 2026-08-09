@@ -125,6 +125,12 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
       className="recording-filters"
       onSubmit={(event) => event.preventDefault()}
     >
+      <div className="recording-filter-heading">
+        <div>
+          <h2>Filtry</h2>
+          <p>Hledání a zařazení se promítají do adresy stránky.</p>
+        </div>
+      </div>
       <div className="recording-filter-grid">
         <label className="recording-filter-search">
           <span>Hledat</span>

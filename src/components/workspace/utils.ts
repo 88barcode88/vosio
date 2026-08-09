@@ -76,19 +76,27 @@ export function formatDuration(seconds: number | null) {
 }
 
 // getRecordingCounts summarizes the inbox state without mutating the recording list.
-export function getRecordingCounts(recordings: RecordingRow[]) {
+export function getRecordingCounts(recordings: Array<Pick<RecordingRow, "status">>) {
   return recordings.reduce(
     (counts, recording) => ({
       ...counts,
+      created: recording.status === "created" ? counts.created + 1 : counts.created,
       completed: recording.status === "completed" ? counts.completed + 1 : counts.completed,
+      deleted: recording.status === "deleted" ? counts.deleted + 1 : counts.deleted,
       failed: recording.status === "failed" ? counts.failed + 1 : counts.failed,
-      transcribing: recording.status === "transcribing" ? counts.transcribing + 1 : counts.transcribing
+      transcribing: recording.status === "transcribing" ? counts.transcribing + 1 : counts.transcribing,
+      uploaded: recording.status === "uploaded" ? counts.uploaded + 1 : counts.uploaded,
+      uploading: recording.status === "uploading" ? counts.uploading + 1 : counts.uploading
     }),
     {
       completed: 0,
+      created: 0,
+      deleted: 0,
       failed: 0,
       total: recordings.length,
-      transcribing: 0
+      transcribing: 0,
+      uploaded: 0,
+      uploading: 0
     }
   );
 }

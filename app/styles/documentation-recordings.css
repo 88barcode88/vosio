@@ -1005,6 +1005,18 @@
   justify-content: center;
   height: 100%;
 }
+.delete-recording-error {
+  flex: 1 0 100%;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--red);
+  background: var(--panel);
+  font-size: 11px;
+  line-height: 1.4;
+}
 .delete-recording-form button {
   display: inline-flex;
   align-items: center;
@@ -1326,4 +1338,280 @@
   color: #7f2020;
   border-color: rgba(159, 47, 47, 0.42);
   background: rgba(159, 47, 47, 0.08);
+}
+
+/* The real recordings route uses the compact Notion Warm inbox composition. */
+.recordings-inbox.ui-panel {
+  container: recordings-inbox / inline-size;
+  gap: 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 14px;
+}
+.recordings-inbox-header {
+  padding: 2px 2px 10px;
+}
+.recordings-inbox-header h1 {
+  margin: 0;
+  font-size: 22px;
+}
+.recordings-inbox-header p {
+  color: var(--text-secondary);
+}
+.recordings-header-new {
+  min-height: 44px;
+  color: var(--accent-text);
+  background: var(--accent);
+}
+.recordings-management-disclosure {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+.recordings-management-disclosure .ui-disclosure-trigger {
+  min-height: 40px;
+  background: var(--surface-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+.recordings-management-disclosure .ui-disclosure-panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 10px;
+}
+.recordings-management-disclosure .ui-disclosure-panel[hidden] {
+  display: none;
+}
+.recordings-management-disclosure .organization-manager {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+.recording-filter-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.recording-filter-heading h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.recording-filter-heading p {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.recordings-inbox .recording-filters {
+  border-radius: 12px;
+  background: var(--surface-muted);
+  padding: 12px;
+}
+.recordings-inbox .recording-filter-grid label,
+.recordings-inbox .recording-filter-tags,
+.recordings-inbox .recording-filter-tags legend small {
+  color: var(--text-secondary);
+}
+.recordings-inbox .recording-filter-grid input,
+.recordings-inbox .recording-filter-grid select,
+.recordings-inbox .recording-filter-tags label,
+.recordings-inbox .recording-filter-actions button {
+  background: var(--surface);
+}
+.recordings-inbox .recording-filter-tags input {
+  accent-color: var(--accent);
+}
+.recordings-status-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 0;
+  min-height: 36px;
+  border-block: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 7px 2px;
+  font-size: 11px;
+}
+.recordings-status-total {
+  padding-right: 10px;
+}
+.recordings-status-segments {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.recordings-status-segment {
+  border-left: 1px solid var(--border);
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.recordings-status-summary strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.recordings-inbox .recordings-table-head {
+  grid-template-columns: minmax(260px, 1fr) 130px 110px 116px;
+  background: var(--surface-raised);
+}
+.recordings-inbox .recordings-row {
+  grid-template-columns: minmax(0, 1fr) 116px;
+  background: var(--surface);
+}
+.recordings-inbox .recordings-row:hover {
+  background: var(--surface-muted);
+}
+.recordings-inbox .recordings-row-main {
+  grid-template-columns: minmax(260px, 1fr) 130px 110px;
+}
+.recordings-inbox .recordings-row-main span,
+.recordings-inbox .recordings-row-size {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.recordings-row-title > a {
+  width: fit-content;
+  max-width: 100%;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+.recordings-row-title > a:hover {
+  text-decoration-color: var(--accent);
+}
+.recordings-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 100%;
+  border-left: 1px solid var(--border);
+  padding: 0 8px;
+}
+.recordings-row-actions:has(.delete-recording-error) {
+  align-content: center;
+  flex-wrap: wrap;
+  height: auto;
+  padding-block: 6px;
+}
+.recordings-row-actions:has(.delete-recording-error) .delete-recording-form {
+  height: auto;
+}
+.recordings-inbox .recordings-row:has(.delete-recording-error) > .recordings-row-actions,
+.recording-search-result:has(.delete-recording-error) > .recordings-row-actions {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border);
+  border-left: 0;
+}
+.recordings-row-actions .recording-title-edit {
+  height: auto;
+  border: 0;
+  padding: 0;
+}
+.recordings-row-actions .recording-title-edit-button,
+.recordings-row-actions .delete-recording-icon button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.recordings-row-actions .recording-title-edit-button {
+  justify-content: center;
+  padding: 0 8px;
+  font-size: 0;
+}
+.recordings-row-actions .recording-title-edit-button::before {
+  content: "Upravit";
+  font-size: 11px;
+}
+.recordings-row-actions .recording-title-edit-button > span {
+  font-size: 11px;
+}
+.recordings-search-error,
+.recordings-error-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.recordings-search-error .recordings-alert {
+  flex: 1 1 320px;
+}
+.recordings-error-actions button,
+.recordings-error-actions a,
+.recordings-inbox .ui-empty-state-action a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface);
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 750;
+}
+.recording-search-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  background: var(--surface);
+}
+.recording-search-result:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+}
+.recording-search-result-main {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.recording-search-result-meta,
+.recording-search-excerpt {
+  color: var(--text-secondary);
+}
+.recording-search-excerpt mark {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.recordings-route-state {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 220px;
+  padding: 20px;
+}
+.recordings-route-state h1 {
+  margin: 0;
+  font-size: 20px;
+}
+.recordings-route-state p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.recordings-route-state button,
+.recordings-route-state a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface-muted);
+  padding: 0 12px;
+  font-weight: 750;
+}
+.recordings-loading-lines {
+  display: grid;
+  gap: 8px;
+}
+.recordings-loading-lines span {
+  display: block;
+  width: 100%;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-muted);
 }

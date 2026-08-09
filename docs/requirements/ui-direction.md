@@ -205,19 +205,20 @@ Technické segmenty a tokeny mohou zůstat interní data, ale výchozí UI má u
 
 Route: `/recordings`
 
-Stránka nahrávek má působit jako kompaktní inbox nahrávek. Priorita je rychle najít správnou nahrávku, poznat její stav a kliknutím ji otevřít.
+Stránka nahrávek je kompaktní Notion Warm inbox. Priorita je rychle najít správnou nahrávku, poznat její stav a otevřít ji přes název.
 
 Požadavky:
 
 - seznam nahrávek bez tlačítka `Otevřít`,
-- kliknutí na řádek otevře detail,
+- název je hlavní Next odkaz na detail; editace a koš jsou jeho samostatní sourozenci,
 - editace názvu přes samostatný ovládací prvek,
 - editor názvu se po úspěšném uložení automaticky zavře; při chybě zůstane otevřený s rozepsanou hodnotou,
-- stav nahrávky jasně viditelný,
+- kompaktní stavová linka ukazuje všech sedm persisted stavů nad aktuálně filtrovaným seznamem nebo stránkou hledání,
 - velikost, datum a zdroj zobrazit kompaktně,
-- připravit prostor pro budoucí filtry.
+- filtry `q`, `client`, závislý `project`, `folder` a opakovatelný `tag` zůstávají URL-backed a synchronizované s Back/Forward,
+- desktop používá pracovní řádky a mobil do 900 px skládané karty bez horizontálního posunu.
 
-Klienti, projekty, ploché složky a štítky jsou budoucí organizační funkce, nikoli aktuálně hotová část seznamu. Jejich create, rename a assignment editory mají po implementaci použít stejný success-only collapse kontrakt jako název nahrávky; delete zůstává samostatná potvrzovaná destruktivní akce.
+Klienti, projekty, ploché složky a štítky se spravují v defaultně zavřeném panelu `Spravovat`. Panel při zavření zůstává připojený, ale je skrytý pro focus i accessibility strom, takže rozepsaný nebo pending editor neztratí stav. Create, rename a assignment editory používají success-only collapse kontrakt; delete zůstává samostatná potvrzovaná destruktivní akce.
 
 ## Mobil
 

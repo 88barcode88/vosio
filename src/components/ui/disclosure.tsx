@@ -8,6 +8,7 @@ type DisclosureProps = {
   children: ReactNode;
   className?: string;
   defaultOpen?: boolean;
+  keepMounted?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
 
@@ -18,6 +19,7 @@ export function Disclosure({
   children,
   className,
   defaultOpen = false,
+  keepMounted = false,
   onOpenChange
 }: DisclosureProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -55,8 +57,15 @@ export function Disclosure({
       >
         {triggerLabel}
       </button>
-      {isOpen ? (
-        <div id={panelId} className="ui-disclosure-panel" role="region" aria-label={label}>
+      {isOpen || keepMounted ? (
+        <div
+          aria-hidden={!isOpen || undefined}
+          aria-label={label}
+          className="ui-disclosure-panel"
+          hidden={!isOpen}
+          id={panelId}
+          role="region"
+        >
           {children}
         </div>
       ) : null}

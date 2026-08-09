@@ -169,6 +169,124 @@
   .recording-rail-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .recordings-inbox.ui-panel {
+    padding: 12px;
+  }
+  .recordings-inbox-header {
+    display: flex;
+  }
+  .recordings-management-disclosure {
+    grid-template-columns: 1fr;
+  }
+  .recordings-management-disclosure .ui-disclosure-trigger {
+    min-height: 44px;
+  }
+  .recording-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .recording-filter-grid input,
+  .recording-filter-grid select,
+  .recording-filter-tags label,
+  .recording-filter-actions button {
+    min-height: 44px;
+  }
+  .recordings-status-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .recordings-status-segments {
+    gap: 6px 0;
+    margin-left: -10px;
+  }
+  .recordings-table {
+    gap: 10px;
+    overflow: visible;
+    border: 0;
+  }
+  .recordings-table-head {
+    display: none;
+  }
+  .recording-client-group {
+    gap: 8px;
+  }
+  .recording-client-group > h2 {
+    border: 1px solid var(--border);
+    border-radius: 9px;
+  }
+  .recordings-inbox .recordings-row,
+  .recording-search-result {
+    grid-template-columns: minmax(0, 1fr);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: visible;
+  }
+  .recordings-inbox .recordings-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    min-width: 0;
+  }
+  .recordings-row-title {
+    grid-column: 1 / -1;
+  }
+  .recordings-row-actions {
+    min-height: 52px;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+  .recordings-row-actions .recording-title-edit-button,
+  .recordings-row-actions .delete-recording-icon button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .recording-title-popover,
+  .organization-create-form,
+  .organization-rename-form {
+    max-width: calc(100vw - 48px);
+  }
+}
+@container recordings-inbox (max-width: 680px) {
+  .recordings-table {
+    gap: 10px;
+    overflow: visible;
+    border: 0;
+  }
+  .recordings-table-head {
+    display: none;
+  }
+  .recording-client-group {
+    gap: 8px;
+  }
+  .recording-client-group > h2 {
+    border: 1px solid var(--border);
+    border-radius: 9px;
+  }
+  .recordings-inbox .recordings-row,
+  .recording-search-result {
+    grid-template-columns: minmax(0, 1fr);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: visible;
+  }
+  .recordings-inbox .recordings-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    min-width: 0;
+  }
+  .recordings-row-title {
+    grid-column: 1 / -1;
+  }
+  .recordings-row-actions {
+    min-height: 52px;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+  .recordings-row-actions .recording-title-edit-button,
+  .recordings-row-actions .delete-recording-icon button {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 @media (max-width: 760px) {
   body {

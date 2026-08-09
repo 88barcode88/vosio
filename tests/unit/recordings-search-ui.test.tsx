@@ -74,7 +74,11 @@ describe("recordings indexed search UI", () => {
     expect(markup).toContain('aria-label="Výsledky hledání v nahrávkách"');
     expect(markup).toContain('role="list"');
     expect(markup).toContain('role="listitem"');
+    expect(markup).toContain('class="recordings-status-summary" aria-label="Stavy nahrávek" role="group"');
+    expect(markup).toContain('class="recordings-row-actions" aria-label="Akce nahrávky Lucern CRM call" role="group"');
     expect(markup).toContain("Nalezeno 51 nahrávek. Strana 2 z 3.");
+    expect(markup).toContain('<span class="recordings-status-total"><strong>1</strong> celkem</span>');
+    expect(markup).toContain('<span class="recordings-status-segment">Dokončeno <strong>1</strong></span>');
     expect(markup).toContain("Acme · CRM · Calls");
     expect(markup).toContain("<mark>Lucern</mark>");
     expect(markup).toContain(

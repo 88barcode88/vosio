@@ -259,6 +259,7 @@
 }
 .recordings-row[data-optimistic-deleted="true"],
 .recording-object-header[data-optimistic-deleted="true"],
+[data-recording-delete-target][data-optimistic-deleted="true"],
 .utility-row[data-optimistic-deleted="true"],
 .ai-output-detail[data-optimistic-deleted="true"] {
   max-height: 0;

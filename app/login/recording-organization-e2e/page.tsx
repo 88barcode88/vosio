@@ -24,6 +24,7 @@ import {
   renameFixtureTagAction
 } from "./actions";
 import { validateOrganizationFixtureAccess } from "./development-runtime";
+import { DeleteFailureHarness } from "./delete-failure-harness";
 import {
   getOrganizationFixtureSnapshot,
   listOrganizationFixtureRecordings
@@ -52,6 +53,31 @@ export default async function RecordingOrganizationE2EPage({
   }
   const searchQuery = normalizeRecordingSearchQuery(Array.isArray(params.q) ? params.q[0] : params.q);
   const recordings = listOrganizationFixtureRecordings(scopeValue, canonical.filters, searchQuery);
+  const fixtureMode = Array.isArray(params.fixture) ? params.fixture[0] : params.fixture;
+  const indexedSearchPage = searchQuery && (fixtureMode === "indexed" || fixtureMode === "search-error")
+    ? {
+        page: 1,
+        pageSize: 25,
+        results: recordings.map((recording) => ({
+          clientId: recording.client_id,
+          createdAt: recording.created_at,
+          durationSeconds: recording.duration_seconds,
+          fileSizeBytes: recording.file_size_bytes,
+          folderId: recording.folder_id,
+          id: recording.id,
+          matchedExcerpt: `Výsledek [[H]]${searchQuery}[[/H]] ve vývojové fixture.`,
+          matchEndMs: 2400,
+          matchStartMs: 1200,
+          mimeType: recording.mime_type,
+          projectId: recording.project_id,
+          sourceType: recording.source_type,
+          status: recording.status,
+          title: recording.title,
+          updatedAt: recording.updated_at
+        })),
+        totalCount: recordings.length
+      }
+    : null;
   const organizationActions: OrganizationManagerActions = {
     createClient: createFixtureClientAction.bind(null, scopeValue),
     createFolder: createFixtureFolderAction.bind(null, scopeValue),
@@ -66,6 +92,8 @@ export default async function RecordingOrganizationE2EPage({
     renameProject: renameFixtureProjectAction.bind(null, scopeValue),
     renameTag: renameFixtureTagAction.bind(null, scopeValue)
   };
+
+  if (fixtureMode === "delete-failure") return <DeleteFailureHarness />;
 
   return (
     <main className="recording-organization-e2e-fixture">
@@ -85,6 +113,10 @@ export default async function RecordingOrganizationE2EPage({
         organizationActions={organizationActions}
         organizationOptions={snapshot.options}
         recordings={recordings}
+        searchError={fixtureMode === "search-error"
+          ? "Hledání se nepodařilo načíst. Zkuste to znovu."
+          : null}
+        searchPage={indexedSearchPage}
         searchQuery={searchQuery}
       />
     </main>
