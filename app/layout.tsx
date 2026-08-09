@@ -1,11 +1,24 @@
 import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
+import { Inter, Newsreader } from "next/font/google";
 import { PwaRegistration } from "@/components/pwa-registration";
 import { PersistentRecordingSessionProvider } from "@/components/persistent-recording-session";
 import { RecordingNavigationGuardProvider } from "@/components/recording-navigation-guard";
 import { getVosioLicenseMarker } from "@/lib/license-marker";
 import { normalizeTheme, VOSIO_THEME_COOKIE, VOSIO_THEME_STORAGE_KEY } from "@/lib/theme";
 import "./globals.css";
+
+const inter = Inter({
+  display: "swap",
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-ui"
+});
+
+const newsreader = Newsreader({
+  display: "swap",
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-heading"
+});
 
 const themeInitScript = `
 try {
@@ -64,7 +77,7 @@ export default async function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body>
+      <body className={`${inter.variable} ${newsreader.variable}`}>
         <RecordingNavigationGuardProvider>
           <PersistentRecordingSessionProvider>
             {children}

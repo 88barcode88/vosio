@@ -6,17 +6,19 @@ Vosio je pracovní audio workspace pro nahrávání, přepis a AI vytěžení ho
 
 UI je aplikace pro opakované denní používání, ne marketingová stránka. Hlavní objekt je nahrávka.
 
+Tento schválený dokument Notion Warm má přednost před konfliktními tvrzeními o paletě a typografii ve starším `docs/requirements/ui-redesign-plan.md`, dokud nebude tento dokument migrován během kompletního redesignu.
+
 ## Aesthetic Direction
 
-Direction: Scandinavian audio workspace.
+Direction: Notion Warm.
 
-Vosio má působit jako moderní pracovní nástroj ve stylu Linear / Notion / CRM, ale vizuálně střídměji: skandinávsky čisté, klidné, přesné a méně "AI aplikace". Rozhraní má být kompaktní, čitelné a rychlé. Design nemá používat hero bloky, přehnané gradienty, dekorativní benefit sekce, velké prázdné karty, obří ikony ani velké display písmo uvnitř aplikace.
+Vosio má působit jako klidný, soustředěný pracovní nástroj s teplými neutrálními plochami. Pracovní hustota zůstává vysoká, ale formuláře dostávají více vzduchu pro bezpečné vyplnění. Rozhraní je čitelné, rychlé a nenápadné: bez hero bloků, přehnaných gradientů, dekorativních benefit sekcí, obřích ikon a velkého display písma uvnitř aplikace.
 
 Designová reference:
 
-- pracovní hustota jako Linear nebo Notion,
-- pořádek a klid jako moderní CRM,
-- materiálový pocit jako skandinávský interiér: neutrální plochy, jemné vrstvy, málo efektů, důraz na funkci.
+- pracovní pořádek a hierarchie jako Notion,
+- kompaktní seznamy a konkrétní pracovní kroky jako moderní CRM,
+- teplý papírový materiálový pocit: krémové světlé plochy, uhlově teplý dark mode, jemné vrstvy a důraz na obsah.
 
 Memorable detail:
 
@@ -51,6 +53,7 @@ Používej významové tokeny, ne barvy podle názvu odstínu.
 - `--accent`
 - `--accent-hover`
 - `--accent-text`
+- `--focus-ring`
 - `--success`
 - `--recording`
 - `--danger`
@@ -59,47 +62,53 @@ Používej významové tokeny, ne barvy podle názvu odstínu.
 
 ### Dark Mode Palette
 
-Dark mode má být černo-šedý a neutrální. Teal je akcent pro aktivní akce, stav live přepisu a brand, ne dominantní barva celé obrazovky.
+Dark mode je teplý uhlový pracovní režim, ne modrozelené rozhraní. Teal je akcent pro aktivní akce, stav live přepisu a brand, ne dominantní barva celé obrazovky.
 
-- `--bg`: `#071014`
-- `--surface`: `#0d171d`
-- `--surface-muted`: `rgba(255, 255, 255, 0.045)`
-- `--surface-raised`: `#121f27`
-- `--border`: `rgba(194, 213, 218, 0.14)`
-- `--border-strong`: `rgba(32, 176, 168, 0.34)`
-- `--text`: `#eef4f3`
-- `--text-secondary`: `#b8c5c8`
-- `--text-muted`: `#99a9ad`
-- `--accent`: `#20c3b8`
-- `--accent-hover`: `#35d0c6`
-- `--accent-text`: `#042022`
-- `--success`: `#88a79a`
-- `--recording`: `#f36b6b`
-- `--danger`: `#f36b6b`
-- `--warning`: `#db9852`
-- `--info`: `#4e8ccf`
+- `--bg`: `#191918`
+- `--surface`: `#222220`
+- `--surface-muted`: `#2a2927`
+- `--surface-raised`: `#302f2c`
+- `--border`: `#3d3a36`
+- `--border-strong`: `#56514a`
+- `--text`: `#f3f0ea`
+- `--text-secondary`: `#c1bbb1`
+- `--text-muted`: `#989188`
+- `--accent`: `#5cc8bc`
+- `--accent-hover`: `#79d6cc`
+- `--accent-text`: `#10211f`
+- `--focus-ring`: `var(--accent)`
+- `--success`: `#7fc7a4`
+- `--recording`: `#ff8f8f`
+- `--danger`: `#ff8f8f`
+- `--warning`: `#e8b36a`
+- `--info`: `#86b7e8`
 
 ### Light Mode Palette
 
-Light mode má být bílý, světle šedý a pracovní. Nemá působit jako marketingová stránka. Teal akcent používat stejně střídmě jako v dark mode.
+Light mode je krémový a pracovní, ne čistě bílá marketingová stránka. Teal akcent používat stejně střídmě jako v dark mode.
 
-- `--bg`: `#f4f7f7`
-- `--surface`: `#ffffff`
-- `--surface-muted`: `rgba(9, 34, 41, 0.045)`
-- `--surface-raised`: `#edf3f3`
-- `--border`: `rgba(20, 48, 56, 0.12)`
-- `--border-strong`: `rgba(18, 151, 143, 0.3)`
-- `--text`: `#132428`
-- `--text-secondary`: `#40575d`
-- `--text-muted`: `#63777c`
-- `--accent`: `#128f88`
-- `--accent-hover`: `#0b6f68`
-- `--accent-text`: `#f8ffff`
-- `--success`: `#5f7f70`
-- `--recording`: `#cc4f4f`
-- `--danger`: `#cc4f4f`
-- `--warning`: `#b46c2d`
-- `--info`: `#346da8`
+- `--bg`: `#f7f5f2`
+- `--surface`: `#fffefa`
+- `--surface-muted`: `#f0ede8`
+- `--surface-raised`: `#ffffff`
+- `--border`: `#ded9d1`
+- `--border-strong`: `#c8c1b7`
+- `--text`: `#252421`
+- `--text-secondary`: `#625f59`
+- `--text-muted`: `#817c74`
+- `--accent`: `#0f766e`
+- `--accent-hover`: `#0b5f59`
+- `--accent-text`: `#ffffff`
+- `--focus-ring`: `var(--accent)`
+- `--success`: `#2f7d56`
+- `--recording`: `#b83f3f`
+- `--danger`: `#b83f3f`
+- `--warning`: `#8a5a16`
+- `--info`: `#2f67a5`
+
+### Temporary Compatibility Aliases
+
+`--text-muted` zůstává schválený token pro skutečně doplňkový text. Dokud nejsou migrované existující 12px textové prvky, legacy alias `--muted` mapuj na `--text-secondary`, aby jejich kontrast zůstal čitelný. Tento alias je dočasný a při migraci jednotlivých komponent se má nahradit vhodným sémantickým tokenem.
 
 ## Speaker Colors
 
@@ -120,12 +129,17 @@ Dark mode speaker chips mají být jemné tinted surfaces. Light mode speaker ch
 
 Primary UI font:
 
-- preferred: `Geist Sans`,
-- fallback: `Aptos`, `Segoe UI`, `system-ui`, `sans-serif`.
+- `Inter` přes `next/font/google` a proměnnou `--font-ui`,
+- fallback: `Segoe UI`, `system-ui`, `sans-serif`.
+
+Heading font:
+
+- `Newsreader` přes `next/font/google` a proměnnou `--font-heading`,
+- pouze pro nadpisy `h1` až `h3`, nikdy pro běžné UI, formuláře nebo metadata,
+- fallback: `Georgia`, `serif`.
 
 Data/monospace font:
 
-- preferred: `Geist Mono`,
 - fallback: `JetBrains Mono`, `Consolas`, `monospace`.
 
 Typography rules:
@@ -146,6 +160,11 @@ Icon rules:
 - velké dekorativní ikony se nepoužívají,
 - logo může být výraznější, ale nesmí určovat velikost ostatního UI.
 
+## Borders and Shadows
+
+- Rozhraní používá 1px border z tokenu `--border`; silnější hranice jen pro focus, vybraný stav nebo funkční oddělení.
+- Stíny jsou minimální a slouží jen k oddělení překryvů nebo raised surface. Běžné panely a seznamy se opírají o plochu a border, ne o velký shadow.
+
 ## Spacing
 
 Base unit: 4 px.
@@ -163,7 +182,8 @@ Scale:
 
 Density:
 
-- pracovní obrazovky používají compact density,
+- pracovní obrazovky a seznamy používají compact density,
+- formuláře používají vzdušnější rozestupy mezi poli, jejich popisky a nápovědou,
 - prázdné stavy mohou být volnější,
 - karty v detailu nahrávky nesmí růst jen kvůli dekoraci,
 - stránky nesmí začínat velkým hero blokem, pokud nejde o veřejnou landing page.
