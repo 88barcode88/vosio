@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useDialogFocusTrap } from "./modal";
 
 type DrawerProps = {
@@ -15,10 +15,17 @@ type DrawerProps = {
 export function Drawer({ open, onClose, label, children, className }: DrawerProps) {
   const { dialogRef, handleKeyDown } = useDialogFocusTrap(open, onClose);
 
+  // handleBackdropPointerDown closes only the backdrop and prevents the completed click from stealing restored focus.
+  function handleBackdropPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    onClose();
+  }
+
   if (!open) return null;
 
   return (
-    <div className="ui-drawer-backdrop" onPointerDown={onClose} onKeyDown={handleKeyDown}>
+    <div className="ui-drawer-backdrop" onPointerDown={handleBackdropPointerDown} onKeyDown={handleKeyDown}>
       <div
         ref={dialogRef}
         className={["ui-drawer", className].filter(Boolean).join(" ")}

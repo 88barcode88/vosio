@@ -26,7 +26,7 @@ import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
 import type { ResolvedTranscriptDeepLink } from "@/lib/transcripts/deep-link";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
-import type { WorkspaceView } from "@/lib/workspace-data";
+import type { NavigationHrefOverrides, WorkspaceView } from "@/lib/workspace-data";
 
 type VosioWorkspaceProps = {
   activeRecordingId?: string;
@@ -37,6 +37,7 @@ type VosioWorkspaceProps = {
   initialTranscriptTab?: TranscriptTab;
   initialTranscriptTabFromCookie?: boolean;
   initialTranscriptTabFromUrl?: boolean;
+  navigationHrefOverrides?: NavigationHrefOverrides;
   promptTemplates?: PromptTemplateRow[];
   recordingStorageConfig?: RecordingStorageConfig;
   recordingMarkers?: RecordingMarkerRow[];
@@ -86,6 +87,7 @@ export function VosioWorkspace({
   initialTranscriptTab = "transcript",
   initialTranscriptTabFromCookie = false,
   initialTranscriptTabFromUrl = false,
+  navigationHrefOverrides,
   promptTemplates = [],
   recordingStorageConfig = unavailableRecordingStorageConfig,
   recordingMarkers = [],
@@ -132,7 +134,11 @@ export function VosioWorkspace({
 
   return (
     <main className="workspace-shell">
-      <WorkspaceSidebar activeView={view} userEmail={userEmail} />
+      <WorkspaceSidebar
+        activeView={view}
+        navigationHrefOverrides={navigationHrefOverrides}
+        userEmail={userEmail}
+      />
 
       <section
         className={getContentAreaClassName({
@@ -191,7 +197,11 @@ export function VosioWorkspace({
         </div>
       </section>
 
-      <MobileNav activeView={view} />
+      <MobileNav
+        activeView={view}
+        hrefOverrides={navigationHrefOverrides}
+        userEmail={userEmail}
+      />
     </main>
   );
 }

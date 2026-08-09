@@ -1,31 +1,35 @@
-import { Coffee, LogOut, Plus } from "lucide-react";
-import Link from "next/link";
+import { Coffee, LogOut } from "lucide-react";
 import { LogoMark } from "@/components/logo-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { SidebarDocumentationLink, WorkspaceNavigation } from "@/components/workspace-navigation";
+import {
+  NewRecordingNavigationLink,
+  SidebarUtilityNavigation,
+  WorkspaceNavigation
+} from "@/components/workspace-navigation";
 import { signOutAction } from "@/lib/auth/actions";
-import type { WorkspaceView } from "@/lib/workspace-data";
+import {
+  VOSIO_SUPPORT_URL,
+  type NavigationHrefOverrides,
+  type WorkspaceView
+} from "@/lib/workspace-data";
 import { getEmailInitials } from "@/components/workspace/utils";
-
-const SUPPORT_LINK = "https://donate.stripe.com/3cI7sLdRHaWJ1Lke48dZ602";
 
 // WorkspaceSidebar renders the fixed desktop navigation shell.
 export function WorkspaceSidebar({
   activeView,
+  navigationHrefOverrides,
   userEmail
 }: {
   activeView: WorkspaceView;
+  navigationHrefOverrides?: NavigationHrefOverrides;
   userEmail: string;
 }) {
   return (
     <aside className="sidebar" aria-label="Hlavní navigace">
       <BrandBlock />
-      <Link className="new-recording-button" href="/recordings/new">
-        <Plus size={15} />
-        Nová nahrávka
-      </Link>
-      <WorkspaceNavigation activeView={activeView} />
-      <SidebarDocumentationLink activeView={activeView} />
+      <NewRecordingNavigationLink hrefOverrides={navigationHrefOverrides} />
+      <WorkspaceNavigation activeView={activeView} hrefOverrides={navigationHrefOverrides} />
+      <SidebarUtilityNavigation activeView={activeView} hrefOverrides={navigationHrefOverrides} />
       <SupportLink />
       <UserCard userEmail={userEmail} />
     </aside>
@@ -48,7 +52,7 @@ function BrandBlock() {
 // SupportLink opens the built-in Stripe Donate page used for voluntary support.
 function SupportLink() {
   return (
-    <a className="sidebar-support-link" href={SUPPORT_LINK} rel="noopener noreferrer" target="_blank">
+    <a className="sidebar-support-link" href={VOSIO_SUPPORT_URL} rel="noopener noreferrer" target="_blank">
       <Coffee size={16} />
       <span>Kup mi kafe</span>
     </a>

@@ -67,10 +67,10 @@ Sidebar má zůstat čistý a kompaktní:
 - `Prompty`
 - `Koš`
 - `Nastavení`
-- sekundární `Dokumentace` nad účtem uživatele na desktopu
+- spodní utility skupina `Koš`, `Nastavení`, `Dokumentace` nad supportem a účtem uživatele na desktopu
 - malá ikona přepnutí světlý/tmavý režim vedle názvu Vosio
 
-Sidebar nemá obsahovat duplicitní seznam nahrávek ani storage kartu. Nahrávky patří na stránku `/recordings`. Na mobilu může `Dokumentace` zůstat ve spodní navigaci, protože mobilní layout nemá spodní účetový blok.
+Sidebar nemá obsahovat duplicitní seznam nahrávek ani storage kartu. Nahrávky patří na stránku `/recordings`. Na mobilu do 900 px má fixed spodní navigace přesně pět cílů `Nahrávky`, `Nová`, `Prompty`, `Nastavení`, `Více`; Drawer `Více` zpřístupní `Koš`, `Dokumentaci`, motiv, support a účet s odhlášením.
 
 `AI zpracování` se nemá zobrazovat jako samostatná primární položka v sidebaru, pokud pouze pracuje s výstupy konkrétní nahrávky. AI patří do detailu nahrávky jako tab.
 
