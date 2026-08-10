@@ -75,7 +75,7 @@ export default async function RecordingOrganizationE2EPage({
           title: recording.title,
           updatedAt: recording.updated_at
         })),
-        totalCount: recordings.length
+        totalCount: 30
       }
     : null;
   const organizationActions: OrganizationManagerActions = {

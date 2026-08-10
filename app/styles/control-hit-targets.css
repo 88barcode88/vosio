@@ -1,0 +1,40 @@
+/* Loaded last so the real app's touch contract wins component-level compact sizing. */
+:root :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock, .auth-shell, .utility-route-state, .not-found-page) :is(
+  button,
+  input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+  select,
+  textarea,
+  summary,
+  [role="tab"]
+) {
+  min-height: var(--control-hit-size);
+}
+
+:root :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock, .auth-shell, .utility-route-state, .not-found-page)
+:is(button, [role="button"], [role="tab"], .icon-button) {
+  min-width: var(--control-hit-size);
+}
+
+/* Native toggles stay visually compact while their semantic labels own the complete hit area. */
+:root :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock, .auth-shell, .utility-route-state, .not-found-page) :is(
+  label:has(input[type="checkbox"]),
+  label:has(input[type="radio"])
+) {
+  align-items: center;
+  min-height: var(--control-hit-size);
+}
+
+/* Inline prose links remain text-sized unless explicitly marked as actions. */
+:root :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock, .auth-shell, .utility-route-state, .not-found-page) :is(
+  .nav-item,
+  .sidebar-support-link,
+  .mobile-nav-item,
+  .mobile-more-link,
+  .recording-detail-back,
+  [data-touch-target="action"]
+) {
+  align-items: center;
+  display: inline-flex;
+  min-height: var(--control-hit-size);
+  min-width: var(--control-hit-size);
+}

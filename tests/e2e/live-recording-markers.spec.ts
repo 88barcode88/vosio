@@ -314,6 +314,12 @@ test("actual persistent recorder saves two markers and opens both from timeline"
   const dock = page.locator(".persistent-recorder-dock:not([hidden])");
   await expect(dock).toBeVisible();
   await expect(dock.locator(".browser-recorder-compact")).toBeVisible();
+  const openRecording = dock.getByRole("link", { name: "Otevřít nahrávání" });
+  await expect(openRecording).toHaveAttribute("data-touch-target", "action");
+  const openRecordingBox = await openRecording.boundingBox();
+  expect(openRecordingBox).not.toBeNull();
+  expect(openRecordingBox!.height).toBeGreaterThanOrEqual(43.5);
+  expect(openRecordingBox!.width).toBeGreaterThanOrEqual(43.5);
 
   await page.waitForTimeout(1_100);
   const compactMarker = dock.getByRole("button", { name: "Označit moment" });

@@ -152,7 +152,10 @@ function AiOutputCard({ defaultOpen, output }: { defaultOpen?: boolean; output: 
           <span>MD</span>
         </button>
         {isFollowUpEmail ? (
-          <a href={createMailtoHref(getFollowUpEmailSubject(output), getAiOutputPreview(output))}>
+          <a
+            data-touch-target="action"
+            href={createMailtoHref(getFollowUpEmailSubject(output), getAiOutputPreview(output))}
+          >
             <Mail size={14} />
             <span>Otevřít e-mail</span>
           </a>

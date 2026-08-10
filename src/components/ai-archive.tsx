@@ -101,7 +101,7 @@ export function AiArchive({
                     <time dateTime={item.created_at}>{formatRecordingDate(item.created_at)}</time>
                   </div>
                   <p>{getAiOutputPreview(item)}</p>
-                  <Link className="ai-archive-recording-link" href={recordingHref}>
+                  <Link className="ai-archive-recording-link" data-touch-target="action" href={recordingHref}>
                     <span>{item.recording.title}</span>
                     {isTrashed ? <small>V koši</small> : <ChevronRight aria-hidden="true" size={14} />}
                   </Link>

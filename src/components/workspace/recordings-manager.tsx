@@ -169,6 +169,7 @@ function RecordingSearchResults({
                   <header>
                     <Link
                       aria-label={`Otevřít nalezenou nahrávku ${result.title}`}
+                      data-touch-target="action"
                       href={buildRecordingSearchResultHref(result, searchQuery)}
                     >
                       <strong>{result.title}</strong>
@@ -205,9 +206,9 @@ function RecordingSearchResults({
       )}
       {page.totalCount > page.pageSize || page.page > 1 ? (
         <nav aria-label="Stránkování výsledků hledání" className="recording-search-pagination">
-          {previousHref ? <Link href={previousHref}>Předchozí</Link> : <span aria-disabled="true">Předchozí</span>}
+          {previousHref ? <Link data-touch-target="action" href={previousHref}>Předchozí</Link> : <span aria-disabled="true">Předchozí</span>}
           <span>Strana {page.page} z {totalPages}</span>
-          {nextHref ? <Link href={nextHref}>Další</Link> : <span aria-disabled="true">Další</span>}
+          {nextHref ? <Link data-touch-target="action" href={nextHref}>Další</Link> : <span aria-disabled="true">Další</span>}
         </nav>
       ) : null}
     </section>
@@ -316,6 +317,7 @@ export function RecordingsManager({
                           <div className="recordings-row-title">
                             <Link
                               aria-label={`Detail nahrávky ${recording.title}`}
+                              data-touch-target="action"
                               href={`/recordings/${recording.id}`}
                             >
                               <strong>{recording.title}</strong>

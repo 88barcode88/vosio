@@ -22,12 +22,18 @@ function fixturePath(view: FixtureView, scope = createFixtureScope()) {
 
 // expectNoHorizontalOverflow verifies the document and real shell both fit the selected viewport.
 async function expectNoHorizontalOverflow(page: Page) {
-  const overflow = await page.evaluate(() => ({
-    document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    shell: document.querySelector<HTMLElement>(".workspace-shell")!.scrollWidth
-      - document.querySelector<HTMLElement>(".workspace-shell")!.clientWidth
-  }));
-  expect(overflow).toEqual({ document: 0, shell: 0 });
+  const overflow = await page.evaluate(() => {
+    const shell = document.querySelector<HTMLElement>(".workspace-shell")!;
+    return {
+      document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      offenders: Array.from(shell.querySelectorAll<HTMLElement>("*"))
+        .filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
+        .slice(0, 6)
+        .map((element) => ({ className: element.className, right: element.getBoundingClientRect().right }))
+    };
+  });
+  expect(overflow.document, JSON.stringify(overflow)).toBe(0);
+  expect(overflow.offenders, JSON.stringify(overflow)).toEqual([]);
 }
 
 // getBox requires a rendered bounding box so geometry checks never confuse visibility with viewport reachability.
@@ -35,6 +41,80 @@ async function getBox(locator: import("@playwright/test").Locator) {
   const box = await locator.boundingBox();
   expect(box).not.toBeNull();
   return box!;
+}
+
+// expectRealAppHitTargets checks visible semantic controls and labelled toggles against the shared 44px contract.
+async function expectRealAppHitTargets(page: Page) {
+  const offenders = await page.evaluate(() => {
+    const minimum = 44;
+    const isVisible = (element: HTMLElement) => {
+      const style = getComputedStyle(element);
+      const box = element.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
+    };
+    const controls = Array.from(document.querySelectorAll<HTMLElement>([
+      "button",
+      "input:not([type='hidden']):not([type='checkbox']):not([type='radio']):not([type='color'])",
+      "select",
+      "textarea",
+      "summary",
+      "[role='tab']",
+      "[data-touch-target='action']"
+    ].join(",")));
+    const controlOffenders = controls.filter(isVisible).flatMap((element) => {
+      const box = element.getBoundingClientRect();
+      const needsWidth = element.matches("button, [role='button'], [role='tab'], .icon-button, [data-touch-target='action']");
+      return box.height + 0.5 < minimum || (needsWidth && box.width + 0.5 < minimum)
+        ? [`${element.tagName.toLowerCase()}.${element.className}: ${box.width}x${box.height}`]
+        : [];
+    });
+    const toggleOffenders = Array.from(document.querySelectorAll<HTMLInputElement>(
+      "input[type='checkbox'], input[type='radio']"
+    )).filter(isVisible).flatMap((input) => {
+      const label = input.closest("label");
+      const box = label?.getBoundingClientRect();
+      return !box || box.height + 0.5 < minimum
+        ? [`${input.type} label: ${box?.width ?? 0}x${box?.height ?? 0}`]
+        : [];
+    });
+    return [...controlOffenders, ...toggleOffenders];
+  });
+  expect(offenders).toEqual([]);
+}
+
+// expectShellSurfaceContainment keeps real rows, tables and cards inside the content column and viewport.
+async function expectShellSurfaceContainment(page: Page) {
+  const offenders = await page.evaluate(() => {
+    const content = document.querySelector<HTMLElement>(".content-area")!;
+    const contentBox = content.getBoundingClientRect();
+    const selectors = [
+      ".recordings-table",
+      ".recordings-row",
+      ".recording-search-result",
+      "[data-primary-capture]",
+      ".recording-workbench",
+      ".recording-object-header",
+      ".transcript-table",
+      ".transcript-table-row",
+      ".prompt-workspace",
+      ".settings-panel",
+      ".trash-recording-row",
+      ".documentation-layout"
+    ].join(",");
+    return Array.from(document.querySelectorAll<HTMLElement>(selectors)).flatMap((element) => {
+      const style = getComputedStyle(element);
+      const box = element.getBoundingClientRect();
+      if (style.display === "none" || style.visibility === "hidden" || box.width === 0 || box.height === 0) return [];
+      const contained = box.left >= contentBox.left - 1
+        && box.right <= contentBox.right + 1
+        && box.left >= -1
+        && box.right <= document.documentElement.clientWidth + 1;
+      return contained
+        ? []
+        : [`${element.className}: ${box.left}..${box.right} outside ${contentBox.left}..${contentBox.right}`];
+    });
+  });
+  expect(offenders).toEqual([]);
 }
 
 test("the shell fixture rejects missing, malformed and unknown scoped routes", async ({ request }) => {
@@ -71,12 +151,15 @@ for (const width of [375, 768, 1024, 1440]) {
     });
     expect(scrollOwners).toBeLessThanOrEqual(1);
     if (width === 375 || width === 1024) {
-      await page.screenshot({ path: testInfo.outputPath(`trash-${width}.png`), fullPage: true });
-      await page.evaluate(() => window.localStorage.setItem("vosio-theme", "light"));
+      await page.screenshot({ caret: "initial", path: testInfo.outputPath(`trash-${width}.png`), fullPage: true });
+      await page.evaluate(() => {
+        window.localStorage.setItem("vosio-theme", "light");
+        document.cookie = "vosio-theme=light; Path=/; SameSite=Lax";
+      });
       await page.reload();
       await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
       await expectNoHorizontalOverflow(page);
-      await page.screenshot({ path: testInfo.outputPath(`trash-${width}-light.png`), fullPage: true });
+      await page.screenshot({ caret: "initial", path: testInfo.outputPath(`trash-${width}-light.png`), fullPage: true });
     }
   });
 
@@ -190,7 +273,7 @@ for (const width of [375, 768]) {
     await expect(page.locator(".sidebar")).toBeHidden();
     await expectNoHorizontalOverflow(page);
     if (width === 375) {
-      await page.screenshot({ path: testInfo.outputPath("shell-375.png") });
+      await page.screenshot({ caret: "initial", path: testInfo.outputPath("shell-375.png") });
     }
   });
 }
@@ -251,7 +334,7 @@ for (const width of [375, 768, 1024, 1440]) {
     }
 
     await expectNoHorizontalOverflow(page);
-    await page.screenshot({ path: testInfo.outputPath(`settings-${width}-dark.png`), fullPage: true });
+    await page.screenshot({ caret: "initial", path: testInfo.outputPath(`settings-${width}-dark.png`), fullPage: true });
 
     if (width <= 900) {
       await page.getByRole("navigation", { name: "Mobilní navigace" }).getByRole("button", { name: "Více" }).click();
@@ -260,7 +343,7 @@ for (const width of [375, 768, 1024, 1440]) {
     } else {
       await page.locator(".sidebar .theme-toggle").click();
     }
-    await page.screenshot({ path: testInfo.outputPath(`settings-${width}-light.png`), fullPage: true });
+    await page.screenshot({ caret: "initial", path: testInfo.outputPath(`settings-${width}-light.png`), fullPage: true });
   });
 }
 
@@ -309,6 +392,8 @@ test("mobile More traps focus, restores it on every close, toggles theme and com
   expect(await page.locator("body").evaluate((element) => getComputedStyle(element).backgroundColor))
     .not.toBe(initialBackground);
   expect(await page.evaluate(() => window.localStorage.getItem("vosio-theme"))).toBe(toggledTheme);
+  expect((await page.context().cookies()).find((cookie) => cookie.name === "vosio-theme")?.value)
+    .toBe(toggledTheme);
 
   const trashLink = drawer.getByRole("link", { name: "Koš" });
   await expect(trashLink).toHaveAttribute("href", fixturePath("trash", scope));
@@ -319,6 +404,8 @@ test("mobile More traps focus, restores it on every close, toggles theme and com
     .getByRole("button", { name: "Více" });
   await expect(activeMore).toHaveAttribute("aria-pressed", "true");
   await expect(activeMore).not.toHaveClass(/mobile-nav-item-pending/u);
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", toggledTheme);
 });
 
 for (const width of [1024, 1440]) {
@@ -399,7 +486,7 @@ for (const width of [1024, 1440]) {
     expect(await page.evaluate(() => window.scrollY)).toBe(0);
     expect(sidebarAfterScroll).toEqual(sidebarBeforeScroll);
     await expectNoHorizontalOverflow(page);
-    await page.screenshot({ path: testInfo.outputPath(`shell-${width}.png`), fullPage: true });
+    await page.screenshot({ caret: "initial", path: testInfo.outputPath(`shell-${width}.png`), fullPage: true });
   });
 }
 
@@ -440,7 +527,7 @@ for (const width of [375, 1024, 1440]) {
         expect(fullPageState.documentExtra).toBe(0);
       }
       if (width === 375 && themeIndex < 2) {
-        await page.screenshot({ path: testInfo.outputPath(`shell-375-${theme}.png`) });
+        await page.screenshot({ caret: "initial", path: testInfo.outputPath(`shell-375-${theme}.png`) });
       }
 
       if (themeIndex === themeSequence.length - 1) break;
@@ -469,3 +556,102 @@ for (const view of ["trash", "documentation"] as const) {
       .toHaveAttribute("aria-pressed", "true");
   });
 }
+
+for (const width of [375, 768, 1024, 1440]) {
+  test(`C8 real shell surfaces keep semantic controls touch-safe without x-overflow at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 760 });
+    for (const view of ["recordings", "new", "detail", "templates", "settings", "trash", "documentation"] as const) {
+      await page.goto(fixturePath(view));
+      await expect(page.locator(".workspace-shell")).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+      await expectRealAppHitTargets(page);
+      await expectShellSurfaceContainment(page);
+    }
+  });
+}
+
+for (const width of [375, 768, 1024, 1440]) {
+  test(`C8 real detail route contains its complete workbench at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto(`/login/recording-layout-e2e?scope=${createFixtureScope()}&mode=blocks`);
+    await expect(page.locator(".recording-workbench")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await expectShellSurfaceContainment(page);
+    await expectRealAppHitTargets(page);
+  });
+}
+
+// getLowDesktopScrollState reports every possible full-page vertical owner at the short desktop breakpoint.
+async function getLowDesktopScrollState(page: Page) {
+  return page.evaluate(() => {
+    const sidebar = document.querySelector<HTMLElement>(".sidebar")!;
+    const content = document.querySelector<HTMLElement>(".content-area")!;
+    const nestedOwners = Array.from(document.querySelectorAll<HTMLElement>("body *"))
+      .filter((element) => {
+        const style = getComputedStyle(element);
+        return ["auto", "scroll"].includes(style.overflowY)
+          && element.scrollHeight > element.clientHeight + 1;
+      })
+      .map((element) => element.className);
+    return {
+      contentOverflow: getComputedStyle(content).overflowY,
+      documentExtra: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      nestedOwners,
+      sidebarOverflow: getComputedStyle(sidebar).overflowY,
+      sidebarPosition: getComputedStyle(sidebar).position
+    };
+  });
+}
+
+test("C8 low desktop uses one document scroll owner for reachable sidebar, detail and settings content", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 520 });
+  await page.goto(fixturePath("detail"));
+
+  const state = await getLowDesktopScrollState(page);
+  expect(state).toMatchObject({
+    contentOverflow: "visible",
+    nestedOwners: [],
+    sidebarOverflow: "visible",
+    sidebarPosition: "static"
+  });
+  expect(state.documentExtra).toBeGreaterThan(0);
+
+  const sidebarTargets = page.locator(".sidebar .nav-item, .sidebar-support-link, .sidebar .sign-out-form button");
+  for (const target of await sidebarTargets.all()) {
+    await target.scrollIntoViewIfNeeded();
+    await expect(target).toBeInViewport();
+    expect(await page.evaluate(() => ({
+      content: document.querySelector<HTMLElement>(".content-area")!.scrollTop,
+      sidebar: document.querySelector<HTMLElement>(".sidebar")!.scrollTop
+    }))).toEqual({ content: 0, sidebar: 0 });
+  }
+
+  const detailEnd = page.getByText("KONEC DLOUHÉHO DETAILU SHELLU", { exact: true });
+  await detailEnd.scrollIntoViewIfNeeded();
+  await expect(detailEnd).toBeInViewport();
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => ({
+    content: document.querySelector<HTMLElement>(".content-area")!.scrollTop,
+    sidebar: document.querySelector<HTMLElement>(".sidebar")!.scrollTop
+  }))).toEqual({ content: 0, sidebar: 0 });
+  await expectNoHorizontalOverflow(page);
+
+  await page.goto(fixturePath("settings"));
+  const settingsState = await getLowDesktopScrollState(page);
+  expect(settingsState).toMatchObject({
+    contentOverflow: "visible",
+    nestedOwners: [],
+    sidebarOverflow: "visible",
+    sidebarPosition: "static"
+  });
+  expect(settingsState.documentExtra).toBeGreaterThan(0);
+  const settingsEnd = page.getByRole("button", { name: "Uložit nastavení" });
+  await settingsEnd.scrollIntoViewIfNeeded();
+  await expect(settingsEnd).toBeInViewport();
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => ({
+    content: document.querySelector<HTMLElement>(".content-area")!.scrollTop,
+    sidebar: document.querySelector<HTMLElement>(".sidebar")!.scrollTop
+  }))).toEqual({ content: 0, sidebar: 0 });
+  await expectNoHorizontalOverflow(page);
+});

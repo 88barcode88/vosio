@@ -63,6 +63,16 @@ for (const width of [375, 768, 1024, 1440]) {
     const main = row.locator(".recordings-row-main");
     const actions = row.locator(".recordings-row-actions");
     const [rowBox, mainBox, actionsBox] = await Promise.all([getBox(row), getBox(main), getBox(actions)]);
+    const [inboxBox, tableBox] = await Promise.all([
+      getBox(page.locator(".recordings-inbox")),
+      getBox(page.locator(".recordings-table"))
+    ]);
+    for (const box of [tableBox, rowBox, mainBox, actionsBox]) {
+      expect(box.x).toBeGreaterThanOrEqual(inboxBox.x - 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(inboxBox.x + inboxBox.width + 1);
+      expect(box.x).toBeGreaterThanOrEqual(-1);
+      expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+    }
     expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(width + 0.5);
     if (width <= 900) {
       expect(actionsBox.y).toBeGreaterThanOrEqual(mainBox.y + mainBox.height - 0.5);
@@ -86,7 +96,7 @@ for (const width of [375, 768, 1024, 1440]) {
       await expectNoHorizontalOverflow(page);
     }
     expect(colors[0]).not.toBe(colors[1]);
-    await page.screenshot({ path: testInfo.outputPath(`recordings-${width}.png`), fullPage: true });
+    await page.screenshot({ caret: "initial", path: testInfo.outputPath(`recordings-${width}.png`), fullPage: true });
   });
 }
 

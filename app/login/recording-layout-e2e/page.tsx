@@ -45,7 +45,7 @@ const fixtureAiOutputs: AiOutputView[] = [{
   output_json: { markdown: "E2E AI SENTINEL" },
   output_text: null,
   processing_job_id: "00000000-0000-4000-8000-000000000305",
-  processing_type: "summary",
+  processing_type: "follow_up_email",
   transcript_id: transcriptId,
   user_id: userId
 }];

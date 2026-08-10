@@ -12,14 +12,14 @@ export function normalizeTheme(value: string | null | undefined): ThemeMode {
   return value === "light" ? "light" : "dark";
 }
 
-// getThemeSnapshot reads the browser-backed theme shared by every mounted toggle.
+// getThemeSnapshot keeps the server-rendered cookie theme authoritative over stale browser storage.
 export function getThemeSnapshot(): ThemeMode {
   if (typeof window === "undefined") return "dark";
 
   try {
     return normalizeTheme(
-      window.localStorage.getItem(VOSIO_THEME_STORAGE_KEY)
-      ?? document.documentElement.dataset.theme
+      document.documentElement.dataset.theme
+      ?? window.localStorage.getItem(VOSIO_THEME_STORAGE_KEY)
     );
   } catch {
     return normalizeTheme(document.documentElement.dataset.theme);

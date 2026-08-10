@@ -1696,7 +1696,7 @@ export function BrowserRecorder({
                 ? "Spouštím nahrávání"
                 : "Probíhá nahrávání"}
           </strong>
-          <Link href="/recordings/new">Otevřít nahrávání</Link>
+          <Link data-touch-target="action" href="/recordings/new">Otevřít nahrávání</Link>
         </div>
       ) : null}
       {!compact && status === "idle" ? (

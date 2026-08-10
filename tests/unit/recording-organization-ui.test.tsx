@@ -447,7 +447,7 @@ describe("OrganizationManager", () => {
     expect(renameAction.mock.calls[0]?.[1].get("scopeKey")).toBe(clientA);
   });
 
-  it("uses a visual color picker and submits a blank hidden color after choosing neutral", async () => {
+  it("uses an accessible controlled color popover and preserves hidden form semantics", async () => {
     const createAction = vi.fn(async (state: SaveActionState, formData: FormData) =>
       createSaveSuccess(state.revision, String(formData.get("scopeKey")), "VytvoĹ™eno.")
     );
@@ -460,20 +460,21 @@ describe("OrganizationManager", () => {
     await act(async () => createClientButton?.click());
 
     const form = container.querySelector<HTMLFormElement>("form.organization-create-form");
-    const picker = form?.querySelector<HTMLInputElement>('input[type="color"]');
     const hiddenColor = form?.querySelector<HTMLInputElement>('input[type="hidden"][name="color"]');
     const nameInput = form?.querySelector<HTMLInputElement>('input[name="name"]');
-    expect(picker).not.toBeNull();
+    const pickerTrigger = form?.querySelector<HTMLButtonElement>('[aria-label="Vybrat barvu Přidat klienta"]');
+    expect(form?.querySelector('input[type="color"]')).toBeNull();
+    expect(pickerTrigger?.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(pickerTrigger?.getAttribute("aria-expanded")).toBe("false");
     expect(hiddenColor?.value).toBe("");
     expect(form?.querySelector('input[type="text"][name="color"]')).toBeNull();
 
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      setter?.call(picker, "#224466");
-      picker?.dispatchEvent(new Event("input", { bubbles: true }));
-      picker?.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await act(async () => pickerTrigger?.click());
+    expect(pickerTrigger?.getAttribute("aria-expanded")).toBe("true");
+    expect(form?.querySelector('[role="dialog"][aria-label="Barva Přidat klienta"]')).not.toBeNull();
+    await clickButton("Námořnická");
     expect(hiddenColor?.value).toBe("#224466");
+    await act(async () => pickerTrigger?.click());
     await clickButton("Bez barvy");
     expect(hiddenColor?.value).toBe("");
 
@@ -485,6 +486,102 @@ describe("OrganizationManager", () => {
 
     await submitForm("organization-create-form");
     expect(createAction.mock.calls[0]?.[1].get("color")).toBe("");
+  });
+
+  it("closes only the color picker on Escape or an outside pointer and keeps the draft", async () => {
+    await act(async () => root.render(<OrganizationManager options={options} />));
+    await clickButton("Přidat klienta");
+    const form = container.querySelector<HTMLFormElement>("form.organization-create-form");
+    const nameInput = form?.querySelector<HTMLInputElement>('input[name="name"]');
+    const pickerTrigger = form?.querySelector<HTMLButtonElement>('[aria-label="Vybrat barvu Přidat klienta"]');
+    if (!form || !nameInput || !pickerTrigger) throw new Error("Missing organization color fixture");
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(nameInput, "Rozepsaný klient");
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      pickerTrigger.click();
+    });
+    const dialog = form.querySelector<HTMLElement>('[role="dialog"][aria-label="Barva Přidat klienta"]');
+    await act(async () => dialog?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" })));
+    expect(form.isConnected).toBe(true);
+    expect(nameInput.value).toBe("Rozepsaný klient");
+    expect(document.activeElement).toBe(pickerTrigger);
+    expect(form.querySelector('[role="dialog"]')).toBeNull();
+
+    await act(async () => pickerTrigger.click());
+    nameInput.focus();
+    const outsidePointer = new Event("pointerdown", { bubbles: true, cancelable: true });
+    await act(async () => nameInput.dispatchEvent(outsidePointer));
+    expect(outsidePointer.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(nameInput);
+    expect(form.querySelector('[role="dialog"]')).toBeNull();
+    expect(nameInput.value).toBe("Rozepsaný klient");
+  });
+
+  it("keeps invalid custom HEX open and applies a valid arbitrary color with trigger focus", async () => {
+    await act(async () => root.render(<OrganizationManager options={options} />));
+    await clickButton("Přidat klienta");
+    const form = container.querySelector<HTMLFormElement>("form.organization-create-form");
+    const pickerTrigger = form?.querySelector<HTMLButtonElement>('[aria-label="Vybrat barvu Přidat klienta"]');
+    const hiddenColor = form?.querySelector<HTMLInputElement>('input[type="hidden"][name="color"]');
+    if (!form || !pickerTrigger || !hiddenColor) throw new Error("Missing custom color fixture");
+    await act(async () => pickerTrigger.click());
+    const customColor = form.querySelector<HTMLInputElement>('input[aria-label="Vlastní HEX barva"]');
+    if (!customColor) throw new Error("Missing custom HEX input");
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(customColor, "#12GG45");
+      customColor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await clickButton("Použít");
+    expect(hiddenColor.value).toBe("");
+    expect(form.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(form.querySelector('[role="alert"]')?.textContent).toContain("#RRGGBB");
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(customColor, "#13579B");
+      customColor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await clickButton("Použít");
+    expect(hiddenColor.value).toBe("#13579B");
+    expect(form.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(pickerTrigger);
+  });
+
+  it("round-trips an existing non-preset HEX and keeps picker ids unique", async () => {
+    await act(async () => root.render(<OrganizationManager options={options} />));
+    await clickButton("Přidat klienta");
+    await clickButton("Přejmenovat Acme");
+    const createTrigger = container.querySelector<HTMLButtonElement>(
+      '.organization-create-form [aria-label="Vybrat barvu Přidat klienta"]'
+    );
+    const renameTrigger = container.querySelector<HTMLButtonElement>(
+      '.organization-rename-form [aria-label="Vybrat barvu Přejmenovat Acme"]'
+    );
+    if (!createTrigger || !renameTrigger) throw new Error("Missing unique color picker fixture");
+    await act(async () => {
+      createTrigger.click();
+      renameTrigger.click();
+    });
+
+    expect(createTrigger.getAttribute("aria-controls")).not.toBe(renameTrigger.getAttribute("aria-controls"));
+    expect(document.getElementById(String(createTrigger.getAttribute("aria-controls")))).not.toBeNull();
+    expect(document.getElementById(String(renameTrigger.getAttribute("aria-controls")))).not.toBeNull();
+    const existingCustomColor = container.querySelector<HTMLInputElement>(
+      '.organization-rename-form input[aria-label="Vlastní HEX barva"]'
+    );
+    expect(existingCustomColor?.value).toBe("#112233");
+    const renameApply = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".organization-rename-form button")
+    ).find((button) => button.textContent === "Použít");
+    if (!renameApply) throw new Error("Missing rename HEX apply");
+    await act(async () => renameApply.click());
+    expect(container.querySelector<HTMLInputElement>('.organization-rename-form input[name="color"]')?.value)
+      .toBe("#112233");
+    expect(document.activeElement).toBe(renameTrigger);
   });
 
   it("renders each manager row as one colored badge without a separate color dot", async () => {

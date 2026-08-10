@@ -190,7 +190,7 @@ export function WorkspaceShellFixture({
       initialTranscriptTabFromCookie={isDetail}
       isCreatingRecording={view === "new"}
       navigationHrefOverrides={createFixtureNavigationOverrides(scope)}
-      recordings={isDetail ? [recording] : []}
+      recordings={view === "recordings" || isDetail ? [recording] : []}
       recordingStorageConfig={settingsFixtureStorage}
       settingsFormDisabled={view === "settings"}
       transcripts={isDetail ? [createFixtureTranscript()] : []}

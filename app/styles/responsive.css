@@ -748,3 +748,27 @@
     display: none;
   }
 }
+
+/* Short desktops use the document as the sole vertical scroll owner for both shell columns. */
+@media (min-width: 901px) and (max-height: 640px) {
+  .workspace-shell {
+    align-items: start;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+    min-height: 100dvh;
+    overflow-y: visible;
+  }
+
+  .content-area,
+  .content-area-recordings-list,
+  .content-area-document {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+    overflow-y: visible;
+    overscroll-behavior-y: auto;
+  }
+}

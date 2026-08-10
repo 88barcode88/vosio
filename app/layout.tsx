@@ -2,10 +2,11 @@ import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Inter, Newsreader } from "next/font/google";
 import { PwaRegistration } from "@/components/pwa-registration";
+import { ThemeStorageMigration } from "@/components/theme-storage-migration";
 import { PersistentRecordingSessionProvider } from "@/components/persistent-recording-session";
 import { RecordingNavigationGuardProvider } from "@/components/recording-navigation-guard";
 import { getVosioLicenseMarker } from "@/lib/license-marker";
-import { normalizeTheme, VOSIO_THEME_COOKIE, VOSIO_THEME_STORAGE_KEY } from "@/lib/theme";
+import { normalizeTheme, VOSIO_THEME_COOKIE } from "@/lib/theme";
 import "./globals.css";
 
 const inter = Inter({
@@ -19,18 +20,6 @@ const newsreader = Newsreader({
   subsets: ["latin", "latin-ext"],
   variable: "--font-heading"
 });
-
-const themeInitScript = `
-try {
-  var storedTheme = window.localStorage.getItem("${VOSIO_THEME_STORAGE_KEY}");
-  var cookieMatch = document.cookie.match(/(?:^|; )${VOSIO_THEME_COOKIE}=([^;]+)/);
-  var cookieTheme = cookieMatch ? decodeURIComponent(cookieMatch[1]) : null;
-  var theme = storedTheme || cookieTheme;
-  document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
-} catch (_) {
-  document.documentElement.dataset.theme = "dark";
-}
-`;
 
 export const metadata: Metadata = {
   applicationName: "Vosio",
@@ -70,14 +59,14 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
-  const initialTheme = normalizeTheme(cookieStore.get(VOSIO_THEME_COOKIE)?.value);
+  const storedTheme = cookieStore.get(VOSIO_THEME_COOKIE)?.value;
+  const initialTheme = normalizeTheme(storedTheme);
+  const themeSource = storedTheme === "dark" || storedTheme === "light" ? "cookie" : "default";
 
   return (
-    <html data-theme={initialTheme} lang="cs" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-      </head>
+    <html data-theme={initialTheme} data-theme-source={themeSource} lang="cs" suppressHydrationWarning>
       <body className={`${inter.variable} ${newsreader.variable}`}>
+        <ThemeStorageMigration />
         <RecordingNavigationGuardProvider>
           <PersistentRecordingSessionProvider>
             {children}

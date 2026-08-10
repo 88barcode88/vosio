@@ -4,6 +4,30 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
+## [0.1.31] - 2026-08-10
+
+### Added
+
+- Nový konzistentní Notion Warm workspace pro nahrávky, detail, prompty, AI archiv, nastavení, Koš a dokumentaci.
+- Samostatný plný detail nahrávky s přepisem, AI zpracováním, časovou osou a soubory.
+- Obnovení nahrávek z Koše, bezpečné permanentní mazání a česká stránka 404.
+- URL řízený editor promptů a sekundární AI archiv s filtrováním podle typu a nahrávky.
+
+### Changed
+
+- Nahrávky se otevírají přes název a dlouhý obsah používá responzivní pracovní plochu místo postranního detailu.
+- Správa nahrávek, filtry, capture workspace a nastavení jsou kompaktnější a použitelné na mobilu i menším desktopu.
+- Koš uchovává přesný původní stav a neměnný čas smazání; permanentní purge čeká 24 hodin kvůli TUS uploadům.
+
+### Fixed
+
+- Opakovaný posun přehrávače funguje bez nutnosti pohnout myší a klávesové ovládání drží aktuální ARIA hodnoty.
+- Nastavení a dlouhý detail mají dosažitelný obsah bez horizontálního přetékání.
+- Upload přijímá platný 33 MiB M4A i při obecném browser MIME a zachovává stabilní průběh.
+- Filtry klientů, projektů, složek a štítků používají kanonický URL stav a více štítků má ALL sémantiku.
+- Celé AI generace lze smazat a jednotlivé úkoly mají samostatnou kompaktní akci koše.
+- Route chyby a destruktivní akce nezobrazují interní provider nebo databázové detaily.
+
 ## [0.1.3] - 2026-08-07
 
 ### Added
