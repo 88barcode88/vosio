@@ -13,16 +13,21 @@ export default async function WorkspaceShellViewE2EPage({
   searchParams
 }: {
   params: Promise<{ view?: string }>;
-  searchParams: Promise<{ scope?: string }>;
+  searchParams: Promise<{ mode?: string | string[]; scope?: string }>;
 }) {
   if (process.env.NODE_ENV !== "development") {
     notFound();
   }
 
-  const [{ view }, { scope }] = await Promise.all([params, searchParams]);
+  const [{ view }, query] = await Promise.all([params, searchParams]);
+  const { scope } = query;
   if (!isWorkspaceShellFixtureScope(scope) || !isWorkspaceShellFixtureView(view)) {
     notFound();
   }
 
-  return <WorkspaceShellFixture scope={scope} view={view} />;
+  const mode = typeof query.mode === "string" && ["empty", "failure"].includes(query.mode)
+    ? query.mode as "empty" | "failure"
+    : "populated";
+
+  return <WorkspaceShellFixture scope={scope} trashMode={mode} view={view} />;
 }

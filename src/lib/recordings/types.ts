@@ -72,6 +72,7 @@ export type RecordingRow = {
   client_id: string | null;
   id: string;
   created_at: string;
+  deleted_at?: string | null;
   duration_seconds: number | null;
   error_message: string | null;
   file_size_bytes: number | null;

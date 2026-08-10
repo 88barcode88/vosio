@@ -5,10 +5,12 @@ import { defaultUserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
 import type { NavigationHrefOverrides, WorkspaceView } from "@/lib/workspace-data";
+import { inertTrashAction, rejectTrashAction } from "./actions";
 
 const recordingId = "00000000-0000-4000-8000-000000000601";
 const transcriptId = "00000000-0000-4000-8000-000000000602";
 const userId = "00000000-0000-4000-8000-000000000603";
+const deletedRecordingId = "00000000-0000-4000-8000-000000000604";
 const fixtureScopePattern = /^[0-9a-f]{12}$/;
 const fixtureViews = [
   "detail",
@@ -111,6 +113,35 @@ function createFixtureRecording(): RecordingRow {
   };
 }
 
+// createDeletedFixtureRecordings supplies safe local-only rows for Trash interaction and layout checks.
+function createDeletedFixtureRecordings(): RecordingRow[] {
+  return [
+    {
+      ...createFixtureRecording(),
+      deleted_at: "2026-08-09T12:00:00.000Z",
+      duration_seconds: 2_580,
+      file_size_bytes: 28_400_000,
+      id: deletedRecordingId,
+      mime_type: "audio/m4a",
+      source_type: "upload",
+      status: "deleted",
+      storage_path: `${userId}/${deletedRecordingId}/recording.m4a`,
+      title: "Produktový rozhovor k novému webu",
+      updated_at: "2026-08-09T12:10:00.000Z"
+    },
+    {
+      ...createFixtureRecording(),
+      deleted_at: "2026-08-08T09:00:00.000Z",
+      duration_seconds: 1_240,
+      file_size_bytes: null,
+      id: "00000000-0000-4000-8000-000000000605",
+      status: "deleted",
+      title: "Textový přepis bez audia",
+      updated_at: "2026-08-08T09:30:00.000Z"
+    }
+  ];
+}
+
 // createFixtureTranscript provides enough real transcript rows to require the intended inner scroll owner.
 function createFixtureTranscript(): TranscriptRow {
   return {
@@ -140,9 +171,11 @@ function getWorkspaceView(view: WorkspaceShellFixtureView): WorkspaceView {
 
 // WorkspaceShellFixture mounts the real Vosio shell with bounded local-only data and navigation.
 export function WorkspaceShellFixture({
+  trashMode = "populated",
   scope,
   view
 }: {
+  trashMode?: "empty" | "failure" | "populated";
   scope: string;
   view: WorkspaceShellFixtureView;
 }) {
@@ -153,6 +186,7 @@ export function WorkspaceShellFixture({
     <VosioWorkspace
       activeRecordingId={isDetail ? recording.id : undefined}
       aiOutputs={[]}
+      deletedRecordings={view === "trash" && trashMode !== "empty" ? createDeletedFixtureRecordings() : []}
       initialTranscriptTabFromCookie={isDetail}
       isCreatingRecording={view === "new"}
       navigationHrefOverrides={createFixtureNavigationOverrides(scope)}
@@ -160,6 +194,9 @@ export function WorkspaceShellFixture({
       recordingStorageConfig={settingsFixtureStorage}
       settingsFormDisabled={view === "settings"}
       transcripts={isDetail ? [createFixtureTranscript()] : []}
+      trashActionContext={{ fixtureScope: scope }}
+      trashPurgeAction={trashMode === "failure" ? rejectTrashAction : inertTrashAction}
+      trashRestoreAction={trashMode === "failure" ? rejectTrashAction : inertTrashAction}
       usageState={settingsFixtureUsage}
       userSettings={{ ...defaultUserSettings, supabaseStoragePlan: "free" }}
       userEmail="shell@example.cz"

@@ -30,7 +30,7 @@ const documentationSections: DocumentationSection[] = [
     body: [
       "Nahrávky jsou inbox všech uložených callů. Řádek se otevírá kliknutím, název jde upravit samostatně a smazání nejdřív přesune položku do Koše.",
       "U každé položky je vidět stav, zdroj, velikost a datum. Cílem je rychle najít správný call a přejít do detailu bez zbytečných tlačítek navíc.",
-      "Vyhledávání na stránce Nahrávky filtruje aktuální seznam podle názvu, stavu, zdroje a typu souboru. Hledání uvnitř celých transcriptů bude samostatný fulltextový krok s indexem."
+      "Vyhledávání na stránce Nahrávky umí prohledat názvy i uložené přepisy. Fulltext vrátí konkrétní úryvek a po otevření přejde na odpovídající místo v přepisu."
     ],
     id: "nahravky",
     kicker: "Seznam a detail callů",

@@ -42,6 +42,8 @@ Aktuální tlačítko koše u nahrávek dělá soft-delete změnou `recordings.s
 
 Trvalé mazání z Koše musí nejdřív ověřit vlastníka přes běžnou Supabase Auth session a až potom použít service role operace pro Storage a DB delete. Přímé klientské mazání storage objektu nestačí, protože permanent delete má odstranit i kaskádovaná data a nesmí umožnit smazat cizí objekt.
 
+Supabase TUS upload URL může zůstat platná až 24 hodin. `deleted_at` je proto po dobu pobytu v Koši neměnné a permanentní purge smí začít až při `deleted_at <= now() - 24 hodin`. Storage INSERT/UPDATE policy současně vyžaduje aktivní vlastněný řádek bez purge claimu. Purge po prvním mazání používá přesný claim token, znovu projde celý `{user_id}/{recording_id}/` prefix a pozdě dokončené objekty odstraní v omezeném počtu kol; při chybě nebo trvale neprázdném prefixu DB řádek nesmaže a claim po zahájení Storage mutace ponechá pro bezpečný retry.
+
 ## Browser MIME typy obsahují codec parametry
 
 MediaRecorder může vracet MIME typ ve tvaru `audio/webm;codecs=opus`. Supabase Storage bucket ale porovnává povolené MIME typy proti čistému typu jako `audio/webm`. Před validací, uložením metadat a uploadem do Storage je proto nutné MIME typ normalizovat odstraněním parametrů za středníkem.
@@ -159,6 +161,8 @@ Client `onSubmit` proběhne dřív, než server action potvrdí validaci, auth a
 ## Mazání je potvrzené a optimistické
 
 Destruktivní akce v UI musí mít potvrzovací dialog. Po potvrzení se položka ve frontendu schová okamžitě a server action doběhne na pozadí přes běžné revalidace/redirecty. Neočekávaný client-action reject musí obnovit přesně označený řádek nebo kartu a ukázat sanitizovanou chybu v plnošířkovém druhém řádku běžného toku layoutu; rozšíření desktop action sloupce nebo absolutní feedback uvnitř tabulky může obsah přetéct, oříznout nebo překrýt s dalším řádkem. Next redirect se propouští beze změny a cílová stránka ukáže stav podle databáze. Optimistické schování nesmí nahrazovat server-side autorizaci ani RLS.
+
+Trvalé smazání Storage objektu nesmí důvěřovat samotnému `recordings.storage_path`. Uživatel může přes běžné UPDATE oprávnění měnit vlastní řádek, proto purge musí před prvním Storage nebo DB delete krokem fail-closed ověřit prefix konkrétního uživatele i konkrétního `recording_id` a odmítnout zpětná lomítka, traversal a cestu jiné nahrávky.
 
 ## Mailto není plná mail integrace
 

@@ -1,10 +1,21 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
 import { listDeletedRecordings } from "@/lib/recordings/queries";
+import { canonicalizeTrashSearchParams, createTrashSearchParams } from "@/lib/recordings/trash-navigation";
 import { createClient } from "@/lib/supabase/server";
 
 // TrashPage renders soft-deleted recordings that are still visible through RLS.
-export default async function TrashPage() {
+export default async function TrashPage({
+  searchParams
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = await searchParams;
+  const canonical = canonicalizeTrashSearchParams(createTrashSearchParams(query));
+  if (canonical.changed) {
+    const suffix = canonical.searchParams.toString();
+    redirect(`/trash${suffix ? `?${suffix}` : ""}`);
+  }
   const supabase = await createClient();
   const {
     data: { user }
@@ -22,6 +33,7 @@ export default async function TrashPage() {
       deletedRecordings={deletedRecordings}
       recordings={[]}
       transcripts={[]}
+      trashActionAlert={canonical.actionAlert}
       userEmail={user.email ?? "uzivatel@vosio.local"}
       view="trash"
     />

@@ -239,7 +239,14 @@ export function Modal({ open, onClose, label, children, className }: ModalProps)
   if (!open) return null;
 
   return (
-    <div className="ui-modal-backdrop" onPointerDown={onClose} onKeyDown={handleKeyDown}>
+    <div
+      className="ui-modal-backdrop"
+      onPointerDown={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onKeyDown={handleKeyDown}
+    >
       <div
         ref={dialogRef}
         className={["ui-modal", className].filter(Boolean).join(" ")}

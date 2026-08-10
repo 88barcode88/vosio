@@ -6,6 +6,7 @@ export type RecordingAudioAvailability = "single" | "segmented" | "none";
 export type RecordingClientView = Pick<
   RecordingRow,
   | "created_at"
+  | "deleted_at"
   | "duration_seconds"
   | "file_size_bytes"
   | "id"
@@ -30,6 +31,7 @@ export function toRecordingClientView(recording: RecordingRow): RecordingClientV
   return {
     audioAvailability,
     created_at: recording.created_at,
+    deleted_at: recording.deleted_at ?? null,
     duration_seconds: recording.duration_seconds,
     file_size_bytes: recording.file_size_bytes,
     id: recording.id,

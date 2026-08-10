@@ -3,7 +3,8 @@ import { FileText, Sparkles, Trash2 } from "lucide-react";
 import { AiArchive } from "@/components/ai-archive";
 import { DocumentationPanel } from "@/components/documentation-panel";
 import { PromptTemplateEditor, type PromptTemplateActions } from "@/components/prompt-template-editor";
-import { PurgeRecordingForm } from "@/components/purge-recording-form";
+import { PurgeRecordingForm, type TrashRecordingAction } from "@/components/purge-recording-form";
+import { RestoreRecordingForm } from "@/components/restore-recording-form";
 import { SettingsPanel } from "@/components/settings-panel";
 import type { AiArchiveFilters } from "@/lib/ai/archive";
 import type { AiArchiveItem, AiOutputView } from "@/lib/ai/types";
@@ -43,6 +44,10 @@ type UtilityWorkspaceViewProps = {
   settings: UserSettings;
   settingsStatus: "error" | "saved" | null;
   templateStatus: "created" | "duplicated" | "error" | "saved" | null;
+  trashActionAlert?: string | null;
+  trashActionContext?: Record<string, string>;
+  trashPurgeAction?: TrashRecordingAction;
+  trashRestoreAction?: TrashRecordingAction;
   usageState?: CurrentMonthUsageState;
   view: "ai" | "templates" | "documentation" | "trash" | "settings";
 };
@@ -63,6 +68,10 @@ export function UtilityWorkspaceView({
   settingsFormDisabled = false,
   settings,
   settingsStatus,
+  trashActionAlert,
+  trashActionContext,
+  trashPurgeAction,
+  trashRestoreAction,
   usageState,
   view
 }: UtilityWorkspaceViewProps) {
@@ -124,7 +133,7 @@ export function UtilityWorkspaceView({
   }
 
   return (
-    <section className="utility-panel" aria-label="Koš">
+    <section className="utility-panel utility-panel-trash" aria-label="Koš">
       <div className="utility-header">
         <Trash2 size={18} />
         <div>
@@ -132,25 +141,43 @@ export function UtilityWorkspaceView({
           <p>Smazané nahrávky. Tady lze položku trvale odstranit včetně souboru, přepisu a AI výstupů.</p>
         </div>
       </div>
-      <div className="utility-list">
+      {trashActionAlert ? <p className="trash-route-alert" role="alert">{trashActionAlert}</p> : null}
+      <div className="utility-list trash-recording-list">
         {deletedRecordings.length > 0 ? deletedRecordings.map((recording) => (
-          <article className="utility-row" key={recording.id}>
-            <div>
+          <article className="trash-recording-row" data-recording-id={recording.id} key={recording.id}>
+            <div className="trash-recording-copy">
               <strong>{recording.title}</strong>
-              <span>{formatRecordingDate(recording.updated_at)}</span>
+              <p>
+                {formatFileSize(recording.file_size_bytes)} · {getRecordingAudioAvailabilityLabel(recording.audioAvailability)} · {recording.mime_type ?? "neznámý typ"}
+              </p>
             </div>
-            <p>
-              {formatFileSize(recording.file_size_bytes)} · {getRecordingAudioAvailabilityLabel(recording.audioAvailability)} · {recording.mime_type ?? "neznámý typ"}
-            </p>
-            <PurgeRecordingForm recordingId={recording.id} />
+            <time dateTime={recording.deleted_at ?? recording.updated_at}>
+              {formatRecordingDate(recording.deleted_at ?? recording.updated_at)}
+            </time>
+            <div className="trash-recording-actions">
+              <RestoreRecordingForm
+                actionContext={trashActionContext}
+                recordingId={recording.id}
+                restoreAction={trashRestoreAction}
+              />
+              <PurgeRecordingForm
+                actionContext={trashActionContext}
+                purgeAction={trashPurgeAction}
+                recordingId={recording.id}
+              />
+            </div>
           </article>
-        )) : <EmptyUtilityState text="Koš je prázdný. Aktivní nahrávky zůstávají v hlavní pracovní ploše." />}
+        )) : (
+          <article className="utility-empty trash-empty-state">
+            <strong>Koš je prázdný</strong>
+            <p>Aktivní nahrávky zůstávají v hlavní pracovní ploše.</p>
+            <div>
+              <Link href="/recordings">Nahrávky</Link>
+              <Link href="/recordings/new">Nová nahrávka</Link>
+            </div>
+          </article>
+        )}
       </div>
     </section>
   );
-}
-
-// EmptyUtilityState renders a compact empty state for secondary workspace pages.
-function EmptyUtilityState({ text }: { text: string }) {
-  return <article className="utility-empty"><strong>Bez dat</strong><p>{text}</p></article>;
 }

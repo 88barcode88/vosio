@@ -229,6 +229,8 @@ Formát storage path:
 {user_id}/{recording_id}/{filename}
 ```
 
+Authenticated INSERT/UPDATE do bucketu navíc ověřuje, že druhý segment je ID vlastněného řádku `recordings`, jeho stav není `deleted` a nemá aktivní purge claim. Service role tímto omezením není dotčená. Permanentní purge používá neměnné `deleted_at` a inkluzivní hranici 24 hodin kvůli maximální platnosti Supabase TUS URL; před DB delete opakovaně ověří prázdný prefix celé nahrávky.
+
 Nová live nahrávka pod limitem používá jeden finální objekt:
 
 ```text

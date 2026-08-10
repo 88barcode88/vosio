@@ -79,3 +79,12 @@
 - Nepřidávej historické sekce typu "v1", "updated" nebo "changed".
 - Po behavior change aktualizuj odpovídající dokument.
 - `docs/requirements/` drž jako aktuální specifikaci cílových funkcí.
+
+## Verze a release
+
+- `package.json` je jediný zdroj verze; UI ji pouze importuje.
+- Používej Semantic Versioning a pro každou vydanou verzi přidej datovaný záznam do `CHANGELOG.md`.
+- Release metadata drž v samostatném commitu po feature commitech, které popisují.
+- Tag, push, deploy a databázový postflight jsou oddělené stavy a reportují se zvlášť.
+
+Forward migrace `20260810005550_restore_recordings_from_trash.sql` je source-only změna, dokud neproběhne samostatně schválený apply a postflight na konkrétním Supabase targetu. Lokální test ani build její aplikaci na vzdálenou databázi neprokazuje.

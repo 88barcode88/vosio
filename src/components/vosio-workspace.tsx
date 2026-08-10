@@ -35,6 +35,7 @@ import type { TranscriptTab } from "@/components/transcript-tabs/types";
 import type { ResolvedTranscriptDeepLink } from "@/lib/transcripts/deep-link";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
 import type { NavigationHrefOverrides, WorkspaceView } from "@/lib/workspace-data";
+import type { TrashRecordingAction } from "@/components/purge-recording-form";
 
 type VosioWorkspaceProps = {
   activeRecordingId?: string;
@@ -74,6 +75,10 @@ type VosioWorkspaceProps = {
   settingsFormDisabled?: boolean;
   structuredItems?: StructuredAiItems;
   templateStatus?: "created" | "duplicated" | "error" | "saved" | null;
+  trashActionAlert?: string | null;
+  trashActionContext?: Record<string, string>;
+  trashPurgeAction?: TrashRecordingAction;
+  trashRestoreAction?: TrashRecordingAction;
   transcripts: TranscriptRow[];
   transcriptSearchWarning?: boolean;
   usageState?: CurrentMonthUsageState;
@@ -144,6 +149,10 @@ export function VosioWorkspace({
   settingsFormDisabled = false,
   structuredItems = getEmptyStructuredAiItems(),
   templateStatus = null,
+  trashActionAlert = null,
+  trashActionContext,
+  trashPurgeAction,
+  trashRestoreAction,
   transcripts,
   transcriptSearchWarning = false,
   usageState,
@@ -227,6 +236,10 @@ export function VosioWorkspace({
               settingsFormDisabled={settingsFormDisabled}
               settingsStatus={settingsStatus}
               templateStatus={templateStatus}
+              trashActionAlert={trashActionAlert}
+              trashActionContext={trashActionContext}
+              trashPurgeAction={trashPurgeAction}
+              trashRestoreAction={trashRestoreAction}
               usageState={usageState}
               view={view}
             />

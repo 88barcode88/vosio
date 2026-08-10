@@ -44,6 +44,127 @@ test("the shell fixture rejects missing, malformed and unknown scoped routes", a
     .toBe(404);
 });
 
+test("C7 invalid guarded view renders the Czech product 404", async ({ page }) => {
+  await page.goto(`/login/workspace-shell-e2e/unknown?scope=${createFixtureScope()}`);
+  await expect(page.getByRole("heading", { name: "Stránka nebyla nalezena" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Nahrávky" })).toHaveAttribute("href", "/recordings");
+  await expect(page.getByRole("link", { name: "Nová nahrávka" })).toHaveAttribute("href", "/recordings/new");
+});
+
+for (const width of [375, 768, 1024, 1440]) {
+  test(`C7 Trash stays compact, touch-safe and single-scroll at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto(fixturePath("trash"));
+
+    await expect(page.getByRole("heading", { name: "Koš" })).toBeVisible();
+    await expect(page.locator(".trash-recording-row")).toHaveCount(2);
+    for (const button of await page.locator(".trash-recording-row button").all()) {
+      const box = await getBox(button);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    await expectNoHorizontalOverflow(page);
+    const scrollOwners = await page.evaluate(() => {
+      const content = document.querySelector<HTMLElement>(".content-area")!;
+      return Number(document.documentElement.scrollHeight > document.documentElement.clientHeight)
+        + Number(["auto", "scroll"].includes(getComputedStyle(content).overflowY)
+          && content.scrollHeight > content.clientHeight);
+    });
+    expect(scrollOwners).toBeLessThanOrEqual(1);
+    if (width === 375 || width === 1024) {
+      await page.screenshot({ path: testInfo.outputPath(`trash-${width}.png`), fullPage: true });
+      await page.evaluate(() => window.localStorage.setItem("vosio-theme", "light"));
+      await page.reload();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+      await expectNoHorizontalOverflow(page);
+      await page.screenshot({ path: testInfo.outputPath(`trash-${width}-light.png`), fullPage: true });
+    }
+  });
+
+  test(`C7 documentation keeps readable anchors without horizontal overflow at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto(fixturePath("documentation"));
+
+    const links = page.locator(".documentation-topics a");
+    expect(await links.count()).toBeGreaterThan(3);
+    const firstHref = await links.first().getAttribute("href");
+    expect(firstHref).toMatch(/^#[a-z0-9-]+$/u);
+    await links.first().click();
+    await expect(page).toHaveURL(new RegExp(`${firstHref}$`, "u"));
+    await expectNoHorizontalOverflow(page);
+    if (width <= 900) {
+      const topics = page.locator(".documentation-topics");
+      expect(await topics.evaluate((element) => getComputedStyle(element).overflowX)).toBe("visible");
+      expect(await topics.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+      const topicBox = await topics.boundingBox();
+      expect(topicBox).not.toBeNull();
+      for (const link of await links.all()) {
+        const linkBox = await link.boundingBox();
+        expect(linkBox).not.toBeNull();
+        expect(linkBox!.x).toBeGreaterThanOrEqual(topicBox!.x - 1);
+        expect(linkBox!.x + linkBox!.width).toBeLessThanOrEqual(topicBox!.x + topicBox!.width + 1);
+        expect(linkBox!.height).toBeGreaterThanOrEqual(44);
+      }
+    }
+  });
+}
+
+test("C7 Trash restore and purge failures restore only their exact rows with sanitized feedback", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 760 });
+  await page.goto(`${fixturePath("trash")}&mode=failure`);
+  const rows = page.locator(".trash-recording-row");
+  const first = rows.first();
+  const second = rows.nth(1);
+
+  await first.getByRole("button", { name: "Obnovit" }).click();
+  await expect(first).toHaveAttribute("data-optimistic-deleted", "true");
+  await expect(second).toBeVisible();
+  await expect(first.getByRole("alert")).toContainText("nepodařilo obnovit");
+  await expect(first).not.toHaveAttribute("data-optimistic-deleted", "true");
+  await expect(first).not.toContainText("fixture-private-trash-failure");
+
+  await page.reload();
+  const purgeRow = page.locator(".trash-recording-row").first();
+  const purgeSibling = page.locator(".trash-recording-row").nth(1);
+  const purgeOpener = purgeRow.getByRole("button", { name: "Smazat trvale" });
+  await purgeOpener.focus();
+  await purgeOpener.click();
+  let dialog = page.getByRole("dialog", { name: "Trvale smazat nahrávku" });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(purgeOpener).toBeFocused();
+
+  await purgeOpener.click();
+  dialog = page.getByRole("dialog", { name: "Trvale smazat nahrávku" });
+  await page.locator(".ui-modal-backdrop").click({ position: { x: 4, y: 4 } });
+  await expect(dialog).toBeHidden();
+  await expect(purgeOpener).toBeFocused();
+
+  await purgeOpener.click();
+  dialog = page.getByRole("dialog", { name: "Trvale smazat nahrávku" });
+  await dialog.getByRole("button", { name: "Smazat trvale" }).click();
+  await expect(purgeRow).toHaveAttribute("data-optimistic-deleted", "true");
+  await expect(purgeRow.getByRole("alert")).toContainText("nepodařilo trvale smazat");
+  await expect(purgeRow).not.toHaveAttribute("data-optimistic-deleted", "true");
+  await expect(purgeSibling).toBeVisible();
+});
+
+test("C7 Trash success hides only the chosen row and empty mode offers both recovery paths", async ({ page }) => {
+  const scope = createFixtureScope();
+  await page.setViewportSize({ width: 768, height: 760 });
+  await page.goto(fixturePath("trash", scope));
+  const rows = page.locator(".trash-recording-row");
+  await rows.first().getByRole("button", { name: "Obnovit" }).click();
+  await expect(rows.first()).toHaveAttribute("data-optimistic-deleted", "true");
+  await expect(rows.nth(1)).toBeVisible();
+
+  await page.goto(`${fixturePath("trash", scope)}&mode=empty`);
+  await expect(page.getByText("Koš je prázdný", { exact: true })).toBeVisible();
+  const emptyState = page.locator(".trash-empty-state");
+  await expect(emptyState.getByRole("link", { name: "Nahrávky" })).toBeVisible();
+  await expect(emptyState.getByRole("link", { name: "Nová nahrávka" })).toBeVisible();
+});
+
 for (const width of [375, 768]) {
   test(`mobile navigation is exact and touch-safe at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 760 });
