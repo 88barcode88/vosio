@@ -1,11 +1,9 @@
 import { createClient } from "@/lib/supabase/browser";
 import {
-  ACCEPTED_RECORDING_MIME_TYPES,
   RECORDINGS_BUCKET,
   SEGMENTED_RECORDING_STORAGE_FOLDER,
   formatFileSize,
-  getRecordingContentType,
-  type AcceptedRecordingMimeType
+  getRecordingContentType
 } from "@/lib/recordings/types";
 import {
   createResumableRecordingUpload,
@@ -15,6 +13,7 @@ import {
 } from "@/lib/recordings/resumable-upload";
 
 export type UploadRecordingInput = {
+  allowedMimeTypes: readonly string[];
   file: File;
   maxFileSizeBytes: number;
   onPhase?: (phase: UploadRecordingPhase) => void;
@@ -73,22 +72,25 @@ export function getRecordingTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "").trim() || "Nová nahrávka";
 }
 
-// isAcceptedAudio checks whether an audio or MP4 recording file is supported for upload.
-export function isAcceptedAudio(file: File) {
-  return ACCEPTED_RECORDING_MIME_TYPES.includes(
-    getRecordingContentType(file) as AcceptedRecordingMimeType
-  );
+export const unsupportedRecordingMimeMessage =
+  "Soubor nemá podporovaný MIME typ. Vyberte M4A, MP3, WAV, WebM, OGG, FLAC nebo MP4.";
+
+// isAcceptedAudio checks the explicit MIME against the runtime Supabase bucket allowlist.
+export function isAcceptedAudio(file: File, allowedMimeTypes: readonly string[]) {
+  return allowedMimeTypes.includes(getRecordingContentType(file, allowedMimeTypes));
 }
 
 // validateAudioFile returns a user-facing error when a recording file cannot be uploaded.
-export function validateAudioFile(file: File, maxFileSizeBytes: number | null) {
-  if (!isAcceptedAudio(file)) {
-    return "Vyberte podporovaný audio soubor nebo MP4 video.";
-  }
-
-  if (maxFileSizeBytes === null) {
+export function validateAudioFile(
+  file: File,
+  maxFileSizeBytes: number | null,
+  allowedMimeTypes: readonly string[] | null
+) {
+  if (maxFileSizeBytes === null || allowedMimeTypes === null || allowedMimeTypes.length === 0) {
     return "Nahrávání souborů teď není dostupné.";
   }
+
+  if (!isAcceptedAudio(file, allowedMimeTypes)) return unsupportedRecordingMimeMessage;
 
   if (file.size > maxFileSizeBytes) {
     return `Soubor je větší než ${formatFileSize(maxFileSizeBytes)}.`;
@@ -127,13 +129,13 @@ async function markRecordingUploadFailed(input: {
 // uploadRecording creates metadata first, transfers audio with TUS, then finalizes the recording row.
 export async function uploadRecording(input: UploadRecordingInput): Promise<UploadRecordingResult> {
   const supabase = createClient();
-  const validationError = validateAudioFile(input.file, input.maxFileSizeBytes);
+  const validationError = validateAudioFile(input.file, input.maxFileSizeBytes, input.allowedMimeTypes);
 
   if (validationError) {
     throw new Error(validationError);
   }
 
-  const contentType = getRecordingContentType(input.file);
+  const contentType = getRecordingContentType(input.file, input.allowedMimeTypes);
   const {
     data: { user },
     error: userError

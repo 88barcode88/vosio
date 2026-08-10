@@ -27,7 +27,7 @@ test("desktop prompt master-detail and mobile Back preserve URL history", async 
   await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("template")));
   await expect(page.getByRole("heading", { level: 2, name: "Obchodní follow-up" })).toBeVisible();
   await expect(page.locator(".prompt-advanced-fields")).not.toHaveAttribute("open", "");
-  await page.screenshot({ fullPage: true, path: testInfo.outputPath("prompts-desktop.png") });
+  await page.screenshot({ caret: "initial", fullPage: true, path: testInfo.outputPath("prompts-desktop.png") });
 
   await page.setViewportSize({ width: 375, height: 760 });
   await expect(page.locator(".prompt-master")).toBeHidden();
@@ -99,7 +99,7 @@ test("archive filters use URL history and recording links distinguish active and
   await page.goto(fixtureHref("ai"));
   await expect(page.getByRole("heading", { level: 1, name: "AI archiv" })).toBeVisible();
   await expect(page.locator(".ai-archive-row")).toHaveCount(2);
-  await page.screenshot({ fullPage: true, path: testInfo.outputPath("ai-archive.png") });
+  await page.screenshot({ caret: "initial", fullPage: true, path: testInfo.outputPath("ai-archive.png") });
   await page.getByLabel("Filtrovat podle typu výstupu").selectOption("summary");
   await expect(page).toHaveURL((url) => url.searchParams.get("type") === "summary");
   await expect(page.locator(".ai-archive-row")).toHaveCount(1);

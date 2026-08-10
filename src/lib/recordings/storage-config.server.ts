@@ -19,7 +19,7 @@ export async function getRecordingStorageConfig(
       return createUnavailableRecordingStorageConfig(plan);
     }
 
-    return resolveRecordingStorageConfig(bucket.file_size_limit, plan);
+    return resolveRecordingStorageConfig(bucket.file_size_limit, bucket.allowed_mime_types, plan);
   } catch {
     return createUnavailableRecordingStorageConfig(plan);
   }

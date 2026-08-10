@@ -221,7 +221,7 @@ Bucket:
 - `recordings`
 - private
 - baseline per-bucket limit 50 MB na soubor (`52428800` bytes); runtime aplikace načítá aktuální `file_size_limit`, takže placený projekt může použít vyšší hodnotu v mezích svého globálního Storage limitu
-- povolené audio MIME typy: AAC, FLAC, MP4/M4A, MPEG/MP3, OGG, WAV, WEBM
+- baseline bucket obsahuje historicky širší Soniox MIME allowlist včetně AAC, AIFF, AMR a ASF; produktový upload z něj runtime používá pouze průnik s běžným katalogem M4A, MP3, WAV, WebM, OGG, FLAC a MP4
 
 Formát storage path:
 

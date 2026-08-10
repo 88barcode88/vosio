@@ -9,6 +9,7 @@ describe("recording Storage copy", () => {
     expect(
       getRecordingStorageLimitSummary(
         {
+          allowedMimeTypes: ["audio/mpeg"],
           bucketMaxFileSizeBytes: 100 * MEBIBYTE,
           detectedGlobalMaxFileSizeBytes: null,
           maxFileSizeBytes: 50 * MEBIBYTE,
@@ -30,6 +31,7 @@ describe("recording Storage copy", () => {
     expect(
       getRecordingStorageLimitSummary(
         {
+          allowedMimeTypes: ["audio/mpeg"],
           bucketMaxFileSizeBytes: 50 * MEBIBYTE,
           detectedGlobalMaxFileSizeBytes: null,
           maxFileSizeBytes: 50 * MEBIBYTE,
@@ -50,6 +52,7 @@ describe("recording Storage copy", () => {
     expect(
       getRecordingStorageLimitSummary(
         {
+          allowedMimeTypes: null,
           bucketMaxFileSizeBytes: null,
           detectedGlobalMaxFileSizeBytes: null,
           maxFileSizeBytes: null,

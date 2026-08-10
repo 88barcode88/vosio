@@ -1,6 +1,6 @@
 import { VosioWorkspace } from "@/components/vosio-workspace";
 import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
-import type { RecordingRow } from "@/lib/recordings/types";
+import { ACCEPTED_RECORDING_MIME_TYPES, type RecordingRow } from "@/lib/recordings/types";
 import { defaultUserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
@@ -23,6 +23,7 @@ const fixtureViews = [
 ] as const;
 
 const settingsFixtureStorage: RecordingStorageConfig = {
+  allowedMimeTypes: [...ACCEPTED_RECORDING_MIME_TYPES],
   bucketMaxFileSizeBytes: 100 * 1024 * 1024,
   detectedGlobalMaxFileSizeBytes: null,
   maxFileSizeBytes: 50 * 1024 * 1024,

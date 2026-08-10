@@ -22,11 +22,12 @@ describe("recording storage config server query", () => {
 
   it("applies the Free ceiling to the recordings bucket limit", async () => {
     getBucket.mockResolvedValue({
-      data: { file_size_limit: 100 * MEBIBYTE },
+      data: { allowed_mime_types: ["audio/mpeg", "video/mp4"], file_size_limit: 100 * MEBIBYTE },
       error: null
     });
 
     await expect(getRecordingStorageConfig("free")).resolves.toEqual({
+      allowedMimeTypes: ["audio/mpeg", "video/mp4"],
       bucketMaxFileSizeBytes: 100 * MEBIBYTE,
       detectedGlobalMaxFileSizeBytes: null,
       maxFileSizeBytes: 50 * MEBIBYTE,
@@ -42,10 +43,23 @@ describe("recording storage config server query", () => {
     });
 
     await expect(getRecordingStorageConfig("paid")).resolves.toEqual({
+      allowedMimeTypes: null,
       bucketMaxFileSizeBytes: null,
       detectedGlobalMaxFileSizeBytes: null,
       maxFileSizeBytes: null,
       planMaxFileSizeBytes: 500 * GIBIBYTE
+    });
+  });
+
+  it("fails closed when the bucket has no explicit MIME allowlist", async () => {
+    getBucket.mockResolvedValue({
+      data: { allowed_mime_types: null, file_size_limit: 100 * MEBIBYTE },
+      error: null
+    });
+
+    await expect(getRecordingStorageConfig("auto")).resolves.toMatchObject({
+      allowedMimeTypes: null,
+      maxFileSizeBytes: null
     });
   });
 });

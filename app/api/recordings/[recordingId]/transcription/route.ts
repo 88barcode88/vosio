@@ -10,7 +10,11 @@ import {
   getSonioxTranscription,
   mapSonioxStatus
 } from "@/lib/soniox/client";
-import { RECORDINGS_BUCKET, isSegmentedRecordingStoragePath } from "@/lib/recordings/types";
+import {
+  RECORDINGS_BUCKET,
+  isSegmentedRecordingStoragePath,
+  isSupportedRecordingMimeType
+} from "@/lib/recordings/types";
 import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
 import { getTranscriptSearchWarningPayload } from "@/lib/transcripts/search-warning";
 import { extractTranscriptSpeakerSummaries } from "@/lib/transcripts/speakers";
@@ -58,7 +62,7 @@ async function getAuthenticatedRecording(recordingId: string) {
 
   const { data: recording, error: recordingError } = await supabase
     .from("recordings")
-    .select("id,user_id,title,storage_path,status")
+    .select("id,user_id,title,storage_path,mime_type,status")
     .eq("id", recordingId)
     .eq("user_id", user.id)
     .single();
@@ -524,6 +528,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const shouldRestart = request.nextUrl.searchParams.get("restart") === "1";
     const admin = createAdminClient();
     const isSegmentedRecording = isSegmentedRecordingStoragePath(recording.storage_path);
+
+    if (!isSegmentedRecording && !isSupportedRecordingMimeType(recording.mime_type)) {
+      return NextResponse.json({ error: "Nahrávka nemá podporovaný formát pro přepis." }, { status: 409 });
+    }
 
     if (shouldRestart) {
       await resetRecordingTranscriptionState({

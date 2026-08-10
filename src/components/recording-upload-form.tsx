@@ -2,13 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Files, RotateCcw, Upload, X } from "lucide-react";
+import { RotateCcw, Upload, X } from "lucide-react";
 import { useRecordingNavigationBlocker } from "@/components/recording-navigation-guard";
-import { formatFileSize, RECORDING_FILE_ACCEPT } from "@/lib/recordings/types";
+import {
+  formatFileSize,
+  getRecordingFileAccept,
+  getRecordingFormatSummary
+} from "@/lib/recordings/types";
 import { createUploadOperationGuard, createUploadQueue } from "@/lib/recordings/upload-queue";
 import { createUploadProgressTracker, type AggregateUploadProgress } from "@/lib/recordings/upload-progress";
 import type { RecordingUploadProgress } from "@/lib/recordings/resumable-upload";
-import { uploadRecording, validateAudioFile } from "@/lib/recordings/upload";
+import {
+  unsupportedRecordingMimeMessage,
+  uploadRecording,
+  validateAudioFile
+} from "@/lib/recordings/upload";
 
 type UploadState = {
   message: string;
@@ -36,11 +44,12 @@ const safeExactUploadMessages = new Set([
   "Přihlášení vypršelo. Přihlaste se znovu.",
   "Soubor je uložený, ale metadata se neuložila.",
   `Soubor je uložený, ale metadata se neuložila.${failedStateSuffix}`,
-  "Vyberte podporovaný audio soubor nebo MP4 video."
+  unsupportedRecordingMimeMessage
 ]);
 const safeFileSizeMessagePattern = /^Soubor je větší než (?:(?:povolených )?\d+(?:[.,]\d+)? (?:B|KB|MB|GB)\.)(?: Vyberte menší soubor\.)?$/u;
 
 type RecordingUploadFormProps = {
+  allowedMimeTypes: readonly string[] | null;
   maxFileSizeBytes: number | null;
   redirectAfterUpload?: "detail" | "list" | "stay";
   uploadTransport?: RecordingUploadTransport;
@@ -82,12 +91,12 @@ function summarizeSelectedFiles(files: File[]): SelectedFileSummary {
 
 // RecordingUploadForm uploads selected audio and keeps progress and terminal states in one stable surface.
 export function RecordingUploadForm({
+  allowedMimeTypes,
   maxFileSizeBytes,
   redirectAfterUpload,
   uploadTransport = uploadRecording
 }: RecordingUploadFormProps) {
   const filteredInputRef = useRef<HTMLInputElement>(null);
-  const unfilteredInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
   const operationGuardRef = useRef<ReturnType<typeof createUploadOperationGuard> | null>(null);
   const retryFilesRef = useRef<File[]>([]);
@@ -124,7 +133,7 @@ export function RecordingUploadForm({
 
   // processFiles performs the authenticated serial upload flow for a browser selection or retry.
   async function processFiles(files: File[]) {
-    if (maxFileSizeBytes === null || files.length === 0 || isUploading) return;
+    if (maxFileSizeBytes === null || allowedMimeTypes === null || files.length === 0 || isUploading) return;
 
     retryFilesRef.current = files;
     setSelectedFiles(summarizeSelectedFiles(files));
@@ -135,7 +144,9 @@ export function RecordingUploadForm({
     setCurrentFileProgress(null);
     setProgress(null);
 
-    const validationError = files.map((file) => validateAudioFile(file, maxFileSizeBytes)).find(Boolean);
+    const validationError = files
+      .map((file) => validateAudioFile(file, maxFileSizeBytes, allowedMimeTypes))
+      .find(Boolean);
     if (validationError) {
       setPhase("error");
       setUploadState({ message: validationError, tone: "error" });
@@ -168,6 +179,7 @@ export function RecordingUploadForm({
         }
 
         const uploadedRecording = await uploadTransport({
+          allowedMimeTypes,
           file,
           maxFileSizeBytes,
           onPhase: (nextPhase) => {
@@ -258,48 +270,34 @@ export function RecordingUploadForm({
   const totalProgressValue = progress?.bytesSent ?? 0;
   const totalProgressMax = progress?.bytesTotal || selectedFiles?.totalSize || 1;
   const fileLabel = selectedFiles?.name ?? "Zatím nebyl vybrán soubor";
+  const enabledMimeTypes = allowedMimeTypes ?? [];
+  const fileAccept = getRecordingFileAccept(enabledMimeTypes);
+  const formatSummary = getRecordingFormatSummary(enabledMimeTypes);
+  const uploadAvailable = maxFileSizeBytes !== null && enabledMimeTypes.length > 0;
 
   return (
     <div aria-busy={isUploading} className="real-upload" data-phase={phase}>
       <input
-        accept={RECORDING_FILE_ACCEPT.join(",")}
+        accept={fileAccept}
         className="visually-hidden"
-        disabled={isUploading || maxFileSizeBytes === null}
+        disabled={isUploading || !uploadAvailable}
         multiple
         onChange={handleFileChange}
         ref={filteredInputRef}
         type="file"
       />
-      <input
-        className="visually-hidden"
-        disabled={isUploading || maxFileSizeBytes === null}
-        multiple
-        onChange={handleFileChange}
-        ref={unfilteredInputRef}
-        type="file"
-      />
-
       <div className="upload-dropzone" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
         <Upload aria-hidden="true" size={22} />
-        <strong>Přetáhněte audio nebo MP4 sem</strong>
-        <span>nebo vyberte soubor ze zařízení</span>
+        <strong>Přetáhněte zvukový záznam nebo MP4 sem</strong>
+        <span>{formatSummary}</span>
         <div className="real-upload-actions">
           <button
-            disabled={isUploading || maxFileSizeBytes === null}
+            disabled={isUploading || !uploadAvailable}
             onClick={() => filteredInputRef.current?.click()}
             type="button"
           >
             <Upload aria-hidden="true" size={18} />
             Vybrat soubor
-          </button>
-          <button
-            className="secondary-upload-button"
-            disabled={isUploading || maxFileSizeBytes === null}
-            onClick={() => unfilteredInputRef.current?.click()}
-            type="button"
-          >
-            <Files aria-hidden="true" size={18} />
-            Vybrat jiný typ
           </button>
         </div>
       </div>

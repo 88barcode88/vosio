@@ -1212,7 +1212,7 @@ export function BrowserRecorder({
     audioStorage:
       | "supabase_recording_segments"
       | "supabase_recording_upload"
-      | "transcript_only" = "supabase_recording_segments"
+      | "transcript_only"
   ) {
     if (!rawText) {
       throw new Error("Live přepis nevrátil žádný text.");

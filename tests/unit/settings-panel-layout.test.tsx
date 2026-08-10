@@ -11,6 +11,7 @@ vi.mock("@/lib/settings/actions", () => ({
 }));
 
 const storageConfig = {
+  allowedMimeTypes: ["audio/mpeg"],
   bucketMaxFileSizeBytes: 100 * 1024 * 1024,
   detectedGlobalMaxFileSizeBytes: null,
   maxFileSizeBytes: 50 * 1024 * 1024,

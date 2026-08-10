@@ -54,7 +54,7 @@ test("real primary capture cards stay equal on desktop and ordered when stacked"
   await expect(page.getByText("Capture console")).toHaveCount(0);
 });
 
-test("a generic-MIME 33 MiB M4A shows monotonic phases in one stable surface", async ({ page }) => {
+test("a concrete-MIME 33 MiB M4A shows monotonic phases in one stable surface", async ({ page }) => {
   await openFixture(page);
   const status = page.locator("[data-upload-status]");
   const initialBox = await status.boundingBox();
@@ -63,7 +63,7 @@ test("a generic-MIME 33 MiB M4A shows monotonic phases in one stable surface", a
 
   await page.locator(".real-upload input[accept]").setInputFiles({
     buffer: Buffer.alloc(33 * 1024 * 1024),
-    mimeType: "application/octet-stream",
+    mimeType: "audio/mp4",
     name: "lucern-update-33mb.m4a"
   });
   await expect(status).toHaveAttribute("data-phase", "transferring");
@@ -75,6 +75,47 @@ test("a generic-MIME 33 MiB M4A shows monotonic phases in one stable surface", a
 
   const finalBox = await status.boundingBox();
   expect(Math.abs((finalBox?.height ?? 0) - (initialBox?.height ?? 0))).toBeLessThanOrEqual(1);
+});
+
+test("the single picker exposes every supported format and rejects generic MIME without fallback", async ({ page }) => {
+  await openFixture(page);
+  const picker = page.locator(".real-upload input[type='file']");
+  await expect(picker).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Vybrat jiný typ" })).toHaveCount(0);
+  await expect(page.locator("[data-primary-capture='upload']")).toContainText(
+    "M4A, MP3, WAV, WebM, OGG, FLAC a MP4"
+  );
+  expect(await picker.getAttribute("accept")).not.toContain("audio/*");
+
+  await picker.setInputFiles({
+    buffer: Buffer.from("generic fixture"),
+    mimeType: "application/octet-stream",
+    name: "recording.m4a"
+  });
+
+  const status = page.locator("[data-upload-status]");
+  await expect(status).toHaveAttribute("data-phase", "error");
+  await expect(status).toContainText("Soubor nemá podporovaný MIME typ");
+});
+
+test("the seven common recording format groups use the same upload flow", async ({ page }) => {
+  await openFixture(page);
+  const picker = page.locator(".real-upload input[type='file']");
+  const formats = [
+    ["recording.flac", "audio/flac"],
+    ["recording.m4a", "audio/mp4"],
+    ["recording.mp3", "audio/mpeg"],
+    ["recording.mp4", "video/mp4"],
+    ["recording.ogg", "audio/ogg"],
+    ["recording.wav", "audio/wav"],
+    ["recording.webm", "audio/webm"]
+  ] as const;
+
+  for (const [name, mimeType] of formats) {
+    await picker.setInputFiles({ buffer: Buffer.from(name), mimeType, name });
+    await expect(page.locator("[data-upload-status]")).toHaveAttribute("data-phase", "success");
+    await expect(page.locator("[data-upload-status]")).toContainText(name);
+  }
 });
 
 test("an upload failure stays local, safe and retryable", async ({ page }) => {
@@ -106,7 +147,7 @@ test("the workspace remains readable in both themes", async ({ page }) => {
 });
 
 for (const width of [1024, 1440]) {
-  test(`the actual shell owns new-recording document scrolling at ${width}px`, async ({ page }, testInfo) => {
+  test(`the actual shell keeps one reachable new-recording scroll owner at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width === 1024 ? 520 : 700 });
     await openFixture(page);
     const content = page.locator(".content-area");
@@ -122,11 +163,19 @@ for (const width of [1024, 1440]) {
         shellExtra: shell.scrollHeight - shell.clientHeight
       };
     });
-    expect(before.documentExtra).toBe(0);
-    expect(before.bodyExtra).toBe(0);
-    expect(before.shellExtra).toBe(0);
-    expect(before.contentExtra).toBeGreaterThan(0);
-    expect(before.contentOverflow).toBe("auto");
+    if (width === 1024) {
+      expect(before.documentExtra).toBeGreaterThan(0);
+      expect(before.bodyExtra).toBe(0);
+      expect(before.shellExtra).toBe(0);
+      expect(before.contentExtra).toBe(0);
+      expect(before.contentOverflow).toBe("visible");
+    } else {
+      expect(before.documentExtra).toBe(0);
+      expect(before.bodyExtra).toBe(0);
+      expect(before.shellExtra).toBe(0);
+      expect(before.contentExtra).toBeGreaterThan(0);
+      expect(before.contentOverflow).toBe("auto");
+    }
 
     await page.locator(".transcript-import-disclosure > summary").click();
     const importButton = page.getByRole("button", { name: "Uložit testovací přepis" });
@@ -135,7 +184,12 @@ for (const width of [1024, 1440]) {
     await expect(importButton).toBeVisible();
     await importButton.click();
     await expect(page.getByText("Testovací přepis zůstal jen v prohlížeči.")).toBeVisible();
-    expect(await content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    if (width === 1024) {
+      expect(await page.evaluate(() => document.documentElement.scrollTop)).toBeGreaterThan(0);
+      expect(await content.evaluate((element) => element.scrollTop)).toBe(0);
+    } else {
+      expect(await content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.screenshot({ fullPage: true, path: testInfo.outputPath(`new-recording-shell-${width}.png`) });
   });

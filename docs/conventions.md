@@ -16,6 +16,7 @@
 - Funkce může být implementovaná později, ale musí být zohledněná v datovém a stavovém modelu, pokud je cílovou schopností.
 - Dlouhé operace patří do job/worker vrstvy, ne do dlouhého UI requestu.
 - Upload audio souborů má jít přímo do Supabase Storage přes authenticated resumable TUS upload; velké audio nesmí téct přes Vercel.
+- Povolené upload formáty vždy odvozuj z průniku explicitního runtime `recordings.allowed_mime_types` bucketu a produktového katalogu M4A, MP3, WAV, WebM, OGG, FLAC a MP4. Prázdný nebo obecný MIME typ nesmí získat oprávnění podle přípony souboru.
 - Server-side API route má řešit metadata, autorizaci a vytvoření jobu, ne přenášet velké audio.
 
 ## Data a soukromí

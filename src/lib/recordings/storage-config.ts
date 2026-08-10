@@ -1,9 +1,11 @@
 import type { SupabaseStoragePlan } from "@/lib/settings/types";
+import { getSupportedRecordingMimeTypes } from "@/lib/recordings/types";
 
 const MEBIBYTE = 1024 * 1024;
 const GIBIBYTE = 1024 * MEBIBYTE;
 
 export type RecordingStorageConfig = {
+  allowedMimeTypes: string[] | null;
   bucketMaxFileSizeBytes: number | null;
   detectedGlobalMaxFileSizeBytes: number | null;
   maxFileSizeBytes: number | null;
@@ -27,6 +29,7 @@ export function createUnavailableRecordingStorageConfig(
   plan: SupabaseStoragePlan
 ): RecordingStorageConfig {
   return {
+    allowedMimeTypes: null,
     bucketMaxFileSizeBytes: null,
     detectedGlobalMaxFileSizeBytes: null,
     maxFileSizeBytes: null,
@@ -43,20 +46,36 @@ export function normalizeRecordingStorageLimit(value: unknown) {
     : null;
 }
 
+// normalizeRecordingMimeAllowlist accepts only a non-empty explicit Supabase bucket allowlist.
+export function normalizeRecordingMimeAllowlist(value: unknown) {
+  if (!Array.isArray(value)) return null;
+
+  const normalized = [...new Set(value
+    .filter((mimeType): mimeType is string => typeof mimeType === "string")
+    .map((mimeType) => mimeType.toLowerCase().trim())
+    .filter(Boolean))];
+
+  const supportedMimeTypes = getSupportedRecordingMimeTypes(normalized);
+  return supportedMimeTypes.length > 0 ? supportedMimeTypes : null;
+}
+
 // resolveRecordingStorageConfig keeps the configured bucket authoritative and only lets a plan tighten it.
 export function resolveRecordingStorageConfig(
   bucketLimit: unknown,
+  bucketAllowedMimeTypes: unknown,
   plan: SupabaseStoragePlan
 ): RecordingStorageConfig {
   const bucketMaxFileSizeBytes = normalizeRecordingStorageLimit(bucketLimit);
+  const allowedMimeTypes = normalizeRecordingMimeAllowlist(bucketAllowedMimeTypes);
 
-  if (bucketMaxFileSizeBytes === null) {
+  if (bucketMaxFileSizeBytes === null || allowedMimeTypes === null) {
     return createUnavailableRecordingStorageConfig(plan);
   }
 
   const planMaxFileSizeBytes = getSupabasePlanMaxFileSizeBytes(plan);
 
   return {
+    allowedMimeTypes,
     bucketMaxFileSizeBytes,
     detectedGlobalMaxFileSizeBytes: null,
     maxFileSizeBytes: planMaxFileSizeBytes === null

@@ -7,6 +7,12 @@ import {
   getSafeUploadFailureMessage,
   RecordingUploadForm
 } from "@/components/recording-upload-form";
+import { ACCEPTED_RECORDING_MIME_TYPES } from "@/lib/recordings/types";
+
+const uploadFormProps = {
+  allowedMimeTypes: ACCEPTED_RECORDING_MIME_TYPES,
+  maxFileSizeBytes: 50 * 1024 * 1024
+};
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -61,13 +67,20 @@ describe("recording upload form UI", () => {
       input.onPhase?.("finalizing");
       return { id: "recording-id", storagePath: "safe/path" };
     });
-    await act(async () => root.render(<RecordingUploadForm maxFileSizeBytes={50 * 1024 * 1024} redirectAfterUpload="detail" />));
+    await act(async () => root.render(
+      <RecordingUploadForm
+        {...uploadFormProps}
+        redirectAfterUpload="detail"
+      />
+    ));
 
     const statusSurface = container.querySelector("[data-upload-status]");
     expect(statusSurface).not.toBeNull();
     expect(statusSurface?.textContent).toContain("Limit 50 MB");
     expect(statusSurface?.textContent).toContain("Zatím nebyl vybrán soubor");
-    expect(container.textContent).toContain("Přetáhněte audio nebo MP4 sem");
+    expect(container.textContent).toContain("M4A, MP3, WAV, WebM, OGG, FLAC a MP4");
+    expect(container.querySelectorAll("input[type='file']")).toHaveLength(1);
+    expect(container.textContent).not.toContain("Vybrat jiný typ");
 
     await chooseFiles(new File([new Uint8Array(33)], "lucern-update.m4a", { type: "audio/mp4" }));
 
@@ -81,7 +94,7 @@ describe("recording upload form UI", () => {
     mocks.uploadRecording
       .mockRejectedValueOnce(new Error("Nahrání souboru se nepodařilo. Zkuste to znovu."))
       .mockResolvedValueOnce({ id: "retry-id", storagePath: "safe/path" });
-    await act(async () => root.render(<RecordingUploadForm maxFileSizeBytes={50 * 1024 * 1024} />));
+    await act(async () => root.render(<RecordingUploadForm {...uploadFormProps} />));
 
     await chooseFiles(new File(["audio"], "retry.mp3", { type: "audio/mpeg" }));
     expect(container.querySelector("[data-upload-status]")?.getAttribute("data-phase")).toBe("error");
@@ -95,7 +108,7 @@ describe("recording upload form UI", () => {
 
   it("routes dropped audio through the same upload transport", async () => {
     mocks.uploadRecording.mockResolvedValue({ id: "drop-id", storagePath: "safe/path" });
-    await act(async () => root.render(<RecordingUploadForm maxFileSizeBytes={50 * 1024 * 1024} redirectAfterUpload="detail" />));
+    await act(async () => root.render(<RecordingUploadForm {...uploadFormProps} redirectAfterUpload="detail" />));
     const dropzone = container.querySelector<HTMLElement>(".upload-dropzone");
     const droppedFile = new File(["audio"], "drop.mp3", { type: "audio/mpeg" });
     const dropEvent = new Event("drop", { bubbles: true, cancelable: true });
@@ -124,7 +137,7 @@ describe("recording upload form UI", () => {
       input.onProgress?.({ bytesSent: input.file.size, bytesTotal: input.file.size, percentage: 100 });
       return { id: "first-id", storagePath: "safe/path" };
     });
-    await act(async () => root.render(<RecordingUploadForm maxFileSizeBytes={50 * 1024 * 1024} redirectAfterUpload="stay" />));
+    await act(async () => root.render(<RecordingUploadForm {...uploadFormProps} redirectAfterUpload="stay" />));
 
     await chooseFiles(new File(["audio"], "first.mp3", { type: "audio/mpeg" }));
     expect(container.querySelector<HTMLProgressElement>("progress")?.value).toBeGreaterThan(0);
@@ -144,7 +157,7 @@ describe("recording upload form UI", () => {
         done: Promise.resolve()
       });
     }));
-    await act(async () => root.render(<RecordingUploadForm maxFileSizeBytes={50 * 1024 * 1024} />));
+    await act(async () => root.render(<RecordingUploadForm {...uploadFormProps} />));
     await chooseFiles(new File(["audio"], "cancel.mp3", { type: "audio/mpeg" }));
 
     const cancel = Array.from(container.querySelectorAll("button"))
@@ -166,7 +179,7 @@ describe("recording upload form UI", () => {
       }
       return { id: "first-id", storagePath: "safe/path" };
     });
-    await act(async () => root.render(<RecordingUploadForm maxFileSizeBytes={50 * 1024 * 1024} redirectAfterUpload="detail" />));
+    await act(async () => root.render(<RecordingUploadForm {...uploadFormProps} redirectAfterUpload="detail" />));
 
     await chooseFiles(
       new File(["first"], "first.mp3", { type: "audio/mpeg" }),

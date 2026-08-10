@@ -30,13 +30,13 @@ supabase db reset
 
 ## What The Migrations Create
 
-- application tables for recordings, transcripts, jobs, prompts, AI outputs and audit logs
-- RLS policies for user-owned data
-- private Storage bucket settings for `recordings`, including a safe 50 MB baseline limit and Soniox-compatible MIME types; paid projects can raise the global and per-bucket limits, which the app reads at runtime
-- seed prompt templates
-- provider configuration for Soniox, OpenAI and optional Gemini
-- evidence locations, recording organization, live markers and indexed transcript search
-- indexes used by recording detail, transcript processing and search screens
+- application tables for recordings, transcripts, jobs, prompts, AI outputs and audit logs,
+- RLS policies for user-owned data,
+- private Storage bucket settings for `recordings`, including a safe 50 MB baseline limit and Soniox-compatible MIME types; the app reads both `file_size_limit` and `allowed_mime_types` at runtime and fails closed when either is unavailable,
+- seed prompt templates,
+- provider configuration for Soniox, OpenAI and optional Gemini,
+- evidence locations, recording organization, live markers and indexed transcript search,
+- indexes used by recording detail, transcript processing and search screens.
 
 ## Deployment State
 

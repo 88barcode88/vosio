@@ -8,6 +8,7 @@ import {
 import { TranscriptImportForm } from "@/components/transcript-import-form";
 import { getLiveAudioMaxFileSizeBytes } from "@/lib/recordings/live-audio-limit";
 import { getRecordingStorageLimitSummary } from "@/lib/recordings/storage-copy";
+import { getRecordingFormatSummary } from "@/lib/recordings/types";
 import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 
@@ -33,6 +34,7 @@ export function NewRecordingWorkspace({
   userSettings = defaultUserSettings
 }: NewRecordingWorkspaceProps) {
   const maxFileSizeBytes = recordingStorageConfig.maxFileSizeBytes;
+  const allowedMimeTypes = recordingStorageConfig.allowedMimeTypes;
   const liveAudioMaxFileSizeBytes = getLiveAudioMaxFileSizeBytes(maxFileSizeBytes);
   const storageLimitSummary = getRecordingStorageLimitSummary(
     recordingStorageConfig,
@@ -95,11 +97,12 @@ export function NewRecordingWorkspace({
             <Upload aria-hidden="true" size={16} />
             <div>
               <strong>Nahrát soubor</strong>
-              <span>Audio, M4A nebo MP4</span>
+              <span>{getRecordingFormatSummary(allowedMimeTypes ?? [])}</span>
             </div>
           </div>
           <div className="upload-console">
             <RecordingUploadForm
+              allowedMimeTypes={allowedMimeTypes}
               maxFileSizeBytes={maxFileSizeBytes}
               redirectAfterUpload={uploadRedirectAfterSuccess}
               uploadTransport={uploadTransport}

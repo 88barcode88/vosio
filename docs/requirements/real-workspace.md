@@ -92,27 +92,27 @@ Selected tags use ALL semantics: every returned recording must contain every sel
 
 ## Supported Upload Types
 
-`/recordings/new` presents exactly two primary capture cards: live first and file upload second. They are equal desktop columns above 900 px and stack in the same order at 900 px and below. Transcript import is a secondary, default-collapsed disclosure rather than a third primary card. The actual desktop shell gives this route one `.content-area-document` vertical scroll owner, with no body or nested horizontal overflow, so the import controls remain reachable in short viewports. The upload card keeps one persistent status surface for selected file metadata, the effective limit, transfer progress, finalization, success, cancellation, safe error copy and retry. Drag/drop and both picker buttons enter the same authenticated serial upload queue; production single-file success still redirects to recording detail. The guarded development fixture may replace only the live and transcript-import presentation slots with inert local controls; production defaults and upload lifecycle remain unchanged.
+`/recordings/new` presents exactly two primary capture cards: live first and file upload second. They are equal desktop columns above 900 px and stack in the same order at 900 px and below. Transcript import is a secondary, default-collapsed disclosure rather than a third primary card. A regular desktop uses `.content-area-document` as its one vertical scroll owner; a short desktop up to 640 px high and mobile use the browser document as the one owner so the sidebar and bottom import controls remain reachable. No mode may add body-plus-content double scroll or horizontal overflow. The upload card keeps one persistent status surface for selected file metadata, the effective limit, transfer progress, finalization, success, cancellation, safe error copy and retry. Drag/drop and the single filtered picker enter the same authenticated serial upload queue; production single-file success still redirects to recording detail. The guarded development fixture may replace only the live and transcript-import presentation slots with inert local controls; production defaults and upload lifecycle remain unchanged.
 
-- `audio/aac`
-- `audio/aiff`
-- `audio/amr`
-- `audio/asf`
 - `audio/flac`
+- `audio/x-flac`
+- `audio/m4a`
 - `audio/mp4`
+- `audio/mp3`
 - `audio/mpeg`
+- `application/ogg`
 - `audio/ogg`
+- `audio/vnd.wave`
 - `audio/wav`
+- `audio/x-wav`
 - `audio/webm`
-- `audio/x-aiff`
 - `audio/x-m4a`
-- `application/vnd.ms-asf`
-- `video/x-ms-asf`
+- `video/webm`
 - `video/mp4`
 
-The effective manual upload limit is `min(recordings.file_size_limit, optional per-user plan cap)`. The baseline migration uses a `52428800`-byte (50 MiB) bucket limit; the `free` preference adds a 50 MiB cap, `paid` adds a 500 GiB cap and `auto` adds no cap. A preference can only lower the bucket limit, never raise it or authorize Storage. The global project limit cannot be detected safely and is displayed as unknown. Audio paths fail closed when a positive explicit bucket limit cannot be read. Live audio has a hard limit of `min(effective manual upload limit, 128 MiB)`, an estimated cutoff below it by `min(5% of the hard live limit, 2 MiB)`, and a final Blob validation against the full hard limit.
+The effective manual upload limit is `min(recordings.file_size_limit, optional per-user plan cap)`. The baseline migration uses a `52428800`-byte (50 MiB) bucket limit; the `free` preference adds a 50 MiB cap, `paid` adds a 500 GiB cap and `auto` adds no cap. A preference can only lower the bucket limit, never raise it or authorize Storage. The global project limit cannot be detected safely and is displayed as unknown. Audio paths fail closed when either a positive explicit bucket limit or a non-empty explicit bucket MIME allowlist cannot be read. Live audio has a hard limit of `min(effective manual upload limit, 128 MiB)`, an estimated cutoff below it by `min(5% of the hard live limit, 2 MiB)`, and a final Blob validation against the full hard limit.
 
-Browser MIME values are normalized before allowlist validation. Concrete supported types such as `audio/mp4`, `audio/x-m4a` and `video/mp4` remain authoritative. An empty MIME or `application/octet-stream` may fall back only through `RECORDING_MIME_TYPE_BY_EXTENSION`; therefore allowlisted `.m4a` resolves to `audio/mp4`, while an unknown extension remains rejected. File-size validation accepts the exact effective-limit boundary and rejects only `size > limit`; a 33 MiB M4A is valid under a 50 MiB effective limit.
+The product accepts the common groups M4A, MP3, WAV, WebM, OGG, FLAC and MP4. The effective format set is their intersection with the runtime Supabase bucket MIME rules; broader bucket entries such as legacy AAC, AIFF, AMR or ASF do not automatically become product upload formats. Browser MIME values are normalized before allowlist validation. Common aliases may map only from an explicit MIME to a canonical type allowed by the bucket. File extensions are picker hints, never an authorization fallback: an empty MIME or `application/octet-stream` is rejected even for `.m4a`. File-size validation accepts the exact effective-limit boundary and rejects only `size > limit`; a concrete `audio/mp4` 33 MiB M4A is valid under a 50 MiB effective limit. The transcription endpoint revalidates the stored MIME before sending a single uploaded object to Soniox; legacy segmented recordings retain their separate compatibility path.
 
 ## AI Prompt Templates
 

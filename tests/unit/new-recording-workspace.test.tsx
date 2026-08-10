@@ -38,6 +38,7 @@ async function renderWorkspace() {
     root.render(
       <NewRecordingWorkspace
         recordingStorageConfig={{
+          allowedMimeTypes: ["audio/mpeg"],
           bucketMaxFileSizeBytes: 50 * 1024 * 1024,
           detectedGlobalMaxFileSizeBytes: null,
           maxFileSizeBytes: 50 * 1024 * 1024,

@@ -196,7 +196,7 @@ Ve frontend kódu nevaliduj celé `process.env` jako objekt. Next.js umí spoleh
 
 MP4 exporty z mobilu obvykle přijdou jako `video/mp4`, i když nás zajímá hlavně audio stopa. Supabase Storage bucket i frontend validace proto musí povolit `video/mp4`; samotný Soniox async přepis podporuje formát `mp4` a audio z kontejneru autodetekuje.
 
-Mobilní file picker filtruj přes kombinaci MIME typů, wildcard `audio/*` a přípon souborů. Některé záznamníky v mobilu neposílají přesný MIME typ, ale soubor s příponou `.m4a`, `.amr` nebo podobně. Validace proto používá MIME typ i fallback podle přípony.
+Mobilní file picker používá jeden explicitní seznam MIME typů a přípon odvozený z runtime `recordings.allowed_mime_types` bucketu a běžného produktového katalogu M4A, MP3, WAV, WebM, OGG, FLAC a MP4. Přípony jsou pouze nápověda pro picker, nikoli autorizační fallback. Prázdný MIME a `application/octet-stream` se odmítají i u souboru se známou příponou; běžné browserové aliasy se mohou převést pouze z explicitně dodaného MIME na kanonický typ povolený bucketem.
 
 ## Supabase plan preference není konfigurace projektu
 

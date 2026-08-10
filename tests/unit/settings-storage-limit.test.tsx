@@ -14,6 +14,7 @@ describe("settings storage limit", () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         recordingStorageConfig={{
+          allowedMimeTypes: ["audio/mpeg"],
           bucketMaxFileSizeBytes: 100 * MEBIBYTE,
           detectedGlobalMaxFileSizeBytes: null,
           maxFileSizeBytes: 50 * MEBIBYTE,

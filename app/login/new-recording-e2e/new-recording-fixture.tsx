@@ -5,6 +5,7 @@ import { RecordingNavigationGuardProvider } from "@/components/recording-navigat
 import type { NewRecordingCaptureSlots } from "@/components/new-recording-workspace";
 import type { RecordingUploadTransport } from "@/components/recording-upload-form";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { ACCEPTED_RECORDING_MIME_TYPES } from "@/lib/recordings/types";
 import type { NewRecordingFixtureMode } from "./development-runtime";
 
 const fixtureLimit = 50 * 1024 * 1024;
@@ -105,6 +106,7 @@ export function NewRecordingFixture({ mode, scope }: { mode: NewRecordingFixture
         newRecordingUploadRedirectAfterSuccess="stay"
         newRecordingUploadTransport={uploadTransport}
         recordingStorageConfig={{
+          allowedMimeTypes: [...ACCEPTED_RECORDING_MIME_TYPES],
           bucketMaxFileSizeBytes: fixtureLimit,
           detectedGlobalMaxFileSizeBytes: null,
           maxFileSizeBytes: fixtureLimit,
