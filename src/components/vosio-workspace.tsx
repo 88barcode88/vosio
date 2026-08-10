@@ -71,6 +71,7 @@ type VosioWorkspaceProps = {
   recordingSearchPage?: RecordingSearchPage | null;
   recordingSearchPreviousHref?: string | null;
   settingsStatus?: "error" | "saved" | null;
+  settingsFormDisabled?: boolean;
   structuredItems?: StructuredAiItems;
   templateStatus?: "created" | "duplicated" | "error" | "saved" | null;
   transcripts: TranscriptRow[];
@@ -140,6 +141,7 @@ export function VosioWorkspace({
   recordingSearchPage = null,
   recordingSearchPreviousHref = null,
   settingsStatus = null,
+  settingsFormDisabled = false,
   structuredItems = getEmptyStructuredAiItems(),
   templateStatus = null,
   transcripts,
@@ -222,6 +224,7 @@ export function VosioWorkspace({
               promptTemplateNavigationState={promptTemplateNavigationState}
               recordingStorageConfig={recordingStorageConfig}
               settings={userSettings}
+              settingsFormDisabled={settingsFormDisabled}
               settingsStatus={settingsStatus}
               templateStatus={templateStatus}
               usageState={usageState}

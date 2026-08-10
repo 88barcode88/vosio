@@ -74,6 +74,75 @@ for (const width of [375, 768]) {
   });
 }
 
+for (const width of [375, 768, 1024, 1440]) {
+  test(`settings uses one reachable document scroll owner at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto(fixturePath("settings"));
+
+    const content = page.locator(".content-area");
+    const save = page.getByRole("button", { name: "Uložit nastavení" });
+    const coverageDetails = page.getByRole("button", { name: "Více informací" });
+    const technicalDetails = page.getByRole("button", { name: "Technické informace" });
+
+    await expect(page.getByRole("heading", { name: "AI a výstupy" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Diagnostika a využití" })).toBeVisible();
+    await expect(page.getByText("Neúplná data", { exact: true })).toBeVisible();
+    await expect(coverageDetails).toHaveAttribute("aria-expanded", "false");
+    await coverageDetails.click();
+    await expect(page.getByRole("region", { name: "Pokrytí dat využití" })).toContainText("3 z 5 nahrávek má uloženou délku");
+    await expect(technicalDetails).toHaveAttribute("aria-expanded", "false");
+    await technicalDetails.focus();
+    await page.keyboard.press("Enter");
+    await expect(technicalDetails).toHaveAttribute("aria-expanded", "true");
+    const technicalRegion = page.getByRole("region", { name: "Technické informace" });
+    await expect(technicalRegion).toBeVisible();
+    await expect(technicalRegion).toContainText("krátkodobý Soniox api_key");
+    await expect(technicalRegion).not.toContainText("API klíče a region zůstávají mimo klienta");
+
+    const scrollState = await page.evaluate(() => {
+      const contentArea = document.querySelector<HTMLElement>(".content-area")!;
+      return {
+        bodyExtra: document.body.scrollHeight - document.body.clientHeight,
+        contentExtra: contentArea.scrollHeight - contentArea.clientHeight,
+        contentOverflow: getComputedStyle(contentArea).overflowY,
+        documentExtra: document.documentElement.scrollHeight - document.documentElement.clientHeight
+      };
+    });
+
+    if (width <= 900) {
+      expect(scrollState.contentOverflow).toBe("visible");
+      expect(scrollState.documentExtra).toBeGreaterThan(0);
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      const [saveBox, navBox] = await Promise.all([
+        getBox(save),
+        getBox(page.getByRole("navigation", { name: "Mobilní navigace" }))
+      ]);
+      expect(saveBox.y + saveBox.height).toBeLessThanOrEqual(navBox.y);
+    } else {
+      expect(scrollState.bodyExtra).toBe(0);
+      expect(scrollState.documentExtra).toBe(0);
+      expect(scrollState.contentExtra).toBeGreaterThan(0);
+      expect(scrollState.contentOverflow).toBe("auto");
+      await content.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      await expect(save).toBeVisible();
+    }
+
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: testInfo.outputPath(`settings-${width}-dark.png`), fullPage: true });
+
+    if (width <= 900) {
+      await page.getByRole("navigation", { name: "Mobilní navigace" }).getByRole("button", { name: "Více" }).click();
+      await page.getByRole("dialog", { name: "Další možnosti" }).getByRole("button", { name: /Přepnout na/ }).click();
+      await page.keyboard.press("Escape");
+    } else {
+      await page.locator(".sidebar .theme-toggle").click();
+    }
+    await page.screenshot({ path: testInfo.outputPath(`settings-${width}-light.png`), fullPage: true });
+  });
+}
+
 test("mobile More traps focus, restores it on every close, toggles theme and completes fixture navigation", async ({ page }) => {
   const scope = createFixtureScope();
   await page.setViewportSize({ width: 375, height: 760 });

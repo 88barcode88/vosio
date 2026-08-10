@@ -1,53 +1,30 @@
 "use client";
 
 import { Moon, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import {
-  normalizeTheme,
-  type ThemeMode,
-  VOSIO_THEME_COOKIE,
-  VOSIO_THEME_STORAGE_KEY
+  getServerThemeSnapshot,
+  getThemeSnapshot,
+  setThemeSnapshot,
+  subscribeToTheme
 } from "@/lib/theme";
 
 type ThemeToggleProps = {
   compact?: boolean;
 };
 
-// getInitialTheme reads the stored UI theme without blocking server rendering.
-function getInitialTheme(): ThemeMode {
-  if (typeof window === "undefined") {
-    return "dark";
-  }
-
-  const storedTheme = window.localStorage.getItem(VOSIO_THEME_STORAGE_KEY);
-
-  return normalizeTheme(storedTheme ?? document.documentElement.dataset.theme);
-}
-
-// applyTheme writes the active theme to the document root, localStorage and the server-readable cookie.
-function applyTheme(theme: ThemeMode) {
-  document.documentElement.dataset.theme = theme;
-  window.localStorage.setItem(VOSIO_THEME_STORAGE_KEY, theme);
-  document.cookie = `${VOSIO_THEME_COOKIE}=${theme}; Path=/; Max-Age=31536000; SameSite=Lax`;
-}
-
 // ThemeToggle switches Vosio between light and dark working modes.
 export function ThemeToggle({ compact = false }: ThemeToggleProps) {
-  const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
-
-  useEffect(() => {
-    const initialTheme = getInitialTheme();
-
-    setTheme(initialTheme);
-    applyTheme(initialTheme);
-  }, []);
+  const theme = useSyncExternalStore(
+    subscribeToTheme,
+    getThemeSnapshot,
+    getServerThemeSnapshot
+  );
 
   // toggleTheme flips the persisted UI theme.
   function toggleTheme() {
-    const nextTheme = theme === "dark" ? "light" : "dark";
-
-    setTheme(nextTheme);
-    applyTheme(nextTheme);
+    const nextTheme = getThemeSnapshot() === "dark" ? "light" : "dark";
+    setThemeSnapshot(nextTheme);
   }
 
   return (

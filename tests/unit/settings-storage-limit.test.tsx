@@ -29,7 +29,7 @@ describe("settings storage limit", () => {
     expect(markup).toContain('<option value="free" selected="">Free</option>');
     expect(markup).toContain("Efektivní limit manuálního uploadu");
     expect(markup).toContain("50 MB");
-    expect(markup).toContain("Globální limit projektu");
-    expect(markup).toContain("Nezjištěn");
+    expect(markup).toContain("Technické informace");
+    expect(markup).not.toContain("Globální limit projektu");
   });
 });

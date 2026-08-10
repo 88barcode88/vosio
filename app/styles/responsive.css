@@ -56,11 +56,10 @@
     border-top: 1px solid var(--border);
   }
   .settings-grid,
-  .settings-check-grid,
-  .settings-readonly dl {
+  .settings-technical-list {
     grid-template-columns: 1fr;
   }
-  .settings-usage-section dl {
+  .settings-usage-summary dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .ai-tab-actions .quick-grid {
@@ -523,7 +522,7 @@
     width: 100%;
   }
   .prompt-template-fields-row,
-  .settings-usage-section dl {
+  .settings-usage-summary dl {
     grid-template-columns: 1fr;
   }
   .utility-header-actions {

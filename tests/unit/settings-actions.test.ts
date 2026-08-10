@@ -42,6 +42,7 @@ describe("settings form", () => {
     formData.set("aiTemperature", "0.7");
     formData.set("audioRetentionPolicy", "delete_audio_after_transcription");
     formData.set("autoProcessAfterTranscription", "on");
+    formData.set("autoProcessingTypesPresent", "1");
     formData.append("autoProcessingTypes", "summary");
     formData.append("autoProcessingTypes", "action_items");
     formData.set("defaultOpenaiModel", "gpt-5.6-terra");
@@ -105,6 +106,27 @@ describe("settings form", () => {
 
     expect(settings.sonioxRealtimeLanguage).toBe("auto");
     expect(settings).not.toHaveProperty("longRecordingWarningMinutes");
+  });
+
+  it("round-trips an explicitly empty automatic processing type collection", () => {
+    const formData = new FormData();
+    formData.set("autoProcessingTypesPresent", "1");
+
+    expect(parseSettingsForm(formData).autoProcessingTypes).toEqual([]);
+  });
+
+  it("keeps the legacy default when automatic processing types are completely missing", () => {
+    expect(parseSettingsForm(new FormData()).autoProcessingTypes).toEqual(["summary"]);
+  });
+
+  it("deduplicates valid automatic processing types when the collection sentinel is present", () => {
+    const formData = new FormData();
+    formData.set("autoProcessingTypesPresent", "1");
+    formData.append("autoProcessingTypes", "summary");
+    formData.append("autoProcessingTypes", "summary");
+    formData.append("autoProcessingTypes", "action_items");
+
+    expect(parseSettingsForm(formData).autoProcessingTypes).toEqual(["summary", "action_items"]);
   });
 
   it("rejects an unsupported Soniox live language", () => {

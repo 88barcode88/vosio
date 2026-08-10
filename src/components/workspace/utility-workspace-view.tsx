@@ -39,6 +39,7 @@ type UtilityWorkspaceViewProps = {
   promptTemplateNavigationState?: PromptTemplateNavigationState;
   promptTemplates: PromptTemplateRow[];
   recordingStorageConfig?: RecordingStorageConfig;
+  settingsFormDisabled?: boolean;
   settings: UserSettings;
   settingsStatus: "error" | "saved" | null;
   templateStatus: "created" | "duplicated" | "error" | "saved" | null;
@@ -59,6 +60,7 @@ export function UtilityWorkspaceView({
   promptTemplateNavigationState = { kind: "list" },
   promptTemplates,
   recordingStorageConfig,
+  settingsFormDisabled = false,
   settings,
   settingsStatus,
   usageState,
@@ -67,6 +69,7 @@ export function UtilityWorkspaceView({
   if (view === "settings") {
     return (
       <SettingsPanel
+        disableSave={settingsFormDisabled}
         recordingStorageConfig={recordingStorageConfig ?? unavailableRecordingStorageConfig}
         settings={settings}
         status={settingsStatus}

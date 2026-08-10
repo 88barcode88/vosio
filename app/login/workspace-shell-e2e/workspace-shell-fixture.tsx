@@ -1,6 +1,9 @@
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
 import type { RecordingRow } from "@/lib/recordings/types";
+import { defaultUserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
+import type { CurrentMonthUsageState } from "@/lib/usage/summary";
 import type { NavigationHrefOverrides, WorkspaceView } from "@/lib/workspace-data";
 
 const recordingId = "00000000-0000-4000-8000-000000000601";
@@ -16,6 +19,48 @@ const fixtureViews = [
   "templates",
   "trash"
 ] as const;
+
+const settingsFixtureStorage: RecordingStorageConfig = {
+  bucketMaxFileSizeBytes: 100 * 1024 * 1024,
+  detectedGlobalMaxFileSizeBytes: null,
+  maxFileSizeBytes: 50 * 1024 * 1024,
+  planMaxFileSizeBytes: 50 * 1024 * 1024
+};
+
+const settingsFixtureUsage: CurrentMonthUsageState = {
+  error: null,
+  summary: {
+    ai: {
+      estimatedCostUsd: 0.024,
+      inputTokens: 4_200,
+      jobCount: 4,
+      jobsMissingTokenUsage: 1,
+      modelBreakdown: [],
+      outputTokens: 1_100,
+      unpricedModelIds: ["custom-model"]
+    },
+    period: { endIso: "2026-09-01T00:00:00.000Z", startIso: "2026-08-01T00:00:00.000Z" },
+    recordings: {
+      count: 5,
+      deletedCount: 1,
+      totalDurationSeconds: 5_400,
+      totalFileSizeBytes: 26 * 1024 * 1024,
+      withDurationCount: 3,
+      withFileSizeCount: 2
+    },
+    soniox: {
+      asyncDurationSeconds: 5_400,
+      asyncEstimatedCostUsd: 0.15,
+      billableDurationSeconds: 5_400,
+      estimatedCostUsd: 0.15,
+      jobCount: 3,
+      jobsMissingDurationCount: 1,
+      jobsWithDurationCount: 2,
+      realtimeDurationSeconds: 0,
+      realtimeEstimatedCostUsd: 0
+    }
+  }
+};
 
 export type WorkspaceShellFixtureView = (typeof fixtureViews)[number];
 
@@ -112,7 +157,11 @@ export function WorkspaceShellFixture({
       isCreatingRecording={view === "new"}
       navigationHrefOverrides={createFixtureNavigationOverrides(scope)}
       recordings={isDetail ? [recording] : []}
+      recordingStorageConfig={settingsFixtureStorage}
+      settingsFormDisabled={view === "settings"}
       transcripts={isDetail ? [createFixtureTranscript()] : []}
+      usageState={settingsFixtureUsage}
+      userSettings={{ ...defaultUserSettings, supabaseStoragePlan: "free" }}
       userEmail="shell@example.cz"
       view={getWorkspaceView(view)}
     />
