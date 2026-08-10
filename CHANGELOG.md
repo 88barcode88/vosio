@@ -4,7 +4,7 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
-## [0.1.31] - 2026-08-10
+## [0.1.4] - 2026-08-10
 
 ### Added
 

@@ -4,9 +4,9 @@ import packageMetadata from "../../package.json";
 import { APP_VERSION } from "@/lib/app-version";
 
 describe("application version", () => {
-  it("prepares the approved Vosio 0.1.31 release", () => {
-    expect(packageMetadata.version).toBe("0.1.31");
-    expect(APP_VERSION).toBe("0.1.31");
+  it("prepares the approved Vosio 0.1.4 release", () => {
+    expect(packageMetadata.version).toBe("0.1.4");
+    expect(APP_VERSION).toBe("0.1.4");
   });
 
   it("uses package.json as the single application version source", () => {
@@ -18,6 +18,6 @@ describe("application version", () => {
     const changelog = readFileSync("CHANGELOG.md", "utf8");
 
     expect(changelog).toContain(`## [${APP_VERSION}]`);
-    expect(changelog).toMatch(/## \[0\.1\.31\] - 2026-08-10/u);
+    expect(changelog).toMatch(/## \[0\.1\.4\] - 2026-08-10/u);
   });
 });

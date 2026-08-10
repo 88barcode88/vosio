@@ -12,7 +12,7 @@ Nejdřív vznikne lokální ukázková obrazovka se všemi podstatnými prvky. P
 
 ## Zvolený přístup
 
-Redesign zůstane na současném Next.js, React a plain-CSS základu. Verze 0.1.31 nebude zavádět Tailwind, shadcn ani ReUI. ReUI může sloužit jako inspirace pro kompozici, ale přímé použití by vyžadovalo samostatnou technologickou migraci.
+Redesign zůstane na současném Next.js, React a plain-CSS základu. Verze 0.1.4 nebude zavádět Tailwind, shadcn ani ReUI. ReUI může sloužit jako inspirace pro kompozici, ale přímé použití by vyžadovalo samostatnou technologickou migraci.
 
 Datové dotazy, server actions, Supabase schéma a zpracování nahrávek se během vizuální fáze nemění, pokud to není nezbytné pro nové zobrazení. Tím se oddělí velká designová změna od funkčních oprav.
 

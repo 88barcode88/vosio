@@ -1,6 +1,6 @@
 {
   "name": "vosio-app",
-  "version": "0.1.31",
+  "version": "0.1.4",
   "license": "SEE LICENSE IN LICENSE.md",
   "private": true,
   "scripts": {
