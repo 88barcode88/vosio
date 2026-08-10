@@ -261,7 +261,8 @@
 .recording-object-header[data-optimistic-deleted="true"],
 [data-recording-delete-target][data-optimistic-deleted="true"],
 .utility-row[data-optimistic-deleted="true"],
-.ai-output-detail[data-optimistic-deleted="true"] {
+.ai-output-detail[data-optimistic-deleted="true"],
+[data-ai-output-delete-target][data-optimistic-deleted="true"] {
   max-height: 0;
   min-height: 0;
   border-width: 0;
@@ -795,6 +796,165 @@
   max-width: 760px;
   margin: 5px 0 0;
   line-height: 1.5;
+}
+.utility-header-actions {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+}
+.utility-panel-document {
+  width: 100%;
+}
+.ai-archive {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.ai-archive-action-alert {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  color: var(--danger);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.ai-archive-filters {
+  display: grid;
+  grid-template-columns: 18px repeat(2, minmax(180px, 280px)) auto;
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 10px;
+}
+.ai-archive-filters > svg {
+  align-self: center;
+  color: var(--text-secondary);
+}
+.ai-archive-filters label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.ai-archive-filters select,
+.ai-archive-filters button,
+.ai-archive-empty button {
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface);
+  padding: 0 10px;
+}
+.ai-archive-list {
+  display: grid;
+  gap: 6px;
+}
+.ai-archive-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 10px;
+}
+.ai-archive-row-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  color: var(--accent);
+  background: var(--surface-muted);
+}
+.ai-archive-row-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.ai-archive-row-copy > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ai-archive-row-copy time {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.ai-archive-row-copy p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.4;
+}
+.ai-archive-recording-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: start;
+  min-height: 44px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.ai-archive-recording-link small {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  padding: 2px 7px;
+}
+.ai-archive-row .ai-output-delete-form button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+}
+.ai-archive-row .ai-output-delete-form span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.ai-output-delete-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+.utility-route-state {
+  display: grid;
+  gap: 12px;
+  margin: 12px;
+}
+.utility-route-state h1,
+.utility-route-state p {
+  margin: 0;
+}
+.utility-route-state > div {
+  display: flex;
+  gap: 8px;
+}
+.utility-route-state button,
+.utility-route-state a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
 }
 .utility-list {
   display: grid;

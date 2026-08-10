@@ -310,6 +310,14 @@ Staré task/decision řádky s quote a nulovými časy získají při renderu po
 
 Čtyři forward migrace se na každý target aplikují v přesném pořadí: `20260804100000_add_evidence_locations.sql`, `20260804110000_add_recording_organization.sql`, `20260804120000_add_recording_markers.sql`, `20260804130000_add_transcript_fulltext_search.sql`; potom musí proběhnout úspěšný DB postflight a teprve následně deploy aplikace. Tento veřejný repozitář stav vzdálených DB nepotvrzuje. Neověřený target musí prokázat SQL/PG17 kompatibilitu, GIN index a authenticated `EXPLAIN`, evidence/organization/marker/search constrainty, grants, forced RLS, anon-vs-auth a dvouuživatelskou izolaci, latest-transcript current-vs-old chování, raw/manual fallback, deleted filtr, runtime keyset/offset stránkování a potřebný backfill. Source testy ani build tento target-specific důkaz nenahrazují.
 
+### Prompty a sekundární AI archiv
+
+`/templates` používá desktopový master-detail a na šířce 900 px a méně samostatnou plochu editoru s návratem do seznamu. Výběr šablony je v canonical URL `template=<uuid>`, nový prompt používá `mode=create`; duplicitní, konfliktní nebo neznámé hodnoty se odstraní. Vlastní prompty se vytvářejí a upravují přes authenticated Supabase klienta a RLS. Systémový prompt je read-only a jeho kopie se nevytváří z hodnot odeslaných formulářem: server načte autoritativní řádek přes `id` + `is_system = true` a teprve potom vloží vlastní kopii. Pokročilé parametry typu zpracování a JSON schématu jsou výchozí zavřené. Action-state zůstává v mounted formuláři, takže pending a bezpečně zpracovaná chyba nezahodí rozepsaný draft.
+
+`/ai` je sekundární archiv celých uložených generací, nikoli globální primární navigace ani místo pro spouštění nového zpracování. Archivní query používá explicitní inner joins a načítá pouze payload `ai_outputs`, processing type, `transcripts.recording_id` a identitu/název/stav nahrávky; nenačítá `raw_text`, segmenty, speakers, storage cestu ani provider konfiguraci. Forced RLS zůstává hranicí čtení. Canonical URL filtry `type` a `recording` podporují Back/Forward. Aktivní nahrávka vede na `?tab=ai`, smazaná na `/trash` se stavem `V koši`. Mazání se týká celé generace; optimistic stav patří přesně archivní kartě a při neočekávaném selhání se stejná karta obnoví se sanitizovaným alertem. Existující query filtry se zachovají i v chybovém redirectu.
+
+Detail nahrávky přijímá přesně jednu hodnotu `tab=transcript|ai|timeline|files`. Platná URL záložka má přednost před cookie; `tab=transcript` dál zachovává one-shot `at`/`highlight` deep-link kontrakt. Neplatná nebo duplicitní záložka se canonicalizuje na výchozí stav bez `tab`, `at` a `highlight`, aby SSR a hydratace vycházely ze stejného rozhodnutí.
+
 ## Bezpečnost
 
 - RLS na všech uživatelských tabulkách.

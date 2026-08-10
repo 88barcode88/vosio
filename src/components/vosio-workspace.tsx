@@ -12,6 +12,10 @@ import { TranscriptSearchWarningNotice } from "@/components/transcript-search-wa
 import { getEmptyStructuredAiItems } from "@/lib/ai/structured-queries";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
+import type { AiArchiveFilters } from "@/lib/ai/archive";
+import type { AiArchiveItem } from "@/lib/ai/types";
+import type { PromptTemplateActions } from "@/components/prompt-template-editor";
+import type { PromptTemplateNavigationState } from "@/lib/prompt-templates/navigation";
 import type { PromptTemplateRow } from "@/lib/prompt-templates/types";
 import { toRecordingClientView } from "@/lib/recordings/client-view";
 import {
@@ -35,6 +39,11 @@ import type { NavigationHrefOverrides, WorkspaceView } from "@/lib/workspace-dat
 type VosioWorkspaceProps = {
   activeRecordingId?: string;
   aiOutputs: AiOutputView[];
+  aiArchiveBaseHref?: string;
+  aiArchiveActionAlert?: string | null;
+  aiArchiveDeleteAction?: (formData: FormData) => Promise<void>;
+  aiArchiveFilters?: AiArchiveFilters;
+  aiArchiveItems?: AiArchiveItem[];
   deletedRecordings?: RecordingRow[];
   isCreatingRecording?: boolean;
   initialTranscriptDeepLink?: ResolvedTranscriptDeepLink | null;
@@ -46,6 +55,9 @@ type VosioWorkspaceProps = {
   newRecordingUploadRedirectAfterSuccess?: "detail" | "list" | "stay";
   newRecordingUploadTransport?: RecordingUploadTransport;
   promptTemplates?: PromptTemplateRow[];
+  promptTemplateActions?: PromptTemplateActions;
+  promptTemplateBaseHref?: string;
+  promptTemplateNavigationState?: PromptTemplateNavigationState;
   recordingStorageConfig?: RecordingStorageConfig;
   recordingMarkers?: RecordingMarkerRow[];
   recordingOrganization?: RecordingOrganization;
@@ -89,13 +101,18 @@ export function getContentAreaClassName({
 
   return view === "recordings" && !hasActiveRecording
     ? "content-area content-area-recordings-list"
-    : "content-area";
+    : "content-area content-area-document";
 }
 
 // VosioWorkspace composes the workspace shell and routes each view into its working area.
 export function VosioWorkspace({
   activeRecordingId,
   aiOutputs,
+  aiArchiveActionAlert,
+  aiArchiveBaseHref,
+  aiArchiveDeleteAction,
+  aiArchiveFilters = { processingType: null, recordingId: null },
+  aiArchiveItems = [],
   deletedRecordings = [],
   isCreatingRecording = false,
   initialTranscriptDeepLink = null,
@@ -107,6 +124,9 @@ export function VosioWorkspace({
   newRecordingUploadRedirectAfterSuccess,
   newRecordingUploadTransport,
   promptTemplates = [],
+  promptTemplateActions,
+  promptTemplateBaseHref,
+  promptTemplateNavigationState = { kind: "list" },
   recordingStorageConfig = unavailableRecordingStorageConfig,
   recordingMarkers = [],
   recordingOrganization = { client: null, folder: null, project: null, tags: [] },
@@ -189,9 +209,17 @@ export function VosioWorkspace({
             />
           ) : view === "ai" || view === "templates" || view === "documentation" || view === "trash" || view === "settings" ? (
             <UtilityWorkspaceView
+              aiArchiveActionAlert={aiArchiveActionAlert}
+              aiArchiveBaseHref={aiArchiveBaseHref}
+              aiArchiveDeleteAction={aiArchiveDeleteAction}
+              aiArchiveFilters={aiArchiveFilters}
+              aiArchiveItems={aiArchiveItems}
               aiOutputs={aiOutputs}
               deletedRecordings={deletedRecordingViews}
               promptTemplates={promptTemplates}
+              promptTemplateActions={promptTemplateActions}
+              promptTemplateBaseHref={promptTemplateBaseHref}
+              promptTemplateNavigationState={promptTemplateNavigationState}
               recordingStorageConfig={recordingStorageConfig}
               settings={userSettings}
               settingsStatus={settingsStatus}

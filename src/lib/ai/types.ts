@@ -12,3 +12,10 @@ export type AiOutputView = AiOutputRow & {
   processing_type: string | null;
 };
 
+export type AiArchiveItem = Omit<AiOutputView, "user_id"> & {
+  recording: {
+    id: string;
+    status: import("@/lib/recordings/types").RecordingStatus;
+    title: string;
+  };
+};

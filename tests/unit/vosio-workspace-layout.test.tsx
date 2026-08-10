@@ -26,7 +26,7 @@ describe("Vosio workspace content area", () => {
         hasActiveRecording: true,
         isCreatingRecording: false,
         view
-      })).toBe("content-area");
+      })).toBe("content-area content-area-document");
     }
     expect(getContentAreaClassName({
       hasActiveRecording: false,

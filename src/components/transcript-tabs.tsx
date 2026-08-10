@@ -301,6 +301,18 @@ export function TranscriptTabs({
     } catch {
       // Storage can be unavailable in restrictive browser modes; the tab still changes in memory.
     }
+
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set("tab", tab);
+    if (tab !== "transcript") {
+      currentUrl.searchParams.delete("at");
+      currentUrl.searchParams.delete("highlight");
+    }
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`
+    );
   }
 
   // openTranscriptLocation starts direct-click playback immediately and leaves effects to DOM navigation only.

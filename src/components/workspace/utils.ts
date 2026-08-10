@@ -18,7 +18,7 @@ export function getAiOutputTitle(processingType: string | null) {
 }
 
 // getAiOutputPreview picks a readable preview from JSON and markdown AI output payloads.
-export function getAiOutputPreview(output: AiOutputView) {
+export function getAiOutputPreview(output: Pick<AiOutputView, "output_json" | "output_text">) {
   if (output.output_json && typeof output.output_json === "object") {
     const markdown = "markdown" in output.output_json ? output.output_json.markdown : null;
 

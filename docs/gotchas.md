@@ -267,3 +267,19 @@ Vosio nastavuje v `next.config.ts` základní bezpečnostní hlavičky (`X-Conte
 ## Balíček server-only vyhazuje ve Vitest
 
 `src/lib/env.server.ts` a `src/lib/supabase/admin.ts` importují `server-only`, aby omylný import do client komponenty selhal už při buildu. Balíček `server-only` ale vyhazuje i v plain Node prostředí bez `react-server` condition — tedy i ve Vitest. Proto `vitest.config.ts` aliasuje `server-only` na prázdný stub `tests/stubs/server-only.ts`. Když přidáš `import "server-only"` do dalšího modulu testovaného unit testy, nic dalšího nastavovat nemusíš; alias platí globálně.
+
+## Kopie systémového promptu nesmí věřit formuláři
+
+Read-only input ve formuláři není bezpečnostní hranice. Uživatel může `FormData` změnit ručně. Akce pro kopii systémového promptu proto přijímá pouze UUID, znovu načte řádek přes authenticated RLS klienta s `id` a `is_system = true` a kopíruje výhradně načtené hodnoty. Název, prompt, processing type ani output schema z formuláře se při této akci nepoužijí.
+
+Form action vytvoří odesílaný `FormData` snapshot ještě před serverovým settlementem. Během pending stavu proto musí zůstat fieldset i prompt navigace zamknuté; jinak může uživatel vidět novější draft, i když server uložil starší snapshot. Failure editor odemkne a ponechá přesně rozepsaná data.
+
+## AI archiv nesmí načítat celý transcript
+
+Globální archiv potřebuje preview uloženého outputu a odkaz na nahrávku, nikoli `transcripts.raw_text`, Soniox segmenty, speakers, storage metadata nebo provider konfiguraci. Používej samostatný explicitní join kontrakt. Detail nahrávky si dál načítá transcript vlastním úzkým dotazem; archiv ho nesmí začít tahat jen kvůli filtru nebo odkazu.
+
+Query parametr `error` z delete redirectu je nedůvěryhodný vstup. UI smí vykreslit pouze pevnou allowlist zprávu z `canonicalizeAiArchiveSearchParams`; duplicitní nebo neznámé hodnoty se odstraní, aniž by se zahodily platné filtry `type` a `recording`.
+
+## Git tag není deploy ani databázový postflight
+
+Verze v `package.json`, private commit na `dev` a private tag `vX.Y.Z` potvrzují pouze source-only stav private repozitáře. Neprokazují Vercel deploy, aplikaci Supabase migrací ani shodu remote migration ledgeru. Public repozitář má samostatnou historii a sanitizovaný povrch; private commity ani tagy se do něj nikdy nepushují. Public release potřebuje oddělený public checkout a vlastní ověření. Tyto stavy vždy ověř a reportuj samostatně pro konkrétní target.
