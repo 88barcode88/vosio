@@ -54,11 +54,11 @@ Upload chyby se do UI nesmí propouštět podle prefixu. Zobrazit se smí jen p�
 
 Vývojová route `new-recording-e2e` používá skutečný `VosioWorkspace`, ale live a importní capture sloty musí být inertní lokální prezentace. Fixture nesmí mountovat `PersistentRecorderSlot`, `BrowserRecorder` ani `TranscriptImportForm`; testovací kliknutí nesmí spustit Supabase, Soniox ani aplikační API mutaci. Produkční defaulty injekce nemění.
 
-## Soniox realtime region není websocket URL
+## Soniox region je uživatelská preference, ne URL
 
-Pro EU realtime Soniox konfiguraci používej ideálně `SONIOX_REGION=eu`. Pokud je kvůli zpětné kompatibilitě v `SONIOX_STT_WS_URL` hodnota `eu`, aplikace ji interpretuje jako region, ne jako URL. Plná URL má smysl jen ve tvaru `wss://...`.
+Region se vybírá v Nastavení pro každého uživatele. Global je výchozí. Temporary API key musí vzniknout ve stejné regionální REST API doméně, do které se pak připojuje realtime WebSocket, a async polling musí používat region uložený při vytvoření jobu. Aplikace proto mapuje volbu na pevné podporované endpointy a nepřijímá vlastní URL.
 
-Soniox temporary API key musí vzniknout ve stejné regionální REST API doméně, do které se pak připojuje realtime WebSocket. Pro `SONIOX_REGION=eu` tedy backend používá `https://api.eu.soniox.com` a browser SDK se připojuje do EU realtime endpointu. Kombinace US auth API a EU realtime WebSocketu vede na chybu typu `Invalid or expired temporary API key`.
+EU volba funguje pouze s EU-enabled Soniox projektem a odpovídajícím regionálním klíčem. Kombinace globálního klíče a EU endpointů vede k access/auth chybě; v takovém případě ověř region projektu a kontaktuj `support@soniox.com`.
 
 ## Auth metadata jen pro preference
 
@@ -234,11 +234,11 @@ Aktivní tab detailu nahrávky se ukládá do `localStorage` i do cookie `vosio-
 
 ## Soniox region musí odpovídat projektu
 
-Soniox API key je vázaný na region projektu. Pokud dashboard ukazuje `Region: United States`, nech ve Vercelu `SONIOX_REGION` prázdné nebo proměnnou odstraň, protože výchozí Soniox endpoint je US. `SONIOX_REGION=eu` používej jen s API klíčem z EU Soniox projektu. Kombinace US klíč + EU REST/realtime endpoint vede k chybě při vytváření temporary realtime key.
+Soniox API key je vázaný na region projektu. Global je bezpečný výchozí režim pro běžný projekt. EU vybírej v Nastavení jen s EU-enabled Soniox projektem a odpovídajícím regionálním klíčem. Nový async job uloží region do `transcription_jobs.provider_config`; pozdější změna uživatelské preference nesmí přesměrovat už existující job.
 
 ## Soniox temporary key expirace není délka nahrávání
 
-`SONIOX_TEMP_KEY_EXPIRES_SECONDS` nastavuje jen dobu, po kterou se browser muze pripojit s cerstve vydanym temporary key. Jakmile je WebSocket pripojeny, nahravka muze bezet dal. Vosio do temporary key requestu neposila zadny limit delky realtime session, protoze realtime nahravani nema mit aplikacni session cap vynuceny provider payloadem.
+Temporary key má v aplikaci pevnou interní životnost 60 sekund a není konfigurovatelný. Jde jen o dobu, po kterou se browser může připojit s čerstvě vydaným klíčem. Jakmile je WebSocket připojený, nahrávka může běžet dál. Vosio do temporary key requestu neposílá žádný limit délky realtime session, protože realtime nahrávání nemá mít aplikační session cap vynucený provider payloadem.
 
 ## Soniox usage je odhad z délky audia
 

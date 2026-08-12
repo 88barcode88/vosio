@@ -10,11 +10,15 @@ Tracked template:
 
 ## Vercel
 
-Add the same variables in Vercel project settings before deploying connected features.
+Vosio has one installation model: each person or company deploys its own application and supplies its own Supabase, Soniox, and AI credentials. There is no shared credential pool or separate supported staging installation flow.
 
-## Production Vercel baseline
+Add the variables below in Vercel project settings before deploying connected features. Production and Preview use the same required variable names when both environments should be fully functional. If both scopes point to the same Supabase and provider projects, Preview uses the same data and creates the same provider costs as Production. An owner may choose different values, but the application setup and required names do not change.
 
-Vosio production currently expects the required variables below. `GEMINI_API_KEY` is optional unless Gemini models are enabled for real use. This is the deployment baseline for a new maintainer cloning the repo.
+Environment changes are read when the app is built or started. Redeploy or restart the application after adding or changing them.
+
+## Vercel baseline
+
+Vosio expects the required variables below. `GEMINI_API_KEY` is optional unless Gemini models are enabled for real use.
 
 | Variable | Required for | Why it exists |
 | --- | --- | --- |
@@ -22,10 +26,14 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser | Publishable Supabase key for client-side authenticated access. RLS still controls rows and storage objects. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server only | Privileged server-side writes for transcription jobs, transcript persistence, AI jobs, signed storage access, and live transcript saves. Never expose it to the browser. |
 | `SONIOX_API_KEY` | Server only | Creates async transcription jobs and mints temporary realtime keys. Never expose it to the browser. |
-| `SONIOX_REGION` | Server only | Selects the Soniox regional API endpoint. Use `eu` only with an EU Soniox project key. Leave empty/delete for a US Soniox project. |
-| `SONIOX_TEMP_KEY_EXPIRES_SECONDS` | Server only | Controls how long a temporary browser key can be used to establish the Soniox WebSocket connection. Current operational value: `60`. |
 | `OPENAI_API_KEY` | Server only | Runs OpenAI AI processing over completed transcripts. Models are selected in the app, not through Vercel. |
 | `GEMINI_API_KEY` | Server only, optional | Required only when the app user selects a Gemini model for AI processing. Never expose it to the browser. |
+
+## Safe configuration diagnostics
+
+- Before Supabase can initialize, `/configuration` shows only missing public Supabase variable names and the coarse environment label. It never imports a Supabase client or displays values.
+- After authentication, **Settings -> Technical information** shows readiness, the environment label, optional Gemini presence, and missing required names only. It never displays secret values, prefixes, lengths, or hashes.
+- Diagnostics do not apply environment changes. Redeploy or restart after fixing the hosting configuration.
 
 ## Variables
 
@@ -58,34 +66,10 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 - Server-only Soniox API key.
 - Used for transcription job creation and realtime temporary key minting.
 
-`SONIOX_API_BASE_URL`
-
-- Optional Soniox REST API base URL.
-- Defaults to `https://api.soniox.com`.
-- Use the documented regional API URL only when the deployment requires data residency.
-
-`SONIOX_REGION`
-
-- Optional Soniox region alias.
-- Defaults to the US/global Soniox endpoint when empty.
-- Use `eu` only with an EU Soniox project API key.
-
 `SONIOX_ASYNC_MODEL`
 
 - Optional async transcription model.
 - Defaults to `stt-async-v5`.
-
-`SONIOX_TEMP_KEY_EXPIRES_SECONDS`
-
-- Optional lifetime for browser-safe Soniox temporary keys.
-- Defaults to `60`.
-- You can delete this from Vercel if the default is acceptable.
-- This is only the time window for connecting to Soniox after the key is minted, not the recording duration.
-
-`SONIOX_STT_WS_URL`
-
-- Optional Soniox realtime websocket URL.
-- Use only for documented regional routing, for example EU data residency.
 
 `OPENAI_API_KEY`
 
@@ -103,6 +87,16 @@ Vosio production currently expects the required variables below. `GEMINI_API_KEY
 - Paid Gemini API content is not used to improve Google's products according to the current Google AI pricing/data-use table; do not use Gemini Free tier for sensitive production call content.
 
 ### App-managed model preferences
+
+`sonioxRegion` (app-managed preference)
+
+- Selected per user in **Settings** and stored in Supabase Auth `user_metadata.vosio_settings`.
+- **Global** is the default for legacy, missing, or invalid metadata.
+- **EU** routes both realtime and new async jobs to the EU endpoints. Each async job stores its chosen region so later polling keeps the original route.
+- EU requires an EU-enabled Soniox project and matching regional key. If EU access or authentication fails, contact `support@soniox.com`.
+- Region is not selected through a Vercel environment variable.
+
+The browser-safe Soniox temporary key has a fixed internal connection lifetime of 60 seconds. It is not configurable. The lifetime controls how soon the browser must establish its realtime connection after minting; it does not cap the duration of an established recording.
 
 `SONIOX_REALTIME_MODEL`
 
@@ -164,6 +158,8 @@ Runtime requirements:
 - Local callback URL: `http://localhost:3047/auth/callback`.
 - Production Site URL: `https://<your-app>.vercel.app` (your deployment domain).
 - Production callback URL: `https://<your-app>.vercel.app/auth/callback`.
+- Add every stable custom domain and Production callback to Supabase Auth redirect URLs.
+- For Vercel Preview, add `https://*-<team-or-account-slug>.vercel.app/**` to the Supabase Auth redirect URLs, replacing the placeholder with the deployment owner slug. This is the current [Supabase-documented Vercel wildcard callback](https://supabase.com/docs/guides/auth/redirect-urls#vercel-preview-urls); keep the pattern scoped to the project owner. Preview deployments must be covered before password or email callback flows can return to them.
 
 The app uses `@supabase/ssr` with cookie-backed sessions. The Next.js `proxy.ts` refreshes sessions before protected routes render.
 

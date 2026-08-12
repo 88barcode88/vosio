@@ -4,6 +4,14 @@
 
 The authenticated workspace loads real `recordings` rows from Supabase for the current user.
 
+## Installation and provider region
+
+Vosio has one installation flow: each person or company deploys its own application and supplies its own Vercel, Supabase, Soniox, and AI credentials. The required environment variable names are identical in Vercel Production and Preview when both scopes are enabled as fully functional deployments. Reusing the same values means both scopes use the same data and provider costs; this is an owner decision inside the same installation flow, not a second supported staging mode.
+
+The Soniox region is selected per user in **Settings**. **Global** is the default for missing, legacy, or invalid metadata. **EU** requires an EU-enabled Soniox project and matching regional key. If EU access or authentication fails, the UI directs the owner to `support@soniox.com`. Both realtime and new async transcription use the selected region; an async job stores the selected region in `provider_config` and all later polling keeps that stored route. The temporary realtime key connection lifetime is fixed internally at 60 seconds and is not configurable; it does not limit an established recording.
+
+Before Supabase initialization, `/configuration` may show only the environment label and missing public Supabase variable names. After authentication, **Settings -> Technical information** may show the environment, readiness, optional Gemini presence, and missing required names only. Neither surface may expose values, prefixes, lengths, hashes, or full environment objects. Environment changes require a Vercel redeploy or local restart.
+
 When the user uploads an audio file:
 
 1. The browser validates MIME type and size.
