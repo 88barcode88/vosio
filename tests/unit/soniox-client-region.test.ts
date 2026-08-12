@@ -5,7 +5,8 @@ import {
   createSonioxTranscription,
   getSonioxRealtimeClientConfig,
   getSonioxTranscript,
-  getSonioxTranscription
+  getSonioxTranscription,
+  SonioxRequestError
 } from "@/lib/soniox/client";
 
 const testEnv = vi.hoisted(() => ({
@@ -124,10 +125,14 @@ describe("Soniox client regional routing", () => {
     }
   );
 
-  it("redacts the server-only API key from provider error text", async () => {
+  it("preserves structured provider diagnostics while redacting the server-only API key", async () => {
     fetchMock.mockResolvedValue(
       new Response(
-        JSON.stringify({ message: `Rejected bearer ${testEnv.sonioxApiKey}` }),
+        JSON.stringify({
+          error_type: "unauthenticated",
+          message: `Rejected bearer ${testEnv.sonioxApiKey}`,
+          request_id: "req-client-401"
+        }),
         { headers: { "Content-Type": "application/json" }, status: 401 }
       )
     );
@@ -137,8 +142,55 @@ describe("Soniox client regional routing", () => {
       region: "global"
     }).catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(SonioxRequestError);
+    expect(error).toMatchObject({
+      errorType: "unauthenticated",
+      requestId: "req-client-401",
+      status: 401
+    });
     expect((error as Error).message).toContain("401");
     expect((error as Error).message).not.toContain(testEnv.sonioxApiKey);
+    expect(JSON.stringify(error)).not.toContain(testEnv.sonioxApiKey);
+  });
+
+  it("does not invent structured fields omitted by the provider", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ message: "Service unavailable." }),
+        { headers: { "Content-Type": "application/json" }, status: 503 }
+      )
+    );
+
+    const error = await createSonioxTemporaryKey({
+      clientReferenceId: "live-error-no-request-id",
+      region: "eu"
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SonioxRequestError);
+    expect(error).toMatchObject({ status: 503 });
+    expect((error as SonioxRequestError).errorType).toBeUndefined();
+    expect((error as SonioxRequestError).requestId).toBeUndefined();
+    expect(JSON.stringify(error)).not.toContain("requestId");
+  });
+
+  it("drops a provider request id that contains the server-only API key", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error_type: "unauthenticated",
+          message: "Authentication failed.",
+          request_id: `req-${testEnv.sonioxApiKey}`
+        }),
+        { headers: { "Content-Type": "application/json" }, status: 401 }
+      )
+    );
+
+    const error = await createSonioxTemporaryKey({
+      clientReferenceId: "live-error-secret-request-id",
+      region: "eu"
+    }).catch((caught: unknown) => caught) as SonioxRequestError;
+
+    expect(error.requestId).toBeUndefined();
+    expect(JSON.stringify(error)).not.toContain(testEnv.sonioxApiKey);
   });
 });

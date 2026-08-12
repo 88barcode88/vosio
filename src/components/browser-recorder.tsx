@@ -50,7 +50,7 @@ import type {
   LiveMarkerFeedback,
   LiveSaveMode,
   RealtimeConfig,
-  RealtimeConfigErrorCode,
+  RealtimeConfigError,
   RecorderStatus
 } from "@/components/browser-recorder/types";
 import {
@@ -683,11 +683,11 @@ export function BrowserRecorder({
   async function fetchRealtimeConfig(): Promise<RealtimeConfig> {
     const response = await fetch("/api/soniox/realtime-key", { method: "POST" });
     const payload = (await response.json().catch(() => null)) as
-      | (RealtimeConfig & { code?: RealtimeConfigErrorCode; error?: string })
+      | (RealtimeConfig & RealtimeConfigError)
       | null;
 
     if (!response.ok || !payload?.api_key) {
-      throw new Error(getRealtimeConfigErrorMessage(payload?.code));
+      throw new Error(getRealtimeConfigErrorMessage(payload?.code, payload?.request_id));
     }
 
     return {

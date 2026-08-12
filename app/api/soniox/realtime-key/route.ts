@@ -3,15 +3,28 @@ import { NextResponse } from "next/server";
 import { createRateLimiter } from "@/lib/rate-limit";
 import {
   createSonioxTemporaryKey,
-  getSonioxRealtimeClientConfig
+  getSonioxRealtimeClientConfig,
+  SonioxRequestError
 } from "@/lib/soniox/client";
+import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
+import type { SonioxRegion } from "@/lib/soniox/region";
 import { createClient } from "@/lib/supabase/server";
 
 // Generous per-user cap: live sessions re-request keys on reconnects, abuse loops do not.
 const realtimeKeyRateLimit = createRateLimiter({ limit: 20, windowMs: 60_000 });
 
-// getRealtimeKeyErrorCode maps internal failures to safe client-visible diagnostics.
-function getRealtimeKeyErrorCode(error: unknown) {
+// isSonioxAuthenticationFailure recognizes only structured provider auth and permission failures.
+function isSonioxAuthenticationFailure(error: SonioxRequestError) {
+  return error.status === 401 || error.status === 403 || [
+    "unauthenticated",
+    "unauthorized",
+    "forbidden",
+    "permission_denied"
+  ].includes(error.errorType?.toLowerCase() ?? "");
+}
+
+// getRealtimeKeyErrorCode maps structured failures to safe client-visible diagnostics.
+function getRealtimeKeyErrorCode(error: unknown, region: SonioxRegion) {
   if (!(error instanceof Error)) {
     return "unknown";
   }
@@ -20,7 +33,11 @@ function getRealtimeKeyErrorCode(error: unknown) {
     return "server_env_invalid";
   }
 
-  if (/api key|unauthorized|forbidden|401|403/i.test(error.message)) {
+  if (error instanceof SonioxRequestError && isSonioxAuthenticationFailure(error)) {
+    if (region === "eu") {
+      return "soniox_eu_access_required";
+    }
+
     return "soniox_auth_or_region";
   }
 
@@ -39,6 +56,7 @@ export async function POST() {
     return NextResponse.json({ error: "Nejste přihlášený." }, { status: 401 });
   }
 
+  const region = getUserSettingsFromMetadata(user.user_metadata).sonioxRegion;
   const rateLimit = realtimeKeyRateLimit(user.id);
 
   if (!rateLimit.allowed) {
@@ -49,10 +67,10 @@ export async function POST() {
   }
 
   try {
-    const realtimeConfig = getSonioxRealtimeClientConfig("global");
+    const realtimeConfig = getSonioxRealtimeClientConfig(region);
     const temporaryKey = await createSonioxTemporaryKey({
       clientReferenceId: `vosio-live:${user.id}:${randomUUID()}`,
-      region: "global"
+      region
     });
 
     return NextResponse.json({
@@ -62,12 +80,26 @@ export async function POST() {
       stt_ws_url: realtimeConfig.websocketUrl
     });
   } catch (error) {
-    if (error instanceof Error) {
+    if (error instanceof SonioxRequestError) {
+      console.error("[Vosio realtime key]", {
+        message: error.message,
+        requestId: error.requestId
+      });
+    } else if (error instanceof Error) {
       console.error("[Vosio realtime key]", error.message);
     }
 
+    const code = getRealtimeKeyErrorCode(error, region);
+    const requestId = error instanceof SonioxRequestError ? error.requestId : undefined;
+
     return NextResponse.json(
-      { code: getRealtimeKeyErrorCode(error), error: "Nepodařilo se vytvořit realtime klíč." },
+      {
+        code,
+        error: code === "soniox_eu_access_required"
+          ? "Region EU vyžaduje Soniox EU projekt a odpovídající regionální API key."
+          : "Nepodařilo se vytvořit realtime klíč.",
+        ...(requestId ? { request_id: requestId } : {})
+      },
       { status: 500 }
     );
   }

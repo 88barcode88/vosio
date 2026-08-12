@@ -34,21 +34,60 @@ export type SonioxTemporaryKey = {
   expires_at: string;
 };
 
-// getSonioxErrorMessage extracts a safe provider message without exposing credentials.
-function getSonioxErrorMessage(payload: unknown, status: number, apiKey: string) {
-  if (typeof payload !== "object" || payload === null) {
-    return `Soniox request failed with status ${status}.`;
+type SonioxRequestErrorInput = {
+  errorType?: string;
+  message: string;
+  requestId?: string;
+  status: number;
+};
+
+// SonioxRequestError preserves safe provider diagnostics for server-side classification.
+export class SonioxRequestError extends Error {
+  readonly errorType?: string;
+  readonly requestId?: string;
+  readonly status: number;
+
+  // constructor records only diagnostics already sanitized at the provider boundary.
+  constructor(input: SonioxRequestErrorInput) {
+    super(`${input.message} (${input.status})`);
+    this.name = "SonioxRequestError";
+    this.errorType = input.errorType;
+    this.requestId = input.requestId;
+    this.status = input.status;
   }
+}
+
+// getSafeProviderIdentifier accepts only bounded identifier characters from provider diagnostics.
+function getSafeProviderIdentifier(value: unknown, apiKey: string) {
+  return typeof value === "string" && !value.includes(apiKey) && /^[a-z0-9._:-]{1,200}$/i.test(value)
+    ? value
+    : undefined;
+}
+
+// getSonioxRequestError extracts safe structured diagnostics without exposing credentials.
+function getSonioxRequestError(payload: unknown, status: number, apiKey: string) {
+  if (typeof payload !== "object" || payload === null) {
+    return new SonioxRequestError({
+      message: "Soniox request failed",
+      status
+    });
+  }
+
+  const errorType = "error_type" in payload
+    ? getSafeProviderIdentifier(payload.error_type, apiKey)
+    : undefined;
+  const requestId = "request_id" in payload
+    ? getSafeProviderIdentifier(payload.request_id, apiKey)
+    : undefined;
+  let message = "Soniox request failed";
 
   if ("error_message" in payload && typeof payload.error_message === "string") {
-    return `${payload.error_message.replaceAll(apiKey, "[redacted]")} (${status})`;
+    message = payload.error_message.replaceAll(apiKey, "[redacted]");
+  } else if ("message" in payload && typeof payload.message === "string") {
+    message = payload.message.replaceAll(apiKey, "[redacted]");
   }
 
-  if ("message" in payload && typeof payload.message === "string") {
-    return `${payload.message.replaceAll(apiKey, "[redacted]")} (${status})`;
-  }
-
-  return `Soniox request failed with status ${status}.`;
+  return new SonioxRequestError({ errorType, message, requestId, status });
 }
 
 // sonioxFetch calls Soniox REST API with server-only bearer authentication.
@@ -67,7 +106,7 @@ async function sonioxFetch<T>(region: SonioxRegion, path: string, init?: Request
   const payload = (await response.json().catch(() => null)) as T | unknown;
 
   if (!response.ok) {
-    throw new Error(getSonioxErrorMessage(payload, response.status, env.sonioxApiKey));
+    throw getSonioxRequestError(payload, response.status, env.sonioxApiKey);
   }
 
   return payload as T;

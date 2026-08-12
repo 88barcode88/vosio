@@ -209,21 +209,33 @@ export function getRealtimeErrorMessage(error: Error, saveMode: LiveSaveMode) {
 }
 
 // getRealtimeConfigErrorMessage converts realtime key API failures into actionable UI text.
-export function getRealtimeConfigErrorMessage(code: RealtimeConfigErrorCode | undefined) {
+export function getRealtimeConfigErrorMessage(
+  code: RealtimeConfigErrorCode | undefined,
+  requestId?: string
+) {
   const messages: Record<RealtimeConfigErrorCode, string> = {
     server_env_invalid: "Realtime konfigurace na serveru není platná.",
     soniox_auth_or_region: "Soniox API key neodpovídá nastavenému regionu.",
+    soniox_eu_access_required:
+      "EU region Soniox vyžaduje EU Soniox projekt a odpovídající regionální API key. " +
+      "Kontaktujte support@soniox.com.",
     soniox_request_failed: "Soniox nevydal dočasný realtime klíč.",
     unknown: "Nepovedlo se získat realtime klíč."
   };
 
-  return messages[code ?? "unknown"];
+  const resolvedCode = code ?? "unknown";
+  const message = messages[resolvedCode];
+
+  return resolvedCode === "soniox_eu_access_required" && requestId
+    ? `${message} ID požadavku: ${requestId}.`
+    : message;
 }
 
 // isSafeRecordingStartErrorMessage allows only curated startup errors into visible UI.
 export function isSafeRecordingStartErrorMessage(message: string) {
   return [
     "Realtime konfigurace",
+    "EU region Soniox",
     "Soniox API key",
     "Soniox nevydal",
     "Nepovedlo se získat"
