@@ -1,3 +1,4 @@
+
 /** @vitest-environment jsdom */
 
 import { renderToStaticMarkup } from "react-dom/server";
@@ -7,11 +8,13 @@ import { describe, expect, it, vi } from "vitest";
 import { InstallationStatusDetails, SettingsPanel } from "@/components/settings-panel";
 import type { InstallationStatus } from "@/lib/installation-status.server";
 import { parseSettingsForm } from "@/lib/settings/form";
+import { createSettingsActionError, type SettingsActionState } from "@/lib/settings/action-state";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 
 vi.mock("@/lib/settings/actions", () => ({
   updateUserSettingsAction: vi.fn()
 }));
+
 
 const storageConfig = {
   allowedMimeTypes: ["audio/mpeg"],
@@ -108,6 +111,7 @@ describe("settings workspace layout", () => {
     }
     expect(markup).toContain("Některé dříve uložené preference zatím aplikace nepoužívá.");
     expect(markup).toContain("Usage se teď nepodařilo načíst.");
+    expect(markup).toContain('autoComplete="off"');
   });
 
   it("renders only safe installation state in the technical information content", () => {
@@ -118,6 +122,37 @@ describe("settings workspace layout", () => {
     expect(markup).toContain("OPENAI_API_KEY");
     expect(markup).toContain("GEMINI_API_KEY (volitelné)");
     expect(markup).not.toContain("test-secret");
+  });
+
+  it("keeps read-only disclosures and theme available when saving is disabled", async () => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(
+        <SettingsPanel
+          disableSave
+          installationStatus={installationStatus}
+          recordingStorageConfig={storageConfig}
+          settings={{ ...defaultUserSettings, supabaseStoragePlan: "free" }}
+          status={null}
+          usageState={{ error: "Usage se teď nepodařilo načíst.", summary: null }}
+        />
+      ));
+
+      expect(Array.from(container.querySelectorAll<HTMLSelectElement>("select")).every((select) => select.disabled))
+        .toBe(true);
+      expect(container.querySelector<HTMLButtonElement>(".settings-save-button")?.disabled).toBe(true);
+      const technicalDisclosure = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "Technické informace")!;
+      const themeToggle = container.querySelector<HTMLButtonElement>(".theme-toggle")!;
+      expect(technicalDisclosure.disabled).toBe(false);
+      expect(themeToggle.disabled).toBe(false);
+      await act(async () => technicalDisclosure.click());
+      expect(technicalDisclosure.getAttribute("aria-expanded")).toBe("true");
+    } finally {
+      await act(async () => root.unmount());
+    }
   });
 
   it("renders the saved Soniox region and a persistent EU access warning", () => {
@@ -138,6 +173,7 @@ describe("settings workspace layout", () => {
   it("updates the EU warning in both directions without saving the form", async () => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const container = document.createElement("div");
+    document.body.append(container);
     const root = createRoot(container);
 
     try {
@@ -163,7 +199,7 @@ describe("settings workspace layout", () => {
       });
 
       expect(select?.value).toBe("global");
-      expect(container.querySelector(".settings-region-warning")).toBeNull();
+      expect(container.querySelector(".settings-region-warning")).not.toBeNull();
 
       await act(async () => {
         select!.value = "eu";
@@ -172,6 +208,132 @@ describe("settings workspace layout", () => {
 
       expect(select?.value).toBe("eu");
       expect(container.querySelector(".settings-region-warning")).not.toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  it("preserves every visible settings field after failure and across an unrelated rerender", async () => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const saveAction = vi.fn(async (_state, formData: FormData) =>
+      createSettingsActionError("save_failed", formData.get("sonioxRegion"))
+    );
+    const persistedSettings = { ...defaultUserSettings, sonioxRegion: "global" as const, supabaseStoragePlan: "free" as const };
+    const renderPanel = (nextSettings: UserSettings = persistedSettings, nextStatus: "saved" | null = null) => (
+      <SettingsPanel
+        installationStatus={installationStatus}
+        recordingStorageConfig={storageConfig}
+        saveAction={saveAction}
+        settings={nextSettings}
+        status={nextStatus}
+        usageState={{ error: "Usage se teď nepodařilo načíst.", summary: null }}
+      />
+    );
+
+    try {
+      await act(async () => root.render(renderPanel()));
+      const draft = {
+        defaultOpenaiModel: "gpt-5.6-sol",
+        sonioxRealtimeLanguage: "de",
+        sonioxRealtimeModel: "stt-rt-v5",
+        sonioxRegion: "eu",
+        supabaseStoragePlan: "paid"
+      };
+      await act(async () => {
+        for (const [name, value] of Object.entries(draft)) {
+          const select = container.querySelector<HTMLSelectElement>(`select[name="${name}"]`)!;
+          select.value = value;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+      const technicalDisclosure = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "Technické informace")!;
+      await act(async () => technicalDisclosure.click());
+      expect(Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "Technické informace")
+        ?.getAttribute("aria-expanded")).toBe("true");
+      container.querySelector<HTMLButtonElement>(".settings-save-button")!.focus();
+      await act(async () => container.querySelector<HTMLFormElement>("form")!.requestSubmit());
+
+      expect(saveAction).toHaveBeenCalledOnce();
+      for (const [name, value] of Object.entries(draft)) {
+        expect(saveAction.mock.calls[0]?.[1].get(name)).toBe(value);
+        expect(container.querySelector<HTMLSelectElement>(`select[name="${name}"]`)?.value).toBe(value);
+      }
+      expect(container.querySelector(".settings-alert-error")?.textContent)
+        .toContain("Nastavení se nepodařilo uložit");
+      expect(Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent === "Technické informace")
+        ?.getAttribute("aria-expanded")).toBe("true");
+      expect(document.activeElement).toBe(container.querySelector(".settings-alert-error"));
+      expect(container.querySelector(".settings-region-warning")).not.toBeNull();
+
+      await act(async () => root.render(renderPanel({ ...persistedSettings })));
+      for (const [name, value] of Object.entries(draft)) {
+        expect(container.querySelector<HTMLSelectElement>(`select[name="${name}"]`)?.value).toBe(value);
+      }
+      expect(container.querySelector(".settings-alert-error")).not.toBeNull();
+
+      const serverSettings: UserSettings = {
+        ...defaultUserSettings,
+        defaultOpenaiModel: "gpt-5.6-luna",
+        sonioxRealtimeLanguage: "cs",
+        sonioxRegion: "global",
+        supabaseStoragePlan: "free"
+      };
+      await act(async () => root.render(renderPanel(serverSettings, "saved")));
+      expect(container.querySelector<HTMLSelectElement>('select[name="defaultOpenaiModel"]')?.value)
+        .toBe("gpt-5.6-luna");
+      expect(container.querySelector<HTMLSelectElement>('select[name="sonioxRealtimeLanguage"]')?.value)
+        .toBe("cs");
+      expect(container.querySelector<HTMLSelectElement>('select[name="sonioxRegion"]')?.value)
+        .toBe("global");
+      expect(container.querySelector<HTMLSelectElement>('select[name="supabaseStoragePlan"]')?.value)
+        .toBe("free");
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  it("locks the whole settings control group while the action is pending and restores the draft", async () => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    let settle!: (state: SettingsActionState) => void;
+    const saveAction = vi.fn(() => new Promise<SettingsActionState>((resolve) => { settle = resolve; }));
+
+    try {
+      await act(async () => root.render(
+        <SettingsPanel
+          installationStatus={installationStatus}
+          recordingStorageConfig={storageConfig}
+          saveAction={saveAction}
+          settings={{ ...defaultUserSettings, sonioxRegion: "global", supabaseStoragePlan: "free" }}
+          status={null}
+          usageState={{ error: "Usage se teď nepodařilo načíst.", summary: null }}
+        />
+      ));
+      const region = container.querySelector<HTMLSelectElement>('select[name="sonioxRegion"]')!;
+      await act(async () => {
+        region.value = "eu";
+        region.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      act(() => container.querySelector<HTMLFormElement>("form")!.requestSubmit());
+
+      const fieldset = container.querySelector<HTMLFieldSetElement>("fieldset[data-settings-fields]");
+      expect(fieldset?.disabled).toBe(true);
+      expect(fieldset?.getAttribute("aria-busy")).toBe("true");
+      expect(Array.from(container.querySelectorAll<HTMLSelectElement | HTMLButtonElement>("select, button"))
+        .every((control) => control.disabled || control.closest("fieldset")?.disabled)).toBe(true);
+
+      await act(async () => settle(createSettingsActionError("save_failed", "eu")));
+      expect(fieldset?.disabled).toBe(false);
+      expect(container.querySelector<HTMLSelectElement>('select[name="sonioxRegion"]')?.value).toBe("eu");
     } finally {
       await act(async () => root.unmount());
     }

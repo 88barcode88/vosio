@@ -399,6 +399,14 @@
 .settings-form {
   gap: 16px;
 }
+.settings-form-fields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
 .settings-section {
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -473,7 +481,7 @@
   padding-left: 12px;
 }
 .settings-region-warning {
-  display: flex;
+  display: none;
   gap: 9px;
   align-items: flex-start;
   border: 1px solid color-mix(in srgb, var(--warning) 42%, var(--border));
@@ -483,6 +491,9 @@
   padding: 11px 12px;
   font-size: 13px;
   line-height: 1.5;
+}
+.settings-section-transcription:has(select[name="sonioxRegion"] option[value="eu"]:checked) .settings-region-warning {
+  display: flex;
 }
 .settings-region-warning svg {
   flex: 0 0 auto;

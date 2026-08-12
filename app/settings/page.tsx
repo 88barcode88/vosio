@@ -7,10 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { loadCurrentMonthUsageState } from "@/lib/usage/summary";
 
 type SettingsPageProps = {
-  searchParams: Promise<{
-    error?: string;
-    saved?: string;
-  }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 // SettingsPage renders user-editable non-secret app preferences.
@@ -38,7 +35,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       installationStatus={installationStatus}
       recordings={[]}
       recordingStorageConfig={recordingStorageConfig}
-      settingsStatus={params.saved ? "saved" : params.error ? "error" : null}
+      settingsStatus={params.saved === "1" ? "saved" : null}
       transcripts={[]}
       usageState={usageState}
       userSettings={userSettings}

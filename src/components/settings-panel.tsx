@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Settings2, TriangleAlert } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Disclosure } from "@/components/ui/disclosure";
@@ -9,6 +9,7 @@ import type { InstallationEnvironment, InstallationStatus } from "@/lib/installa
 import { getRecordingStorageLimitSummary } from "@/lib/recordings/storage-copy";
 import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
 import { updateUserSettingsAction } from "@/lib/settings/actions";
+import { createInitialSettingsActionState, type SettingsActionState } from "@/lib/settings/action-state";
 import { supabaseStoragePlans, type UserSettings } from "@/lib/settings/types";
 import {
   AI_MODEL_QUALITY_GUIDANCE,
@@ -25,9 +26,44 @@ type SettingsPanelProps = {
   installationStatus: InstallationStatus;
   recordingStorageConfig: RecordingStorageConfig;
   settings: UserSettings;
+  saveAction?: (state: SettingsActionState, formData: FormData) => Promise<SettingsActionState>;
   status: "error" | "saved" | null;
   usageState: CurrentMonthUsageState;
 };
+
+type VisibleSettingsDraft = Pick<
+  UserSettings,
+  | "defaultOpenaiModel"
+  | "sonioxRealtimeLanguage"
+  | "sonioxRealtimeModel"
+  | "sonioxRegion"
+  | "supabaseStoragePlan"
+>;
+
+// createVisibleSettingsDraft copies only the settings represented by editable form controls.
+function createVisibleSettingsDraft(settings: UserSettings): VisibleSettingsDraft {
+  return {
+    defaultOpenaiModel: settings.defaultOpenaiModel,
+    sonioxRealtimeLanguage: settings.sonioxRealtimeLanguage,
+    sonioxRealtimeModel: settings.sonioxRealtimeModel,
+    sonioxRegion: settings.sonioxRegion,
+    supabaseStoragePlan: settings.supabaseStoragePlan
+  };
+}
+
+// getVisibleSettingsKey changes only when server-authoritative editable settings actually change.
+function getVisibleSettingsKey(settings: UserSettings) {
+  return JSON.stringify(createVisibleSettingsDraft(settings));
+}
+
+// SettingsSaveButton exposes the real pending state while a settings mutation is in flight.
+function SettingsSaveButton({ disabled, pending }: { disabled: boolean; pending: boolean }) {
+  return (
+    <button className="settings-save-button" disabled={disabled || pending} type="submit">
+      {pending ? "Ukládám nastavení…" : "Uložit nastavení"}
+    </button>
+  );
+}
 
 const installationEnvironmentLabels: Record<InstallationEnvironment, string> = {
   development: "Vývoj",
@@ -182,11 +218,32 @@ export function InstallationStatusDetails({ status }: { status: InstallationStat
 }
 
 // SettingsPanel presents only preferences that the current runtime can apply.
-export function SettingsPanel({ disableSave = false, installationStatus, recordingStorageConfig, settings, status, usageState }: SettingsPanelProps) {
-  const [sonioxRegion, setSonioxRegion] = useState<SonioxRegion>(settings.sonioxRegion);
-  const storageLimitSummary = getRecordingStorageLimitSummary(recordingStorageConfig, settings.supabaseStoragePlan);
-  const sonioxRealtimeModel = sonioxRealtimeModelOptions.find((option) => option.id === settings.sonioxRealtimeModel)
+export function SettingsPanel({ disableSave = false, installationStatus, recordingStorageConfig, saveAction = updateUserSettingsAction, settings, status, usageState }: SettingsPanelProps) {
+  const [visibleDraft, setVisibleDraft] = useState(() => createVisibleSettingsDraft(settings));
+  const [, setReconcileRevision] = useState(0);
+  const visibleSettingsKey = getVisibleSettingsKey(settings);
+  const previousVisibleSettingsKey = useRef(visibleSettingsKey);
+  const errorAlertRef = useRef<HTMLDivElement>(null);
+  const [actionState, formAction, pending] = useActionState(
+    saveAction,
+    createInitialSettingsActionState(status)
+  );
+  const storageLimitSummary = getRecordingStorageLimitSummary(recordingStorageConfig, visibleDraft.supabaseStoragePlan);
+  const sonioxRealtimeModel = sonioxRealtimeModelOptions.find((option) => option.id === visibleDraft.sonioxRealtimeModel)
     ?? sonioxRealtimeModelOptions[0];
+
+  useEffect(() => {
+    if (actionState.status === "error") {
+      setReconcileRevision((revision) => revision + 1);
+      errorAlertRef.current?.focus();
+    }
+  }, [actionState]);
+
+  useEffect(() => {
+    if (previousVisibleSettingsKey.current === visibleSettingsKey) return;
+    previousVisibleSettingsKey.current = visibleSettingsKey;
+    setVisibleDraft(createVisibleSettingsDraft(settings));
+  }, [settings, visibleSettingsKey]);
 
   return (
     <section className="utility-panel settings-panel" aria-label="Nastavení">
@@ -198,14 +255,26 @@ export function SettingsPanel({ disableSave = false, installationStatus, recordi
         </div>
       </div>
 
-      {status ? (
-        <div aria-live="polite" className={status === "saved" ? "settings-alert settings-alert-success" : "settings-alert settings-alert-error"} role={status === "saved" ? "status" : "alert"}>
+      {actionState.status !== "idle" ? (
+        <div
+          aria-live="polite"
+          className={actionState.status === "saved" ? "settings-alert settings-alert-success" : "settings-alert settings-alert-error"}
+          ref={actionState.status === "error" ? errorAlertRef : undefined}
+          role={actionState.status === "saved" ? "status" : "alert"}
+          tabIndex={actionState.status === "error" ? -1 : undefined}
+        >
           <CheckCircle2 size={17} />
-          {status === "saved" ? "Nastavení je uložené." : "Nastavení se nepodařilo uložit."}
+          {actionState.status === "saved" ? "Nastavení je uložené." : "Nastavení se nepodařilo uložit."}
         </div>
       ) : null}
 
-      <form action={disableSave ? undefined : updateUserSettingsAction} className="settings-form">
+      <form action={disableSave ? undefined : formAction} autoComplete="off" className="settings-form">
+        <fieldset
+          aria-busy={pending}
+          className="settings-form-fields"
+          data-settings-fields
+          disabled={pending}
+        >
         <input name="aiTemperature" type="hidden" value={settings.aiTemperature} />
         <input name="audioRetentionPolicy" type="hidden" value={settings.audioRetentionPolicy} />
         <input name="autoProcessAfterTranscription" type="hidden" value={settings.autoProcessAfterTranscription ? "on" : "off"} />
@@ -218,10 +287,18 @@ export function SettingsPanel({ disableSave = false, installationStatus, recordi
           <div className="settings-grid settings-grid-single">
             <label>
               <span>Výchozí AI model</span>
-              <select name="defaultOpenaiModel" defaultValue={settings.defaultOpenaiModel}>
+              <select
+                disabled={disableSave}
+                name="defaultOpenaiModel"
+                onChange={(event) => {
+                  const value = event.currentTarget.value as UserSettings["defaultOpenaiModel"];
+                  setVisibleDraft((draft) => ({ ...draft, defaultOpenaiModel: value }));
+                }}
+                value={visibleDraft.defaultOpenaiModel}
+              >
                 {aiModelOptions.map((model) => <option key={model.id} value={model.id}>{model.label} - {model.price}</option>)}
               </select>
-              <small>{getAiModelDescription(settings.defaultOpenaiModel)}</small>
+              <small>{getAiModelDescription(visibleDraft.defaultOpenaiModel)}</small>
             </label>
           </div>
           <Disclosure label="Model a kvalita" triggerLabel="Model a kvalita" className="settings-disclosure">
@@ -229,15 +306,19 @@ export function SettingsPanel({ disableSave = false, installationStatus, recordi
           </Disclosure>
         </section>
 
-        <section className="settings-section" aria-labelledby="settings-transcription">
+        <section className="settings-section settings-section-transcription" aria-labelledby="settings-transcription">
           <div className="settings-section-heading"><h2 id="settings-transcription">Jazyk a přepis</h2><p>Platí jako výchozí volba pro nový live záznam; před startem ji lze změnit.</p></div>
           <div className="settings-grid settings-grid-transcription">
             <label>
               <span>Region Soniox</span>
               <select
+                disabled={disableSave}
                 name="sonioxRegion"
-                onChange={(event) => setSonioxRegion(event.currentTarget.value as SonioxRegion)}
-                value={sonioxRegion}
+                onChange={(event) => {
+                  const value = event.currentTarget.value as SonioxRegion;
+                  setVisibleDraft((draft) => ({ ...draft, sonioxRegion: value }));
+                }}
+                value={visibleDraft.sonioxRegion}
               >
                 {sonioxRegionOptions.map((region) => <option key={region.id} value={region.id}>{region.label}</option>)}
               </select>
@@ -245,25 +326,39 @@ export function SettingsPanel({ disableSave = false, installationStatus, recordi
             </label>
             <label>
               <span>Výchozí jazyk live přepisu</span>
-              <select name="sonioxRealtimeLanguage" defaultValue={settings.sonioxRealtimeLanguage}>
+              <select
+                disabled={disableSave}
+                name="sonioxRealtimeLanguage"
+                onChange={(event) => {
+                  const value = event.currentTarget.value as UserSettings["sonioxRealtimeLanguage"];
+                  setVisibleDraft((draft) => ({ ...draft, sonioxRealtimeLanguage: value }));
+                }}
+                value={visibleDraft.sonioxRealtimeLanguage}
+              >
                 {sonioxRealtimeLanguageOptions.map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}
               </select>
             </label>
             <label>
               <span>Soniox realtime model</span>
-              <select name="sonioxRealtimeModel" defaultValue={settings.sonioxRealtimeModel}>
+              <select
+                disabled={disableSave}
+                name="sonioxRealtimeModel"
+                onChange={(event) => {
+                  const value = event.currentTarget.value as UserSettings["sonioxRealtimeModel"];
+                  setVisibleDraft((draft) => ({ ...draft, sonioxRealtimeModel: value }));
+                }}
+                value={visibleDraft.sonioxRealtimeModel}
+              >
                 {sonioxRealtimeModelOptions.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
               </select>
             </label>
           </div>
-          {sonioxRegion === "eu" ? (
-            <aside aria-live="polite" className="settings-region-warning" role="note">
-              <TriangleAlert aria-hidden="true" size={17} />
-              <p>
-                Region EU vyžaduje Soniox EU projekt a odpovídající regionální API klíč. Pokud se objeví chyba přístupu nebo autorizace, kontaktujte <a href="mailto:support@soniox.com">support@soniox.com</a>.
-              </p>
-            </aside>
-          ) : null}
+          <aside aria-live="polite" className="settings-region-warning" role="note">
+            <TriangleAlert aria-hidden="true" size={17} />
+            <p>
+              Region EU vyžaduje Soniox EU projekt a odpovídající regionální API klíč. Pokud se objeví chyba přístupu nebo autorizace, kontaktujte <a href="mailto:support@soniox.com">support@soniox.com</a>.
+            </p>
+          </aside>
           <Disclosure label="Jak funguje live přepis" triggerLabel="Jak funguje live přepis" className="settings-disclosure">
             <p>{sonioxRealtimeModel.description} Pevná jazyková volba pomůže přepisu držet se jednoho jazyka; diarizace mluvčích zůstává zapnutá.</p>
           </Disclosure>
@@ -279,7 +374,15 @@ export function SettingsPanel({ disableSave = false, installationStatus, recordi
           <div className="settings-grid settings-grid-single">
             <label>
               <span>Supabase tarif pro limity</span>
-              <select name="supabaseStoragePlan" defaultValue={settings.supabaseStoragePlan}>
+              <select
+                disabled={disableSave}
+                name="supabaseStoragePlan"
+                onChange={(event) => {
+                  const value = event.currentTarget.value as UserSettings["supabaseStoragePlan"];
+                  setVisibleDraft((draft) => ({ ...draft, supabaseStoragePlan: value }));
+                }}
+                value={visibleDraft.supabaseStoragePlan}
+              >
                 {supabaseStoragePlans.map((plan) => <option key={plan} value={plan}>{supabaseStoragePlanLabels[plan]}</option>)}
               </select>
               <small>Nemění Supabase projekt ani bucket.</small>
@@ -309,7 +412,8 @@ export function SettingsPanel({ disableSave = false, installationStatus, recordi
           </Disclosure>
         </section>
 
-        <button className="settings-save-button" disabled={disableSave} type="submit">Uložit nastavení</button>
+        <SettingsSaveButton disabled={disableSave} pending={pending} />
+        </fieldset>
       </form>
     </section>
   );

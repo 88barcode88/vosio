@@ -2,13 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { createSettingsActionError, type SettingsActionState } from "@/lib/settings/action-state";
 import { parseSettingsForm } from "@/lib/settings/form";
 import type { UserSettings } from "@/lib/settings/types";
 import { USER_SETTINGS_METADATA_KEY } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
 
 // updateUserSettingsAction stores non-secret Vosio preferences in Supabase Auth metadata.
-export async function updateUserSettingsAction(formData: FormData) {
+export async function updateUserSettingsAction(
+  _previousState: SettingsActionState,
+  formData: FormData
+): Promise<SettingsActionState> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -16,7 +20,7 @@ export async function updateUserSettingsAction(formData: FormData) {
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    redirect("/login?next=/settings");
+    return redirect("/login?next=/settings");
   }
 
   let settings: UserSettings;
@@ -24,7 +28,7 @@ export async function updateUserSettingsAction(formData: FormData) {
   try {
     settings = parseSettingsForm(formData);
   } catch {
-    redirect("/settings?error=invalid_settings");
+    return createSettingsActionError("invalid_settings", formData.get("sonioxRegion"));
   }
 
   const { error } = await supabase.auth.updateUser({
@@ -35,11 +39,11 @@ export async function updateUserSettingsAction(formData: FormData) {
   });
 
   if (error) {
-    redirect("/settings?error=save_failed");
+    return createSettingsActionError("save_failed", settings.sonioxRegion);
   }
 
   revalidatePath("/");
   revalidatePath("/recordings");
   revalidatePath("/settings");
-  redirect("/settings?saved=1");
+  return redirect("/settings?saved=1");
 }

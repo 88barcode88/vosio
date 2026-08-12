@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -12,6 +12,30 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 
 import { parseSettingsForm } from "@/lib/settings/form";
 import { updateUserSettingsAction } from "@/lib/settings/actions";
+import { idleSettingsActionState } from "@/lib/settings/action-state";
+
+beforeEach(() => {
+  mocks.createClient.mockReset();
+  mocks.redirect.mockReset();
+  mocks.revalidatePath.mockReset();
+});
+
+// createCompleteSettingsForm supplies every active and stored-only field to the real save action.
+function createCompleteSettingsForm(region: "eu" | "global") {
+  const formData = new FormData();
+  formData.set("aiTemperature", "0.7");
+  formData.set("audioRetentionPolicy", "delete_audio_after_transcription");
+  formData.set("autoProcessAfterTranscription", "on");
+  formData.set("autoProcessingTypesPresent", "1");
+  formData.append("autoProcessingTypes", "summary");
+  formData.set("defaultOpenaiModel", "gpt-5.6-terra");
+  formData.set("outputLanguage", "cs");
+  formData.set("sonioxRegion", region);
+  formData.set("sonioxRealtimeLanguage", "de");
+  formData.set("sonioxRealtimeModel", "stt-rt-v5");
+  formData.set("supabaseStoragePlan", "paid");
+  return formData;
+}
 
 describe("settings form", () => {
   it("updates a storage preference without dropping the saved temperature or unrelated metadata", async () => {
@@ -52,7 +76,7 @@ describe("settings form", () => {
     formData.set("sonioxRealtimeModel", "stt-rt-v5");
     formData.set("supabaseStoragePlan", "paid");
 
-    await updateUserSettingsAction(formData);
+    await updateUserSettingsAction(idleSettingsActionState, formData);
 
     expect(updateUser).toHaveBeenCalledWith({
       data: {
@@ -72,6 +96,48 @@ describe("settings form", () => {
         }
       }
     });
+  });
+
+  it("preserves only the validated submitted Soniox region when the real Auth update fails", async () => {
+    const updateUser = vi.fn().mockResolvedValue({ error: { message: "private provider detail" } });
+    const persistedMetadata = { vosio_settings: { sonioxRegion: "global" } };
+    mocks.createClient.mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { user_metadata: persistedMetadata } },
+          error: null
+        }),
+        updateUser
+      }
+    });
+    const result = await updateUserSettingsAction(
+      idleSettingsActionState,
+      createCompleteSettingsForm("eu")
+    );
+
+    expect(updateUser).toHaveBeenCalledOnce();
+    expect(result).toEqual({ errorCode: "save_failed", sonioxRegion: "eu", status: "error" });
+    expect(JSON.stringify(result)).not.toContain("private provider detail");
+    expect(JSON.stringify(result)).not.toContain("aiTemperature");
+    expect(mocks.redirect).not.toHaveBeenCalled();
+    expect(persistedMetadata.vosio_settings.sonioxRegion).toBe("global");
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("returns an allowlisted invalid-form state without exposing submitted fields", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { user_metadata: {} } }, error: null })
+      }
+    });
+    const invalid = createCompleteSettingsForm("eu");
+    invalid.set("audioRetentionPolicy", "private-invalid-policy");
+    const result = await updateUserSettingsAction(idleSettingsActionState, invalid);
+
+    expect(result).toEqual({ errorCode: "invalid_settings", sonioxRegion: "eu", status: "error" });
+    expect(JSON.stringify(result)).not.toContain("private-invalid-policy");
+    expect(mocks.redirect).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("parses the selected Supabase storage plan", () => {
