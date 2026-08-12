@@ -8,6 +8,7 @@ import { RestoreRecordingForm } from "@/components/restore-recording-form";
 import { SettingsPanel } from "@/components/settings-panel";
 import type { AiArchiveFilters } from "@/lib/ai/archive";
 import type { AiArchiveItem, AiOutputView } from "@/lib/ai/types";
+import type { InstallationStatus } from "@/lib/installation-status.server";
 import type { PromptTemplateNavigationState } from "@/lib/prompt-templates/navigation";
 import type { PromptTemplateRow } from "@/lib/prompt-templates/types";
 import {
@@ -35,6 +36,7 @@ type UtilityWorkspaceViewProps = {
   aiArchiveItems?: AiArchiveItem[];
   aiOutputs: AiOutputView[];
   deletedRecordings: RecordingClientView[];
+  installationStatus?: InstallationStatus;
   promptTemplateActions?: PromptTemplateActions;
   promptTemplateBaseHref?: string;
   promptTemplateNavigationState?: PromptTemplateNavigationState;
@@ -60,6 +62,7 @@ export function UtilityWorkspaceView({
   aiArchiveFilters = { processingType: null, recordingId: null },
   aiArchiveItems = [],
   deletedRecordings,
+  installationStatus,
   promptTemplateActions,
   promptTemplateBaseHref,
   promptTemplateNavigationState = { kind: "list" },
@@ -79,6 +82,12 @@ export function UtilityWorkspaceView({
     return (
       <SettingsPanel
         disableSave={settingsFormDisabled}
+        installationStatus={installationStatus ?? {
+          environment: "unknown",
+          geminiConfigured: false,
+          missingRequiredNames: [],
+          ready: false
+        }}
         recordingStorageConfig={recordingStorageConfig ?? unavailableRecordingStorageConfig}
         settings={settings}
         status={settingsStatus}

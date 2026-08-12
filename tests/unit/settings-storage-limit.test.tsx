@@ -13,6 +13,12 @@ describe("settings storage limit", () => {
   it("renders the selected Supabase preference with effective limits", () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
+        installationStatus={{
+          environment: "development",
+          geminiConfigured: false,
+          missingRequiredNames: [],
+          ready: true
+        }}
         recordingStorageConfig={{
           allowedMimeTypes: ["audio/mpeg"],
           bucketMaxFileSizeBytes: 100 * MEBIBYTE,

@@ -430,6 +430,9 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
 }
+.settings-grid-transcription {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .settings-grid-single {
   max-width: 520px;
 }
@@ -468,6 +471,31 @@
 .settings-stored-note {
   border-left: 2px solid var(--border-strong);
   padding-left: 12px;
+}
+.settings-region-warning {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  border: 1px solid color-mix(in srgb, var(--warning) 42%, var(--border));
+  border-radius: 10px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--warning) 9%, var(--surface));
+  padding: 11px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.settings-region-warning svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--warning);
+}
+.settings-region-warning p {
+  margin: 0;
+}
+.settings-region-warning a {
+  color: var(--text);
+  font-weight: 700;
+  text-underline-offset: 2px;
 }
 .settings-limit-callout {
   margin: 0;
@@ -553,6 +581,27 @@
   color: var(--text);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.settings-technical-list .settings-technical-wide {
+  grid-column: 1 / -1;
+}
+.settings-missing-environment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-missing-environment-list code {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  padding: 3px 6px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 .settings-save-button {

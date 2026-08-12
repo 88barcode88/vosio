@@ -14,6 +14,7 @@ import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { AiArchiveFilters } from "@/lib/ai/archive";
 import type { AiArchiveItem } from "@/lib/ai/types";
+import type { InstallationStatus } from "@/lib/installation-status.server";
 import type { PromptTemplateActions } from "@/components/prompt-template-editor";
 import type { PromptTemplateNavigationState } from "@/lib/prompt-templates/navigation";
 import type { PromptTemplateRow } from "@/lib/prompt-templates/types";
@@ -51,6 +52,7 @@ type VosioWorkspaceProps = {
   initialTranscriptTab?: TranscriptTab;
   initialTranscriptTabFromCookie?: boolean;
   initialTranscriptTabFromUrl?: boolean;
+  installationStatus?: InstallationStatus;
   navigationHrefOverrides?: NavigationHrefOverrides;
   newRecordingCaptureSlots?: NewRecordingCaptureSlots;
   newRecordingUploadRedirectAfterSuccess?: "detail" | "list" | "stay";
@@ -125,6 +127,7 @@ export function VosioWorkspace({
   initialTranscriptTab = "transcript",
   initialTranscriptTabFromCookie = false,
   initialTranscriptTabFromUrl = false,
+  installationStatus,
   navigationHrefOverrides,
   newRecordingCaptureSlots,
   newRecordingUploadRedirectAfterSuccess,
@@ -227,6 +230,7 @@ export function VosioWorkspace({
               aiArchiveItems={aiArchiveItems}
               aiOutputs={aiOutputs}
               deletedRecordings={deletedRecordingViews}
+              installationStatus={installationStatus}
               promptTemplates={promptTemplates}
               promptTemplateActions={promptTemplateActions}
               promptTemplateBaseHref={promptTemplateBaseHref}

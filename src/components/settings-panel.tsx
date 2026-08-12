@@ -1,7 +1,11 @@
-import { CheckCircle2, Settings2 } from "lucide-react";
+"use client";
+
+import { useState } from "react";
+import { CheckCircle2, Settings2, TriangleAlert } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Disclosure } from "@/components/ui/disclosure";
 import { APP_VERSION } from "@/lib/app-version";
+import type { InstallationEnvironment, InstallationStatus } from "@/lib/installation-status.server";
 import { getRecordingStorageLimitSummary } from "@/lib/recordings/storage-copy";
 import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
 import { updateUserSettingsAction } from "@/lib/settings/actions";
@@ -13,14 +17,23 @@ import {
   sonioxRealtimeModelOptions
 } from "@/lib/model-options";
 import { sonioxRealtimeLanguageOptions } from "@/lib/soniox/languages";
+import { sonioxRegionOptions, type SonioxRegion } from "@/lib/soniox/region";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
 
 type SettingsPanelProps = {
   disableSave?: boolean;
+  installationStatus: InstallationStatus;
   recordingStorageConfig: RecordingStorageConfig;
   settings: UserSettings;
   status: "error" | "saved" | null;
   usageState: CurrentMonthUsageState;
+};
+
+const installationEnvironmentLabels: Record<InstallationEnvironment, string> = {
+  development: "Vývoj",
+  preview: "Preview",
+  production: "Produkce",
+  unknown: "Neznámé"
 };
 
 const supabaseStoragePlanLabels: Record<(typeof supabaseStoragePlans)[number], string> = {
@@ -147,8 +160,30 @@ function UsageContent({ state }: { state: CurrentMonthUsageState }) {
   );
 }
 
+// InstallationStatusDetails renders only the public configuration-presence contract.
+export function InstallationStatusDetails({ status }: { status: InstallationStatus }) {
+  return (
+    <>
+      <div><dt>Prostředí</dt><dd>{installationEnvironmentLabels[status.environment]}</dd></div>
+      <div><dt>Konfigurace instalace</dt><dd>{status.ready ? "Připraveno" : "Chybí konfigurace"}</dd></div>
+      <div><dt>GEMINI_API_KEY (volitelné)</dt><dd>{status.geminiConfigured ? "Nastaveno" : "Nenastaveno"}</dd></div>
+      <div className="settings-technical-wide">
+        <dt>Chybějící proměnné</dt>
+        <dd>
+          {status.missingRequiredNames.length > 0 ? (
+            <ul className="settings-missing-environment-list">
+              {status.missingRequiredNames.map((name) => <li key={name}><code>{name}</code></li>)}
+            </ul>
+          ) : status.ready ? "Žádné" : "Stav nelze určit"}
+        </dd>
+      </div>
+    </>
+  );
+}
+
 // SettingsPanel presents only preferences that the current runtime can apply.
-export function SettingsPanel({ disableSave = false, recordingStorageConfig, settings, status, usageState }: SettingsPanelProps) {
+export function SettingsPanel({ disableSave = false, installationStatus, recordingStorageConfig, settings, status, usageState }: SettingsPanelProps) {
+  const [sonioxRegion, setSonioxRegion] = useState<SonioxRegion>(settings.sonioxRegion);
   const storageLimitSummary = getRecordingStorageLimitSummary(recordingStorageConfig, settings.supabaseStoragePlan);
   const sonioxRealtimeModel = sonioxRealtimeModelOptions.find((option) => option.id === settings.sonioxRealtimeModel)
     ?? sonioxRealtimeModelOptions[0];
@@ -196,7 +231,18 @@ export function SettingsPanel({ disableSave = false, recordingStorageConfig, set
 
         <section className="settings-section" aria-labelledby="settings-transcription">
           <div className="settings-section-heading"><h2 id="settings-transcription">Jazyk a přepis</h2><p>Platí jako výchozí volba pro nový live záznam; před startem ji lze změnit.</p></div>
-          <div className="settings-grid">
+          <div className="settings-grid settings-grid-transcription">
+            <label>
+              <span>Region Soniox</span>
+              <select
+                name="sonioxRegion"
+                onChange={(event) => setSonioxRegion(event.currentTarget.value as SonioxRegion)}
+                value={sonioxRegion}
+              >
+                {sonioxRegionOptions.map((region) => <option key={region.id} value={region.id}>{region.label}</option>)}
+              </select>
+              <small>Region se použije pro live přepis i nové přepisy nahraných souborů.</small>
+            </label>
             <label>
               <span>Výchozí jazyk live přepisu</span>
               <select name="sonioxRealtimeLanguage" defaultValue={settings.sonioxRealtimeLanguage}>
@@ -210,6 +256,14 @@ export function SettingsPanel({ disableSave = false, recordingStorageConfig, set
               </select>
             </label>
           </div>
+          {sonioxRegion === "eu" ? (
+            <aside aria-live="polite" className="settings-region-warning" role="note">
+              <TriangleAlert aria-hidden="true" size={17} />
+              <p>
+                Region EU vyžaduje Soniox EU projekt a odpovídající regionální API klíč. Pokud se objeví chyba přístupu nebo autorizace, kontaktujte <a href="mailto:support@soniox.com">support@soniox.com</a>.
+              </p>
+            </aside>
+          ) : null}
           <Disclosure label="Jak funguje live přepis" triggerLabel="Jak funguje live přepis" className="settings-disclosure">
             <p>{sonioxRealtimeModel.description} Pevná jazyková volba pomůže přepisu držet se jednoho jazyka; diarizace mluvčích zůstává zapnutá.</p>
           </Disclosure>
@@ -248,6 +302,7 @@ export function SettingsPanel({ disableSave = false, recordingStorageConfig, set
               <div><dt>Bucket recordings</dt><dd>{storageLimitSummary.bucketLimit}</dd></div>
               <div><dt>Manuální upload</dt><dd>{storageLimitSummary.manualUploadLimit}</dd></div>
               <div><dt>Live audio</dt><dd>{storageLimitSummary.liveAudioLimit}</dd></div>
+              <InstallationStatusDetails status={installationStatus} />
               <div><dt>Serverové hranice</dt><dd>Dlouhodobé provider klíče zůstávají pouze na serveru. Klient pro live přepis získá krátkodobý Soniox api_key a konfiguraci regionu a WebSocketu.</dd></div>
             </dl>
             <p className="settings-limit-warning">{storageLimitSummary.warning}</p>
