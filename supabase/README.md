@@ -11,8 +11,9 @@ A new empty project must apply every migration in timestamp order:
 3. `20260804110000_add_recording_organization.sql`
 4. `20260804120000_add_recording_markers.sql`
 5. `20260804130000_add_transcript_fulltext_search.sql`
+6. `20260810005550_restore_recordings_from_trash.sql`
 
-The baseline is not the complete current schema by itself. The complete source contract is the baseline plus all four forward migrations.
+The baseline is not the complete current schema by itself. The complete source contract is the baseline plus all five forward migrations.
 
 Apply the chain with the Supabase CLI:
 
@@ -41,6 +42,8 @@ supabase db reset
 ## Deployment State
 
 This public repository is the source contract, not a deployment ledger. It does not assert that any particular hosted Supabase project has applied the chain.
+
+Migration `05550` is therefore source-only and treated as unverified on every target until that target completes its own apply and postflight.
 
 Before deploying application code to an existing target:
 

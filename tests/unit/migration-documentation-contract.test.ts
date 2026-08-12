@@ -10,16 +10,17 @@ describe("migration documentation contract", () => {
       "docs/requirements/real-workspace.md",
       "docs/api/supabase-schema.md",
       "docs/gotchas.md",
-      "docs/decisions/0004-private-vosio-manual-forward-migrations.md"
+      "docs/architecture.md"
     ]) {
       expect(readFileSync(path, "utf8"), path).toContain(restoreMigration);
     }
   });
 
-  it("does not claim the unverified C7 migration is already live", () => {
+  it("keeps the public repository target-neutral about migration deployment", () => {
     const readme = readFileSync("supabase/README.md", "utf8");
 
     expect(readme).toContain("05550");
-    expect(readme).toMatch(/05550[^\n]*(unverified|neověřen|not applied|unapplied)/iu);
+    expect(readme).toMatch(/05550[^\n]*(unverified|not applied|unapplied)/iu);
+    expect(readme).not.toContain("kwtivytfnahlrxlydmfk");
   });
 });
