@@ -71,9 +71,11 @@ describe("configuration diagnostics page", () => {
 
   it("does not import a Supabase client and keeps the route stylesheet overflow-safe", () => {
     const pageSource = readFileSync("app/configuration/page.tsx", "utf8");
+    const diagnosticsSource = readFileSync("app/configuration/configuration-diagnostics.tsx", "utf8");
     const stylesheet = readFileSync("app/configuration/page.module.css", "utf8");
 
     expect(pageSource).not.toMatch(/from ["'][^"']*supabase[^"']*["']/iu);
+    expect(diagnosticsSource).not.toMatch(/from ["'][^"']*supabase[^"']*["']/iu);
     expect(stylesheet).toMatch(/overflow-x:\s*hidden/u);
     expect(stylesheet).toMatch(/overflow-wrap:\s*anywhere/u);
   });
