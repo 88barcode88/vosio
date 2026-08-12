@@ -4,7 +4,7 @@ Vosio is a Next.js PWA for recording or uploading audio, storing recordings in S
 
 This is the canonical public source repository. It contains source code, documentation, tests, CI, and the complete fresh-project Supabase migration chain, but no real API keys or production data.
 
-Current source release: `0.1.3`
+Current source release: `0.1.5`
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2F88barcode88%2Fvosio&project-name=vosio&repository-name=vosio&env=NEXT_PUBLIC_SUPABASE_URL%2CNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY%2CSUPABASE_SERVICE_ROLE_KEY%2CSONIOX_API_KEY%2COPENAI_API_KEY&envDescription=Vosio%20requires%20your%20own%20Supabase%2C%20Soniox%2C%20and%20OpenAI%20projects.&envLink=https%3A%2F%2Fgithub.com%2F88barcode88%2Fvosio%23vercel-environment-variables)
 

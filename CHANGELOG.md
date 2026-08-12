@@ -4,6 +4,24 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-12
+
+### Added
+
+- Volba globálního nebo evropského regionu Soniox přímo v Nastavení, včetně upozornění na požadavky EU projektu a regionálního klíče.
+- Bezpečná diagnostika instalace, která zobrazuje pouze prostředí a názvy chybějících proměnných, nikdy jejich hodnoty.
+- Samostatná konfigurační stránka pro chybějící veřejné Supabase proměnné bez načtení Supabase klienta.
+
+### Changed
+
+- Nové async i live přepisy používají region uložený u uživatele a async job si svůj region zachová po celou dobu zpracování.
+- Instalace používá jeden popsaný postup pro vlastní Supabase, Soniox a AI klíče v Production i Preview prostředí.
+
+### Fixed
+
+- Starší async joby bez uloženého regionu pokračují bezpečně přes globální Soniox endpoint.
+- Nastavení regionu zachová rozepsanou EU nebo globální volbu při neúspěšném uložení bez vytváření chybového záznamu v historii prohlížeče.
+
 ## [0.1.4] - 2026-08-10
 
 ### Added
