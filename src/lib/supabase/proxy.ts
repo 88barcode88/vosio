@@ -1,19 +1,15 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getPublicEnv } from "@/lib/env";
+import { isDevelopmentWorkspaceShellFixture } from "@/lib/proxy-paths";
+
+export { isDevelopmentWorkspaceShellFixture } from "@/lib/proxy-paths";
 
 const PUBLIC_PATHS = ["/login", "/auth"];
-const WORKSPACE_SHELL_FIXTURE_PATH = "/login/workspace-shell-e2e";
 
 // isPublicPath returns whether the request may run without an authenticated user.
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
-}
-
-// isDevelopmentWorkspaceShellFixture avoids auth/provider traffic for the guarded local-only shell fixture.
-export function isDevelopmentWorkspaceShellFixture(pathname: string, nodeEnv = process.env.NODE_ENV) {
-  return nodeEnv === "development"
-    && (pathname === WORKSPACE_SHELL_FIXTURE_PATH || pathname.startsWith(`${WORKSPACE_SHELL_FIXTURE_PATH}/`));
 }
 
 // createLoginRedirect builds a safe login redirect that preserves the requested path.

@@ -23,7 +23,7 @@ function isConfiguredValue(value: string | undefined) {
 }
 
 // getInstallationEnvironment reduces runtime-specific values to the public installation enum.
-function getInstallationEnvironment(): InstallationEnvironment {
+export function getInstallationEnvironment(): InstallationEnvironment {
   if (process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview" || process.env.VERCEL_ENV === "development") {
     return process.env.VERCEL_ENV;
   }
