@@ -3,6 +3,35 @@ import { getUserSettingsFromMetadata, USER_SETTINGS_METADATA_KEY } from "@/lib/s
 import { DEFAULT_AI_MODEL_ID } from "@/lib/model-options";
 
 describe("settings metadata", () => {
+  it.each([
+    ["empty metadata", {}],
+    ["legacy metadata", { display_name: "Marie" }]
+  ])("defaults %s to the global Soniox region", (_label, metadata) => {
+    expect(getUserSettingsFromMetadata(metadata).sonioxRegion).toBe("global");
+  });
+
+  it("preserves the global Soniox region default for partial settings metadata", () => {
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { outputLanguage: "en" }
+    }).sonioxRegion).toBe("global");
+  });
+
+  it("keeps a valid saved Soniox EU region", () => {
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { sonioxRegion: "eu" }
+    }).sonioxRegion).toBe("eu");
+  });
+
+  it("rejects an invalid Soniox region and restores the safe defaults", () => {
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { sonioxRegion: "jp" }
+    })).toEqual(expect.objectContaining({
+      aiTemperature: 0.2,
+      sonioxRegion: "global",
+      supabaseStoragePlan: "auto"
+    }));
+  });
+
   it("defaults legacy metadata to automatic Supabase plan detection", () => {
     expect(getUserSettingsFromMetadata({} as never).supabaseStoragePlan).toBe("auto");
   });

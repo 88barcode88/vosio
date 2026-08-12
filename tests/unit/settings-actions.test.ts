@@ -47,6 +47,7 @@ describe("settings form", () => {
     formData.append("autoProcessingTypes", "action_items");
     formData.set("defaultOpenaiModel", "gpt-5.6-terra");
     formData.set("outputLanguage", "cs");
+    formData.set("sonioxRegion", "eu");
     formData.set("sonioxRealtimeLanguage", "de");
     formData.set("sonioxRealtimeModel", "stt-rt-v5");
     formData.set("supabaseStoragePlan", "paid");
@@ -64,6 +65,7 @@ describe("settings form", () => {
           autoProcessingTypes: ["summary", "action_items"],
           defaultOpenaiModel: "gpt-5.6-terra",
           outputLanguage: "cs",
+          sonioxRegion: "eu",
           sonioxRealtimeLanguage: "de",
           sonioxRealtimeModel: "stt-rt-v5",
           supabaseStoragePlan: "paid"
@@ -77,6 +79,20 @@ describe("settings form", () => {
     formData.set("supabaseStoragePlan", "free");
 
     expect(parseSettingsForm(formData).supabaseStoragePlan).toBe("free");
+  });
+
+  it("parses the selected Soniox region", () => {
+    const formData = new FormData();
+    formData.set("sonioxRegion", "eu");
+
+    expect(parseSettingsForm(formData).sonioxRegion).toBe("eu");
+  });
+
+  it("rejects an unsupported Soniox region", () => {
+    const formData = new FormData();
+    formData.set("sonioxRegion", "jp");
+
+    expect(() => parseSettingsForm(formData)).toThrow("Invalid settings form payload.");
   });
 
   it("uses the default AI temperature when the field is missing", () => {

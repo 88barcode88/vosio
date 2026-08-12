@@ -50,6 +50,11 @@ export function parseSettingsForm(formData: FormData): UserSettings {
       defaultUserSettings.defaultOpenaiModel
     ),
     outputLanguage: getStringField(formData, "outputLanguage", "call_language"),
+    sonioxRegion: getStringField(
+      formData,
+      "sonioxRegion",
+      defaultUserSettings.sonioxRegion
+    ),
     sonioxRealtimeLanguage: getStringField(
       formData,
       "sonioxRealtimeLanguage",

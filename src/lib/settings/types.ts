@@ -6,6 +6,7 @@ import {
   sonioxRealtimeModelIds
 } from "@/lib/model-options";
 import { sonioxRealtimeLanguageIds } from "@/lib/soniox/languages";
+import { sonioxRegionSchema } from "@/lib/soniox/region";
 
 export const settingsProcessingTypes = [
   "summary",
@@ -38,6 +39,7 @@ export const defaultUserSettings = {
   autoProcessingTypes: ["summary"],
   defaultOpenaiModel: DEFAULT_AI_MODEL_ID,
   outputLanguage: "call_language",
+  sonioxRegion: "global",
   sonioxRealtimeLanguage: "auto",
   sonioxRealtimeModel: "stt-rt-v5",
   supabaseStoragePlan: "auto"
@@ -50,6 +52,7 @@ export const userSettingsSchema = z.object({
   autoProcessingTypes: z.array(z.enum(settingsProcessingTypes)),
   defaultOpenaiModel: aiModelSchema,
   outputLanguage: z.enum(outputLanguages),
+  sonioxRegion: sonioxRegionSchema,
   sonioxRealtimeLanguage: z.enum(sonioxRealtimeLanguageIds),
   sonioxRealtimeModel: sonioxRealtimeModelSchema,
   supabaseStoragePlan: z.enum(supabaseStoragePlans)
