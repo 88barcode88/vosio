@@ -2,6 +2,21 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("root runtime contracts", () => {
+  it("keeps Soniox region and temporary-key lifetime out of deployment configuration", () => {
+    const source = readFileSync("src/lib/env.server.ts", "utf8");
+
+    expect(source).toContain("SONIOX_API_KEY");
+    expect(source).toContain("SONIOX_ASYNC_MODEL");
+    expect(source).not.toContain("SONIOX_API_BASE_URL");
+    expect(source).not.toContain("SONIOX_REGION");
+    expect(source).not.toContain("SONIOX_STT_WS_URL");
+    expect(source).not.toContain("SONIOX_TEMP_KEY_EXPIRES_SECONDS");
+    expect(source).not.toContain("optionalPositiveInteger");
+    expect(source).not.toContain("optionalSonioxRegion");
+    expect(source).not.toContain("parseSonioxRealtimeTarget");
+    expect(source).not.toContain("getSonioxApiBaseUrl");
+  });
+
   it("renders the cookie-selected theme without a hydration-time script", () => {
     const source = readFileSync("app/layout.tsx", "utf8");
 

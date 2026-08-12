@@ -267,7 +267,8 @@ async function createSegmentedTranscriptionJobs(input: {
     const transcription = await createSonioxTranscription({
       audioUrl: signedUrl.signedUrl,
       clientReferenceId: initialJob.id,
-      options: providerConfig
+      options: providerConfig,
+      region: "global"
     }).catch(async (error: unknown) => {
       const errorMessage = error instanceof Error ? error.message : "Soniox segment request failed";
 
@@ -320,7 +321,7 @@ async function refreshSegmentBatchJobs(input: {
         return job;
       }
 
-      const transcription = await getSonioxTranscription(job.provider_job_id);
+      const transcription = await getSonioxTranscription("global", job.provider_job_id);
       const jobStatus = mapSonioxStatus(transcription.status);
       const { data, error } = await input.admin
         .from("transcription_jobs")
@@ -388,8 +389,8 @@ async function saveCombinedSegmentTranscript(input: {
     }
 
     const [transcription, transcript] = await Promise.all([
-      getSonioxTranscription(job.provider_job_id),
-      getSonioxTranscript(job.provider_job_id)
+      getSonioxTranscription("global", job.provider_job_id),
+      getSonioxTranscript("global", job.provider_job_id)
     ]);
 
     rawTextParts.push(transcript.text.trim());
@@ -624,7 +625,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const transcription = await createSonioxTranscription({
       audioUrl: signedUrl.signedUrl,
       clientReferenceId: initialJob.id,
-      options: providerConfig
+      options: providerConfig,
+      region: "global"
     }).catch(async (error: unknown) => {
       const errorMessage = error instanceof Error ? error.message : "Soniox request failed";
 
@@ -758,7 +760,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Přepisovací job nebyl nalezen." }, { status: 404 });
     }
 
-    const transcription = await getSonioxTranscription(latestJob.provider_job_id);
+    const transcription = await getSonioxTranscription("global", latestJob.provider_job_id);
     const jobStatus = mapSonioxStatus(transcription.status);
 
     const { error: jobUpdateError } = await admin
@@ -797,7 +799,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     const durationSeconds = getSonioxAudioDurationSeconds(transcription.audio_duration_ms);
-    const transcript = await getSonioxTranscript(latestJob.provider_job_id);
+    const transcript = await getSonioxTranscript("global", latestJob.provider_job_id);
     const speakers = extractTranscriptSpeakerSummaries(transcript.tokens);
     const { data: existingTranscript, error: existingTranscriptError } = await admin
       .from("transcripts")

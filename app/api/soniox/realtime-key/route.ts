@@ -49,16 +49,17 @@ export async function POST() {
   }
 
   try {
-    const realtimeConfig = getSonioxRealtimeClientConfig();
+    const realtimeConfig = getSonioxRealtimeClientConfig("global");
     const temporaryKey = await createSonioxTemporaryKey({
-      clientReferenceId: `vosio-live:${user.id}:${randomUUID()}`
+      clientReferenceId: `vosio-live:${user.id}:${randomUUID()}`,
+      region: "global"
     });
 
     return NextResponse.json({
       api_key: temporaryKey.api_key,
       expires_at: temporaryKey.expires_at,
-      region: realtimeConfig.region ?? undefined,
-      stt_ws_url: realtimeConfig.stt_ws_url ?? undefined
+      region: realtimeConfig.region,
+      stt_ws_url: realtimeConfig.websocketUrl
     });
   } catch (error) {
     if (error instanceof Error) {

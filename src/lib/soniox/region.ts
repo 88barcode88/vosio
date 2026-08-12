@@ -18,11 +18,11 @@ const sonioxRegionTargets: Record<SonioxRegion, {
 }> = {
   global: {
     apiBaseUrl: "https://api.soniox.com",
-    sttWsUrl: "wss://stt-rt.soniox.com"
+    sttWsUrl: "wss://stt-rt.soniox.com/transcribe-websocket"
   },
   eu: {
     apiBaseUrl: "https://api.eu.soniox.com",
-    sttWsUrl: "wss://stt-rt.eu.soniox.com"
+    sttWsUrl: "wss://stt-rt.eu.soniox.com/transcribe-websocket"
   }
 };
 

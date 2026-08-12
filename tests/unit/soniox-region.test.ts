@@ -15,8 +15,16 @@ describe("Soniox region", () => {
   });
 
   it.each([
-    ["global", "https://api.soniox.com", "wss://stt-rt.soniox.com"],
-    ["eu", "https://api.eu.soniox.com", "wss://stt-rt.eu.soniox.com"]
+    [
+      "global",
+      "https://api.soniox.com",
+      "wss://stt-rt.soniox.com/transcribe-websocket"
+    ],
+    [
+      "eu",
+      "https://api.eu.soniox.com",
+      "wss://stt-rt.eu.soniox.com/transcribe-websocket"
+    ]
   ] as const)("maps %s to its REST and realtime endpoints", (region, apiBaseUrl, sttWsUrl) => {
     expect(getSonioxRegionTarget(region)).toEqual({ apiBaseUrl, sttWsUrl });
   });
