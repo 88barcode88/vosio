@@ -45,7 +45,9 @@ function normalizeDedupeText(input: string | null | undefined) {
 }
 
 // getTaskDedupeKey identifies equivalent checklist tasks across repeated AI generations.
-function getTaskDedupeKey(task: StructuredTaskRow) {
+export function getTaskDedupeKey(
+  task: Pick<StructuredTaskRow, "deadline" | "deadline_normalized" | "owner_category" | "title">
+) {
   return [
     task.owner_category,
     normalizeDedupeText(task.title),

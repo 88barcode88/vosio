@@ -1,4 +1,6 @@
 .content-area {
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   height: 100dvh;
   min-height: 100vh;
@@ -10,6 +12,11 @@
   padding: 12px;
 }
 .content-area-recordings-list {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.content-area-document {
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
 }
@@ -70,9 +77,9 @@
   transform: scale(0.97);
 }
 .theme-toggle-compact {
-  width: 34px;
-  min-width: 34px;
-  min-height: 34px;
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
   border-radius: 10px;
   padding: 0;
 }
@@ -101,11 +108,29 @@
 }
 .recording-workbench {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
   gap: 10px;
-  height: calc(100dvh - 24px);
+  height: auto;
+  width: 100%;
   min-width: 0;
   min-height: 0;
+}
+.recording-detail-back {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 5px;
+  min-height: 44px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 8px;
+}
+.recording-detail-back:hover {
+  color: var(--text);
+  background: var(--surface-muted);
 }
 .recording-workbench-grid {
   display: grid;
@@ -137,7 +162,7 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--panel);
-  padding: 8px 10px;
+  padding: 14px 16px;
 }
 .recording-detail-main {
   display: flex;
@@ -161,7 +186,8 @@
   max-width: 720px;
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 19px;
+  font-family: var(--font-heading), Georgia, serif;
+  font-size: clamp(22px, 2.2vw, 28px);
   font-weight: 650;
   line-height: 1.2;
 }
@@ -201,6 +227,22 @@
   gap: 8px;
   flex: 0 0 auto;
   justify-content: flex-end;
+}
+.recording-header-operations .command-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.recording-header-operations .command-bar .command-button {
+  width: auto;
+  min-height: 36px;
+}
+.recording-header-operations .command-state {
+  flex-basis: 100%;
+  max-width: none;
 }
 .recording-inline-edit-shell {
   position: relative;
@@ -661,8 +703,8 @@
 }
 .real-upload {
   display: grid;
-  justify-items: end;
-  gap: 8px;
+  justify-items: stretch;
+  gap: 10px;
 }
 .real-upload-actions {
   display: flex;
@@ -672,11 +714,11 @@
 }
 .upload-progress {
   display: grid;
-  width: min(100%, 320px);
+  width: 100%;
   gap: 5px;
   color: var(--muted);
   font-size: 12px;
-  text-align: right;
+  text-align: left;
 }
 .upload-progress progress {
   width: 100%;
@@ -694,7 +736,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 38px;
+  min-height: 44px;
   border: 0;
   border-radius: 9px;
   color: var(--accent-text);
@@ -716,10 +758,11 @@
   opacity: 0.5;
 }
 .upload-state {
-  max-width: 320px;
+  max-width: none;
   margin: 0;
   font-size: 12px;
-  text-align: right;
+  line-height: 1.4;
+  text-align: left;
 }
 .upload-state-error {
   color: var(--red);
@@ -732,6 +775,8 @@
 }
 .visually-hidden {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   margin: -1px;

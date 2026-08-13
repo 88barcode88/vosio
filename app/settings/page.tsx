@@ -1,15 +1,13 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { getInstallationStatus } from "@/lib/installation-status.server";
 import { getRecordingStorageConfig } from "@/lib/recordings/storage-config.server";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
 import { loadCurrentMonthUsageState } from "@/lib/usage/summary";
 
 type SettingsPageProps = {
-  searchParams: Promise<{
-    error?: string;
-    saved?: string;
-  }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 // SettingsPage renders user-editable non-secret app preferences.
@@ -25,6 +23,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   }
 
   const userSettings = getUserSettingsFromMetadata(user.user_metadata);
+  const installationStatus = getInstallationStatus();
   const [usageState, recordingStorageConfig] = await Promise.all([
     loadCurrentMonthUsageState(supabase),
     getRecordingStorageConfig(userSettings.supabaseStoragePlan)
@@ -33,9 +32,10 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   return (
     <VosioWorkspace
       aiOutputs={[]}
+      installationStatus={installationStatus}
       recordings={[]}
       recordingStorageConfig={recordingStorageConfig}
-      settingsStatus={params.saved ? "saved" : params.error ? "error" : null}
+      settingsStatus={params.saved === "1" ? "saved" : null}
       transcripts={[]}
       usageState={usageState}
       userSettings={userSettings}

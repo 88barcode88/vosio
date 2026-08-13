@@ -34,7 +34,8 @@ function parseAiOutputDeleteForm(formData: FormData) {
   });
 
   if (!parsed.success) {
-    redirect("/recordings?error=invalid_ai_output_delete");
+    const nextPath = getSafeNextPath(getOptionalString(formData, "next"));
+    redirect(appendQueryStatus(nextPath, "error", "invalid_ai_output_delete"));
   }
 
   return parsed.data;
@@ -65,7 +66,7 @@ export async function deleteAiOutputAction(formData: FormData) {
     .returns<Array<{ id: string; transcript_id: string }>>();
 
   if (error || !data || data.length !== uniqueOutputIds.length) {
-    redirect(`${nextPath}?error=ai_output_delete_failed`);
+    redirect(appendQueryStatus(nextPath, "error", "ai_output_delete_failed"));
   }
 
   revalidatePath("/");
@@ -73,4 +74,11 @@ export async function deleteAiOutputAction(formData: FormData) {
   revalidatePath("/recordings");
   revalidatePath(nextPath);
   redirect(nextPath);
+}
+
+// appendQueryStatus preserves existing archive filters while replacing one safe feedback value.
+function appendQueryStatus(path: string, key: string, value: string) {
+  const url = new URL(path, "https://vosio.local");
+  url.searchParams.set(key, value);
+  return `${url.pathname}${url.search}${url.hash}`;
 }

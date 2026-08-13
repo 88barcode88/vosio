@@ -42,15 +42,23 @@ Aktuální tlačítko koše u nahrávek dělá soft-delete změnou `recordings.s
 
 Trvalé mazání z Koše musí nejdřív ověřit vlastníka přes běžnou Supabase Auth session a až potom použít service role operace pro Storage a DB delete. Přímé klientské mazání storage objektu nestačí, protože permanent delete má odstranit i kaskádovaná data a nesmí umožnit smazat cizí objekt.
 
+Supabase TUS upload URL může zůstat platná až 24 hodin. `deleted_at` je proto po dobu pobytu v Koši neměnné a permanentní purge smí začít až při `deleted_at <= now() - 24 hodin`. Storage INSERT/UPDATE policy současně vyžaduje aktivní vlastněný řádek bez purge claimu. Purge po prvním mazání používá přesný claim token, znovu projde celý `{user_id}/{recording_id}/` prefix a pozdě dokončené objekty odstraní v omezeném počtu kol; při chybě nebo trvale neprázdném prefixu DB řádek nesmaže a claim po zahájení Storage mutace ponechá pro bezpečný retry.
+
 ## Browser MIME typy obsahují codec parametry
 
 MediaRecorder může vracet MIME typ ve tvaru `audio/webm;codecs=opus`. Supabase Storage bucket ale porovnává povolené MIME typy proti čistému typu jako `audio/webm`. Před validací, uložením metadat a uploadem do Storage je proto nutné MIME typ normalizovat odstraněním parametrů za středníkem.
 
-## Soniox realtime region není websocket URL
+Mobilní nebo Windows picker může pro platné `.m4a` vrátit generický `application/octet-stream`. Takový typ nesmí automaticky znamenat odmítnutí ani univerzální povolení: fallback se smí použít jen pro příponu z nahrávacího allowlistu a musí ji převést na její známý Storage MIME (`.m4a` -> `audio/mp4`). Neznámá přípona s generickým MIME zůstává nepodporovaná. Hranice velikosti je inkluzivní (`size <= effective limit`); 33 MiB soubor proto při 50 MiB limitu projde lokální kontrolou.
 
-Pro EU realtime Soniox konfiguraci používej ideálně `SONIOX_REGION=eu`. Pokud je kvůli zpětné kompatibilitě v `SONIOX_STT_WS_URL` hodnota `eu`, aplikace ji interpretuje jako region, ne jako URL. Plná URL má smysl jen ve tvaru `wss://...`.
+Upload chyby se do UI nesmí propouštět podle prefixu. Zobrazit se smí jen přesně povolené, délkově omezené lokální validační zprávy; provider detail, request id nebo tajný suffix za jinak známým začátkem se převádí na obecnou bezpečnou chybu. Výběr nového souboru musí před jeho validací vyčistit progress předchozího pokusu, jinak odmítnutý soubor zdědí zavádějící procenta.
 
-Soniox temporary API key musí vzniknout ve stejné regionální REST API doméně, do které se pak připojuje realtime WebSocket. Pro `SONIOX_REGION=eu` tedy backend používá `https://api.eu.soniox.com` a browser SDK se připojuje do EU realtime endpointu. Kombinace US auth API a EU realtime WebSocketu vede na chybu typu `Invalid or expired temporary API key`.
+Vývojová route `new-recording-e2e` používá skutečný `VosioWorkspace`, ale live a importní capture sloty musí být inertní lokální prezentace. Fixture nesmí mountovat `PersistentRecorderSlot`, `BrowserRecorder` ani `TranscriptImportForm`; testovací kliknutí nesmí spustit Supabase, Soniox ani aplikační API mutaci. Produkční defaulty injekce nemění.
+
+## Soniox region je uživatelská preference, ne URL
+
+Region se vybírá v Nastavení pro každého uživatele. Global je výchozí. Temporary API key musí vzniknout ve stejné regionální REST API doméně, do které se pak připojuje realtime WebSocket, a async polling musí používat region uložený při vytvoření jobu. Aplikace proto mapuje volbu na pevné podporované endpointy a nepřijímá vlastní URL.
+
+EU volba funguje pouze s EU-enabled Soniox projektem a odpovídajícím regionálním klíčem. Kombinace globálního klíče a EU endpointů vede k access/auth chybě; v takovém případě ověř region projektu a kontaktuj `support@soniox.com`.
 
 ## Auth metadata jen pro preference
 
@@ -84,13 +92,15 @@ Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI 
 
 `transcripts.segments` může obsahovat token-level Soniox JSON s časem a speaker id pro každé slovo. U delších callů to může vytvořit stovky tisíc až milion tokenů, pokud se JSON pošle přímo do AI promptu. AI endpoint proto před renderem promptu používá kompaktní speaker utterances a do metadat přidává, jestli byly segmenty zkrácené. Plný token-level JSON zůstává v DB pro UI přepis, ale providerům se neposílá celý.
 
-Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a pokračuje přes evidence `20260804100000`, organization `20260804110000`, markers `20260804120000` a transcript search `20260804130000`. Samotná baseline není celý aktuální bootstrap ani kompletní source of truth; tím je pouze celý timestampově seřazený řetězec. Veřejný repozitář stav konkrétní runtime databáze neeviduje, proto před deployem ověř skutečné schema i migration history targetu. Baseline už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
+Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a pokračuje přes evidence `20260804100000`, organization `20260804110000`, markers `20260804120000`, transcript search `20260804130000` a Trash restore/purge `20260810005550_restore_recordings_from_trash.sql`. Samotná baseline není celý aktuální bootstrap ani kompletní source of truth; tím je pouze celý timestampově seřazený řetězec. Veřejný repozitář stav konkrétní runtime databáze neeviduje, proto před deployem ověř skutečné schema i migration history targetu. Baseline už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
 
 ## Strukturované AI tabulky jsou odvozené projekce
 
 `ai_outputs` je raw výstup AI providera a zůstává zdroj pro audit, export i fallback zobrazení. `transcript_tasks`, `transcript_chapters`, `transcript_decisions` a `transcript_risks` jsou odvozené pracovní projekce pro UI. Pokud parser strukturovaných položek selže, aplikace nesmí ztratit raw AI výstup. Pokud se smaže `ai_outputs`, odvozené řádky se smažou kaskádou; pokud se uživatel v checklistu označí úkol jako hotový, mění se jen `transcript_tasks.status`, ne původní JSON output.
 
 Běžný authenticated uživatel nemá mít široký update/insert/delete grant nad odvozenými projekcemi. Checklist potřebuje pouze `update (status)` na `transcript_tasks`; ostatní změny obsahu mají vznikat z AI processing endpointu přes service role. Jinak by klient mohl přepsat auditovatelnou projekci bez nového AI jobu.
+
+Individuální smazání úkolu tento grant záměrně nerozšiřuje. Authenticated endpoint nejdřív ověří `auth.getUser()`, pak přes server-only admin klienta načítá i maže jen řádky vlastněné stejným `user_id`. Kvůli deduplikaci opakovaných generací odstraní všechny současné fyzické řádky se stejným owner/title/deadline klíčem v rámci vlastněné nahrávky, jinak by se po refreshi znovu ukázala starší kopie. Raw `ai_outputs` zůstává uložený a další AI generování může stejný úkol vytvořit znovu; trvalé potlačení budoucích generací by vyžadovalo samostatný tombstone kontrakt.
 
 Checklist v AI zpracování může být hluboko ve scrollovatelném detailu. Pokud změna stavu úkolu používá server action s `redirect(nextPath)`, browser po revalidaci skočí nahoru a akce působí pomalu. Interaktivní checklist proto používá optimistický client update a JSON endpoint bez redirectu; SQL grant `update(status)` jen povoluje zápis a sám o sobě scroll problém neřeší.
 
@@ -120,6 +130,8 @@ Klientské FK mají deferred `NO ACTION`, ne cascade. To záměrně blokuje bě�
 
 Filtr více štítků znamená ALL, nikoli ANY. Bez `q` používá seznam `list_own_recordings_v1`, řadí `created_at desc, id desc` a další stránku omezuje tuple cursorem `(created_at, id)`, protože offset při souběžném insert/delete může řádky přeskočit nebo zopakovat. Všechny keyset stránky musí používat stejné organizační filtry a opakovaný cursor je chyba. Každé neprázdné `q` jde místo tohoto list flow přes samostatné indexed `search_own_recordings_v1`, které používá vlastní `limit/offset` stránkování a stejné organizační filtry. Kanonizace `client/project/folder/tag` nesmí zahodit `q` ani nesouvisející URL parametry; same-URL navigace nesmí vytvořit trvalý loading lock.
 
+Breakpoint viewportu sám nestačí pro geometrii inboxu uvnitř desktopového workspace. Například viewport 901 px nechá po 248px sidebaru a shell gutters panel široký jen přibližně 599 px, takže pevné desktopové metadata tracky by kolidovaly s akcemi. Řádky proto používají container query nad skutečnou šířkou `.recordings-inbox`: do 680 px obsahové šířky přecházejí na karty, zatímco 1024px a 1440px shell zůstává v desktopovém režimu. Browser regresi měř ve skutečném shellu a ověř zvlášť hlavní obsah, action track i pending/failure stav, ne pouze celkový `scrollWidth`.
+
 ## Forward migrace jsou release blocker
 
 Pořadí releasu je evidence `10000`, organization `11000`, markers `12000`, search `13000`, DB postflight každé cílové databáze a teprve potom deploy aplikace. Veřejný Git stav není důkazem, že konkrétní target migrace aplikoval. U neověřeného targetu musí postflight zkontrolovat skutečné sloupce/tabulky/funkce/trigger, PostgreSQL syntaxi, GIN index a authenticated `EXPLAIN`, constrainty, grants, forced RLS, anon-vs-auth a dvouuživatelskou izolaci, current-vs-old transcript výběr, manual/raw/deleted search, runtime keyset/offset stránkování a potřebný backfill. Nikdy nezaměňuj `npm test`, `check` nebo `build` za důkaz stavu vzdálené databáze.
@@ -148,7 +160,9 @@ Client `onSubmit` proběhne dřív, než server action potvrdí validaci, auth a
 
 ## Mazání je potvrzené a optimistické
 
-Destruktivní akce v UI musí mít potvrzovací dialog. Po potvrzení se položka ve frontendu schová okamžitě a server action doběhne na pozadí přes běžné revalidace/redirecty. Pokud server akci odmítne, další navigace nebo refresh ukáže stav podle databáze; optimistické schování nesmí nahrazovat server-side autorizaci ani RLS.
+Destruktivní akce v UI musí mít potvrzovací dialog. Po potvrzení se položka ve frontendu schová okamžitě a server action doběhne na pozadí přes běžné revalidace/redirecty. Neočekávaný client-action reject musí obnovit přesně označený řádek nebo kartu a ukázat sanitizovanou chybu v plnošířkovém druhém řádku běžného toku layoutu; rozšíření desktop action sloupce nebo absolutní feedback uvnitř tabulky může obsah přetéct, oříznout nebo překrýt s dalším řádkem. Next redirect se propouští beze změny a cílová stránka ukáže stav podle databáze. Optimistické schování nesmí nahrazovat server-side autorizaci ani RLS.
+
+Trvalé smazání Storage objektu nesmí důvěřovat samotnému `recordings.storage_path`. Uživatel může přes běžné UPDATE oprávnění měnit vlastní řádek, proto purge musí před prvním Storage nebo DB delete krokem fail-closed ověřit prefix konkrétního uživatele i konkrétního `recording_id` a odmítnout zpětná lomítka, traversal a cestu jiné nahrávky.
 
 ## Mailto není plná mail integrace
 
@@ -182,7 +196,7 @@ Ve frontend kódu nevaliduj celé `process.env` jako objekt. Next.js umí spoleh
 
 MP4 exporty z mobilu obvykle přijdou jako `video/mp4`, i když nás zajímá hlavně audio stopa. Supabase Storage bucket i frontend validace proto musí povolit `video/mp4`; samotný Soniox async přepis podporuje formát `mp4` a audio z kontejneru autodetekuje.
 
-Mobilní file picker filtruj přes kombinaci MIME typů, wildcard `audio/*` a přípon souborů. Některé záznamníky v mobilu neposílají přesný MIME typ, ale soubor s příponou `.m4a`, `.amr` nebo podobně. Validace proto používá MIME typ i fallback podle přípony.
+Mobilní file picker používá jeden explicitní seznam MIME typů a přípon odvozený z runtime `recordings.allowed_mime_types` bucketu a běžného produktového katalogu M4A, MP3, WAV, WebM, OGG, FLAC a MP4. Přípony jsou pouze nápověda pro picker, nikoli autorizační fallback. Prázdný MIME a `application/octet-stream` se odmítají i u souboru se známou příponou; běžné browserové aliasy se mohou převést pouze z explicitně dodaného MIME na kanonický typ povolený bucketem.
 
 ## Supabase plan preference není konfigurace projektu
 
@@ -220,11 +234,11 @@ Aktivní tab detailu nahrávky se ukládá do `localStorage` i do cookie `vosio-
 
 ## Soniox region musí odpovídat projektu
 
-Soniox API key je vázaný na region projektu. Pokud dashboard ukazuje `Region: United States`, nech ve Vercelu `SONIOX_REGION` prázdné nebo proměnnou odstraň, protože výchozí Soniox endpoint je US. `SONIOX_REGION=eu` používej jen s API klíčem z EU Soniox projektu. Kombinace US klíč + EU REST/realtime endpoint vede k chybě při vytváření temporary realtime key.
+Soniox API key je vázaný na region projektu. Global je bezpečný výchozí režim pro běžný projekt. EU vybírej v Nastavení jen s EU-enabled Soniox projektem a odpovídajícím regionálním klíčem. Nový async job uloží region do `transcription_jobs.provider_config`; pozdější změna uživatelské preference nesmí přesměrovat už existující job.
 
 ## Soniox temporary key expirace není délka nahrávání
 
-`SONIOX_TEMP_KEY_EXPIRES_SECONDS` nastavuje jen dobu, po kterou se browser muze pripojit s cerstve vydanym temporary key. Jakmile je WebSocket pripojeny, nahravka muze bezet dal. Vosio do temporary key requestu neposila zadny limit delky realtime session, protoze realtime nahravani nema mit aplikacni session cap vynuceny provider payloadem.
+Temporary key má v aplikaci pevnou interní životnost 60 sekund a není konfigurovatelný. Jde jen o dobu, po kterou se browser může připojit s čerstvě vydaným klíčem. Jakmile je WebSocket připojený, nahrávka může běžet dál. Vosio do temporary key requestu neposílá žádný limit délky realtime session, protože realtime nahrávání nemá mít aplikační session cap vynucený provider payloadem.
 
 ## Soniox usage je odhad z délky audia
 
@@ -257,3 +271,26 @@ Vosio nastavuje v `next.config.ts` základní bezpečnostní hlavičky (`X-Conte
 ## Balíček server-only vyhazuje ve Vitest
 
 `src/lib/env.server.ts` a `src/lib/supabase/admin.ts` importují `server-only`, aby omylný import do client komponenty selhal už při buildu. Balíček `server-only` ale vyhazuje i v plain Node prostředí bez `react-server` condition — tedy i ve Vitest. Proto `vitest.config.ts` aliasuje `server-only` na prázdný stub `tests/stubs/server-only.ts`. Když přidáš `import "server-only"` do dalšího modulu testovaného unit testy, nic dalšího nastavovat nemusíš; alias platí globálně.
+
+## Kopie systémového promptu nesmí věřit formuláři
+
+Read-only input ve formuláři není bezpečnostní hranice. Uživatel může `FormData` změnit ručně. Akce pro kopii systémového promptu proto přijímá pouze UUID, znovu načte řádek přes authenticated RLS klienta s `id` a `is_system = true` a kopíruje výhradně načtené hodnoty. Název, prompt, processing type ani output schema z formuláře se při této akci nepoužijí.
+
+Form action vytvoří odesílaný `FormData` snapshot ještě před serverovým settlementem. Během pending stavu proto musí zůstat fieldset i prompt navigace zamknuté; jinak může uživatel vidět novější draft, i když server uložil starší snapshot. Failure editor odemkne a ponechá přesně rozepsaná data.
+
+## AI archiv nesmí načítat celý transcript
+
+Globální archiv potřebuje preview uloženého outputu a odkaz na nahrávku, nikoli `transcripts.raw_text`, Soniox segmenty, speakers, storage metadata nebo provider konfiguraci. Používej samostatný explicitní join kontrakt. Detail nahrávky si dál načítá transcript vlastním úzkým dotazem; archiv ho nesmí začít tahat jen kvůli filtru nebo odkazu.
+
+Query parametr `error` z delete redirectu je nedůvěryhodný vstup. UI smí vykreslit pouze pevnou allowlist zprávu z `canonicalizeAiArchiveSearchParams`; duplicitní nebo neznámé hodnoty se odstraní, aniž by se zahodily platné filtry `type` a `recording`.
+
+## Git tag není deploy ani databázový postflight
+
+Verze v `package.json`, private commit na `dev` a private tag `vX.Y.Z` potvrzují pouze source-only stav private repozitáře. Neprokazují Vercel deploy, aplikaci Supabase migrací ani shodu remote migration ledgeru. Public repozitář má samostatnou historii a sanitizovaný povrch; private commity ani tagy se do něj nikdy nepushují. Public release potřebuje oddělený public checkout a vlastní ověření. Tyto stavy vždy ověř a reportuj samostatně pro konkrétní target.
+## Settings runtime kontrakt
+
+Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čte: výchozí AI model pro ruční AI zpracování, Soniox realtime model a jazyk pro nový live záznam a konzervativní per-user strop velikosti uploadu. Volba storage tarifu nikdy nemění Supabase projekt ani bucket.
+
+`outputLanguage`, `audioRetentionPolicy`, `autoProcessAfterTranscription`, `autoProcessingTypes` a `aiTemperature` zůstávají kvůli zpětné kompatibilitě uložené v Auth metadata, ale současný runtime je nepoužívá. UI je proto nesmí prezentovat jako funkční ovládání, dokud neexistuje skutečná server/worker cesta.
+
+`/settings` je jeden dokument: na desktopu scrolluje pouze `.content-area` s `content-area-document`; na mobilu do 900 px je `.content-area` `overflow: visible` a scrolluje dokument nad fixed spodní navigací. Do Settings nepřidávat druhý scroll container ani sticky section navigation.

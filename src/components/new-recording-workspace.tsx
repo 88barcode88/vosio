@@ -1,23 +1,40 @@
-import { FileText, Mic, Upload } from "lucide-react";
+import { ChevronDown, FileText, Mic, Upload } from "lucide-react";
+import type { ReactNode } from "react";
 import { PersistentRecorderSlot } from "@/components/persistent-recording-session";
-import { RecordingUploadForm } from "@/components/recording-upload-form";
+import {
+  RecordingUploadForm,
+  type RecordingUploadTransport
+} from "@/components/recording-upload-form";
 import { TranscriptImportForm } from "@/components/transcript-import-form";
 import { getLiveAudioMaxFileSizeBytes } from "@/lib/recordings/live-audio-limit";
 import { getRecordingStorageLimitSummary } from "@/lib/recordings/storage-copy";
+import { getRecordingFormatSummary } from "@/lib/recordings/types";
 import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 
+export type NewRecordingCaptureSlots = {
+  live: ReactNode;
+  transcriptImport: ReactNode;
+};
+
 type NewRecordingWorkspaceProps = {
+  captureSlots?: NewRecordingCaptureSlots;
   recordingStorageConfig: RecordingStorageConfig;
+  uploadRedirectAfterSuccess?: "detail" | "list" | "stay";
+  uploadTransport?: RecordingUploadTransport;
   userSettings?: UserSettings;
 };
 
-// NewRecordingWorkspace renders the capture console for live recording, file upload and transcript import.
+// NewRecordingWorkspace renders two primary capture methods and a secondary transcript import.
 export function NewRecordingWorkspace({
+  captureSlots,
   recordingStorageConfig,
+  uploadRedirectAfterSuccess = "detail",
+  uploadTransport,
   userSettings = defaultUserSettings
 }: NewRecordingWorkspaceProps) {
   const maxFileSizeBytes = recordingStorageConfig.maxFileSizeBytes;
+  const allowedMimeTypes = recordingStorageConfig.allowedMimeTypes;
   const liveAudioMaxFileSizeBytes = getLiveAudioMaxFileSizeBytes(maxFileSizeBytes);
   const storageLimitSummary = getRecordingStorageLimitSummary(
     recordingStorageConfig,
@@ -26,19 +43,18 @@ export function NewRecordingWorkspace({
 
   return (
     <section className="new-recording-workspace" aria-label="Nová nahrávka">
-      <div className="new-recording-header">
-        <div>
-          <span>Capture console</span>
-          <h1>Nová nahrávka</h1>
-          <p>Live přepis, audio soubor a hotový přepis jsou rovnocenné cesty do stejného workflow.</p>
-        </div>
-      </div>
+      <header className="new-recording-header">
+        <h1>Nová nahrávka</h1>
+        <p>Začněte live nahráváním nebo nahrajte existující audio soubor.</p>
+      </header>
+
       {storageLimitSummary.warning ? (
         <p className="recording-storage-alert" role="alert">
           {storageLimitSummary.warning}
         </p>
       ) : null}
-      <dl className="recording-storage-summary">
+
+      <dl className="recording-storage-summary" aria-label="Limity úložiště">
         <div>
           <dt>Bucket recordings</dt>
           <dd>{storageLimitSummary.bucketLimit}</dd>
@@ -53,61 +69,69 @@ export function NewRecordingWorkspace({
         </div>
       </dl>
 
-      <div className="capture-grid">
-        <article className="capture-card capture-card-primary">
+      <div className="capture-grid capture-primary-grid">
+        <article className="capture-card capture-card-primary" data-primary-capture="live">
           <div className="capture-card-heading">
-            <Mic size={16} />
+            <Mic aria-hidden="true" size={16} />
             <div>
               <strong>Nahrávat live</strong>
               <span>Limit audia: {storageLimitSummary.liveAudioLimit}. Přepis se uloží vždy.</span>
             </div>
           </div>
           <div className="capture-card-body">
-            <PersistentRecorderSlot
-              allowTranscriptOnly
-              captionMode
-              maxAudioFileSizeBytes={liveAudioMaxFileSizeBytes}
-              realtimeLanguage={userSettings.sonioxRealtimeLanguage}
-              realtimeModel={userSettings.sonioxRealtimeModel}
-              redirectAfterSave="detail"
-            />
+            {captureSlots?.live ?? (
+              <PersistentRecorderSlot
+                allowTranscriptOnly
+                captionMode
+                maxAudioFileSizeBytes={liveAudioMaxFileSizeBytes}
+                realtimeLanguage={userSettings.sonioxRealtimeLanguage}
+                realtimeModel={userSettings.sonioxRealtimeModel}
+                redirectAfterSave="detail"
+              />
+            )}
           </div>
         </article>
 
-        <article className="capture-card">
+        <article className="capture-card capture-card-primary" data-primary-capture="upload">
           <div className="capture-card-heading">
-            <Upload size={16} />
+            <Upload aria-hidden="true" size={16} />
             <div>
               <strong>Nahrát soubor</strong>
-              <span>Audio, M4A nebo MP4</span>
+              <span>{getRecordingFormatSummary(allowedMimeTypes ?? [])}</span>
             </div>
           </div>
           <div className="upload-console">
-            <p>Limit souboru: {storageLimitSummary.manualUploadLimit}.</p>
             <RecordingUploadForm
+              allowedMimeTypes={allowedMimeTypes}
               maxFileSizeBytes={maxFileSizeBytes}
-              redirectAfterUpload="detail"
+              redirectAfterUpload={uploadRedirectAfterSuccess}
+              uploadTransport={uploadTransport}
             />
           </div>
         </article>
+      </div>
 
-        <article className="capture-card">
-          <div className="capture-card-heading">
-            <FileText size={16} />
-            <div>
-              <strong>Vložit přepis</strong>
-              <span>Text bez audio souboru</span>
-            </div>
-          </div>
-          <div className="upload-console">
+      <article className="capture-card transcript-import-card" data-secondary-capture="transcript">
+        <details className="transcript-import-disclosure">
+          <summary>
+            <span className="capture-card-heading">
+              <FileText aria-hidden="true" size={16} />
+              <span>
+                <strong>Vložit přepis</strong>
+                <small>Vedlejší možnost pro text bez audio souboru</small>
+              </span>
+            </span>
+            <ChevronDown aria-hidden="true" className="transcript-import-chevron" size={18} />
+          </summary>
+          <div className="upload-console transcript-import-console">
             <p>
               Vložte hotový přepis. Vosio ho uloží jako dokončený záznam a AI zpracování poběží
               stejně jako u přepisů ze Sonioxu.
             </p>
-            <TranscriptImportForm redirectAfterImport="detail" />
+            {captureSlots?.transcriptImport ?? <TranscriptImportForm redirectAfterImport="detail" />}
           </div>
-        </article>
-      </div>
+        </details>
+      </article>
     </section>
   );
 }

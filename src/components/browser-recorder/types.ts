@@ -36,8 +36,14 @@ export type RealtimeConfig = {
   region?: string;
   stt_ws_url?: string;
 };
+export type RealtimeConfigError = {
+  code?: RealtimeConfigErrorCode;
+  error?: string;
+  request_id?: string;
+};
 export type RealtimeConfigErrorCode =
   | "server_env_invalid"
   | "soniox_auth_or_region"
+  | "soniox_eu_access_required"
   | "soniox_request_failed"
   | "unknown";

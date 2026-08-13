@@ -1,6 +1,8 @@
-import { AudioLines, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { TranscriptTabs } from "@/components/transcript-tabs";
+import { ExportControls } from "@/components/transcript-tabs/export-controls";
 import { TranscriptionControls } from "@/components/transcription-controls";
 import { RecordingDetailTitleEditor } from "@/components/workspace/recording-detail-title-editor";
 import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
@@ -28,13 +30,10 @@ import type {
 import {
   formatDuration,
   getRecordingDotClassName,
-  getRecordingNextStepLabel,
-  getSourceTypeLabel,
-  getStorageAvailabilityLabel,
-  getTranscriptAvailabilityLabel
+  getSourceTypeLabel
 } from "@/components/workspace/utils";
 
-// RecordingWorkbench composes the selected recording header, tabs and right rail.
+// RecordingWorkbench composes the selected recording as one full-width working document.
 export function RecordingWorkbench({
   activeAiOutputs,
   activeRecording,
@@ -68,46 +67,51 @@ export function RecordingWorkbench({
 
   return (
     <section className="recording-workbench" aria-label="Aktuální nahrávka">
+      <Link className="recording-detail-back" href="/recordings">
+        <ChevronLeft aria-hidden="true" size={16} />
+        Zpět na nahrávky
+      </Link>
       <RecordingCard
+        activeAiOutputs={activeAiOutputs}
         activeRecording={activeRecording}
+        activeRecordingView={activeRecordingView}
         activeRecordingOrganization={activeRecordingOrganization}
+        activeStructuredItems={activeStructuredItems}
+        activeTranscript={activeTranscript}
         recordingOrganizationOptions={recordingOrganizationOptions}
       />
-      <div className="recording-workbench-grid">
-        <TranscriptPanel
-          activeAiOutputs={activeAiOutputs}
-          activeRecording={activeRecordingView}
-          activeRecordingMarkers={activeRecordingMarkers}
-          activeStructuredItems={activeStructuredItems}
-          activeTranscript={activeTranscript}
-          initialDeepLink={initialDeepLink}
-          initialTab={initialTab}
-          initialTabFromCookie={initialTabFromCookie}
-          initialTabFromUrl={initialTabFromUrl}
-          userSettings={userSettings}
-        />
-        <aside className="recording-rail" aria-label="Pracovní stav nahrávky">
-          <CommandBar activeRecording={activeRecordingView} activeTranscript={activeTranscript} />
-          <RecordingRail
-            activeAiOutputs={activeAiOutputs}
-            activeRecording={activeRecordingView}
-            activeStructuredItems={activeStructuredItems}
-            activeTranscript={activeTranscript}
-          />
-        </aside>
-      </div>
+      <TranscriptPanel
+        activeAiOutputs={activeAiOutputs}
+        activeRecording={activeRecordingView}
+        activeRecordingMarkers={activeRecordingMarkers}
+        activeStructuredItems={activeStructuredItems}
+        activeTranscript={activeTranscript}
+        initialDeepLink={initialDeepLink}
+        initialTab={initialTab}
+        initialTabFromCookie={initialTabFromCookie}
+        initialTabFromUrl={initialTabFromUrl}
+        userSettings={userSettings}
+      />
     </section>
   );
 }
 
 // RecordingCard shows the compact selected-recording header, metadata and title actions.
 function RecordingCard({
+  activeAiOutputs,
   activeRecording: activeRecordingRow,
+  activeRecordingView,
   activeRecordingOrganization,
+  activeStructuredItems,
+  activeTranscript,
   recordingOrganizationOptions
 }: {
+  activeAiOutputs: AiOutputView[];
   activeRecording: RecordingRow | null;
+  activeRecordingView: RecordingClientView | null;
   activeRecordingOrganization: RecordingOrganization;
+  activeStructuredItems: StructuredAiItems;
+  activeTranscript: TranscriptRow | null;
   recordingOrganizationOptions: RecordingOrganizationOptions;
 }) {
   const activeRecording = activeRecordingRow ? toRecordingClientView(activeRecordingRow) : null;
@@ -144,6 +148,12 @@ function RecordingCard({
         </div>
         {activeRecordingRow ? (
           <div className="recording-detail-actions">
+            <ExportControls
+              activeAiOutputs={activeAiOutputs}
+              activeRecording={activeRecordingView}
+              activeStructuredItems={activeStructuredItems}
+              activeTranscript={activeTranscript}
+            />
             <RecordingDetailTitleEditor
               key={activeRecordingRow.id}
               recordingId={activeRecordingRow.id}
@@ -159,79 +169,19 @@ function RecordingCard({
         ) : null}
       </div>
       {activeRecordingRow ? (
-        <RecordingOrganizationEditor
-          key={`organization-${activeRecordingRow.id}`}
-          options={recordingOrganizationOptions}
-          organization={activeRecordingOrganization}
-          recording={activeRecordingRow}
-        />
+        <>
+          <RecordingOrganizationEditor
+            key={`organization-${activeRecordingRow.id}`}
+            options={recordingOrganizationOptions}
+            organization={activeRecordingOrganization}
+            recording={activeRecordingRow}
+          />
+          <div className="recording-header-operations" aria-label="Akce přepisu">
+            <CommandBar activeRecording={activeRecordingView} activeTranscript={activeTranscript} />
+          </div>
+        </>
       ) : null}
     </section>
-  );
-}
-
-// RecordingRail renders compact operational context next to the transcript workspace.
-function RecordingRail({
-  activeAiOutputs,
-  activeRecording,
-  activeStructuredItems,
-  activeTranscript
-}: {
-  activeAiOutputs: AiOutputView[];
-  activeRecording: RecordingClientView | null;
-  activeStructuredItems: StructuredAiItems;
-  activeTranscript: TranscriptRow | null;
-}) {
-  return (
-    <div className="recording-rail-cards">
-      <section className="rail-card">
-        <div>
-          <CheckCircle2 size={15} />
-          <strong>Stav</strong>
-        </div>
-        <dl>
-          <div>
-            <dt>Nahrávka</dt>
-            <dd>{activeRecording ? getStatusLabel(activeRecording.status) : "Bez nahrávky"}</dd>
-          </div>
-          <div>
-            <dt>Přepis</dt>
-            <dd>{getTranscriptAvailabilityLabel(activeTranscript)}</dd>
-          </div>
-        </dl>
-      </section>
-      <section className="rail-card">
-        <div>
-          <AudioLines size={15} />
-          <strong>Obsah</strong>
-        </div>
-        <dl>
-          <div>
-            <dt>AI výstupy</dt>
-            <dd>{activeAiOutputs.length}</dd>
-          </div>
-          <div>
-            <dt>AI úkoly</dt>
-            <dd>{activeStructuredItems.tasks.length}</dd>
-          </div>
-          <div>
-            <dt>Soubor</dt>
-            <dd>{getStorageAvailabilityLabel(activeRecording)}</dd>
-          </div>
-          <div>
-            <dt>Jazyk</dt>
-            <dd>{activeTranscript?.language ?? "nezjištěno"}</dd>
-          </div>
-        </dl>
-      </section>
-      <section className="rail-card rail-card-next-step">
-        <div>
-          <CheckCircle2 size={15} />
-          <strong>Další krok</strong>
-        </div>
-        <p>{getRecordingNextStepLabel(activeRecording, activeTranscript)}</p>
-      </section>
-    </div>
   );
 }
 
@@ -277,7 +227,7 @@ function TranscriptPanel({
   );
 }
 
-// CommandBar exposes the primary transcription actions in the recording rail.
+// CommandBar exposes transcription actions without creating a dominant side panel.
 function CommandBar({
   activeRecording,
   activeTranscript

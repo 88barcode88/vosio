@@ -10,6 +10,23 @@ export function isTranscriptTab(value: string | null): value is TranscriptTab {
   return transcriptTabIds.some((tabId) => tabId === value);
 }
 
+// parseTranscriptTabSearchParams accepts exactly one known detail tab from the URL.
+export function parseTranscriptTabSearchParams(
+  query: Record<string, string | string[] | undefined>
+): { explicit: boolean; tab: TranscriptTab; valid: boolean } {
+  const value = query.tab;
+
+  if (typeof value === "undefined") {
+    return { explicit: false, tab: "transcript", valid: true };
+  }
+
+  if (typeof value === "string" && isTranscriptTab(value)) {
+    return { explicit: true, tab: value, valid: true };
+  }
+
+  return { explicit: false, tab: "transcript", valid: false };
+}
+
 // getTranscriptTabStorageKey scopes browser tab memory to one recording detail.
 export function getTranscriptTabStorageKey(activeRecording: RecordingClientView | null) {
   return activeRecording ? `vosio:recording:${activeRecording.id}:active-tab` : "vosio:recording:new:active-tab";

@@ -1,15 +1,30 @@
 .transcript-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.recording-detail-sticky {
+  position: sticky;
+  top: -1px;
+  z-index: 12;
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 11px 11px 0 0;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--shadow);
+  overflow: visible;
 }
 .tabs-row {
   justify-content: space-between;
   gap: 12px;
   min-height: 44px;
-  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
   padding: 0 12px;
 }
 .tabs {
@@ -110,18 +125,22 @@
 .tab-panel {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 11px 11px;
+  background: var(--surface);
 }
 .tab-panel > * {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
   width: 100%;
 }
 .tab-panel-transcript {
-  overflow: hidden;
+  overflow: visible;
 }
 .transcript-list {
   display: grid;
@@ -130,23 +149,24 @@
   padding: 14px;
 }
 .transcript-list-scroll {
-  height: 100%;
+  height: auto;
   max-height: none;
-  overflow: auto;
+  overflow: visible;
   padding-right: 16px;
   scrollbar-color: rgba(56, 217, 208, 0.42) transparent;
   scrollbar-width: thin;
 }
 .transcript-content {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
   min-height: 0;
   padding-right: 14px;
 }
 .transcript-table-scroll {
   min-height: 0;
   max-height: none;
-  overflow: auto;
+  overflow: visible;
   padding-right: 8px;
   scrollbar-color: rgba(56, 217, 208, 0.42) transparent;
   scrollbar-width: thin;
@@ -266,8 +286,8 @@
 .speaker-summary-list {
   display: grid;
   gap: 6px;
-  max-height: min(28vh, 280px);
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   padding-right: 4px;
   scrollbar-color: rgba(56, 217, 208, 0.36) transparent;
   scrollbar-width: thin;
@@ -436,19 +456,71 @@
   font-size: 12px;
 }
 .recording-audio-player {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(150px, auto) minmax(180px, 1fr);
   align-items: center;
-  gap: 10px;
-  border-top: 1px solid var(--border);
-  padding: 7px 12px;
+  gap: 10px 12px;
+  padding: 10px 12px;
 }
-.recording-audio-player audio {
+.recording-audio-toggle {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--accent-text);
+  background: var(--accent);
+}
+.recording-audio-toggle:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.recording-audio-toggle:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.recording-audio-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.recording-audio-copy strong {
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.recording-audio-copy span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.recording-audio-progress {
+  display: flex;
+  min-width: 0;
+}
+.recording-audio-progress input {
   width: 100%;
   min-width: 0;
-  height: 34px;
+  min-height: 44px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.recording-audio-progress input:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.recording-audio-element {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 .recording-audio-player p {
+  grid-column: 1 / -1;
   margin: 0;
   color: var(--muted);
   font-size: 11px;
@@ -457,7 +529,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-top: 0;
   padding: 7px 12px;
   font-size: 12px;
 }

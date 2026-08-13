@@ -2,57 +2,115 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Files, Upload } from "lucide-react";
+import { RotateCcw, Upload, X } from "lucide-react";
 import { useRecordingNavigationBlocker } from "@/components/recording-navigation-guard";
-import { formatFileSize, RECORDING_FILE_ACCEPT } from "@/lib/recordings/types";
+import {
+  formatFileSize,
+  getRecordingFileAccept,
+  getRecordingFormatSummary
+} from "@/lib/recordings/types";
 import { createUploadOperationGuard, createUploadQueue } from "@/lib/recordings/upload-queue";
 import { createUploadProgressTracker, type AggregateUploadProgress } from "@/lib/recordings/upload-progress";
 import type { RecordingUploadProgress } from "@/lib/recordings/resumable-upload";
-import { uploadRecording, validateAudioFile } from "@/lib/recordings/upload";
+import {
+  unsupportedRecordingMimeMessage,
+  uploadRecording,
+  validateAudioFile
+} from "@/lib/recordings/upload";
 
 type UploadState = {
   message: string;
   tone: "error" | "success" | "working";
 };
 
-type RecordingUploadFormProps = {
-  maxFileSizeBytes: number | null;
-  redirectAfterUpload?: "detail" | "list";
+type UploadPhase = "idle" | "transferring" | "finalizing" | "success" | "error" | "cancelled";
+
+type SelectedFileSummary = {
+  count: number;
+  name: string;
+  totalSize: number;
 };
 
-// getCancelledUploadMessage preserves a meaningful cancellation persistence error for the visible upload result.
+export type RecordingUploadTransport = typeof uploadRecording;
+
+const genericUploadFailureMessage = "Nahrání souboru se nepodařilo. Zkuste to znovu.";
+const standardCancellationMessage = "Nahrávání bylo zrušeno.";
+const failedStateSuffix = " Záznam se nepodařilo označit jako neúspěšný.";
+const safeExactUploadMessages = new Set([
+  genericUploadFailureMessage,
+  `${genericUploadFailureMessage}${failedStateSuffix}`,
+  "Nahrávání souborů teď není dostupné.",
+  "Nepovedlo se vytvořit záznam nahrávky.",
+  "Přihlášení vypršelo. Přihlaste se znovu.",
+  "Soubor je uložený, ale metadata se neuložila.",
+  `Soubor je uložený, ale metadata se neuložila.${failedStateSuffix}`,
+  unsupportedRecordingMimeMessage
+]);
+const safeFileSizeMessagePattern = /^Soubor je větší než (?:(?:povolených )?\d+(?:[.,]\d+)? (?:B|KB|MB|GB)\.)(?: Vyberte menší soubor\.)?$/u;
+
+type RecordingUploadFormProps = {
+  allowedMimeTypes: readonly string[] | null;
+  maxFileSizeBytes: number | null;
+  redirectAfterUpload?: "detail" | "list" | "stay";
+  uploadTransport?: RecordingUploadTransport;
+};
+
+// getCancelledUploadMessage preserves only the known cancellation persistence failure without leaking provider detail.
 export function getCancelledUploadMessage(input: {
   cancellationReason: unknown | null;
   succeededCount: number;
   totalCount: number;
 }) {
-  const detail = input.cancellationReason instanceof Error &&
-    input.cancellationReason.message !== "Nahrávání bylo zrušeno."
-    ? ` ${input.cancellationReason.message}`
-    : "";
+  const persistenceFailed = input.cancellationReason instanceof Error &&
+    input.cancellationReason.message === `${standardCancellationMessage}${failedStateSuffix}`;
+  const detail = persistenceFailed ? failedStateSuffix : "";
 
   if (input.succeededCount > 0) {
     return `Nahrávání zrušeno. Uloženo ${input.succeededCount} z ${input.totalCount} nahrávek.${detail}`;
   }
 
-  return detail.trim() || "Nahrávání bylo zrušeno.";
+  return persistenceFailed ? `${standardCancellationMessage}${failedStateSuffix}` : standardCancellationMessage;
 }
 
-// RecordingUploadForm uploads selected audio and records its metadata.
+// getSafeUploadFailureMessage prevents unexpected provider details from reaching the browser UI.
+export function getSafeUploadFailureMessage(reason: unknown) {
+  const message = reason instanceof Error ? reason.message.trim() : "";
+  return message.length <= 180 && (safeExactUploadMessages.has(message) || safeFileSizeMessagePattern.test(message))
+    ? message
+    : genericUploadFailureMessage;
+}
+
+// summarizeSelectedFiles creates persistent, non-sensitive metadata for the upload status surface.
+function summarizeSelectedFiles(files: File[]): SelectedFileSummary {
+  return {
+    count: files.length,
+    name: files.length === 1 ? files[0]?.name ?? "Soubor" : `${files.length} soubory`,
+    totalSize: files.reduce((sum, file) => sum + file.size, 0)
+  };
+}
+
+// RecordingUploadForm uploads selected audio and keeps progress and terminal states in one stable surface.
 export function RecordingUploadForm({
+  allowedMimeTypes,
   maxFileSizeBytes,
-  redirectAfterUpload
+  redirectAfterUpload,
+  uploadTransport = uploadRecording
 }: RecordingUploadFormProps) {
   const filteredInputRef = useRef<HTMLInputElement>(null);
-  const unfilteredInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
   const operationGuardRef = useRef<ReturnType<typeof createUploadOperationGuard> | null>(null);
+  const retryFilesRef = useRef<File[]>([]);
   const router = useRouter();
   const { registerNavigationBlocker } = useRecordingNavigationBlocker();
-  const [uploadState, setUploadState] = useState<UploadState | null>(null);
+  const [uploadState, setUploadState] = useState<UploadState>({
+    message: "Připraveno k nahrání.",
+    tone: "working"
+  });
+  const [phase, setPhase] = useState<UploadPhase>("idle");
   const [isUploading, setIsUploading] = useState(false);
-  const [phase, setPhase] = useState<"transferring" | "finalizing" | null>(null);
-  const [announcement, setAnnouncement] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
+  const [announcement, setAnnouncement] = useState("Připraveno k nahrání.");
+  const [selectedFiles, setSelectedFiles] = useState<SelectedFileSummary | null>(null);
   const [currentFileIndex, setCurrentFileIndex] = useState<number | null>(null);
   const [currentFileName, setCurrentFileName] = useState<string | null>(null);
   const [currentFileProgress, setCurrentFileProgress] = useState<RecordingUploadProgress | null>(null);
@@ -69,32 +127,30 @@ export function RecordingUploadForm({
   }, []);
 
   useEffect(() => {
-    if (!isUploading) {
-      return;
-    }
-
+    if (!isUploading) return;
     return registerNavigationBlocker();
   }, [isUploading, registerNavigationBlocker]);
 
-  // handleFileChange performs the authenticated upload flow for selected recording files.
-  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    if (maxFileSizeBytes === null) {
-      event.target.value = "";
-      return;
-    }
+  // processFiles performs the authenticated serial upload flow for a browser selection or retry.
+  async function processFiles(files: File[]) {
+    if (maxFileSizeBytes === null || allowedMimeTypes === null || files.length === 0 || isUploading) return;
 
-    const files = Array.from(event.target.files ?? []);
-
-    if (files.length === 0) {
-      return;
-    }
+    retryFilesRef.current = files;
+    setSelectedFiles(summarizeSelectedFiles(files));
+    setCurrentFileName(files[0]?.name ?? null);
+    setTotalFiles(files.length);
+    setCanRetry(false);
+    setCurrentFileIndex(null);
+    setCurrentFileProgress(null);
+    setProgress(null);
 
     const validationError = files
-      .map((file) => validateAudioFile(file, maxFileSizeBytes))
+      .map((file) => validateAudioFile(file, maxFileSizeBytes, allowedMimeTypes))
       .find(Boolean);
     if (validationError) {
+      setPhase("error");
       setUploadState({ message: validationError, tone: "error" });
-      event.target.value = "";
+      setAnnouncement(validationError);
       return;
     }
 
@@ -105,16 +161,10 @@ export function RecordingUploadForm({
     setPhase("transferring");
     setAnnouncement(`Nahrávání souboru 1 z ${files.length} začalo.`);
     setCurrentFileIndex(0);
-    setCurrentFileName(files[0]?.name ?? null);
-    setTotalFiles(files.length);
-    setCurrentFileProgress({
-      bytesSent: 0,
-      bytesTotal: files[0]?.size ?? 0,
-      percentage: 0
-    });
+    setCurrentFileProgress({ bytesSent: 0, bytesTotal: files[0]?.size ?? 0, percentage: 0 });
     setProgress(progressTracker.getSnapshot());
     setUploadState({
-      message: files.length === 1 ? "Nahrávám soubor..." : `Nahrávám ${files.length} souborů...`,
+      message: files.length === 1 ? "Nahrávám soubor…" : `Nahrávám ${files.length} souborů…`,
       tone: "working"
     });
 
@@ -128,186 +178,182 @@ export function RecordingUploadForm({
           setPhase("transferring");
         }
 
-        const uploadedRecording = await uploadRecording({
+        const uploadedRecording = await uploadTransport({
+          allowedMimeTypes,
           file,
           maxFileSizeBytes,
           onPhase: (nextPhase) => {
-            if (operationGuard.canApplyEffects()) {
-              setPhase(nextPhase);
-              if (nextPhase === "finalizing") {
-                setAnnouncement(`Dokončuji uložení souboru ${index + 1} z ${files.length}.`);
-              }
+            if (!operationGuard.canApplyEffects()) return;
+            setPhase(nextPhase);
+            if (nextPhase === "finalizing") {
+              setUploadState({ message: "Dokončuji bezpečné uložení…", tone: "working" });
+              setAnnouncement(`Dokončuji uložení souboru ${index + 1} z ${files.length}.`);
             }
           },
           onProgress: (nextProgress) => {
-            if (operationGuard.canApplyEffects()) {
-              setCurrentFileProgress(nextProgress);
-              setProgress(progressTracker.updateFileProgress(index, nextProgress.bytesSent));
-            }
+            if (!operationGuard.canApplyEffects()) return;
+            setCurrentFileProgress(nextProgress);
+            setProgress(progressTracker.updateFileProgress(index, nextProgress.bytesSent));
           },
           onResumableUploadTask: control.setActiveTask,
           sourceType: "upload"
         });
-        if (operationGuard.canApplyEffects()) {
-          setProgress(progressTracker.completeFile(index));
-        }
 
+        if (operationGuard.canApplyEffects()) setProgress(progressTracker.completeFile(index));
         return uploadedRecording;
       });
       operationGuard.setActiveTask(queue);
       const result = await queue.run();
       operationGuard.setActiveTask(null);
 
-      event.target.value = "";
-
-      if (!operationGuard.canApplyEffects() || !mountedRef.current) {
-        return;
-      }
+      if (!operationGuard.canApplyEffects() || !mountedRef.current) return;
 
       if (result.cancelled) {
-        setUploadState({
-          message: getCancelledUploadMessage({
-            cancellationReason: result.cancellationReason,
-            succeededCount: result.succeeded.length,
-            totalCount: files.length
-          }),
-          tone: result.succeeded.length > 0 ? "success" : "error"
+        const message = getCancelledUploadMessage({
+          cancellationReason: result.cancellationReason,
+          succeededCount: result.succeeded.length,
+          totalCount: files.length
         });
-
-        if (result.succeeded.length > 0) {
-          router.refresh();
-        }
-
+        setPhase("cancelled");
+        setUploadState({ message, tone: result.succeeded.length > 0 ? "success" : "error" });
+        setAnnouncement(message);
+        setCanRetry(result.succeeded.length === 0);
+        if (result.succeeded.length > 0) router.refresh();
         return;
       }
 
       if (result.failed.length > 0) {
-        const firstReason = result.failed[0]?.error;
-        const detail = firstReason instanceof Error ? firstReason.message : "Upload selhal.";
-
-        setUploadState({
-          message:
-            result.succeeded.length > 0
-              ? `Uloženo ${result.succeeded.length} z ${files.length} nahrávek. ${detail}`
-              : detail,
-          tone: "error"
-        });
-
-        if (result.succeeded.length > 0) {
-          router.refresh();
-        }
-
+        const detail = getSafeUploadFailureMessage(result.failed[0]?.error);
+        const message = result.succeeded.length > 0
+          ? `Uloženo ${result.succeeded.length} z ${files.length} nahrávek. ${detail}`
+          : detail;
+        setPhase("error");
+        setUploadState({ message, tone: "error" });
+        setAnnouncement(message);
+        setCanRetry(result.succeeded.length === 0);
+        if (result.succeeded.length > 0) router.refresh();
         return;
       }
 
-      setUploadState({
-        message: files.length === 1 ? "Nahrávka je uložená." : `Uloženo ${files.length} nahrávek.`,
-        tone: "success"
-      });
-
+      const message = files.length === 1 ? "Nahrávka je uložená." : `Uloženo ${files.length} nahrávek.`;
+      setPhase("success");
+      setUploadState({ message, tone: "success" });
+      setAnnouncement(message);
       const lastRecordingId = result.succeeded[result.succeeded.length - 1]?.value.id ?? null;
 
       if (redirectAfterUpload === "detail" && files.length === 1 && lastRecordingId) {
         router.push(`/recordings/${lastRecordingId}`);
-        return;
-      }
-
-      if (redirectAfterUpload === "list") {
+      } else if (redirectAfterUpload === "list") {
         router.push("/recordings");
-        return;
+      } else if (redirectAfterUpload !== "stay") {
+        router.refresh();
       }
-
-      router.refresh();
     } finally {
-      if (operationGuard.canApplyEffects() && mountedRef.current) {
-        setIsUploading(false);
-        setPhase(null);
-        setAnnouncement(null);
-      }
-
-      if (operationGuardRef.current === operationGuard) {
-        operationGuardRef.current = null;
-      }
+      if (operationGuard.canApplyEffects() && mountedRef.current) setIsUploading(false);
+      if (operationGuardRef.current === operationGuard) operationGuardRef.current = null;
     }
   }
 
+  // handleFileChange normalizes the native picker into the shared serial upload path.
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    void processFiles(files);
+  }
+
+  // handleDrop accepts browser files without turning the decorative drop surface into a second control.
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    void processFiles(Array.from(event.dataTransfer.files));
+  }
+
+  const totalProgressValue = progress?.bytesSent ?? 0;
+  const totalProgressMax = progress?.bytesTotal || selectedFiles?.totalSize || 1;
+  const fileLabel = selectedFiles?.name ?? "Zatím nebyl vybrán soubor";
+  const enabledMimeTypes = allowedMimeTypes ?? [];
+  const fileAccept = getRecordingFileAccept(enabledMimeTypes);
+  const formatSummary = getRecordingFormatSummary(enabledMimeTypes);
+  const uploadAvailable = maxFileSizeBytes !== null && enabledMimeTypes.length > 0;
+
   return (
-    <div aria-busy={isUploading} className="real-upload">
+    <div aria-busy={isUploading} className="real-upload" data-phase={phase}>
       <input
-        accept={RECORDING_FILE_ACCEPT.join(",")}
+        accept={fileAccept}
         className="visually-hidden"
-        disabled={isUploading || maxFileSizeBytes === null}
+        disabled={isUploading || !uploadAvailable}
         multiple
         onChange={handleFileChange}
         ref={filteredInputRef}
         type="file"
       />
-      <input
-        className="visually-hidden"
-        disabled={isUploading || maxFileSizeBytes === null}
-        multiple
-        onChange={handleFileChange}
-        ref={unfilteredInputRef}
-        type="file"
-      />
-      <div className="real-upload-actions">
-        <button
-          disabled={isUploading || maxFileSizeBytes === null}
-          onClick={() => filteredInputRef.current?.click()}
-          type="button"
-        >
-          <Upload size={18} />
-          {phase === "finalizing" ? "Dokončuji…" : isUploading ? "Nahrávám..." : "Nahrát audio/MP4"}
-        </button>
-        <button
-          className="secondary-upload-button"
-          disabled={isUploading || maxFileSizeBytes === null}
-          onClick={() => unfilteredInputRef.current?.click()}
-          type="button"
-        >
-          <Files size={18} />
-          Vybrat jiný soubor
-        </button>
-        {isUploading ? (
+      <div className="upload-dropzone" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
+        <Upload aria-hidden="true" size={22} />
+        <strong>Přetáhněte zvukový záznam nebo MP4 sem</strong>
+        <span>{formatSummary}</span>
+        <div className="real-upload-actions">
           <button
-            className="secondary-upload-button"
-            disabled={phase === "finalizing"}
-            onClick={() => operationGuardRef.current?.cancel()}
+            disabled={isUploading || !uploadAvailable}
+            onClick={() => filteredInputRef.current?.click()}
             type="button"
           >
-            {phase === "finalizing" ? "Dokončuji…" : "Zrušit nahrávání"}
+            <Upload aria-hidden="true" size={18} />
+            Vybrat soubor
           </button>
-        ) : null}
+        </div>
       </div>
-      {isUploading && announcement ? (
-        <p aria-atomic="true" className="visually-hidden" role="status">
-          {announcement}
-        </p>
-      ) : null}
-      {isUploading && progress && currentFileName ? (
-        <div className="upload-progress">
-          <span className="upload-current-file" title={currentFileName}>
-            Aktuální soubor {currentFileIndex === null ? "" : `${currentFileIndex + 1} z ${totalFiles}: `}{currentFileName}
+
+      <div className="upload-status-panel" data-phase={phase} data-upload-status="true">
+        <div className="upload-file-summary">
+          <span className="upload-current-file" title={selectedFiles?.name}>{fileLabel}</span>
+          <span>
+            {selectedFiles ? formatFileSize(selectedFiles.totalSize) : "Bez vybraného souboru"}
+            {selectedFiles && selectedFiles.count > 1 ? ` · ${selectedFiles.count} soubory` : ""}
           </span>
+          <span>Limit {maxFileSizeBytes === null ? "není dostupný" : formatFileSize(maxFileSizeBytes)}</span>
+        </div>
+        <div className="upload-progress">
           <progress
             aria-label="Celkový průběh nahrávání"
-            max={progress.bytesTotal || 1}
-            value={progress.bytesSent}
+            max={totalProgressMax}
+            value={Math.min(totalProgressValue, totalProgressMax)}
           />
           <span>
-            Soubor {currentFileProgress?.percentage ?? 0} % ({formatFileSize(currentFileProgress?.bytesSent ?? 0)} z {formatFileSize(currentFileProgress?.bytesTotal ?? 0)}) · Celkem {progress.percentage} % ({formatFileSize(progress.bytesSent)} z {formatFileSize(progress.bytesTotal)})
+            {isUploading && currentFileName
+              ? `Soubor ${currentFileIndex === null ? "" : `${currentFileIndex + 1} z ${totalFiles} · `}${currentFileProgress?.percentage ?? 0} %`
+              : phase === "success" ? "Nahrávání dokončeno" : "Průběh se zobrazí po zahájení"}
           </span>
         </div>
-      ) : null}
-      {uploadState ? (
         <p
           className={`upload-state upload-state-${uploadState.tone}`}
-          aria-live={uploadState.tone === "error" ? "assertive" : uploadState.tone === "success" ? "polite" : "off"}
-          role={uploadState.tone === "error" ? "alert" : uploadState.tone === "success" ? "status" : undefined}
+          aria-live={uploadState.tone === "error" ? "assertive" : undefined}
+          role={uploadState.tone === "error" ? "alert" : undefined}
         >
           {uploadState.message}
         </p>
-      ) : null}
+        <div className="upload-terminal-actions">
+          {isUploading ? (
+            <button
+              className="secondary-upload-button"
+              disabled={phase === "finalizing"}
+              onClick={() => operationGuardRef.current?.cancel()}
+              type="button"
+            >
+              <X aria-hidden="true" size={18} />
+              {phase === "finalizing" ? "Dokončuji…" : "Zrušit nahrávání"}
+            </button>
+          ) : null}
+          {canRetry ? (
+            <button className="secondary-upload-button" onClick={() => void processFiles(retryFilesRef.current)} type="button">
+              <RotateCcw aria-hidden="true" size={18} />
+              Zkusit znovu
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <p aria-atomic="true" className="visually-hidden" role="status">
+        {uploadState.tone === "error" ? "" : announcement}
+      </p>
     </div>
   );
 }

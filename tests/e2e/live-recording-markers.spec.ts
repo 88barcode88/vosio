@@ -224,6 +224,58 @@ function boxesOverlap(
     && left.y + left.height > right.y;
 }
 
+for (const width of [375, 768]) {
+test(`${width}px product shell keeps the actual persistent recorder dock above clickable mobile navigation`, async ({ page }, testInfo) => {
+  const boundary: CapturedBoundary = {
+    liveTranscriptRequests: [],
+    markerRequests: [],
+    recordingUpdates: []
+  };
+  const scope = createFixtureScope();
+
+  await page.setViewportSize({ width, height: 760 });
+  await installBrowserMediaBoundaries(page);
+  await installHttpBoundaries(page, boundary);
+  await page.goto(`/login/live-marker-e2e?scope=${scope}`);
+  await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
+  await expect(page.locator('[data-e2e-live-marker-state="full"]')).toBeVisible();
+  await page.getByRole("button", { name: "Nahrávat live" }).click();
+  await page.getByRole("link", { name: "Přejít na jinou stránku" }).click();
+  await expect(page).toHaveURL(new RegExp(`scope=${scope}&view=away`));
+
+  const dock = page.locator(".persistent-recorder-dock:not([hidden])");
+  const mobileNav = page.getByRole("navigation", { name: "Mobilní navigace" });
+  await expect(dock).toBeVisible();
+  await expect(mobileNav).toBeVisible();
+  const [dockBox, navBox] = await Promise.all([dock.boundingBox(), mobileNav.boundingBox()]);
+  expect(dockBox).not.toBeNull();
+  expect(navBox).not.toBeNull();
+  expect(boxesOverlap(dockBox!, navBox!)).toBe(false);
+  expect(dockBox!.x).toBeGreaterThanOrEqual(0);
+  expect(dockBox!.y).toBeGreaterThanOrEqual(0);
+  expect(dockBox!.x + dockBox!.width).toBeLessThanOrEqual(width);
+  expect(dockBox!.y + dockBox!.height).toBeLessThanOrEqual(760);
+
+  const navigationTargets = mobileNav.locator(":scope > a, :scope > button");
+  await expect(navigationTargets).toHaveCount(5);
+  const navigationHitStates = await navigationTargets.evaluateAll((elements) => elements.map((element) => {
+      const bounds = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      return {
+        hit: hit === element || element.contains(hit),
+        label: element.textContent?.trim() ?? ""
+      };
+    }));
+  expect(navigationHitStates).toEqual(navigationHitStates.map((state) => ({ ...state, hit: true })));
+  await page.screenshot({ path: testInfo.outputPath(`shell-${width}-active-dock.png`) });
+  await mobileNav.getByRole("button", { name: "Více" }).click();
+  await expect(page.getByRole("dialog", { name: "Další možnosti" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await dock.getByRole("button", { name: "Zastavit" }).click();
+  await expect(dock).toBeHidden();
+});
+}
+
 test("actual persistent recorder saves two markers and opens both from timeline", async ({ page }, testInfo) => {
   const boundary: CapturedBoundary = {
     liveTranscriptRequests: [],
@@ -262,6 +314,12 @@ test("actual persistent recorder saves two markers and opens both from timeline"
   const dock = page.locator(".persistent-recorder-dock:not([hidden])");
   await expect(dock).toBeVisible();
   await expect(dock.locator(".browser-recorder-compact")).toBeVisible();
+  const openRecording = dock.getByRole("link", { name: "Otevřít nahrávání" });
+  await expect(openRecording).toHaveAttribute("data-touch-target", "action");
+  const openRecordingBox = await openRecording.boundingBox();
+  expect(openRecordingBox).not.toBeNull();
+  expect(openRecordingBox!.height).toBeGreaterThanOrEqual(43.5);
+  expect(openRecordingBox!.width).toBeGreaterThanOrEqual(43.5);
 
   await page.waitForTimeout(1_100);
   const compactMarker = dock.getByRole("button", { name: "Označit moment" });

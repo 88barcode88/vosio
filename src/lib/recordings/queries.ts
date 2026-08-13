@@ -18,6 +18,7 @@ const recordingColumns = `
   status,
   error_message,
   created_at,
+  deleted_at,
   updated_at
 `;
 
@@ -116,7 +117,7 @@ export async function listDeletedRecordings(supabase: SupabaseClient) {
       .from("recordings")
       .select(recordingColumns)
       .eq("status", "deleted")
-      .order("updated_at", { ascending: false })
+      .order("deleted_at", { ascending: false })
       .order("id", { ascending: false })
       .range(from, to)
       .returns<RecordingRow[]>()

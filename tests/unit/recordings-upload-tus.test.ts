@@ -53,6 +53,22 @@ function createUploadHarness(updateErrors: Array<{ message: string } | null> = [
 }
 
 describe("uploadRecording resumable upload contract", () => {
+  it("rejects a generic MIME before auth, metadata creation, or TUS transfer", async () => {
+    const harness = createUploadHarness();
+
+    await expect(
+      uploadRecording({
+        allowedMimeTypes: ["audio/mp4"],
+        file: { name: "call.m4a", size: 42, type: "application/octet-stream" } as File,
+        maxFileSizeBytes: 100,
+        sourceType: "upload"
+      })
+    ).rejects.toThrow("Soubor nemá podporovaný MIME typ");
+
+    expect(harness.insertedRows).toEqual([]);
+    expect(mocks.createResumableRecordingUpload).not.toHaveBeenCalled();
+  });
+
   it("creates metadata before TUS transfer, clears its task, and then finalizes the row", async () => {
     const harness = createUploadHarness();
     const task = { cancel: vi.fn(), done: Promise.resolve() };
@@ -61,6 +77,7 @@ describe("uploadRecording resumable upload contract", () => {
     mocks.createResumableRecordingUpload.mockReturnValue(task);
 
     const result = await uploadRecording({
+      allowedMimeTypes: ["audio/webm"],
       file: { name: "call.webm", size: 42, type: "audio/webm" } as File,
       maxFileSizeBytes: 100,
       onPhase: (phase) => phases.push(phase),
@@ -94,6 +111,7 @@ describe("uploadRecording resumable upload contract", () => {
 
     await expect(
       uploadRecording({
+        allowedMimeTypes: ["audio/webm"],
         file: { name: "call.webm", size: 42, type: "audio/webm" } as File,
         maxFileSizeBytes: 100,
         sourceType: "upload"
@@ -115,6 +133,7 @@ describe("uploadRecording resumable upload contract", () => {
 
     await expect(
       uploadRecording({
+        allowedMimeTypes: ["audio/webm"],
         file: { name: "call.webm", size: 42, type: "audio/webm" } as File,
         maxFileSizeBytes: 100,
         sourceType: "upload"
@@ -139,6 +158,7 @@ describe("uploadRecording resumable upload contract", () => {
 
     await expect(
       uploadRecording({
+        allowedMimeTypes: ["audio/webm"],
         file: { name: "call.webm", size: 42, type: "audio/webm" } as File,
         maxFileSizeBytes: 100,
         sourceType: "upload"
@@ -166,6 +186,7 @@ describe("uploadRecording resumable upload contract", () => {
 
     await expect(
       uploadRecording({
+        allowedMimeTypes: ["audio/webm"],
         file: { name: "call.webm", size: 42, type: "audio/webm" } as File,
         maxFileSizeBytes: 100,
         sourceType: "upload"

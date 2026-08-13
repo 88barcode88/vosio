@@ -4,9 +4,9 @@ Vosio is a Next.js PWA for recording or uploading audio, storing recordings in S
 
 This is the canonical public source repository. It contains source code, documentation, tests, CI, and the complete fresh-project Supabase migration chain, but no real API keys or production data.
 
-Current source release: `0.1.3`
+Current source release: `0.1.5`
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2F88barcode88%2Fvosio&project-name=vosio&repository-name=vosio&env=NEXT_PUBLIC_SUPABASE_URL%2CNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY%2CSUPABASE_SERVICE_ROLE_KEY%2CSONIOX_API_KEY%2CSONIOX_REGION&envDefaults=%7B%22SONIOX_REGION%22%3A%22eu%22%7D&envDescription=Vosio%20requires%20your%20own%20Supabase%20project%20and%20Soniox%20EU%20project.&envLink=https%3A%2F%2Fgithub.com%2F88barcode88%2Fvosio%23vercel-environment-variables)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2F88barcode88%2Fvosio&project-name=vosio&repository-name=vosio&env=NEXT_PUBLIC_SUPABASE_URL%2CNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY%2CSUPABASE_SERVICE_ROLE_KEY%2CSONIOX_API_KEY%2COPENAI_API_KEY&envDescription=Vosio%20requires%20your%20own%20Supabase%2C%20Soniox%2C%20and%20OpenAI%20projects.&envLink=https%3A%2F%2Fgithub.com%2F88barcode88%2Fvosio%23vercel-environment-variables)
 
 ## Stack
 
@@ -48,13 +48,18 @@ Before the deployment is usable:
 
 1. Create your own Supabase project.
 2. Apply the complete migration chain from `supabase/migrations/` with `supabase db push`.
-3. Create a Soniox project in the EU region and use its API key.
-4. Keep `SONIOX_REGION=eu` so REST and realtime requests use the EU endpoints.
-5. Fill the required environment variables in Vercel. Add `OPENAI_API_KEY` or `GEMINI_API_KEY` only if you want the corresponding post-transcription AI processing.
+3. Create a Soniox project and use its API key.
+4. Fill the required environment variables in Vercel. Add `GEMINI_API_KEY` only if you want Gemini processing in addition to the default OpenAI processing.
 
 The deployment uses your own Supabase, Soniox, Vercel, and optional AI-provider accounts. No keys or hosted services are supplied by this repository.
 
 The copied repository is independent. Upstream Vosio updates do not automatically appear in your copy; sync or redeploy them deliberately.
+
+## One Installation Flow
+
+Vosio supports one self-hosted installation flow: each person or company runs its own Vercel deployment and connects its own Supabase, Soniox, and AI credentials. The owner controls the data, provider accounts, access, and resulting provider costs. Secrets belong only in `.env.local` or the deployment platform, never in git.
+
+Choose the Soniox region per user in **Settings**, not through a deployment variable. Global is the default. EU requires an EU-enabled Soniox project and matching regional key; if EU access or authentication fails, contact `support@soniox.com`.
 
 ## Supabase
 
@@ -104,7 +109,7 @@ Never commit `.env.local`, Supabase service role keys, Soniox keys, OpenAI keys,
 
 ## Vercel Environment Variables
 
-Add these in Vercel Project Settings before deployment. Put real values only in Vercel or `.env.local`, never in git.
+Add these in Vercel Project Settings before deployment. Put real values only in Vercel or `.env.local`, never in git. If both Vercel Production and Preview must be fully functional, configure the same required variable names in both environments. When their values point to the same provider projects, Preview works with the same data and incurs the same provider costs as Production.
 
 | Variable | Required | Used for |
 | --- | --- | --- |
@@ -112,14 +117,12 @@ Add these in Vercel Project Settings before deployment. Put real values only in 
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Browser-safe Supabase key; RLS still protects rows. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Server-only privileged Supabase writes, signed Storage access, recovery, jobs. |
 | `SONIOX_API_KEY` | Yes | Server-only async transcription and temporary realtime key creation. |
-| `SONIOX_REGION` | Yes for the documented EU setup | Set to `eu` and use a key created in a Soniox EU project. |
-| `SONIOX_TEMP_KEY_EXPIRES_SECONDS` | Optional | Temporary realtime key connection window. Defaults to `60`. |
-| `OPENAI_API_KEY` | Optional | Required when users run OpenAI AI processing. |
+| `OPENAI_API_KEY` | Yes | Server-only default AI processing provider. |
 | `GEMINI_API_KEY` | Optional | Required when users select Gemini AI processing. |
 
-Advanced optional Soniox variables are documented in `docs/api/environment.md`.
+The Soniox region is selected in the app. Temporary realtime keys have a fixed internal 60-second connection window; this is not configurable and does not limit recording duration.
 
-`SONIOX_REGION=eu` does not move an existing US project to Europe. The API key and region setting must belong to the same EU Soniox project.
+Environment changes require a redeploy on Vercel or a local process restart. Supabase Auth redirect configuration for Production and Preview, plus safe diagnostics, are documented in `docs/api/environment.md`.
 
 Do not add `SUPABASE_SERVICE_ROLE_KEY`, `SONIOX_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY` with a `NEXT_PUBLIC_` prefix. Anything prefixed `NEXT_PUBLIC_` is shipped to the browser.
 

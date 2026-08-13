@@ -16,6 +16,7 @@
 - Funkce může být implementovaná později, ale musí být zohledněná v datovém a stavovém modelu, pokud je cílovou schopností.
 - Dlouhé operace patří do job/worker vrstvy, ne do dlouhého UI requestu.
 - Upload audio souborů má jít přímo do Supabase Storage přes authenticated resumable TUS upload; velké audio nesmí téct přes Vercel.
+- Povolené upload formáty vždy odvozuj z průniku explicitního runtime `recordings.allowed_mime_types` bucketu a produktového katalogu M4A, MP3, WAV, WebM, OGG, FLAC a MP4. Prázdný nebo obecný MIME typ nesmí získat oprávnění podle přípony souboru.
 - Server-side API route má řešit metadata, autorizaci a vytvoření jobu, ne přenášet velké audio.
 
 ## Data a soukromí
@@ -53,6 +54,8 @@
 - Kompaktní editor existující hodnoty nesmí zavřít plochu už při raw `submit`. Používá controlled draft, scope-keyed `SaveActionState`, `runSaveActionSafely` a `useCloseOnSuccessfulSave`; během pending blokuje všechny dismiss cesty i další submit, po matching-scope success se zavře a vrátí focus na trigger, po error zůstane otevřený s hodnotami a alertem.
 - Success status kompaktního editoru drž v persistentním `aria-live="polite"` mimo zavíranou plochu. Inline feedback má rezervovaný slot, aby error a pending retry neposouvaly layout. Manuálně dismissed error revision se při znovuotevření neukazuje, ale vyšší revision ano.
 - Full-page formuláře, login, import, search, read-only disclosures a destruktivní potvrzení automaticky nesbaluj. U úspěšného delete zmizí samotná položka, takže success-only collapse kontrakt nedává smysl.
+- Detail nahrávky používá jeden dokumentový scroll owner. Player a záložky drž dostupné sticky/fixed vrstvou, ale transcript, AI, časovou osu ani soubory nezavírej do druhého svislého scrolleru.
+- Mazání jednotlivého AI úkolu patří do úzkého authenticated endpointu, který po ověření uživatele používá server-only admin klienta vždy se scope `id` i `user_id`. UI má jen kompaktní ikonu koše u úkolu; celý AI artefakt se maže pouze na output card.
 
 ## Kód
 
@@ -77,3 +80,12 @@
 - Nepřidávej historické sekce typu "v1", "updated" nebo "changed".
 - Po behavior change aktualizuj odpovídající dokument.
 - `docs/requirements/` drž jako aktuální specifikaci cílových funkcí.
+
+## Verze a release
+
+- `package.json` je jediný zdroj verze; UI ji pouze importuje.
+- Používej Semantic Versioning a pro každou vydanou verzi přidej datovaný záznam do `CHANGELOG.md`.
+- Release metadata drž v samostatném commitu po feature commitech, které popisují.
+- Tag, push, deploy a databázový postflight jsou oddělené stavy a reportují se zvlášť.
+
+Forward migrace `20260810005550_restore_recordings_from_trash.sql` je source-only změna, dokud neproběhne samostatně schválený apply a postflight na konkrétním Supabase targetu. Lokální test ani build její aplikaci na vzdálenou databázi neprokazuje.

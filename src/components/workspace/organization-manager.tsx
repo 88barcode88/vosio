@@ -30,6 +30,7 @@ import {
   type SaveActionState
 } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
+import { OrganizationColorPicker } from "@/components/workspace/organization-color-picker";
 
 export type OrganizationManagerActions = {
   createClient: SaveAction;
@@ -235,21 +236,11 @@ function OrganizationSaveEditor({
               value={name}
             />
           </label>
-          <label className="organization-color-field">
+          <div className="organization-color-field">
             <span>Barva</span>
-            <div>
-              <input
-                aria-label={`Barva ${label}`}
-                onChange={(event) => setColor(event.target.value)}
-                type="color"
-                value={color || "#64748B"}
-              />
-              <button aria-pressed={color === ""} onClick={() => setColor("")} type="button">
-                Bez barvy
-              </button>
-            </div>
+            <OrganizationColorPicker label={label} onChange={setColor} value={color} />
             <input name="color" readOnly type="hidden" value={color} />
-          </label>
+          </div>
           <div className="organization-save-feedback">
             {isCurrentSettlement && actionState.status === "error" && !isPending && !isDismissedError
               ? <p role="alert">{actionState.message}</p>

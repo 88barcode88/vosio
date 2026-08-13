@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   getTranscriptTabCookieValue,
-  parseTranscriptTabCookieValue
+  parseTranscriptTabCookieValue,
+  parseTranscriptTabSearchParams
 } from "@/components/transcript-tabs/tab-state";
 
 describe("transcript tab state", () => {
@@ -21,5 +22,28 @@ describe("transcript tab state", () => {
   it("ignores invalid tab cookie values", () => {
     expect(parseTranscriptTabCookieValue("recording-1", "recording-1:unknown")).toBeNull();
     expect(parseTranscriptTabCookieValue("recording-1", null)).toBeNull();
+  });
+
+  it("accepts every detail tab from one canonical URL value", () => {
+    for (const tab of ["transcript", "ai", "timeline", "files"] as const) {
+      expect(parseTranscriptTabSearchParams({ tab })).toEqual({
+        explicit: true,
+        tab,
+        valid: true
+      });
+    }
+  });
+
+  it("rejects duplicate and invalid URL tabs deterministically", () => {
+    expect(parseTranscriptTabSearchParams({ tab: ["ai", "transcript"] })).toEqual({
+      explicit: false,
+      tab: "transcript",
+      valid: false
+    });
+    expect(parseTranscriptTabSearchParams({ tab: "unknown" })).toEqual({
+      explicit: false,
+      tab: "transcript",
+      valid: false
+    });
   });
 });

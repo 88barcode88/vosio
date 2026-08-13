@@ -1,4 +1,8 @@
-import { NewRecordingWorkspace } from "@/components/new-recording-workspace";
+import {
+  NewRecordingWorkspace,
+  type NewRecordingCaptureSlots
+} from "@/components/new-recording-workspace";
+import type { RecordingUploadTransport } from "@/components/recording-upload-form";
 import { MobileNav } from "@/components/workspace-navigation";
 import { RecordingWorkbench } from "@/components/workspace/recording-workbench";
 import { RecordingsManager } from "@/components/workspace/recordings-manager";
@@ -8,6 +12,11 @@ import { TranscriptSearchWarningNotice } from "@/components/transcript-search-wa
 import { getEmptyStructuredAiItems } from "@/lib/ai/structured-queries";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
+import type { AiArchiveFilters } from "@/lib/ai/archive";
+import type { AiArchiveItem } from "@/lib/ai/types";
+import type { InstallationStatus } from "@/lib/installation-status.server";
+import type { PromptTemplateActions } from "@/components/prompt-template-editor";
+import type { PromptTemplateNavigationState } from "@/lib/prompt-templates/navigation";
 import type { PromptTemplateRow } from "@/lib/prompt-templates/types";
 import { toRecordingClientView } from "@/lib/recordings/client-view";
 import {
@@ -26,18 +35,32 @@ import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
 import type { ResolvedTranscriptDeepLink } from "@/lib/transcripts/deep-link";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
-import type { WorkspaceView } from "@/lib/workspace-data";
+import type { NavigationHrefOverrides, WorkspaceView } from "@/lib/workspace-data";
+import type { TrashRecordingAction } from "@/components/purge-recording-form";
 
 type VosioWorkspaceProps = {
   activeRecordingId?: string;
   aiOutputs: AiOutputView[];
+  aiArchiveBaseHref?: string;
+  aiArchiveActionAlert?: string | null;
+  aiArchiveDeleteAction?: (formData: FormData) => Promise<void>;
+  aiArchiveFilters?: AiArchiveFilters;
+  aiArchiveItems?: AiArchiveItem[];
   deletedRecordings?: RecordingRow[];
   isCreatingRecording?: boolean;
   initialTranscriptDeepLink?: ResolvedTranscriptDeepLink | null;
   initialTranscriptTab?: TranscriptTab;
   initialTranscriptTabFromCookie?: boolean;
   initialTranscriptTabFromUrl?: boolean;
+  installationStatus?: InstallationStatus;
+  navigationHrefOverrides?: NavigationHrefOverrides;
+  newRecordingCaptureSlots?: NewRecordingCaptureSlots;
+  newRecordingUploadRedirectAfterSuccess?: "detail" | "list" | "stay";
+  newRecordingUploadTransport?: RecordingUploadTransport;
   promptTemplates?: PromptTemplateRow[];
+  promptTemplateActions?: PromptTemplateActions;
+  promptTemplateBaseHref?: string;
+  promptTemplateNavigationState?: PromptTemplateNavigationState;
   recordingStorageConfig?: RecordingStorageConfig;
   recordingMarkers?: RecordingMarkerRow[];
   recordingOrganization?: RecordingOrganization;
@@ -51,8 +74,13 @@ type VosioWorkspaceProps = {
   recordingSearchPage?: RecordingSearchPage | null;
   recordingSearchPreviousHref?: string | null;
   settingsStatus?: "error" | "saved" | null;
+  settingsFormDisabled?: boolean;
   structuredItems?: StructuredAiItems;
   templateStatus?: "created" | "duplicated" | "error" | "saved" | null;
+  trashActionAlert?: string | null;
+  trashActionContext?: Record<string, string>;
+  trashPurgeAction?: TrashRecordingAction;
+  trashRestoreAction?: TrashRecordingAction;
   transcripts: TranscriptRow[];
   transcriptSearchWarning?: boolean;
   usageState?: CurrentMonthUsageState;
@@ -71,22 +99,43 @@ export function getContentAreaClassName({
   isCreatingRecording: boolean;
   view: WorkspaceView;
 }) {
-  return view === "recordings" && !hasActiveRecording && !isCreatingRecording
+  if (view === "recordings" && isCreatingRecording) {
+    return "content-area content-area-document";
+  }
+
+  if (view === "recordings" && hasActiveRecording) {
+    return "content-area content-area-document";
+  }
+
+  return view === "recordings" && !hasActiveRecording
     ? "content-area content-area-recordings-list"
-    : "content-area";
+    : "content-area content-area-document";
 }
 
 // VosioWorkspace composes the workspace shell and routes each view into its working area.
 export function VosioWorkspace({
   activeRecordingId,
   aiOutputs,
+  aiArchiveActionAlert,
+  aiArchiveBaseHref,
+  aiArchiveDeleteAction,
+  aiArchiveFilters = { processingType: null, recordingId: null },
+  aiArchiveItems = [],
   deletedRecordings = [],
   isCreatingRecording = false,
   initialTranscriptDeepLink = null,
   initialTranscriptTab = "transcript",
   initialTranscriptTabFromCookie = false,
   initialTranscriptTabFromUrl = false,
+  installationStatus,
+  navigationHrefOverrides,
+  newRecordingCaptureSlots,
+  newRecordingUploadRedirectAfterSuccess,
+  newRecordingUploadTransport,
   promptTemplates = [],
+  promptTemplateActions,
+  promptTemplateBaseHref,
+  promptTemplateNavigationState = { kind: "list" },
   recordingStorageConfig = unavailableRecordingStorageConfig,
   recordingMarkers = [],
   recordingOrganization = { client: null, folder: null, project: null, tags: [] },
@@ -100,8 +149,13 @@ export function VosioWorkspace({
   recordingSearchPage = null,
   recordingSearchPreviousHref = null,
   settingsStatus = null,
+  settingsFormDisabled = false,
   structuredItems = getEmptyStructuredAiItems(),
   templateStatus = null,
+  trashActionAlert = null,
+  trashActionContext,
+  trashPurgeAction,
+  trashRestoreAction,
   transcripts,
   transcriptSearchWarning = false,
   usageState,
@@ -132,7 +186,11 @@ export function VosioWorkspace({
 
   return (
     <main className="workspace-shell">
-      <WorkspaceSidebar activeView={view} userEmail={userEmail} />
+      <WorkspaceSidebar
+        activeView={view}
+        navigationHrefOverrides={navigationHrefOverrides}
+        userEmail={userEmail}
+      />
 
       <section
         className={getContentAreaClassName({
@@ -145,7 +203,10 @@ export function VosioWorkspace({
         <div className="workspace-grid workspace-grid-wide">
           {isCreatingRecording ? (
             <NewRecordingWorkspace
+              captureSlots={newRecordingCaptureSlots}
               recordingStorageConfig={recordingStorageConfig}
+              uploadRedirectAfterSuccess={newRecordingUploadRedirectAfterSuccess}
+              uploadTransport={newRecordingUploadTransport}
               userSettings={userSettings}
             />
           ) : view === "recordings" && !activeRecording ? (
@@ -162,13 +223,27 @@ export function VosioWorkspace({
             />
           ) : view === "ai" || view === "templates" || view === "documentation" || view === "trash" || view === "settings" ? (
             <UtilityWorkspaceView
+              aiArchiveActionAlert={aiArchiveActionAlert}
+              aiArchiveBaseHref={aiArchiveBaseHref}
+              aiArchiveDeleteAction={aiArchiveDeleteAction}
+              aiArchiveFilters={aiArchiveFilters}
+              aiArchiveItems={aiArchiveItems}
               aiOutputs={aiOutputs}
               deletedRecordings={deletedRecordingViews}
+              installationStatus={installationStatus}
               promptTemplates={promptTemplates}
+              promptTemplateActions={promptTemplateActions}
+              promptTemplateBaseHref={promptTemplateBaseHref}
+              promptTemplateNavigationState={promptTemplateNavigationState}
               recordingStorageConfig={recordingStorageConfig}
               settings={userSettings}
+              settingsFormDisabled={settingsFormDisabled}
               settingsStatus={settingsStatus}
               templateStatus={templateStatus}
+              trashActionAlert={trashActionAlert}
+              trashActionContext={trashActionContext}
+              trashPurgeAction={trashPurgeAction}
+              trashRestoreAction={trashRestoreAction}
               usageState={usageState}
               view={view}
             />
@@ -191,7 +266,11 @@ export function VosioWorkspace({
         </div>
       </section>
 
-      <MobileNav activeView={view} />
+      <MobileNav
+        activeView={view}
+        hrefOverrides={navigationHrefOverrides}
+        userEmail={userEmail}
+      />
     </main>
   );
 }

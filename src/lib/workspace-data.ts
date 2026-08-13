@@ -14,16 +14,29 @@ import type { LucideIcon } from "lucide-react";
 
 export type WorkspaceView = "recordings" | "ai" | "templates" | "documentation" | "trash" | "settings";
 
+export type WorkspaceNavigationHref =
+  | "/documentation"
+  | "/recordings"
+  | "/recordings/new"
+  | "/settings"
+  | "/templates"
+  | "/trash";
+
 export type NavigationItem = {
-  href: string;
+  href: WorkspaceNavigationHref;
   label: string;
   icon: LucideIcon;
   view: WorkspaceView;
 };
 
-export const navigationItems: NavigationItem[] = [
+export type NavigationHrefOverrides = Readonly<Partial<Record<WorkspaceNavigationHref, string>>>;
+
+export const primaryNavigationItems: NavigationItem[] = [
   { href: "/recordings", label: "Nahrávky", icon: FileAudio, view: "recordings" },
-  { href: "/templates", label: "Prompty", icon: FileText, view: "templates" },
+  { href: "/templates", label: "Prompty", icon: FileText, view: "templates" }
+];
+
+export const utilityNavigationItems: NavigationItem[] = [
   { href: "/trash", label: "Koš", icon: Trash2, view: "trash" },
   { href: "/settings", label: "Nastavení", icon: Settings2, view: "settings" }
 ];
@@ -34,6 +47,8 @@ export const documentationNavigationItem: NavigationItem = {
   label: "Dokumentace",
   view: "documentation"
 };
+
+export const VOSIO_SUPPORT_URL = "https://donate.stripe.com/3cI7sLdRHaWJ1Lke48dZ602";
 
 export const quickActions = [
   { label: "Shrnutí", icon: FileText, processingType: "summary" },

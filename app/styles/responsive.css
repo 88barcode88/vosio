@@ -1,35 +1,6 @@
 @media (max-width: 1180px) {
-  .workspace-shell {
-    grid-template-columns: 1fr;
-    padding: 0;
-  }
-  .sidebar {
-    position: static;
-    height: auto;
-    overflow: visible;
-    min-height: auto;
-    border-right: 1px solid var(--border);
-    border-radius: 0;
-    margin-bottom: 0;
-  }
-  .content-area {
-    border-radius: 0;
-  }
   .workspace-grid {
     grid-template-columns: 1fr;
-  }
-  .recording-workbench-grid {
-    grid-template-columns: 1fr;
-  }
-  .recording-workbench {
-    height: auto;
-  }
-  .recording-rail {
-    position: static;
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .recording-rail-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .utility-list-two {
     grid-template-columns: 1fr;
@@ -84,15 +55,11 @@
     border-left: 0;
     border-top: 1px solid var(--border);
   }
-  .capture-grid {
-    grid-template-columns: 1fr;
-  }
   .settings-grid,
-  .settings-check-grid,
-  .settings-readonly dl {
+  .settings-technical-list {
     grid-template-columns: 1fr;
   }
-  .settings-usage-section dl {
+  .settings-usage-summary dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .ai-tab-actions .quick-grid {
@@ -101,18 +68,31 @@
   .ai-tab-actions .ai-settings-details .ai-settings {
     grid-template-columns: 1fr;
   }
-  .nav-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .recording-workbench {
+    padding-bottom: 104px;
   }
-  .user-card {
-    display: none;
+  .recording-detail-sticky {
+    position: sticky;
+    top: 0;
+  }
+  .recording-detail-sticky .recording-audio-player {
+    position: fixed;
+    right: 10px;
+    bottom: calc(68px + env(safe-area-inset-bottom));
+    left: 10px;
+    z-index: 29;
+    border: 1px solid var(--border-strong);
+    border-radius: 11px;
+    background: var(--surface-raised);
+    box-shadow: var(--shadow);
   }
 }
-@media (max-width: 760px) {
-  body {
-    background: var(--bg);
-  }
+@media (max-width: 900px) {
   .workspace-shell {
+    grid-template-columns: minmax(0, 1fr);
     padding: 0;
   }
   .sidebar {
@@ -124,37 +104,65 @@
     overflow: visible;
     border: 0;
     border-radius: 0;
-    padding: 14px 14px calc(94px + env(safe-area-inset-bottom));
+    padding: 18px 16px calc(84px + env(safe-area-inset-bottom));
+  }
+  .prompt-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .prompt-workspace-list .prompt-editor-surface,
+  .prompt-workspace-editor .prompt-master {
+    display: none;
+  }
+  .prompt-master {
+    min-height: 0;
+    border-right: 0;
+  }
+  .prompt-editor-surface {
+    min-height: 0;
+    padding: 14px;
+  }
+  .prompt-mobile-back {
+    display: inline-flex;
+  }
+  .capture-grid,
+  .transcript-import-card {
+    grid-template-columns: 1fr;
+  }
+  .upload-file-summary {
+    grid-template-columns: 1fr;
+  }
+  .upload-file-summary span,
+  .upload-file-summary span:last-child {
+    grid-column: 1;
   }
   .mobile-nav {
     position: fixed;
-    right: 10px;
-    bottom: 10px;
-    left: 10px;
+    right: 0;
+    bottom: 0;
+    left: 0;
     z-index: 30;
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 6px;
-    overflow: visible;
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    background: var(--panel);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--surface-raised);
     box-shadow: var(--shadow);
-    padding: 8px max(8px, env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-right));
-    scrollbar-width: none;
-  }
-  .mobile-nav::-webkit-scrollbar {
-    display: none;
+    padding: 5px max(8px, env(safe-area-inset-left)) calc(5px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-right));
   }
   .mobile-nav-item {
     display: grid;
     place-items: center;
-    gap: 4px;
+    gap: 2px;
     position: relative;
     min-width: 0;
     min-height: 52px;
-    border-radius: 12px;
+    border: 0;
+    border-radius: 9px;
     color: var(--muted);
+    background: transparent;
     font-size: 10px;
     white-space: nowrap;
   }
@@ -183,11 +191,153 @@
     right: 8px;
   }
   .mobile-nav-create {
-    color: var(--accent-text);
-    background: var(--accent-bg);
+    color: var(--text);
+    background: transparent;
   }
   .mobile-nav-create svg {
-    color: var(--accent-text);
+    color: var(--accent);
+  }
+  .persistent-recorder-dock {
+    right: 12px;
+    bottom: calc(94px + env(safe-area-inset-bottom));
+    width: calc(100vw - 24px);
+    padding: 12px;
+  }
+  .recording-workbench-grid {
+    grid-template-columns: 1fr;
+  }
+  .recording-workbench {
+    height: auto;
+  }
+  .recording-rail {
+    position: static;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .recording-rail-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .recordings-inbox.ui-panel {
+    padding: 12px;
+  }
+  .recordings-inbox-header {
+    display: flex;
+  }
+  .recordings-management-disclosure {
+    grid-template-columns: 1fr;
+  }
+  .recordings-management-disclosure .ui-disclosure-trigger {
+    min-height: 44px;
+  }
+  .recording-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .recording-filter-grid input,
+  .recording-filter-grid select,
+  .recording-filter-tags label,
+  .recording-filter-actions button {
+    min-height: 44px;
+  }
+  .recordings-status-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .recordings-status-segments {
+    gap: 6px 0;
+    margin-left: -10px;
+  }
+  .recordings-table {
+    gap: 10px;
+    overflow: visible;
+    border: 0;
+  }
+  .recordings-table-head {
+    display: none;
+  }
+  .recording-client-group {
+    gap: 8px;
+  }
+  .recording-client-group > h2 {
+    border: 1px solid var(--border);
+    border-radius: 9px;
+  }
+  .recordings-inbox .recordings-row,
+  .recording-search-result {
+    grid-template-columns: minmax(0, 1fr);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: visible;
+  }
+  .recordings-inbox .recordings-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    min-width: 0;
+  }
+  .recordings-row-title {
+    grid-column: 1 / -1;
+  }
+  .recordings-row-actions {
+    min-height: 52px;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+  .recordings-row-actions .recording-title-edit-button,
+  .recordings-row-actions .delete-recording-icon button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .recording-title-popover,
+  .organization-create-form,
+  .organization-rename-form {
+    max-width: calc(100vw - 48px);
+  }
+}
+@container recordings-inbox (max-width: 680px) {
+  .recordings-table {
+    gap: 10px;
+    overflow: visible;
+    border: 0;
+  }
+  .recordings-table-head {
+    display: none;
+  }
+  .recording-client-group {
+    gap: 8px;
+  }
+  .recording-client-group > h2 {
+    border: 1px solid var(--border);
+    border-radius: 9px;
+  }
+  .recordings-inbox .recordings-row,
+  .recording-search-result {
+    grid-template-columns: minmax(0, 1fr);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: visible;
+  }
+  .recordings-inbox .recordings-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    min-width: 0;
+  }
+  .recordings-row-title {
+    grid-column: 1 / -1;
+  }
+  .recordings-row-actions {
+    min-height: 52px;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+  .recordings-row-actions .recording-title-edit-button,
+  .recordings-row-actions .delete-recording-icon button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (max-width: 760px) {
+  body {
+    background: var(--bg);
   }
   .workspace-grid,
   .recording-body {
@@ -282,12 +432,6 @@
     align-items: stretch;
     flex-direction: column;
   }
-  .persistent-recorder-dock {
-    right: 12px;
-    bottom: calc(94px + env(safe-area-inset-bottom));
-    width: calc(100vw - 24px);
-    padding: 12px;
-  }
   .persistent-recorder-summary {
     align-items: flex-start;
     flex-direction: column;
@@ -378,8 +522,36 @@
     width: 100%;
   }
   .prompt-template-fields-row,
-  .settings-usage-section dl {
+  .settings-usage-summary dl {
     grid-template-columns: 1fr;
+  }
+  .utility-header-actions {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+  .utility-header-actions > a {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .ai-archive-filters {
+    grid-template-columns: 1fr;
+  }
+  .ai-archive-filters > svg {
+    display: none;
+  }
+  .ai-archive-row {
+    grid-template-columns: 36px minmax(0, 1fr) 44px;
+  }
+  .ai-archive-row-copy > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .prompt-editor-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .prompt-editor-heading button {
+    width: 100%;
   }
   .documentation-layout {
     grid-template-columns: 1fr;
@@ -421,15 +593,15 @@
     grid-column: 1 / -1;
   }
   .transcript-list-scroll {
-    max-height: 58vh;
+    max-height: none;
     padding-right: 10px;
   }
   .transcript-table-scroll {
-    max-height: 52vh;
+    max-height: none;
     padding-right: 6px;
   }
   .speaker-summary-list {
-    max-height: 260px;
+    max-height: none;
   }
   .speaker-summary-form {
     grid-template-columns: 1fr;
@@ -487,8 +659,41 @@
     position: static;
     max-height: 220px;
   }
+  .recording-detail-sticky {
+    top: 0;
+  }
+  .recording-audio-player {
+    grid-template-columns: 42px minmax(0, 1fr);
+    padding: 8px 10px;
+  }
+  .recording-audio-progress {
+    grid-column: 1 / -1;
+  }
+  .tabs-row {
+    align-items: center;
+    flex-direction: row;
+    gap: 6px;
+    padding: 4px 8px;
+  }
+  .export-controls,
+  .export-controls summary {
+    flex: 0 0 auto;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+  .export-controls summary span {
+    display: none;
+  }
+  .export-controls-menu {
+    position: absolute;
+    right: 0;
+    width: min(340px, calc(100vw - 32px));
+    margin-top: 8px;
+  }
   .ai-markdown-preview {
-    max-height: 52vh;
+    max-height: none;
   }
   .ai-output-detail summary {
     grid-template-columns: minmax(0, 1fr) 22px;
@@ -541,5 +746,29 @@
   }
   .trust-row {
     display: none;
+  }
+}
+
+/* Short desktops use the document as the sole vertical scroll owner for both shell columns. */
+@media (min-width: 901px) and (max-height: 640px) {
+  .workspace-shell {
+    align-items: start;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+    min-height: 100dvh;
+    overflow-y: visible;
+  }
+
+  .content-area,
+  .content-area-recordings-list,
+  .content-area-document {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+    overflow-y: visible;
+    overscroll-behavior-y: auto;
   }
 }

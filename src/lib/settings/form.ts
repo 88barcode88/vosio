@@ -28,11 +28,13 @@ function getNumberField(formData: FormData, name: string, fallback: number) {
 // getProcessingTypes reads allowed automatic AI output types from checkboxes.
 function getProcessingTypes(formData: FormData) {
   const allowed = new Set<string>(settingsProcessingTypes);
-  const values = formData
+  const values = [...new Set(formData
     .getAll("autoProcessingTypes")
-    .filter((value): value is string => typeof value === "string" && allowed.has(value));
+    .filter((value): value is string => typeof value === "string" && allowed.has(value)))];
 
-  return values.length > 0 ? values : ["summary"];
+  if (values.length > 0) return values;
+
+  return formData.get("autoProcessingTypesPresent") === "1" ? [] : ["summary"];
 }
 
 // parseSettingsForm converts the settings form into a validated user settings object.
@@ -48,6 +50,11 @@ export function parseSettingsForm(formData: FormData): UserSettings {
       defaultUserSettings.defaultOpenaiModel
     ),
     outputLanguage: getStringField(formData, "outputLanguage", "call_language"),
+    sonioxRegion: getStringField(
+      formData,
+      "sonioxRegion",
+      defaultUserSettings.sonioxRegion
+    ),
     sonioxRealtimeLanguage: getStringField(
       formData,
       "sonioxRealtimeLanguage",

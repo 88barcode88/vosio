@@ -13,7 +13,14 @@ describe("settings storage limit", () => {
   it("renders the selected Supabase preference with effective limits", () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
+        installationStatus={{
+          environment: "development",
+          geminiConfigured: false,
+          missingRequiredNames: [],
+          ready: true
+        }}
         recordingStorageConfig={{
+          allowedMimeTypes: ["audio/mpeg"],
           bucketMaxFileSizeBytes: 100 * MEBIBYTE,
           detectedGlobalMaxFileSizeBytes: null,
           maxFileSizeBytes: 50 * MEBIBYTE,
@@ -29,7 +36,7 @@ describe("settings storage limit", () => {
     expect(markup).toContain('<option value="free" selected="">Free</option>');
     expect(markup).toContain("Efektivní limit manuálního uploadu");
     expect(markup).toContain("50 MB");
-    expect(markup).toContain("Globální limit projektu");
-    expect(markup).toContain("Nezjištěn");
+    expect(markup).toContain("Technické informace");
+    expect(markup).not.toContain("Globální limit projektu");
   });
 });

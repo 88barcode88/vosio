@@ -44,6 +44,7 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
   const scope = fixtureScope;
   await page.goto(`/login/recording-organization-e2e?scope=${scope}&q=call`);
   await expect(page.getByRole("heading", { name: "Recording organization E2E fixture" })).toBeVisible();
+  await page.getByRole("button", { name: "Spravovat" }).click();
 
   await createManagerEntity(page, "Přidat klienta", "Acme");
   await createManagerEntity(page, "Přidat projekt", "Project X", "Acme");
@@ -121,32 +122,72 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
   await expect(page.getByText("Filtrovaný výsledek: 2 nahrávky.")).toBeVisible();
 });
 
-test("uses native color selection, neutral reset and color-mixed manager badges in both themes", async ({ page }) => {
+test("uses the accessible color popover, preserves focus and renders badges in both themes", async ({ page }) => {
   await page.goto(`/login/recording-organization-e2e?scope=${fixtureScope}`);
   await expect(page.getByRole("heading", { name: "Recording organization E2E fixture" })).toBeVisible();
+  await page.getByRole("button", { name: "Spravovat" }).click();
 
   await createManagerEntity(page, "Přidat klienta", "Neutral");
   await page.getByRole("button", { name: "Přidat klienta", exact: true }).click();
-  const colorPicker = page.getByLabel("Barva Přidat klienta");
+  const colorPicker = page.getByRole("button", { name: "Vybrat barvu Přidat klienta" });
   const hiddenColor = page.locator('input[type="hidden"][name="color"]');
-  await expect(colorPicker).toHaveAttribute("type", "color");
-  await colorPicker.evaluate((input, color) => {
-    (input as HTMLInputElement).value = color;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  }, "#224466");
-  await expect(hiddenColor).toHaveValue("#224466");
-  await page.getByRole("textbox", { name: "Název" }).fill("Palette");
+  await expect(page.locator('input[type="color"]')).toHaveCount(0);
+  await expect(colorPicker).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(colorPicker).toHaveAttribute("aria-expanded", "false");
+  await colorPicker.click();
+  const colorDialog = page.getByRole("dialog", { name: "Barva Přidat klienta" });
+  await expect(colorDialog).toBeVisible();
+  const pickerBackgrounds: string[] = [];
+  for (const theme of ["dark", "light"] as const) {
+    await page.locator("html").evaluate((element, nextTheme) => { element.dataset.theme = nextTheme; }, theme);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    pickerBackgrounds.push(await colorDialog.evaluate((element) => getComputedStyle(element).backgroundColor));
+    const controlHeights = await colorDialog.getByRole("button").evaluateAll((buttons) =>
+      buttons.map((button) => button.getBoundingClientRect().height)
+    );
+    expect(controlHeights.every((height) => height >= 44)).toBe(true);
+  }
+  expect(pickerBackgrounds[0]).not.toBe(pickerBackgrounds[1]);
+  const customColor = colorDialog.getByLabel("Vlastní HEX barva");
+  const applyCustomColor = colorDialog.getByRole("button", { name: "Použít" });
+  await expect(customColor).toHaveCSS("min-height", "44px");
+  await customColor.fill("#12GG45");
+  await applyCustomColor.click();
+  await expect(hiddenColor).toHaveValue("");
+  await expect(colorDialog).toBeVisible();
+  await expect(colorDialog.getByRole("alert")).toContainText("#RRGGBB");
+  await customColor.fill("#13579B");
+  await applyCustomColor.click();
+  await expect(hiddenColor).toHaveValue("#13579B");
+  await expect(colorDialog).toHaveCount(0);
+  await expect(colorPicker).toBeFocused();
+  const nameInput = page.getByRole("textbox", { name: "Název" });
+  await nameInput.fill("Palette");
+
+  await colorPicker.click();
+  await nameInput.click();
+  await expect(colorDialog).toHaveCount(0);
+  await expect(nameInput).toBeFocused();
+  await expect(nameInput).toHaveValue("Palette");
+
+  await colorPicker.click();
+  await colorDialog.press("Escape");
+  await expect(colorDialog).toHaveCount(0);
+  await expect(colorPicker).toBeFocused();
+  await expect(page.locator("form.organization-create-form")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Správa organizace" })).toBeVisible();
+  await expect(colorPicker).toHaveCSS("min-height", "44px");
   await page.getByRole("button", { name: "Uložit" }).click();
   await expect(page.getByRole("textbox", { name: "Název" })).toHaveCount(0);
 
-  const badge = page.getByText("Palette", { exact: true });
-  const neutralBadge = page.getByText("Neutral", { exact: true });
+  const manager = page.getByRole("region", { name: "Správa organizace" });
+  const badge = manager.locator(".organization-manager-badge", { hasText: "Palette" });
+  const neutralBadge = manager.locator(".organization-manager-badge", { hasText: "Neutral" });
   await expect(badge).toBeVisible();
   await expect(neutralBadge).toBeVisible();
   await expect(badge).toHaveClass(/organization-manager-badge-colored/);
   await expect(neutralBadge).not.toHaveClass(/organization-manager-badge-colored/);
-  await expect(badge).toHaveCSS("--organization-color", "#224466");
+  await expect(badge).toHaveCSS("--organization-color", "#13579B");
   for (const theme of ["dark", "light"] as const) {
     await page.locator("html").evaluate((element, nextTheme) => { element.dataset.theme = nextTheme; }, theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
@@ -156,6 +197,8 @@ test("uses native color selection, neutral reset and color-mixed manager badges 
   }
 
   await page.getByRole("button", { name: "Přejmenovat Palette", exact: true }).click();
+  await page.getByRole("button", { name: "Vybrat barvu Přejmenovat Palette" }).click();
+  await expect(page.getByLabel("Vlastní HEX barva")).toHaveValue("#13579B");
   await page.getByRole("button", { name: "Bez barvy" }).click();
   await expect(page.locator('input[type="hidden"][name="color"]')).toHaveValue("");
   await page.getByRole("button", { name: "Uložit" }).click();

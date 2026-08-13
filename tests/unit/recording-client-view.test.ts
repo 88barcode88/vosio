@@ -10,6 +10,7 @@ import { defaultUserSettings } from "@/lib/settings/types";
 const recordingWithStoragePath: RecordingRow = {
   client_id: null,
   created_at: "2026-08-05T08:00:00.000Z",
+  deleted_at: "2026-08-05T08:30:00.000Z",
   duration_seconds: 60,
   error_message: null,
   file_size_bytes: 1024,
@@ -33,6 +34,7 @@ describe("recording client view", () => {
     expect(Object.keys(view).sort()).toEqual([
       "audioAvailability",
       "created_at",
+      "deleted_at",
       "duration_seconds",
       "file_size_bytes",
       "id",
@@ -44,6 +46,7 @@ describe("recording client view", () => {
     ]);
     expect(view).toMatchObject({
       audioAvailability: "single",
+      deleted_at: "2026-08-05T08:30:00.000Z",
       file_size_bytes: 1024,
       mime_type: "audio/webm"
     });
@@ -85,6 +88,7 @@ describe("recording client view", () => {
     expect(filesMarkup).toContain("Jeden audio soubor");
     expect(filesMarkup).toContain("audio/webm");
     expect(trashMarkup).toContain("jeden soubor");
+    expect(trashMarkup).toContain("5. 8. 2026 10:30");
     expect(filesMarkup).not.toContain(recordingWithStoragePath.storage_path as string);
     expect(trashMarkup).not.toContain(recordingWithStoragePath.storage_path as string);
   });

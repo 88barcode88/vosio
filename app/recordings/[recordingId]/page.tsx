@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { VosioWorkspace } from "@/components/vosio-workspace";
 import {
+  parseTranscriptTabSearchParams,
   parseTranscriptTabCookieValue,
   VOSIO_ACTIVE_RECORDING_TAB_COOKIE
 } from "@/components/transcript-tabs/tab-state";
@@ -35,6 +36,7 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
   const { recordingId } = await params;
   const query = await searchParams;
   const parsedDeepLink = parseTranscriptDeepLink(query);
+  const parsedUrlTab = parseTranscriptTabSearchParams(query);
   const cookieStore = await cookies();
   const persistedTranscriptTab = parseTranscriptTabCookieValue(
     recordingId,
@@ -47,6 +49,15 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
 
   if (!user) {
     redirect(`/login?next=/recordings/${recordingId}`);
+  }
+
+  if (!parsedUrlTab.valid) {
+    const canonicalQuery = createCanonicalDetailSearchParams(query);
+    canonicalQuery.delete("tab");
+    canonicalQuery.delete("at");
+    canonicalQuery.delete("highlight");
+    const suffix = canonicalQuery.toString();
+    redirect(`/recordings/${encodeURIComponent(recordingId)}${suffix ? `?${suffix}` : ""}`);
   }
 
   const [recording, recordingMarkers, transcripts, organizationOptions] = await Promise.all([
@@ -87,9 +98,11 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
       initialTranscriptDeepLink={initialDeepLink}
       initialTranscriptTab={parsedDeepLink.explicitTranscriptTab
         ? "transcript"
-        : persistedTranscriptTab ?? "transcript"}
-      initialTranscriptTabFromCookie={!parsedDeepLink.explicitTranscriptTab && Boolean(persistedTranscriptTab)}
-      initialTranscriptTabFromUrl={parsedDeepLink.explicitTranscriptTab}
+        : parsedUrlTab.explicit
+          ? parsedUrlTab.tab
+          : persistedTranscriptTab ?? "transcript"}
+      initialTranscriptTabFromCookie={!parsedUrlTab.explicit && Boolean(persistedTranscriptTab)}
+      initialTranscriptTabFromUrl={parsedUrlTab.explicit}
       recordings={[recording]}
       recordingMarkers={recordingMarkers}
       recordingOrganization={recordingOrganization}
@@ -102,4 +115,17 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
       view="recordings"
     />
   );
+}
+
+// createCanonicalDetailSearchParams preserves unrelated safe values while retaining duplicates for removal.
+function createCanonicalDetailSearchParams(
+  query: Record<string, string | string[] | undefined>
+) {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    for (const item of Array.isArray(value) ? value : typeof value === "string" ? [value] : []) {
+      searchParams.append(key, item);
+    }
+  }
+  return searchParams;
 }

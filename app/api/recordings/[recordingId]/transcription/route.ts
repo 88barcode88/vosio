@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import {
   createSonioxTranscription,
   getSonioxTranscriptionOptions,
@@ -10,7 +11,12 @@ import {
   getSonioxTranscription,
   mapSonioxStatus
 } from "@/lib/soniox/client";
-import { RECORDINGS_BUCKET, isSegmentedRecordingStoragePath } from "@/lib/recordings/types";
+import { sonioxRegionSchema, type SonioxRegion } from "@/lib/soniox/region";
+import {
+  RECORDINGS_BUCKET,
+  isSegmentedRecordingStoragePath,
+  isSupportedRecordingMimeType
+} from "@/lib/recordings/types";
 import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
 import { getTranscriptSearchWarningPayload } from "@/lib/transcripts/search-warning";
 import { extractTranscriptSpeakerSummaries } from "@/lib/transcripts/speakers";
@@ -58,7 +64,7 @@ async function getAuthenticatedRecording(recordingId: string) {
 
   const { data: recording, error: recordingError } = await supabase
     .from("recordings")
-    .select("id,user_id,title,storage_path,status")
+    .select("id,user_id,title,storage_path,mime_type,status")
     .eq("id", recordingId)
     .eq("user_id", user.id)
     .single();
@@ -78,7 +84,7 @@ async function getLatestJob(input: {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("transcription_jobs")
-    .select("id,provider_job_id,status")
+    .select("id,provider_job_id,status,provider_config")
     .eq("recording_id", input.recordingId)
     .eq("user_id", input.userId)
     .order("created_at", { ascending: false })
@@ -112,6 +118,22 @@ function getProviderConfigNumber(providerConfig: unknown, key: string) {
   const value = providerConfig[key as keyof typeof providerConfig];
 
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+// getTranscriptionJobRegion reads the immutable job region and keeps legacy jobs on the global API.
+function getTranscriptionJobRegion(providerConfig: unknown): SonioxRegion {
+  const parsed = sonioxRegionSchema.safeParse(getProviderConfigString(providerConfig, "region"));
+
+  return parsed.success ? parsed.data : "global";
+}
+
+// getPublicTranscriptionJob keeps internal provider configuration out of API responses.
+function getPublicTranscriptionJob(job: SegmentTranscriptionJob) {
+  return {
+    id: job.id,
+    provider_job_id: job.provider_job_id,
+    status: job.status
+  };
 }
 
 // getSegmentJobIndex returns the stored segment index for deterministic transcript merging.
@@ -215,6 +237,7 @@ function offsetSegmentTokenTimings(token: unknown, offsetMs: number) {
 async function createSegmentedTranscriptionJobs(input: {
   admin: ReturnType<typeof createAdminClient>;
   recording: { id: string; storage_path: string; user_id: string };
+  region: SonioxRegion;
   userId: string;
 }) {
   const segmentPaths = await listSegmentStoragePaths(input.admin, input.recording.storage_path);
@@ -247,7 +270,8 @@ async function createSegmentedTranscriptionJobs(input: {
           batch_id: batchId,
           segment_count: segmentPaths.length,
           segment_index: index,
-          segment_path: segmentPath
+          segment_path: segmentPath,
+          region: input.region
         },
         recording_id: input.recording.id,
         status: "queued",
@@ -263,7 +287,8 @@ async function createSegmentedTranscriptionJobs(input: {
     const transcription = await createSonioxTranscription({
       audioUrl: signedUrl.signedUrl,
       clientReferenceId: initialJob.id,
-      options: providerConfig
+      options: providerConfig,
+      region: input.region
     }).catch(async (error: unknown) => {
       const errorMessage = error instanceof Error ? error.message : "Soniox segment request failed";
 
@@ -316,7 +341,10 @@ async function refreshSegmentBatchJobs(input: {
         return job;
       }
 
-      const transcription = await getSonioxTranscription(job.provider_job_id);
+      const transcription = await getSonioxTranscription(
+        getTranscriptionJobRegion(job.provider_config),
+        job.provider_job_id
+      );
       const jobStatus = mapSonioxStatus(transcription.status);
       const { data, error } = await input.admin
         .from("transcription_jobs")
@@ -384,8 +412,8 @@ async function saveCombinedSegmentTranscript(input: {
     }
 
     const [transcription, transcript] = await Promise.all([
-      getSonioxTranscription(job.provider_job_id),
-      getSonioxTranscript(job.provider_job_id)
+      getSonioxTranscription(getTranscriptionJobRegion(job.provider_config), job.provider_job_id),
+      getSonioxTranscript(getTranscriptionJobRegion(job.provider_config), job.provider_job_id)
     ]);
 
     rawTextParts.push(transcript.text.trim());
@@ -512,6 +540,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const { recording, user } = authenticated;
+    const region = getUserSettingsFromMetadata(user.user_metadata).sonioxRegion;
 
     if (!recording.storage_path) {
       return NextResponse.json({ error: "Nahrávka nemá uložený audio soubor." }, { status: 409 });
@@ -524,6 +553,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const shouldRestart = request.nextUrl.searchParams.get("restart") === "1";
     const admin = createAdminClient();
     const isSegmentedRecording = isSegmentedRecordingStoragePath(recording.storage_path);
+
+    if (!isSegmentedRecording && !isSupportedRecordingMimeType(recording.mime_type)) {
+      return NextResponse.json({ error: "Nahrávka nemá podporovaný formát pro přepis." }, { status: 409 });
+    }
 
     if (shouldRestart) {
       await resetRecordingTranscriptionState({
@@ -560,6 +593,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           storage_path: recording.storage_path,
           user_id: user.id
         },
+        region,
         userId: user.id
       });
 
@@ -581,7 +615,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       : await getLatestJob({ recordingId: recording.id, userId: user.id });
 
     if (existingJob && ["queued", "running", "done"].includes(existingJob.status)) {
-      return NextResponse.json({ job: existingJob, reused: true });
+      return NextResponse.json({ job: getPublicTranscriptionJob(existingJob), reused: true });
     }
 
     const { data: signedUrl, error: signedUrlError } = await admin.storage
@@ -600,7 +634,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         provider: "soniox",
         provider_config: {
           ...providerConfig,
-          audio_source: "supabase_signed_url"
+          audio_source: "supabase_signed_url",
+          region
         },
         recording_id: recording.id,
         status: "queued",
@@ -616,7 +651,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const transcription = await createSonioxTranscription({
       audioUrl: signedUrl.signedUrl,
       clientReferenceId: initialJob.id,
-      options: providerConfig
+      options: providerConfig,
+      region
     }).catch(async (error: unknown) => {
       const errorMessage = error instanceof Error ? error.message : "Soniox request failed";
 
@@ -750,7 +786,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Přepisovací job nebyl nalezen." }, { status: 404 });
     }
 
-    const transcription = await getSonioxTranscription(latestJob.provider_job_id);
+    const region = getTranscriptionJobRegion(latestJob.provider_config);
+    const transcription = await getSonioxTranscription(region, latestJob.provider_job_id);
     const jobStatus = mapSonioxStatus(transcription.status);
 
     const { error: jobUpdateError } = await admin
@@ -781,15 +818,19 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         throw new Error(`Unable to update failed recording status: ${recordingError.message}`);
       }
 
-      return NextResponse.json({ job: { ...latestJob, status: jobStatus } });
+      return NextResponse.json({
+        job: { ...getPublicTranscriptionJob(latestJob), status: jobStatus }
+      });
     }
 
     if (jobStatus !== "done") {
-      return NextResponse.json({ job: { ...latestJob, status: jobStatus } });
+      return NextResponse.json({
+        job: { ...getPublicTranscriptionJob(latestJob), status: jobStatus }
+      });
     }
 
     const durationSeconds = getSonioxAudioDurationSeconds(transcription.audio_duration_ms);
-    const transcript = await getSonioxTranscript(latestJob.provider_job_id);
+    const transcript = await getSonioxTranscript(region, latestJob.provider_job_id);
     const speakers = extractTranscriptSpeakerSummaries(transcript.tokens);
     const { data: existingTranscript, error: existingTranscriptError } = await admin
       .from("transcripts")
@@ -856,7 +897,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     return NextResponse.json({
-      job: { ...latestJob, status: jobStatus },
+      job: { ...getPublicTranscriptionJob(latestJob), status: jobStatus },
       transcript: { id: transcript.id, text: transcript.text },
       ...getTranscriptSearchWarningPayload(indexResult)
     });

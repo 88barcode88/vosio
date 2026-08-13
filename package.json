@@ -1,9 +1,10 @@
 {
   "name": "vosio-app",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "license": "SEE LICENSE IN LICENSE.md",
   "private": true,
   "scripts": {
+    "assets:favicon": "node scripts/generate-favicon.mjs",
     "dev": "next dev --hostname 127.0.0.1 --port 3047",
     "build": "next build",
     "check": "npm run typecheck && npm run lint && npm run test",

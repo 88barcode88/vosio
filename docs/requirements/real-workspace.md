@@ -4,6 +4,14 @@
 
 The authenticated workspace loads real `recordings` rows from Supabase for the current user.
 
+## Installation and provider region
+
+Vosio has one installation flow: each person or company deploys its own application and supplies its own Vercel, Supabase, Soniox, and AI credentials. The required environment variable names are identical in Vercel Production and Preview when both scopes are enabled as fully functional deployments. Reusing the same values means both scopes use the same data and provider costs; this is an owner decision inside the same installation flow, not a second supported staging mode.
+
+The Soniox region is selected per user in **Settings**. **Global** is the default for missing, legacy, or invalid metadata. **EU** requires an EU-enabled Soniox project and matching regional key. If EU access or authentication fails, the UI directs the owner to `support@soniox.com`. Both realtime and new async transcription use the selected region; an async job stores the selected region in `provider_config` and all later polling keeps that stored route. The temporary realtime key connection lifetime is fixed internally at 60 seconds and is not configurable; it does not limit an established recording.
+
+Before Supabase initialization, `/configuration` may show only the environment label and missing public Supabase variable names. After authentication, **Settings -> Technical information** may show the environment, readiness, optional Gemini presence, and missing required names only. Neither surface may expose values, prefixes, lengths, hashes, or full environment objects. Environment changes require a Vercel redeploy or local restart.
+
 When the user uploads an audio file:
 
 1. The browser validates MIME type and size.
@@ -92,23 +100,27 @@ Selected tags use ALL semantics: every returned recording must contain every sel
 
 ## Supported Upload Types
 
-- `audio/aac`
-- `audio/aiff`
-- `audio/amr`
-- `audio/asf`
+`/recordings/new` presents exactly two primary capture cards: live first and file upload second. They are equal desktop columns above 900 px and stack in the same order at 900 px and below. Transcript import is a secondary, default-collapsed disclosure rather than a third primary card. A regular desktop uses `.content-area-document` as its one vertical scroll owner; a short desktop up to 640 px high and mobile use the browser document as the one owner so the sidebar and bottom import controls remain reachable. No mode may add body-plus-content double scroll or horizontal overflow. The upload card keeps one persistent status surface for selected file metadata, the effective limit, transfer progress, finalization, success, cancellation, safe error copy and retry. Drag/drop and the single filtered picker enter the same authenticated serial upload queue; production single-file success still redirects to recording detail. The guarded development fixture may replace only the live and transcript-import presentation slots with inert local controls; production defaults and upload lifecycle remain unchanged.
+
 - `audio/flac`
+- `audio/x-flac`
+- `audio/m4a`
 - `audio/mp4`
+- `audio/mp3`
 - `audio/mpeg`
+- `application/ogg`
 - `audio/ogg`
+- `audio/vnd.wave`
 - `audio/wav`
+- `audio/x-wav`
 - `audio/webm`
-- `audio/x-aiff`
 - `audio/x-m4a`
-- `application/vnd.ms-asf`
-- `video/x-ms-asf`
+- `video/webm`
 - `video/mp4`
 
-The effective manual upload limit is `min(recordings.file_size_limit, optional per-user plan cap)`. The baseline migration uses a `52428800`-byte (50 MiB) bucket limit; the `free` preference adds a 50 MiB cap, `paid` adds a 500 GiB cap and `auto` adds no cap. A preference can only lower the bucket limit, never raise it or authorize Storage. The global project limit cannot be detected safely and is displayed as unknown. Audio paths fail closed when a positive explicit bucket limit cannot be read. Live audio has a hard limit of `min(effective manual upload limit, 128 MiB)`, an estimated cutoff below it by `min(5% of the hard live limit, 2 MiB)`, and a final Blob validation against the full hard limit.
+The effective manual upload limit is `min(recordings.file_size_limit, optional per-user plan cap)`. The baseline migration uses a `52428800`-byte (50 MiB) bucket limit; the `free` preference adds a 50 MiB cap, `paid` adds a 500 GiB cap and `auto` adds no cap. A preference can only lower the bucket limit, never raise it or authorize Storage. The global project limit cannot be detected safely and is displayed as unknown. Audio paths fail closed when either a positive explicit bucket limit or a non-empty explicit bucket MIME allowlist cannot be read. Live audio has a hard limit of `min(effective manual upload limit, 128 MiB)`, an estimated cutoff below it by `min(5% of the hard live limit, 2 MiB)`, and a final Blob validation against the full hard limit.
+
+The product accepts the common groups M4A, MP3, WAV, WebM, OGG, FLAC and MP4. The effective format set is their intersection with the runtime Supabase bucket MIME rules; broader bucket entries such as legacy AAC, AIFF, AMR or ASF do not automatically become product upload formats. Browser MIME values are normalized before allowlist validation. Common aliases may map only from an explicit MIME to a canonical type allowed by the bucket. File extensions are picker hints, never an authorization fallback: an empty MIME or `application/octet-stream` is rejected even for `.m4a`. File-size validation accepts the exact effective-limit boundary and rejects only `size > limit`; a concrete `audio/mp4` 33 MiB M4A is valid under a 50 MiB effective limit. The transcription endpoint revalidates the stored MIME before sending a single uploaded object to Soniox; legacy segmented recordings retain their separate compatibility path.
 
 ## AI Prompt Templates
 
@@ -137,6 +149,10 @@ The `/templates` workspace separates user-owned templates from the system librar
 AI processing lets the user choose one current AI model per run. The model selector includes model purpose, provider and indicative token pricing for `gpt-5.6-sol` (xhigh, $5/$30), `gpt-5.6-terra` (high, $2/$12), `gpt-5.6-luna` (xhigh, $0.20/$1.20) and `gemini-3.6-flash` (thinking medium, $1.50/$7.50) per 1M input/output tokens. The selected model is stored in `ai_processing_jobs.model`, the selected provider in `ai_processing_jobs.provider`, and the effective `reasoning_effort` or `thinking_level` in `ai_processing_jobs.provider_config`. The current catalog does not expose temperature because these model configurations do not use it. Model size and reasoning can affect extraction completeness even when the prompt and JSON schema are identical: smaller, cheaper models may miss details, tasks or evidence. Evidence fields remain required by the contract, but users should review important outputs against the transcript; Sol or Terra are preferred for complex calls. Prices are estimates and provider billing remains authoritative. When an AI run starts, the tab must show a visible running state. The same output type can be started again while an earlier run is still pending, because users may want another pass with different settings.
 
 Tasks extracted by AI are stored as checklist rows with owner category (`Moje práce`, `Klient`, `Nejasné`), optional owner name, deadline, status and evidence quote. Toggling a task updates `transcript_tasks.status` through a server action and RLS. The AI tab groups checklist rows by owner category, shows evidence quotes inline, and keeps raw markdown artifacts collapsed when normalized rows exist. The markdown output remains available for review/export, but task state belongs to the normalized table.
+
+The template workspace uses `template=<uuid>` for one selected editor and `mode=create` for creation. Duplicate, conflicting or unknown values resolve to the list surface. Desktop keeps the list next to the editor; mobile shows either the list or a dedicated editor with Back. Advanced processing type and output-schema fields are closed by default. While a create, update or copy action is pending, the submitted fieldset and prompt navigation are locked so the visible draft cannot diverge from the server snapshot. Validation and unexpected-action failures unlock and keep the exact mounted draft with only a sanitized message. A system-copy submission is identity-only: the server must fetch the current `is_system = true` row by id and ignore any client-supplied name, prompt, processing type or schema.
+
+The secondary `/ai` archive loads whole generations through explicit RLS joins containing only output payload, processing type, transcript recording id and recording id/title/status. It must not load raw transcript text, segments, speakers, storage paths, provider configuration or provider errors. Canonical single-value URL filters are `type` and `recording`. Active recording links open `/recordings/<id>?tab=ai`; deleted recordings link to `/trash` and show `V koši`. Archive deletion removes a whole generation only. It does not expose deletion of inner e-mail, summary or checklist fragments, and it restores the exact optimistic card with sanitized feedback after an unexpected action rejection. Expected delete redirects preserve both filters and may render only allowlisted `error` codes; duplicate or unknown values are removed without being echoed.
 
 ## AI Evidence Navigation
 
@@ -172,7 +188,7 @@ AI outputs can be deleted individually from the recording detail. Deleting an AI
 
 ## Forward Migration Release Boundary
 
-The complete source schema is the ordered chain `20260617000000_initial_schema.sql` -> evidence `20260804100000` -> organization `20260804110000` -> markers `20260804120000` -> transcript search `20260804130000`. The baseline alone is not the complete source of truth. This public repository is not a deployment ledger and does not assert the migration state of any hosted target. Release order is evidence, organization, markers, transcript search, successful database postflight on the target database, then application deploy.
+The complete source schema is the ordered chain `20260617000000_initial_schema.sql` -> evidence `20260804100000` -> organization `20260804110000` -> markers `20260804120000` -> transcript search `20260804130000` -> Trash restore and purge `20260810005550_restore_recordings_from_trash.sql`. The baseline alone is not the complete source of truth. This public repository is not a deployment ledger and does not assert the migration state of any hosted target. Release order is evidence, organization, markers, transcript search, Trash restore and purge, successful database postflight on the target database, then application deploy.
 
 For every unverified target, validate the actual evidence/organization/marker/search constraints, trigger and indexes, authenticated GIN `EXPLAIN`, grants, forced RLS, anon-vs-auth and cross-tenant isolation, current-vs-old transcript selection, manual/raw/deleted search behavior, runtime keyset/offset pagination and any required backfill. Do not deploy application code using a forward contract before the target has an explicitly approved apply and successful postflight. Source tests, `npm run check` and production build are not evidence of a successful Supabase migration.
 

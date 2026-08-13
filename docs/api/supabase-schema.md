@@ -9,8 +9,9 @@ Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seř
 - `supabase/migrations/20260804110000_add_recording_organization.sql`
 - `supabase/migrations/20260804120000_add_recording_markers.sql`
 - `supabase/migrations/20260804130000_add_transcript_fulltext_search.sql`
+- `supabase/migrations/20260810005550_restore_recordings_from_trash.sql`
 
-Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000` a fulltext search tabulka/RPC/indexy až po `13000`. Baseline proto není kompletní source of truth; úplný source kontrakt je pouze celý uvedený ordered chain. Runtime databáze obsahuje jen tu část řetězce, která na ní byla skutečně schváleně aplikována a postflightem ověřena.
+Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000` a restore/purge metadata až po `05550`. Baseline proto není kompletní source of truth; úplný source kontrakt je pouze celý uvedený ordered chain. Runtime databáze obsahuje jen tu část řetězce, která na ní byla skutečně schváleně aplikována a postflightem ověřena.
 
 Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby skutečné schema odpovídalo explicitně schválené a aplikované části aktuálního řetězce; produkční DB se kvůli baseline neresetuje.
 
@@ -122,7 +123,7 @@ Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivac
 
 ## Forward migrations release gate
 
-Pro každý target bez samostatně ověřeného deployment ledgeru se forward migrace považují za neaplikované. Release pořadí je závazné: (1) `20260804100000_add_evidence_locations.sql`, (2) `20260804110000_add_recording_organization.sql`, (3) `20260804120000_add_recording_markers.sql`, (4) `20260804130000_add_transcript_fulltext_search.sql`, (5) úspěšný DB postflight cílové databáze a teprve (6) deploy aplikace. `npm test`, `npm run check` ani `npm run build` nejsou důkazem stavu vzdálené databáze.
+Pro každý target bez samostatně ověřeného deployment ledgeru se forward migrace považují za neaplikované. Release pořadí je závazné: (1) `20260804100000_add_evidence_locations.sql`, (2) `20260804110000_add_recording_organization.sql`, (3) `20260804120000_add_recording_markers.sql`, (4) `20260804130000_add_transcript_fulltext_search.sql`, (5) `20260810005550_restore_recordings_from_trash.sql`, (6) úspěšný DB postflight cílové databáze a teprve (7) deploy aplikace. `npm test`, `npm run check` ani `npm run build` nejsou důkazem stavu vzdálené databáze.
 
 ## Public tabulky
 
@@ -221,13 +222,15 @@ Bucket:
 - `recordings`
 - private
 - baseline per-bucket limit 50 MB na soubor (`52428800` bytes); runtime aplikace načítá aktuální `file_size_limit`, takže placený projekt může použít vyšší hodnotu v mezích svého globálního Storage limitu
-- povolené audio MIME typy: AAC, FLAC, MP4/M4A, MPEG/MP3, OGG, WAV, WEBM
+- baseline bucket obsahuje historicky širší Soniox MIME allowlist včetně AAC, AIFF, AMR a ASF; produktový upload z něj runtime používá pouze průnik s běžným katalogem M4A, MP3, WAV, WebM, OGG, FLAC a MP4
 
 Formát storage path:
 
 ```text
 {user_id}/{recording_id}/{filename}
 ```
+
+Authenticated INSERT/UPDATE do bucketu navíc ověřuje, že druhý segment je ID vlastněného řádku `recordings`, jeho stav není `deleted` a nemá aktivní purge claim. Service role tímto omezením není dotčená. Permanentní purge používá neměnné `deleted_at` a inkluzivní hranici 24 hodin kvůli maximální platnosti Supabase TUS URL; před DB delete opakovaně ověří prázdný prefix celé nahrávky.
 
 Nová live nahrávka pod limitem používá jeden finální objekt:
 

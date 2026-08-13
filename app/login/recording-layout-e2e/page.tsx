@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
-import { TranscriptTabs } from "@/components/transcript-tabs";
+import { VosioWorkspace } from "@/components/vosio-workspace";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
-import type { RecordingClientView } from "@/lib/recordings/client-view";
+import type { RecordingRow } from "@/lib/recordings/types";
 import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import { defaultUserSettings } from "@/lib/settings/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
@@ -13,11 +13,31 @@ export const dynamic = "force-dynamic";
 const transcriptId = "00000000-0000-4000-8000-000000000301";
 const recordingId = "00000000-0000-4000-8000-000000000302";
 const userId = "00000000-0000-4000-8000-000000000303";
-const emptyStructuredItems: StructuredAiItems = {
+const fixtureStructuredItems: StructuredAiItems = {
   chapters: [],
   decisions: [],
   risks: [],
-  tasks: []
+  tasks: [{
+    ai_output_id: "00000000-0000-4000-8000-000000000304",
+    deadline: null,
+    deadline_confidence: null,
+    deadline_normalized: null,
+    description: "Ověřit mobilní dotykové cíle bez skutečné mutace.",
+    evidence_end_ms: null,
+    evidence_quote: null,
+    evidence_start_ms: null,
+    id: "00000000-0000-4000-8000-000000000307",
+    owner_category: "Moje práce",
+    owner_name: null,
+    position: 1,
+    processing_job_id: "00000000-0000-4000-8000-000000000305",
+    raw_item: {},
+    source_type: "explicit",
+    status: "new",
+    title: "E2E úkol",
+    transcript_id: transcriptId,
+    user_id: userId
+  }]
 };
 const fixtureAiOutputs: AiOutputView[] = [{
   created_at: "2026-08-06T10:00:00.000Z",
@@ -25,7 +45,7 @@ const fixtureAiOutputs: AiOutputView[] = [{
   output_json: { markdown: "E2E AI SENTINEL" },
   output_text: null,
   processing_job_id: "00000000-0000-4000-8000-000000000305",
-  processing_type: "summary",
+  processing_type: "follow_up_email",
   transcript_id: transcriptId,
   user_id: userId
 }];
@@ -80,19 +100,24 @@ function createFixtureTranscript(mode: "blocks" | "raw"): TranscriptRow {
   };
 }
 
-// createFixtureRecording exposes stored single-file audio through the production player.
-function createFixtureRecording(): RecordingClientView {
+// createFixtureRecording exposes stored single-file audio through the production detail workspace.
+function createFixtureRecording(): RecordingRow {
   return {
-    audioAvailability: "single",
+    client_id: null,
     created_at: "2026-08-06T10:00:00.000Z",
     duration_seconds: 2_700,
+    error_message: null,
     file_size_bytes: 1_024,
+    folder_id: null,
     id: recordingId,
     mime_type: "audio/e2e-sentinel",
+    project_id: null,
     source_type: "upload",
     status: "completed",
+    storage_path: `${userId}/${recordingId}/fixture.wav`,
     title: "Dlouhý testovací hovor",
-    updated_at: "2026-08-06T10:01:00.000Z"
+    updated_at: "2026-08-06T10:01:00.000Z",
+    user_id: userId
   };
 }
 
@@ -129,23 +154,19 @@ export default async function RecordingLayoutE2EPage({
   const fixtureMode = mode === "raw" ? "raw" : "blocks";
 
   return (
-    <section className="recording-workbench" aria-label="Test detailu nahrávky">
-      <header className="recording-object-header">Dlouhý testovací hovor</header>
-      <div className="recording-workbench-grid">
-        <section className="transcript-panel">
-          <TranscriptTabs
-            activeAiOutputs={fixtureAiOutputs}
-            activeRecording={createFixtureRecording()}
-            activeRecordingMarkers={fixtureMarkers}
-            activeStructuredItems={emptyStructuredItems}
-            activeTranscript={createFixtureTranscript(fixtureMode)}
-            initialTab={getFixtureInitialTab(mode)}
-            initialTabFromCookie
-            userSettings={defaultUserSettings}
-          />
-        </section>
-        <aside className="recording-rail">Testovací panel</aside>
-      </div>
-    </section>
+    <VosioWorkspace
+      activeRecordingId={recordingId}
+      aiOutputs={fixtureAiOutputs}
+      initialTranscriptTab={getFixtureInitialTab(mode)}
+      initialTranscriptTabFromCookie
+      recordingMarkers={fixtureMarkers}
+      recordingOrganization={{ client: null, folder: null, project: null, tags: [] }}
+      recordingOrganizationOptions={{ clients: [], folders: [], projects: [], tags: [] }}
+      recordings={[createFixtureRecording()]}
+      structuredItems={fixtureStructuredItems}
+      transcripts={[createFixtureTranscript(fixtureMode)]}
+      userSettings={defaultUserSettings}
+      userEmail="detail-e2e@vosio.local"
+    />
   );
 }

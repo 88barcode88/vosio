@@ -1,6 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getPublicEnv } from "@/lib/env";
+import { isDevelopmentWorkspaceShellFixture } from "@/lib/proxy-paths";
+
+export { isDevelopmentWorkspaceShellFixture } from "@/lib/proxy-paths";
 
 const PUBLIC_PATHS = ["/login", "/auth"];
 
@@ -19,6 +22,10 @@ function createLoginRedirect(request: NextRequest) {
 
 // updateSession refreshes Supabase auth cookies and protects private app routes.
 export async function updateSession(request: NextRequest) {
+  if (isDevelopmentWorkspaceShellFixture(request.nextUrl.pathname)) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
   const env = getPublicEnv();
 

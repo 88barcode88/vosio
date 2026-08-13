@@ -50,7 +50,7 @@ import type {
   LiveMarkerFeedback,
   LiveSaveMode,
   RealtimeConfig,
-  RealtimeConfigErrorCode,
+  RealtimeConfigError,
   RecorderStatus
 } from "@/components/browser-recorder/types";
 import {
@@ -683,11 +683,11 @@ export function BrowserRecorder({
   async function fetchRealtimeConfig(): Promise<RealtimeConfig> {
     const response = await fetch("/api/soniox/realtime-key", { method: "POST" });
     const payload = (await response.json().catch(() => null)) as
-      | (RealtimeConfig & { code?: RealtimeConfigErrorCode; error?: string })
+      | (RealtimeConfig & RealtimeConfigError)
       | null;
 
     if (!response.ok || !payload?.api_key) {
-      throw new Error(getRealtimeConfigErrorMessage(payload?.code));
+      throw new Error(getRealtimeConfigErrorMessage(payload?.code, payload?.request_id));
     }
 
     return {
@@ -1212,7 +1212,7 @@ export function BrowserRecorder({
     audioStorage:
       | "supabase_recording_segments"
       | "supabase_recording_upload"
-      | "transcript_only" = "supabase_recording_segments"
+      | "transcript_only"
   ) {
     if (!rawText) {
       throw new Error("Live přepis nevrátil žádný text.");
@@ -1685,6 +1685,7 @@ export function BrowserRecorder({
     <div
       aria-busy={status === "starting" || status === "saving"}
       className={compact ? "browser-recorder browser-recorder-compact" : "browser-recorder"}
+      data-recording-status={status}
     >
       {compact ? (
         <div className="persistent-recorder-summary">
@@ -1695,7 +1696,7 @@ export function BrowserRecorder({
                 ? "Spouštím nahrávání"
                 : "Probíhá nahrávání"}
           </strong>
-          <Link href="/recordings/new">Otevřít nahrávání</Link>
+          <Link data-touch-target="action" href="/recordings/new">Otevřít nahrávání</Link>
         </div>
       ) : null}
       {!compact && status === "idle" ? (

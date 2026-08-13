@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
-
 const screenStyle: React.CSSProperties = {
   alignItems: "center",
   display: "flex",
@@ -14,22 +12,17 @@ const screenStyle: React.CSSProperties = {
 const buttonStyle: React.CSSProperties = {
   cursor: "pointer",
   marginTop: "1rem",
-  minHeight: "40px",
+  minHeight: "44px",
   padding: "0.5rem 1.25rem"
 };
 
-// AppError is the route-level error boundary with a retry action and safe logging.
+// AppError is the sanitized route-level error boundary with a touch-safe retry action.
 export default function AppError({
-  error,
   reset
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    console.error("[Vosio app error]", error.message, error.digest ?? "");
-  }, [error]);
-
   return (
     <main style={screenStyle}>
       <div>
