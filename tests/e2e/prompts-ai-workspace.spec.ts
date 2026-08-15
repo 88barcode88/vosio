@@ -1,6 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
+const systemActionItemsId = "00000000-0000-4000-8000-000000000952";
+const defaultActionItemsPrompt = "Najdi v přepisu potvrzené úkoly, termíny a jejich vlastníky.";
+const concurrentActionItemsPrompt = "Současná změna z jiné karty má přednost před zastaralým konceptem.";
+
 // createFixtureScope supplies the exact guard token required by the development route.
 function createFixtureScope() {
   return randomBytes(6).toString("hex");
@@ -9,6 +13,14 @@ function createFixtureScope() {
 // fixtureHref builds one isolated real-component prompt/archive surface.
 function fixtureHref(view: "templates" | "ai") {
   return `/login/prompts-ai-e2e?scope=${createFixtureScope()}&view=${view}`;
+}
+
+// templateFixtureHref opens one system-owned action while preserving the isolated fixture scope.
+function templateFixtureHref(templateId: string, action?: "conflict") {
+  const url = new URL(fixtureHref("templates"), "https://vosio.local");
+  url.searchParams.set("template", templateId);
+  if (action) url.searchParams.set("action", action);
+  return `${url.pathname}${url.search}`;
 }
 
 test("the prompts/archive fixture rejects missing and malformed guards", async ({ request }) => {
@@ -20,79 +32,74 @@ test("the prompts/archive fixture rejects missing and malformed guards", async (
 test("desktop prompt master-detail and mobile Back preserve URL history", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 800 });
   await page.goto(fixtureHref("templates"));
-  await expect(page.getByRole("heading", { level: 1, name: "Prompty" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "AI prompty" })).toBeVisible();
   await expect(page.locator(".prompt-master")).toBeVisible();
   await expect(page.locator(".prompt-editor-surface")).toBeVisible();
-  await page.getByRole("link", { name: /Obchodní follow-up/ }).click();
-  await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("template")));
-  await expect(page.getByRole("heading", { level: 2, name: "Obchodní follow-up" })).toBeVisible();
+  await page.getByRole("link", { name: /Úkoly/ }).click();
+  await expect(page).toHaveURL((url) => url.searchParams.get("template") === systemActionItemsId);
+  await expect(page.getByRole("heading", { level: 2, name: "Úkoly" })).toBeVisible();
   await expect(page.locator(".prompt-advanced-fields")).not.toHaveAttribute("open", "");
   await page.screenshot({ caret: "initial", fullPage: true, path: testInfo.outputPath("prompts-desktop.png") });
 
-  await page.setViewportSize({ width: 375, height: 760 });
+  await page.setViewportSize({ width: 390, height: 760 });
   await expect(page.locator(".prompt-master")).toBeHidden();
-  await expect(page.getByRole("link", { name: "← Zpět na prompty" })).toBeVisible();
-  await page.getByRole("link", { name: "← Zpět na prompty" }).click();
+  await expect(page.getByRole("link", { name: "← Zpět na AI prompty" })).toBeVisible();
+  await page.getByRole("link", { name: "← Zpět na AI prompty" }).click();
   await expect(page).toHaveURL((url) => !url.searchParams.has("template") && !url.searchParams.has("mode"));
   await expect(page.locator(".prompt-master")).toBeVisible();
   await expect(page.locator(".prompt-editor-surface")).toBeHidden();
   await page.goBack();
-  await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("template")));
+  await expect(page).toHaveURL((url) => url.searchParams.get("template") === systemActionItemsId);
 });
 
-test("system prompt is read-only and copy submits only an inert authoritative id", async ({ page }) => {
-  await page.goto(fixtureHref("templates"));
-  await page.getByRole("link", { name: /Systémové shrnutí/ }).click();
-  await expect(page.getByText(/Systémový prompt · pouze pro čtení/)).toBeVisible();
-  await expect(page.locator(".prompt-template-form-readonly textarea").first()).toHaveAttribute("readonly", "");
-  await page.getByRole("button", { name: "Vytvořit vlastní kopii" }).click();
-  await expect(page).toHaveURL((url) => url.searchParams.get("template") === "00000000-0000-4000-8000-000000000902");
+test("a legacy mobile create deep link canonicalizes to the visible prompt list", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 760 });
+  const href = `${fixtureHref("templates")}&mode=create`;
+  await page.goto(href);
+
+  await expect(page).toHaveURL((url) => !url.searchParams.has("mode") && !url.searchParams.has("template"));
+  await expect(page.locator(".prompt-master")).toBeVisible();
+  await expect(page.locator(".prompt-editor-surface")).toBeHidden();
+  await expect(page.getByRole("link", { name: /Úkoly/ })).toBeVisible();
 });
 
-test("prompt error settles safely and preserves the exact mounted draft", async ({ page }) => {
-  await page.goto(`${fixtureHref("templates")}&action=error`);
-  await page.getByRole("link", { name: /Obchodní follow-up/ }).click();
-  const name = page.locator(".prompt-editor-form input[name='name']");
-  const prompt = page.locator(".prompt-editor-form textarea[name='promptText']");
-  await name.fill("Rozpracovaný prompt");
-  await prompt.fill("Rozpracovaný obsah promptu zůstane po bezpečně zpracované chybě beze změny.");
+test("an edited task prompt stays under the same AI action and resets to default", async ({ page }) => {
+  await page.goto(templateFixtureHref(systemActionItemsId));
+  const prompt = page.getByRole("textbox", { exact: true, name: "Prompt" });
+  await expect(page.locator(".prompt-editor-heading").getByText("Výchozí", { exact: true })).toBeVisible();
+  await page.getByText("Pokročilé parametry", { exact: true }).click();
+  await expect(page.getByLabel("JSON schéma výstupu")).toHaveAttribute("readonly", "");
+  await expect(page.getByText("Schéma je pevnou součástí výstupu a nelze je upravit.")).toBeVisible();
+  await prompt.fill("Najdi pouze potvrzené úkoly, termíny a jejich vlastníky.");
   await page.getByRole("button", { name: "Uložit změny" }).click();
-  await expect(page.locator("fieldset[data-prompt-editor-fields]")).toHaveAttribute("disabled", "");
-  await expect(page.locator("[data-prompt-surface]")).toHaveAttribute("aria-busy", "true");
-  await expect(page.locator(".prompt-mobile-back")).toHaveAttribute("aria-disabled", "true");
-  await expect(page.locator(".prompt-action-state[role='alert']")).toContainText("Prompt se nepodařilo uložit.");
-  await expect(name).toHaveValue("Rozpracovaný prompt");
-  await expect(prompt).toHaveValue("Rozpracovaný obsah promptu zůstane po bezpečně zpracované chybě beze změny.");
+  await expect(page.getByRole("heading", { level: 2, name: "Úkoly" })).toBeVisible();
+  await expect(page.locator(".prompt-editor-heading").getByText("Upravený", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL((url) => url.searchParams.get("template") === systemActionItemsId);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Obnovit výchozí" }).click();
+  await expect(page.locator(".prompt-editor-heading").getByText("Výchozí", { exact: true })).toBeVisible();
+  await expect(prompt).toHaveValue(defaultActionItemsPrompt);
+  await expect(page).toHaveURL((url) => url.searchParams.get("template") === systemActionItemsId);
 });
 
-test("deferred prompt update locks navigation and keeps the successful submitted snapshot", async ({ page }) => {
-  await page.goto(fixtureHref("templates"));
-  await page.getByRole("link", { name: /Obchodní follow-up/ }).click();
-  const name = page.locator(".prompt-editor-form input[name='name']");
-  const prompt = page.locator(".prompt-editor-form textarea[name='promptText']");
-  await name.fill("Přesný úspěšný snapshot");
-  await prompt.fill("Přesný obsah úspěšně odeslaného snapshotu zůstane stabilní během celé akce.");
+test("a stale revision keeps the draft visible and does not overwrite the fixture row", async ({ page }) => {
+  const href = templateFixtureHref(systemActionItemsId, "conflict");
+  const draft = "Tento rozpracovaný koncept se při konfliktu nesmí tiše uložit přes novější změnu.";
+  await page.goto(href);
+  const prompt = page.getByRole("textbox", { exact: true, name: "Prompt" });
+  await prompt.fill(draft);
   await page.getByRole("button", { name: "Uložit změny" }).click();
 
-  await expect(page.locator("fieldset[data-prompt-editor-fields]")).toHaveAttribute("disabled", "");
-  await expect(page.locator(".prompt-mobile-back")).toHaveAttribute("aria-disabled", "true");
-  await expect(page.locator(".prompt-action-state[role='status']")).toHaveText("Fixture zůstala pouze lokální.");
-  await expect(name).toHaveValue("Přesný úspěšný snapshot");
-  await expect(prompt).toHaveValue("Přesný obsah úspěšně odeslaného snapshotu zůstane stabilní během celé akce.");
-});
-
-test("deferred prompt create locks its editable snapshot until success", async ({ page }) => {
-  await page.goto(fixtureHref("templates"));
-  await page.getByRole("link", { name: "Nový" }).click();
-  await page.locator("input[name='name']").fill("Nový snapshot");
-  await page.locator("textarea[name='promptText']").fill(
-    "Nový vytvořený prompt má dostatečně dlouhý a stabilní obsah pro odloženou akci."
+  await expect(page.locator(".prompt-action-state[role='alert']")).toHaveText(
+    "Prompt se mezitím změnil v jiné kartě. Obnovte stránku a zkuste změnu znovu."
   );
-  await page.getByRole("button", { name: "Vytvořit prompt" }).click();
+  await expect(prompt).toHaveValue(draft);
 
-  await expect(page.locator("fieldset[data-prompt-editor-fields]")).toHaveAttribute("disabled", "");
-  await expect(page.locator(".prompt-mobile-back")).toHaveAttribute("aria-disabled", "true");
-  await expect(page).toHaveURL((url) => url.searchParams.get("template") === "00000000-0000-4000-8000-000000000902");
+  await page.reload();
+  await expect(prompt).toHaveValue(concurrentActionItemsPrompt);
+  await expect(prompt).not.toHaveValue(draft);
+  await expect(page.locator(".prompt-editor-heading").getByText("Upravený", { exact: true })).toBeVisible();
 });
 
 test("archive filters use URL history and recording links distinguish active and trash", async ({ page }, testInfo) => {
@@ -138,7 +145,7 @@ test("expected archive delete redirect renders one allowlisted alert and preserv
   await expect(page.locator(".ai-archive-row")).toHaveCount(1);
 });
 
-for (const width of [375, 768, 1024, 1440]) {
+for (const width of [390, 768, 1440]) {
   test(`prompt and archive surfaces have no horizontal overflow at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 720 });
     for (const view of ["templates", "ai"] as const) {

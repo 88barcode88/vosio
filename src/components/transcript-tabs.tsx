@@ -460,8 +460,8 @@ export function TranscriptTabs({
           <TimelineContent
             activeTranscript={activeTranscript}
             aiOutputs={activeAiOutputs}
+            defaultAiModel={userSettings.defaultOpenaiModel}
             markers={activeRecordingMarkers}
-            onOpenAiTab={() => selectActiveTab("ai")}
             onOpenMarker={openRecordingMarker}
             structuredItems={runtimeStructuredItems}
           />

@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecordingsManager } from "@/components/workspace/recordings-manager";
 import { createSaveError, type SaveAction, type SaveActionState } from "@/lib/forms/save-action-state";
 import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
-import type { RecordingRow, RecordingStatus } from "@/lib/recordings/types";
+import type { RecordingStatusCounts } from "@/lib/recordings/queries";
+import type { ActiveRecordingStatus, RecordingRow, RecordingStatus } from "@/lib/recordings/types";
 
 vi.mock("@/components/live-recording-recovery-panel", () => ({
   LiveRecordingRecoveryPanel: () => null
@@ -82,7 +83,12 @@ let root: Root;
 // renderInbox mounts the actual manager while external recovery and server actions stay inert.
 async function renderInbox(
   recordings: RecordingRow[] = [],
-  actions = organizationActions
+  actions = organizationActions,
+  statusOptions: {
+    activeStatus?: ActiveRecordingStatus | null;
+    counts?: RecordingStatusCounts;
+    searchParams?: string;
+  } = {}
 ) {
   await act(async () => {
     root.render(
@@ -91,7 +97,10 @@ async function renderInbox(
         filters={{ clientId: null, folderId: null, projectId: null, tagIds: [] }}
         organizationActions={actions}
         organizationOptions={organizationOptions}
+        recordingStatus={statusOptions.activeStatus ?? null}
+        recordingStatusCounts={statusOptions.counts}
         recordings={recordings}
+        recordingsSearchParams={statusOptions.searchParams ?? ""}
         searchQuery=""
       />
     );
@@ -121,12 +130,14 @@ describe("recordings inbox", () => {
     );
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     const management = container.querySelector<HTMLElement>(
-      '[role="region"][aria-label="Správa organizace"]'
+      '[aria-label="Správa organizace"]'
     );
+    expect(container.querySelector('[role="dialog"][aria-label="Správa organizace"]')).toBeNull();
     expect(management?.hidden).toBe(true);
 
     await act(async () => trigger?.click());
     expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector('[role="dialog"][aria-label="Správa organizace"]')).not.toBeNull();
     expect(management?.hidden).toBe(false);
     expect(Array.from(management?.querySelectorAll("h3") ?? []).map((heading) => heading.textContent))
       .toEqual(["Klienti", "Projekty", "Složky", "Štítky"]);
@@ -143,7 +154,8 @@ describe("recordings inbox", () => {
       draft?.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    await act(async () => trigger?.click());
+    const close = container.querySelector<HTMLButtonElement>('[aria-label="Zavřít správu organizace"]');
+    await act(async () => close?.click());
     expect(management?.hidden).toBe(true);
     expect(management?.querySelector<HTMLInputElement>('input[name="name"]')?.value)
       .toBe("Rozpracovaný klient");
@@ -167,7 +179,7 @@ describe("recordings inbox", () => {
     );
     await act(async () => trigger?.click());
     const management = container.querySelector<HTMLElement>(
-      '[role="region"][aria-label="Správa organizace"]'
+      '.ui-drawer-backdrop[aria-label="Správa organizace"]'
     );
     const createClient = Array.from(management?.querySelectorAll("button") ?? []).find((button) =>
       button.textContent === "Přidat klienta"
@@ -189,8 +201,10 @@ describe("recordings inbox", () => {
       button.textContent === "Ukládám…" && button.disabled
     )).toBe(true);
 
-    trigger?.focus();
-    await act(async () => trigger?.click());
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Zavřít správu organizace"]')?.click();
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
     expect(management?.hidden).toBe(true);
     expect(management?.getAttribute("aria-hidden")).toBe("true");
     expect(document.activeElement).toBe(trigger);
@@ -217,39 +231,36 @@ describe("recordings inbox", () => {
     )).toBe(false);
   });
 
-  it("renders all seven real statuses and keeps title, edit and delete as sibling actions", async () => {
-    const statuses: RecordingStatus[] = [
-      "created",
-      "uploading",
-      "uploaded",
-      "transcribing",
-      "completed",
-      "failed",
-      "deleted"
-    ];
-    await renderInbox(statuses.map((status, index) =>
-      createRecording(`recording-${index + 1}`, status, index === 1 ? null : clientA)
-    ));
+  it("renders URL-backed status facets and keeps title, edit and delete as sibling actions", async () => {
+    const recording = createRecording("recording-1", "failed", clientA);
+    recording.title = "Testovací hovor";
+    await renderInbox([recording], organizationActions, {
+      activeStatus: "failed",
+      counts: {
+        completed: 5,
+        created: 1,
+        deleted: 2,
+        failed: 3,
+        transcribing: 4,
+        uploaded: 6,
+        uploading: 7
+      },
+      searchParams: "status=failed"
+    });
 
-    const segments = Array.from(container.querySelectorAll(".recordings-status-segment"));
-    expect(segments).toHaveLength(7);
-    expect(container.querySelector(".recordings-status-summary")?.getAttribute("role"))
-      .toBe("group");
-    for (const label of [
-      "Vytvořeno",
-      "Nahrává se",
-      "Nahráno",
-      "Přepisuje se",
-      "Dokončeno",
-      "Chyba",
-      "Smazáno"
-    ]) {
-      expect(segments.some((segment) => segment.textContent?.includes(`${label} 1`))).toBe(true);
-    }
+    expect(container.querySelector('a[href="/recordings?status=failed"]')?.textContent)
+      .toContain("Chyba 3");
+    expect(container.querySelector('a[aria-current="page"]')?.getAttribute("href"))
+      .toBe("/recordings?status=failed");
+    expect(container.querySelector('a[href="/trash"]')?.textContent).toContain("Smazáno 2");
+    expect(container.querySelector(".recordings-header-new")).toBeNull();
+    expect(container.querySelector('a[aria-label="Detail nahrávky Testovací hovor"]'))
+      .not.toBeNull();
 
     const firstRow = container.querySelector<HTMLElement>('[data-recording-id="recording-1"]');
     const titleLink = firstRow?.querySelector<HTMLAnchorElement>('a[href="/recordings/recording-1"]');
-    expect(titleLink?.textContent).toContain("Nahrávka recording-1");
+    expect(titleLink?.textContent).toContain("Testovací hovor");
+    expect(firstRow?.querySelectorAll('a[href="/recordings/recording-1"]')).toHaveLength(1);
     expect(firstRow?.textContent).not.toContain("Otevřít");
     expect(firstRow?.querySelector('[aria-label="Upravit recording-1"]')?.closest("a")).toBeNull();
     expect(firstRow?.querySelector('[aria-label="Smazat recording-1"]')?.closest("a")).toBeNull();
@@ -258,6 +269,6 @@ describe("recordings inbox", () => {
 
     const groupLabels = Array.from(container.querySelectorAll(".recording-client-group > h2"))
       .map((heading) => heading.firstChild?.textContent?.trim());
-    expect(groupLabels).toEqual(["Acme", "Bez klienta"]);
+    expect(groupLabels).toEqual(["Acme"]);
   });
 });

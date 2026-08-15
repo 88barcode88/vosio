@@ -1,20 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { UploadCloud } from "lucide-react";
-import { speakerRoleOptions } from "@/components/transcript-tabs/constants";
+import { SpeakerSummaryEditor } from "@/components/transcript-tabs/speaker-summary-editor";
 import {
-  getSpeakerClassName,
-  getSpeakerSummaryMeta,
   getTranscriptSpeakerBlocks
 } from "@/components/transcript-tabs/speaker-blocks";
 import type { RecordingClientView } from "@/lib/recordings/client-view";
-import { updateTranscriptSpeakerAction } from "@/lib/transcripts/actions";
-import {
-  getStoredTranscriptSpeakerSummaries,
-  getTranscriptSpeakerDisplayName
-} from "@/lib/transcripts/speakers";
+import { getStoredTranscriptSpeakerSummaries } from "@/lib/transcripts/speakers";
+import type { TranscriptSpeakerSummary } from "@/lib/transcripts/speakers";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { TranscriptSpeakerBlock, TranscriptTarget } from "@/components/transcript-tabs/types";
 import {
@@ -118,11 +112,16 @@ function getPendingTranscriptDescription(activeRecording: RecordingClientView | 
   return "Čekám na dokončení aktuálního kroku nahrávky.";
 }
 
-// SpeakerSummary renders and edits stored diarization metadata for one transcript.
-function SpeakerSummary({ activeTranscript }: { activeTranscript: TranscriptRow }) {
-  const pathname = usePathname();
-  const speakers = getStoredTranscriptSpeakerSummaries(activeTranscript.speakers, activeTranscript.segments);
-
+// SpeakerSummary presents the transcript-scoped autosave editor when diarization speakers exist.
+function SpeakerSummary({
+  activeTranscript,
+  onSpeakersChange,
+  speakers
+}: {
+  activeTranscript: TranscriptRow;
+  onSpeakersChange: (speakers: TranscriptSpeakerSummary[]) => void;
+  speakers: TranscriptSpeakerSummary[];
+}) {
   if (speakers.length === 0) {
     return null;
   }
@@ -133,41 +132,12 @@ function SpeakerSummary({ activeTranscript }: { activeTranscript: TranscriptRow 
         <strong>Mluvčí v přepisu</strong>
         <span>Pojmenujte mluvčí a potvrďte, jestli patří na klienta nebo na náš tým. AI to použije jako kontext.</span>
       </div>
-      <div className="speaker-summary-list" role="list">
-        {speakers.map((speaker) => (
-          <form action={updateTranscriptSpeakerAction} className="speaker-summary-form" key={speaker.id} role="listitem">
-            <input name="transcriptId" type="hidden" value={activeTranscript.id} />
-            <input name="speakerId" type="hidden" value={speaker.id} />
-            <input name="next" type="hidden" value={pathname} />
-            <div className="speaker-summary-identity">
-              <span className={`speaker ${getSpeakerClassName(speaker.id)}`}>{speaker.label}</span>
-              <small>{getSpeakerSummaryMeta(speaker)}</small>
-            </div>
-            <label className="speaker-summary-field">
-              <span>Jméno</span>
-              <input
-                autoComplete="off"
-                defaultValue={speaker.name ?? ""}
-                maxLength={80}
-                name="name"
-                placeholder="např. Anna Nováková"
-              />
-            </label>
-            <label className="speaker-summary-field">
-              <span>Role</span>
-              <select defaultValue={speaker.role} name="role">
-                {speakerRoleOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <strong className="speaker-summary-state">{getTranscriptSpeakerDisplayName(speaker)} · {speaker.roleLabel}</strong>
-            <button type="submit">Uložit</button>
-          </form>
-        ))}
-      </div>
+      <SpeakerSummaryEditor
+        key={activeTranscript.id}
+        onSpeakersChange={onSpeakersChange}
+        speakers={speakers}
+        transcriptId={activeTranscript.id}
+      />
     </section>
   );
 }
@@ -201,16 +171,32 @@ export function TranscriptContent({
   activeTranscript: TranscriptRow | null;
   onOpenTime?: (startMs: number, anchorId: string) => void;
 }) {
-  const speakerBlocks = useMemo(
-    () => activeTranscript ? getTranscriptSpeakerBlocks(activeTranscript.segments, activeTranscript.speakers) : [],
+  const initialSpeakers = useMemo(
+    () => activeTranscript
+      ? getStoredTranscriptSpeakerSummaries(activeTranscript.speakers, activeTranscript.segments)
+      : [],
     [activeTranscript]
+  );
+  const [displaySpeakers, setDisplaySpeakers] = useState(initialSpeakers);
+
+  useEffect(() => {
+    setDisplaySpeakers(initialSpeakers);
+  }, [activeTranscript?.id, initialSpeakers]);
+
+  const speakerBlocks = useMemo(
+    () => activeTranscript ? getTranscriptSpeakerBlocks(activeTranscript.segments, displaySpeakers) : [],
+    [activeTranscript, displaySpeakers]
   );
 
   if (activeTranscript) {
     if (speakerBlocks.length > 0) {
       return (
         <div className="transcript-list transcript-content">
-          <SpeakerSummary activeTranscript={activeTranscript} />
+          <SpeakerSummary
+            activeTranscript={activeTranscript}
+            onSpeakersChange={setDisplaySpeakers}
+            speakers={displaySpeakers}
+          />
           <div className="transcript-table-scroll">
             <div className="transcript-table" role="table" aria-label="Přepis podle mluvčích">
               <div className="transcript-table-head" role="row">
@@ -257,7 +243,11 @@ export function TranscriptContent({
 
     return (
       <div className="transcript-list transcript-list-scroll">
-        <SpeakerSummary activeTranscript={activeTranscript} />
+        <SpeakerSummary
+          activeTranscript={activeTranscript}
+          onSpeakersChange={setDisplaySpeakers}
+          speakers={displaySpeakers}
+        />
         <section
           aria-current={activeBlockAnchorId === TRANSCRIPT_RAW_ANCHOR_ID ? "true" : undefined}
           aria-label="Soniox přepis"

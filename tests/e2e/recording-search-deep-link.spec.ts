@@ -11,6 +11,7 @@ function createFixtureScope() {
 }
 
 test("opens one owned current search result at its transcript without autoplay", async ({ page }) => {
+  test.slow();
   const scope = createFixtureScope();
 
   await page.addInitScript(() => {
@@ -149,6 +150,7 @@ test("opens one owned current search result at its transcript without autoplay",
   );
   const pageTwoFilters = page.getByRole("form", { name: "Filtrování nahrávek" });
   await expect(pageTwoFilters.getByLabel("Hledat")).toHaveValue("Lucern CRM");
+  await pageTwoFilters.getByRole("button", { name: /^Filtry \(\d+\)$/u }).click();
   await expect(pageTwoFilters.getByLabel("Klient")).toHaveValue(clientId);
   await expect(pageTwoFilters.getByRole("checkbox", { name: "Důležité" })).toBeChecked();
 

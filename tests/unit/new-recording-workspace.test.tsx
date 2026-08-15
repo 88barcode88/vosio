@@ -69,4 +69,15 @@ describe("new recording workspace composition", () => {
     expect(container.querySelector("[data-testid='real-upload-form']")).not.toBeNull();
     expect(container.querySelector("[data-testid='real-transcript-import']")).not.toBeNull();
   });
+
+  it("renders storage limits as one compact information row without card children", async () => {
+    await renderWorkspace();
+
+    const summary = container.querySelector('[aria-label="Limity úložiště"]');
+    expect(summary?.classList.contains("recording-storage-info-row")).toBe(true);
+    expect(summary?.querySelectorAll("div")).toHaveLength(0);
+    expect(summary?.textContent).toContain("Bucket recordings");
+    expect(summary?.textContent).toContain("Globální limit");
+    expect(summary?.textContent).toContain("Preference");
+  });
 });

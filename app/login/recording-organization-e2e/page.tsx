@@ -8,6 +8,7 @@ import {
   type RecordingSearchParamsInput
 } from "@/lib/recording-organization/filters";
 import { normalizeRecordingSearchQuery } from "@/lib/recordings/search";
+import { activeRecordingStatuses } from "@/lib/recordings/types";
 import {
   assignFixtureOrganizationAction,
   createFixtureClientAction,
@@ -53,6 +54,22 @@ export default async function RecordingOrganizationE2EPage({
   }
   const searchQuery = normalizeRecordingSearchQuery(Array.isArray(params.q) ? params.q[0] : params.q);
   const recordings = listOrganizationFixtureRecordings(scopeValue, canonical.filters, searchQuery);
+  const recordingStatus = typeof params.status === "string"
+    && activeRecordingStatuses.includes(params.status as typeof activeRecordingStatuses[number])
+    ? params.status as typeof activeRecordingStatuses[number]
+    : null;
+  const visibleRecordings = recordingStatus
+    ? recordings.filter((recording) => recording.status === recordingStatus)
+    : recordings;
+  const recordingStatusCounts = {
+    completed: recordings.filter((recording) => recording.status === "completed").length,
+    created: recordings.filter((recording) => recording.status === "created").length,
+    deleted: 2,
+    failed: 3,
+    transcribing: recordings.filter((recording) => recording.status === "transcribing").length,
+    uploaded: recordings.filter((recording) => recording.status === "uploaded").length,
+    uploading: recordings.filter((recording) => recording.status === "uploading").length
+  };
   const fixtureMode = Array.isArray(params.fixture) ? params.fixture[0] : params.fixture;
   const indexedSearchPage = searchQuery && (fixtureMode === "indexed" || fixtureMode === "search-error")
     ? {
@@ -112,7 +129,10 @@ export default async function RecordingOrganizationE2EPage({
         filters={canonical.filters}
         organizationActions={organizationActions}
         organizationOptions={snapshot.options}
-        recordings={recordings}
+        recordingStatus={recordingStatus}
+        recordingStatusCounts={recordingStatusCounts}
+        recordings={visibleRecordings}
+        recordingsSearchParams={canonical.searchParams.toString()}
         searchError={fixtureMode === "search-error"
           ? "Hledání se nepodařilo načíst. Zkuste to znovu."
           : null}

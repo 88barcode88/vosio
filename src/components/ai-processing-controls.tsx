@@ -1,7 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import {
+  type AiProcessingType,
+  useAiProcessingRun
+} from "@/components/transcript-tabs/use-ai-processing-run";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 import { aiModelOptions, getAiModelDescription } from "@/lib/model-options";
 import { quickActions } from "@/lib/workspace-data";
@@ -11,20 +14,14 @@ type AiProcessingControlsProps = {
   transcriptId: string | null;
 };
 
-type ActiveAiRun = {
-  id: string;
-  label: string;
-  processingType: string;
-};
-
 // getAiProcessingModelHint renders a short model price and quality hint below the selector.
 function getAiProcessingModelHint(modelId: string) {
   return getAiModelDescription(modelId);
 }
 
 // getQuickActionDescription explains what each AI action creates in the recording detail tab.
-function getQuickActionDescription(processingType: string) {
-  const descriptions: Record<string, string> = {
+function getQuickActionDescription(processingType: AiProcessingType) {
+  const descriptions: Record<AiProcessingType, string> = {
     action_items: "Konkrétní úkoly, vlastníci, termíny.",
     crm_note: "Krátký obchodní zápis do CRM.",
     follow_up_email: "Formální e-mail zákazníkovi po hovoru.",
@@ -33,17 +30,12 @@ function getQuickActionDescription(processingType: string) {
     timeline_chapters: "Kapitoly hovoru podle témat."
   };
 
-  return descriptions[processingType] ?? "Výstup z přepisu.";
+  return descriptions[processingType];
 }
 
 // getQuickActionLabel returns the visible Czech label for a processing type.
-function getQuickActionLabel(processingType: string) {
+function getQuickActionLabel(processingType: AiProcessingType) {
   return quickActions.find((action) => action.processingType === processingType)?.label ?? "AI výstup";
-}
-
-// createActiveRunId makes a local-only id for parallel optimistic AI processing indicators.
-function createActiveRunId(processingType: string) {
-  return `${processingType}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 // getSelectedModelOption returns UI metadata for the currently selected model id.
@@ -51,76 +43,21 @@ function getSelectedModelOption(modelId: string) {
   return aiModelOptions.find((option) => option.id === modelId) ?? aiModelOptions[0];
 }
 
-// getAiProcessingErrorMessage renders provider failures with safe diagnostics when the API returns them.
-function getAiProcessingErrorMessage(payload: { detail?: string | null; error?: string } | null) {
-  if (payload?.detail) {
-    return `${payload.error ?? "AI zpracování selhalo."} Detail: ${payload.detail}`;
-  }
-
-  return payload?.error ?? "AI zpracování selhalo.";
-}
-
 // AiProcessingControls runs stored prompt templates against a completed transcript.
 export function AiProcessingControls({
   settings = defaultUserSettings,
   transcriptId
 }: AiProcessingControlsProps) {
-  const router = useRouter();
   const modelPickerRef = useRef<HTMLDetailsElement>(null);
   const modelOptions = aiModelOptions;
-  const [activeRuns, setActiveRuns] = useState<ActiveAiRun[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
   const [model, setModel] = useState<string>(settings.defaultOpenaiModel);
+  const processing = useAiProcessingRun(transcriptId);
   const selectedModel = getSelectedModelOption(model);
   const canProcess = Boolean(transcriptId);
 
-  // addActiveRun marks one AI action as running without blocking another run of the same action.
-  function addActiveRun(processingType: string) {
-    const run = {
-      id: createActiveRunId(processingType),
-      label: getQuickActionLabel(processingType),
-      processingType
-    };
-
-    setActiveRuns((currentRuns) => [...currentRuns, run]);
-
-    return run.id;
-  }
-
-  // removeActiveRun clears one finished optimistic AI indicator while preserving parallel jobs.
-  function removeActiveRun(runId: string) {
-    setActiveRuns((currentRuns) => currentRuns.filter((run) => run.id !== runId));
-  }
-
-  // processTranscript calls the server-side AI processing endpoint for one prompt type.
-  async function processTranscript(processingType: string) {
-    if (!transcriptId) {
-      return;
-    }
-
-    const runId = addActiveRun(processingType);
-    setMessage(`Generuji: ${getQuickActionLabel(processingType)}. Můžete spustit i další AI výstup.`);
-
-    try {
-      const response = await fetch(`/api/transcripts/${transcriptId}/process`, {
-        body: JSON.stringify({ model, processingType }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST"
-      });
-      const payload = (await response.json().catch(() => null)) as { detail?: string | null; error?: string } | null;
-
-      if (!response.ok) {
-        setMessage(getAiProcessingErrorMessage(payload));
-        return;
-      }
-
-      setMessage("AI výstup je uložený v Supabase.");
-      router.refresh();
-    } catch {
-      setMessage("Nepodařilo se spojit se serverem pro AI zpracování.");
-    } finally {
-      removeActiveRun(runId);
-    }
+  // processTranscript delegates one existing quick action to the shared request lifecycle.
+  async function processTranscript(processingType: AiProcessingType) {
+    await processing.run({ model, processingType });
   }
 
   // selectModel updates the local model and closes the custom picker popover.
@@ -168,7 +105,7 @@ export function AiProcessingControls({
       <div className="quick-grid">
         {quickActions.map((action) => (
           <button
-            className={activeRuns.some((run) => run.processingType === action.processingType) ? "quick-action-running" : undefined}
+            className={processing.isRunning(action.processingType) ? "quick-action-running" : undefined}
             disabled={!canProcess}
             onClick={() => processTranscript(action.processingType)}
             type="button"
@@ -178,7 +115,7 @@ export function AiProcessingControls({
             <span>
               <strong>{action.label}</strong>
               <small>
-                {activeRuns.some((run) => run.processingType === action.processingType)
+                {processing.isRunning(action.processingType)
                   ? "Běží. Kliknutím spustíte další výstup."
                   : getQuickActionDescription(action.processingType)}
               </small>
@@ -186,13 +123,13 @@ export function AiProcessingControls({
           </button>
         ))}
       </div>
-      {activeRuns.length > 0 ? (
+      {processing.activeRuns.length > 0 ? (
         <div className="ai-running-state" role="status" aria-live="polite">
           <strong>AI generuje výstup</strong>
-          <span>{activeRuns.map((run) => run.label).join(", ")}</span>
+          <span>{processing.activeRuns.map((run) => getQuickActionLabel(run.processingType)).join(", ")}</span>
         </div>
       ) : null}
-      {message ? <p className="ai-state">{message}</p> : null}
+      {processing.message ? <p className="ai-state">{processing.message}</p> : null}
     </>
   );
 }

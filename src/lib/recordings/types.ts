@@ -30,6 +30,17 @@ const SUPPORTED_RECORDING_MIME_TYPES = [...new Set(
 
 export type AcceptedRecordingMimeType = (typeof ACCEPTED_RECORDING_MIME_TYPES)[number];
 
+export const activeRecordingStatuses = [
+  "created",
+  "uploading",
+  "uploaded",
+  "transcribing",
+  "completed",
+  "failed"
+] as const;
+
+export type ActiveRecordingStatus = (typeof activeRecordingStatuses)[number];
+
 export type RecordingStatus =
   | "created"
   | "uploading"

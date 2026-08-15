@@ -248,6 +248,25 @@ test("C7 Trash success hides only the chosen row and empty mode offers both reco
   await expect(emptyState.getByRole("link", { name: "Nová nahrávka" })).toBeVisible();
 });
 
+test("Trash bulk selection restores and purges through bounded fixture actions", async ({ page }) => {
+  const scope = createFixtureScope();
+  await page.goto(fixturePath("trash", scope));
+  await page.getByRole("checkbox", { name: "Vybrat všechny nahrávky v Koši" }).check();
+  await expect(page.getByRole("button", { name: "Obnovit vybrané (2)" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Smazat vybrané trvale (2)" })).toBeEnabled();
+  await page.getByRole("button", { name: "Obnovit vybrané (2)" }).click();
+  await expect(page.locator('.trash-recording-row[data-optimistic-deleted="true"]')).toHaveCount(2);
+
+  await page.reload();
+  await page.getByRole("checkbox", { name: "Vybrat všechny nahrávky v Koši" }).check();
+  await page.getByRole("button", { name: "Smazat vybrané trvale (2)" }).click();
+  const dialog = page.getByRole("dialog", { name: "Trvale smazat vybrané nahrávky" });
+  await expect(dialog).toContainText("Audio, přepis a AI výstupy");
+  await dialog.getByRole("button", { name: "Smazat trvale" }).click();
+  await expect(page.getByRole("progressbar", { name: "Průběh trvalého mazání" })).toHaveAttribute("max", "2");
+  await expect(page.locator('.trash-recording-row[data-optimistic-deleted="true"]')).toHaveCount(2);
+});
+
 for (const width of [375, 768]) {
   test(`mobile navigation is exact and touch-safe at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 760 });
@@ -258,7 +277,7 @@ for (const width of [375, 768]) {
     expect(await targets.allTextContents()).toEqual([
       "Nahrávky",
       "Nová",
-      "Prompty",
+      "AI prompty",
       "Nastavení",
       "Více"
     ]);
@@ -487,6 +506,56 @@ for (const width of [1024, 1440]) {
     expect(sidebarAfterScroll).toEqual(sidebarBeforeScroll);
     await expectNoHorizontalOverflow(page);
     await page.screenshot({ caret: "initial", path: testInfo.outputPath(`shell-${width}.png`), fullPage: true });
+  });
+}
+
+test("desktop sidebar collapses to a persistent accessible 64px rail", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 760 });
+  await page.goto(fixturePath("recordings"));
+
+  const sidebar = page.locator(".sidebar");
+  const collapseButton = page.getByRole("button", { name: "Sbalit postranní lištu" });
+  await expect(collapseButton).toHaveAttribute("aria-expanded", "true");
+  await collapseButton.click();
+
+  await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+  await expect.poll(async () => (await getBox(sidebar)).width).toBe(64);
+  await expect(page.locator('.nav-item[aria-label="Nahrávky"]')).toHaveAttribute("title", "Nahrávky");
+  await expect(page.locator('.new-recording-button[aria-label="Nová nahrávka"]'))
+    .toHaveAttribute("title", "Nová nahrávka");
+  expect(await page.evaluate(() => window.localStorage.getItem("vosio-sidebar-collapsed"))).toBe("true");
+  await expectNoHorizontalOverflow(page);
+  await expectRealAppHitTargets(page);
+
+  await page.reload();
+  await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+  await expect.poll(async () => (await getBox(sidebar)).width).toBe(64);
+  const expandButton = page.getByRole("button", { name: "Rozbalit postranní lištu" });
+  await expandButton.focus();
+  await expect(expandButton).toBeFocused();
+  expect(await expandButton.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
+});
+
+for (const width of [375, 768]) {
+  test(`stored collapsed sidebar keeps the mobile shell one-column at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 760 });
+    await page.addInitScript(() => {
+      window.localStorage.setItem("vosio-sidebar-collapsed", "true");
+    });
+    await page.goto(fixturePath("recordings"));
+
+    const shell = page.locator(".workspace-shell");
+    const sidebar = page.locator(".sidebar");
+    const content = page.locator(".content-area");
+    await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+    await expect(sidebar).toHaveCSS("display", "none");
+
+    const [shellBox, contentBox] = await Promise.all([getBox(shell), getBox(content)]);
+    expect(contentBox.x).toBeLessThanOrEqual(shellBox.x + 0.5);
+    expect(contentBox.width).toBeGreaterThanOrEqual(shellBox.width - 1);
+    expect(await shell.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(/\s+/u)))
+      .toHaveLength(1);
+    await expectNoHorizontalOverflow(page);
   });
 }
 

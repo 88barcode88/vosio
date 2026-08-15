@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -38,6 +40,50 @@ const organizationOptions = {
 const filters = { clientId: "client-1", folderId: null, projectId: null, tagIds: [] };
 
 describe("recordings indexed search UI", () => {
+  it("treats a status-only empty result as a filtered result with a clear link", () => {
+    const markup = renderToStaticMarkup(createElement(RecordingsManager, {
+      errorCode: null,
+      filters: { clientId: null, folderId: null, projectId: null, tagIds: [] },
+      organizationOptions,
+      recordingStatus: "failed" as const,
+      recordingStatusCounts: {
+        completed: 0,
+        created: 0,
+        deleted: 0,
+        failed: 0,
+        transcribing: 0,
+        uploaded: 0,
+        uploading: 0
+      },
+      recordings: [],
+      recordingsSearchParams: "status=failed",
+      searchQuery: ""
+    }));
+
+    expect(markup).toContain("Žádné odpovídající nahrávky");
+    expect(markup).toContain('href="/recordings">Vyčistit hledání a filtry</a>');
+    expect(markup).not.toContain("Zatím žádné nahrávky");
+    expect(markup).not.toContain('href="/recordings/new">Nová nahrávka</a>');
+  });
+
+  it("keeps every interactive status chip at least 44px tall", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+
+    expect(styles).toMatch(/\.recordings-status-summary a\s*\{[^}]*?min-height:\s*44px;/u);
+  });
+
+  it("keeps the organization management trigger explicitly 44px tall", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+
+    expect(styles).toMatch(/\.recordings-inbox > button\[aria-expanded\]\s*\{[^}]*?min-height:\s*44px;/u);
+  });
+
   it("renders flat ranked results, safe excerpts, metadata and accessible pagination", () => {
     const markup = renderToStaticMarkup(createElement(RecordingsManager, {
       errorCode: null,
@@ -74,11 +120,11 @@ describe("recordings indexed search UI", () => {
     expect(markup).toContain('aria-label="Výsledky hledání v nahrávkách"');
     expect(markup).toContain('role="list"');
     expect(markup).toContain('role="listitem"');
-    expect(markup).toContain('class="recordings-status-summary" aria-label="Stavy nahrávek" role="group"');
+    expect(markup).toContain('class="recordings-status-summary" aria-label="Filtrovat podle stavu"');
     expect(markup).toContain('class="recordings-row-actions" aria-label="Akce nahrávky Lucern CRM call" role="group"');
     expect(markup).toContain("Nalezeno 51 nahrávek. Strana 2 z 3.");
-    expect(markup).toContain('<span class="recordings-status-total"><strong>1</strong> celkem</span>');
-    expect(markup).toContain('<span class="recordings-status-segment">Dokončeno <strong>1</strong></span>');
+    expect(markup).toContain('aria-current="page" href="/recordings">Celkem <strong>1</strong>');
+    expect(markup).toContain('href="/recordings?status=completed">Dokončeno <strong>1</strong>');
     expect(markup).toContain("Acme · CRM · Calls");
     expect(markup).toContain("<mark>Lucern</mark>");
     expect(markup).toContain(

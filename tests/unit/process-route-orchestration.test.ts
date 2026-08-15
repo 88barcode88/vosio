@@ -1,5 +1,189 @@
-import { describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { persistCompletedAiProcessing } from "@/lib/ai/process-route-orchestration";
+import { POST } from "../../app/api/transcripts/[transcriptId]/process/route";
+
+const routeMocks = vi.hoisted(() => ({
+  createAdminClient: vi.fn(),
+  createClient: vi.fn(),
+  runGeminiProcessing: vi.fn(),
+  runOpenAIProcessing: vi.fn(),
+}));
+
+vi.mock("@/lib/rate-limit", () => ({
+  createRateLimiter: () => () => ({ allowed: true, retryAfterSeconds: 0 }),
+}));
+vi.mock("@/lib/env.server", () => ({ getAiProviderConfigurationError: () => null }));
+vi.mock("@/lib/ai/gemini", () => ({ runGeminiProcessing: routeMocks.runGeminiProcessing }));
+vi.mock("@/lib/ai/openai", () => ({ runOpenAIProcessing: routeMocks.runOpenAIProcessing }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: routeMocks.createAdminClient }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: routeMocks.createClient }));
+
+const transcriptId = "00000000-0000-4000-8000-000000000811";
+const userId = "00000000-0000-4000-8000-000000000812";
+const systemPromptId = "00000000-0000-4000-8000-000000000813";
+const overrideId = "00000000-0000-4000-8000-000000000814";
+
+beforeEach(() => vi.resetAllMocks());
+
+// createRouteFixture exposes the authenticated resolver, durable job insert and provider order.
+function createRouteFixture(effectivePrompt: {
+  system_prompt_id: string;
+  override_id: string | null;
+  name: string;
+  processing_type: "action_items";
+  prompt_text: string;
+  output_schema: unknown;
+  source: "system" | "user_override";
+  revision: number | null;
+}) {
+  const events: string[] = [];
+  const transcriptQuery = {
+    eq: vi.fn(),
+    select: vi.fn(),
+    single: vi.fn(),
+  };
+  transcriptQuery.select.mockReturnValue(transcriptQuery);
+  transcriptQuery.eq.mockReturnValue(transcriptQuery);
+  transcriptQuery.single.mockResolvedValue({
+    data: { id: transcriptId, raw_text: "Potvrzený přepis hovoru.", segments: [], speakers: [], user_id: userId },
+    error: null,
+  });
+  const resolverChain = { returns: vi.fn(), single: vi.fn() };
+  resolverChain.returns.mockReturnValue(resolverChain);
+  resolverChain.single.mockResolvedValue({ data: effectivePrompt, error: null });
+  const rpc = vi.fn().mockReturnValue(resolverChain);
+  routeMocks.createClient.mockResolvedValue({
+    auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: userId } }, error: null }) },
+    from: vi.fn((tableName: string) => {
+      if (tableName !== "transcripts") throw new Error(`Unexpected authenticated table ${tableName}`);
+      return transcriptQuery;
+    }),
+    rpc,
+  });
+
+  const jobInsert = vi.fn((_payload: unknown) => {
+    events.push("job-inserted");
+    return jobQuery;
+  });
+  const jobQuery = {
+    eq: vi.fn(),
+    insert: jobInsert,
+    select: vi.fn(),
+    single: vi.fn(),
+    update: vi.fn(),
+  };
+  jobQuery.select.mockReturnValue(jobQuery);
+  jobQuery.single.mockResolvedValue({ data: { id: "job-1" }, error: null });
+  jobQuery.update.mockReturnValue(jobQuery);
+  jobQuery.eq.mockResolvedValue({ error: null });
+  const outputQuery = {
+    insert: vi.fn(),
+    select: vi.fn(),
+    single: vi.fn(),
+  };
+  outputQuery.insert.mockReturnValue(outputQuery);
+  outputQuery.select.mockReturnValue(outputQuery);
+  outputQuery.single.mockResolvedValue({
+    data: { id: "output-1", output_json: { markdown: "Hotovo" }, output_text: '{"markdown":"Hotovo"}' },
+    error: null,
+  });
+  routeMocks.createAdminClient.mockReturnValue({
+    from: vi.fn((tableName: string) => {
+      if (tableName === "ai_processing_jobs") return jobQuery;
+      if (tableName === "ai_outputs") return outputQuery;
+      throw new Error(`Unexpected admin table ${tableName}`);
+    }),
+  });
+  routeMocks.runOpenAIProcessing.mockImplementation(async (input) => {
+    events.push("provider-called");
+    return { inputTokenCount: 10, outputText: '{"markdown":"Hotovo"}', outputTokenCount: 5, input };
+  });
+
+  return { events, jobInsert, rpc };
+}
+
+// postActionItems invokes the route with the intentionally prompt-agnostic browser contract.
+function postActionItems() {
+  return POST(
+    new NextRequest(`https://vosio.test/api/transcripts/${transcriptId}/process`, {
+      body: JSON.stringify({ model: "gpt-5.6-terra", processingType: "action_items" }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    }),
+    { params: Promise.resolve({ transcriptId }) },
+  );
+}
+
+describe("process route prompt resolution", () => {
+  it("snapshots an owner override before the provider receives the same prompt and system schema", async () => {
+    const effectivePrompt = {
+      system_prompt_id: systemPromptId,
+      override_id: overrideId,
+      name: "System action items",
+      processing_type: "action_items" as const,
+      prompt_text: "Uživatelský prompt použitý přes stejné tlačítko Úkoly.",
+      output_schema: { type: "object" },
+      source: "user_override" as const,
+      revision: 5,
+    };
+    const fixture = createRouteFixture(effectivePrompt);
+
+    const response = await postActionItems();
+
+    expect(response.status).toBe(200);
+    expect(fixture.rpc).toHaveBeenCalledWith("resolve_effective_prompt_template_v1", {
+      p_processing_type: "action_items",
+    });
+    expect(fixture.events.slice(0, 2)).toEqual(["job-inserted", "provider-called"]);
+    expect(fixture.jobInsert).toHaveBeenCalledWith(expect.objectContaining({
+      processing_type: "action_items",
+      prompt_id: systemPromptId,
+      prompt_override_id: overrideId,
+      prompt_source: "user_override",
+      prompt_name_snapshot: "System action items",
+      prompt_text_snapshot: effectivePrompt.prompt_text,
+      prompt_output_schema_snapshot: effectivePrompt.output_schema,
+      prompt_revision_snapshot: 5,
+      prompt_snapshot_exact: true,
+    }));
+    const jobPayload = fixture.jobInsert.mock.calls[0]?.[0];
+    expect(JSON.stringify((jobPayload as { provider_config: unknown }).provider_config)).not.toContain(effectivePrompt.prompt_text);
+    expect(routeMocks.runOpenAIProcessing).toHaveBeenCalledWith(expect.objectContaining({
+      outputSchema: effectivePrompt.output_schema,
+      prompt: expect.stringContaining(effectivePrompt.prompt_text),
+    }));
+  });
+
+  it("snapshots the authoritative system fallback without inventing an override revision", async () => {
+    const effectivePrompt = {
+      system_prompt_id: systemPromptId,
+      override_id: null,
+      name: "System action items",
+      processing_type: "action_items" as const,
+      prompt_text: "Systémový prompt použitý přes stejné tlačítko Úkoly.",
+      output_schema: { type: "object" },
+      source: "system" as const,
+      revision: null,
+    };
+    const fixture = createRouteFixture(effectivePrompt);
+
+    const response = await postActionItems();
+
+    expect(response.status).toBe(200);
+    expect(fixture.jobInsert).toHaveBeenCalledWith(expect.objectContaining({
+      prompt_id: systemPromptId,
+      prompt_override_id: null,
+      prompt_source: "system",
+      prompt_revision_snapshot: null,
+      prompt_snapshot_exact: true,
+    }));
+    expect(routeMocks.runOpenAIProcessing).toHaveBeenCalledWith(expect.objectContaining({
+      outputSchema: effectivePrompt.output_schema,
+      prompt: expect.stringContaining(effectivePrompt.prompt_text),
+    }));
+  });
+});
 
 // createAdminMock records the durable write order without contacting Supabase.
 function createAdminMock(events: string[]) {

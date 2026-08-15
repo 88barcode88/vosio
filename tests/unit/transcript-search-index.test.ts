@@ -133,14 +133,16 @@ describe("transcript search index synchronization", () => {
     expect(source.match(/getTranscriptSearchWarningPayload\(/g) ?? []).toHaveLength(warningCalls);
   });
 
-  it("synchronizes speaker-summary updates without changing the existing action return contract", () => {
+  it("awaits search synchronization before returning the speaker autosave state", () => {
     const source = readFileSync(
       join(process.cwd(), "src", "lib", "transcripts", "actions.ts"),
       "utf8"
     );
 
     expect(source).toContain("id,recording_id,user_id,raw_text,segments,speakers");
+    expect(source).toContain("saveTranscriptSpeakerAutosaveAction");
     expect(source.match(/await replaceTranscriptSearchChunks\(/g)).toHaveLength(1);
+    expect(source).toContain("searchWarning:");
     expect(source).not.toContain("getTranscriptSearchWarningPayload(");
   });
 });

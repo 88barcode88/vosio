@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RecordingOrganizationFilters } from "@/lib/recording-organization/filters";
 import type {
+  ActiveRecordingStatus,
   RecordingSearchPage,
   RecordingSearchResult,
   RecordingStatus
@@ -197,6 +198,7 @@ export async function searchOwnRecordings(
     organizationFilters: RecordingOrganizationFilters;
     page: number;
     searchQuery: string;
+    status?: ActiveRecordingStatus | null;
   }
 ): Promise<RecordingSearchPage> {
   const searchQuery = normalizeRecordingSearchQuery(options.searchQuery);
@@ -209,13 +211,14 @@ export async function searchOwnRecordings(
   }
 
   const offset = (options.page - 1) * RECORDING_SEARCH_PAGE_SIZE;
-  const { data, error } = await supabase.rpc("search_own_recordings_v1", {
+  const { data, error } = await supabase.rpc("search_own_recordings_v2", {
     p_client_id: options.organizationFilters.clientId,
     p_folder_id: options.organizationFilters.folderId,
     p_limit: RECORDING_SEARCH_PAGE_SIZE,
     p_offset: offset,
     p_project_id: options.organizationFilters.projectId,
     p_query: searchQuery,
+    p_status: options.status ?? null,
     p_tag_ids: options.organizationFilters.tagIds
   });
 

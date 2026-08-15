@@ -5,7 +5,12 @@ import {
   createRecordingSearchParams,
   type RecordingSearchParamsInput
 } from "@/lib/recording-organization/filters";
-import { listRecordings } from "@/lib/recordings/queries";
+import { canonicalizeRecordingStatusFilter } from "@/lib/recordings/list-filters";
+import {
+  countDeletedRecordings,
+  countOwnRecordingStatuses,
+  listRecordings
+} from "@/lib/recordings/queries";
 import {
   RECORDING_SEARCH_MAX_PAGE,
   RECORDING_SEARCH_PAGE_SIZE,
@@ -46,10 +51,19 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
     organizationOptions
   );
   const canonicalSearch = canonicalizeRecordingSearchParams(canonical.searchParams, searchQuery);
-  if (canonical.changed || canonicalSearch.changed) {
-    const queryString = canonicalSearch.searchParams.toString();
+  const canonicalStatus = canonicalizeRecordingStatusFilter(canonicalSearch.searchParams);
+  if (canonical.changed || canonicalSearch.changed || canonicalStatus.changed) {
+    const queryString = canonicalStatus.searchParams.toString();
     redirect(queryString ? `/recordings?${queryString}` : "/recordings");
   }
+  const [statusCounts, deletedCount] = await Promise.all([
+    countOwnRecordingStatuses(supabase, {
+      organizationFilters: canonical.filters,
+      searchQuery
+    }),
+    countDeletedRecordings(supabase)
+  ]);
+  statusCounts.deleted = deletedCount;
   let recordings: RecordingRow[] = [];
   let recordingSearchError: string | null = null;
   let recordingSearchPage: RecordingSearchPage | null = searchQuery ? {
@@ -64,7 +78,8 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
       recordingSearchPage = await searchOwnRecordings(supabase, {
         organizationFilters: canonical.filters,
         page: canonicalSearch.page,
-        searchQuery
+        searchQuery,
+        status: canonicalStatus.status
       });
     } catch {
       recordingSearchError = "Hledání se nepodařilo načíst. Zkuste to znovu.";
@@ -77,11 +92,12 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
     }
   } else {
     recordings = await listRecordings(supabase, {
-      organizationFilters: canonical.filters
+      organizationFilters: canonical.filters,
+      status: canonicalStatus.status
     });
   }
 
-  const paginationParams = new URLSearchParams(canonicalSearch.searchParams);
+  const paginationParams = new URLSearchParams(canonicalStatus.searchParams);
   paginationParams.delete("warning", TRANSCRIPT_SEARCH_INDEX_WARNING);
   const recordingSearchPreviousHref = searchQuery && canonicalSearch.page > 1
     ? buildRecordingSearchPageHref(paginationParams, canonicalSearch.page - 1)
@@ -100,6 +116,9 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
       recordingsError={(Array.isArray(params.error) ? params.error[0] : params.error) ?? null}
       recordingOrganizationOptions={organizationOptions}
       recordingOrganizationFilters={canonical.filters}
+      recordingStatus={canonicalStatus.status}
+      recordingStatusCounts={statusCounts}
+      recordingsSearchParams={canonicalStatus.searchParams.toString()}
       recordingsSearchQuery={searchQuery}
       recordingSearchError={recordingSearchError}
       recordingSearchNextHref={recordingSearchNextHref}

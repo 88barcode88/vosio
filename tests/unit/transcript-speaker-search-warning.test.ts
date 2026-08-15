@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { updateTranscriptSpeakerAction } from "@/lib/transcripts/actions";
-import { TRANSCRIPT_SEARCH_INDEX_WARNING } from "@/lib/transcripts/search-warning";
+import { saveTranscriptSpeakerAutosaveAction } from "@/lib/transcripts/actions";
 
 const mocks = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
@@ -40,23 +39,20 @@ function createQuery(result: unknown, terminal: "maybeSingle" | "single") {
   return query;
 }
 
-// createSpeakerForm builds one valid client-side speaker update submission.
-function createSpeakerForm() {
-  const formData = new FormData();
-  formData.set("name", "Anna");
-  formData.set("next", `/recordings/${recordingId}`);
-  formData.set("role", "client_customer");
-  formData.set("speakerId", "1");
-  formData.set("transcriptId", transcriptId);
-  return formData;
-}
+const speakerSave = {
+  name: "Miroslav Coufalík",
+  revision: 3,
+  role: "delivery_team" as const,
+  speakerId: "1",
+  transcriptId
+};
 
 beforeEach(() => {
   vi.resetAllMocks();
 });
 
 describe("speaker update search warning", () => {
-  it("keeps the speaker save durable and redirects to the accessible warning path", async () => {
+  it("returns a durable success with a nonfatal search warning", async () => {
     const transcript = {
       id: transcriptId,
       raw_text: "Dobrý den",
@@ -66,27 +62,42 @@ describe("speaker update search warning", () => {
       user_id: userId
     };
     const lookup = createQuery({ data: transcript, error: null }, "maybeSingle");
-    const update = createQuery({ data: transcript, error: null }, "single");
+    const update = createQuery({
+      data: {
+        ...transcript,
+        speakers: [{
+          firstStartMs: null,
+          id: "1",
+          label: "Mluvčí 1",
+          lastEndMs: null,
+          name: "Miroslav Coufalík",
+          role: "delivery_team",
+          roleLabel: "Dodavatel / náš tým",
+          source: "legacy_segment",
+          tokenCount: 0
+        }]
+      },
+      error: null
+    }, "single");
     mocks.createClient.mockResolvedValue({
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: userId } }, error: null }) },
       from: vi.fn().mockReturnValue(lookup)
     });
     mocks.createAdminClient.mockReturnValue({ from: vi.fn().mockReturnValue(update) });
-    mocks.replaceTranscriptSearchChunks.mockResolvedValue({
-      status: "incomplete",
-      warning: TRANSCRIPT_SEARCH_INDEX_WARNING
-    });
+    mocks.replaceTranscriptSearchChunks.mockResolvedValue({ status: "incomplete", warning: "index" });
 
-    await updateTranscriptSpeakerAction(createSpeakerForm());
+    const result = await saveTranscriptSpeakerAutosaveAction(speakerSave);
 
     expect(update.update).toHaveBeenCalled();
-    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/recordings/${recordingId}`);
-    expect(mocks.redirect).toHaveBeenCalledWith(
-      `/recordings/${recordingId}?warning=${TRANSCRIPT_SEARCH_INDEX_WARNING}`
-    );
+    expect(result).toMatchObject({
+      revision: 3,
+      searchWarning: "Mluvčí je uložený, ale vyhledávací index se nepodařilo obnovit.",
+      status: "success"
+    });
+    expect(mocks.redirect).not.toHaveBeenCalled();
   });
 
-  it("finishes a successful speaker save without adding a stale warning URL", async () => {
+  it("returns a sanitized error without navigating away", async () => {
     const transcript = {
       id: transcriptId,
       raw_text: "Dobrý den",
@@ -96,17 +107,24 @@ describe("speaker update search warning", () => {
       user_id: userId
     };
     const lookup = createQuery({ data: transcript, error: null }, "maybeSingle");
-    const update = createQuery({ data: transcript, error: null }, "single");
+    const update = createQuery({
+      data: null,
+      error: { message: "secret database detail" }
+    }, "single");
     mocks.createClient.mockResolvedValue({
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: userId } }, error: null }) },
       from: vi.fn().mockReturnValue(lookup)
     });
     mocks.createAdminClient.mockReturnValue({ from: vi.fn().mockReturnValue(update) });
-    mocks.replaceTranscriptSearchChunks.mockResolvedValue({ status: "ready", warning: null });
 
-    await updateTranscriptSpeakerAction(createSpeakerForm());
+    const result = await saveTranscriptSpeakerAutosaveAction(speakerSave);
 
+    expect(result).toEqual({
+      message: "Mluvčího se nepodařilo uložit. Zkuste to znovu.",
+      revision: 3,
+      status: "error"
+    });
+    expect(JSON.stringify(result)).not.toContain("secret database detail");
     expect(mocks.redirect).not.toHaveBeenCalled();
-    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/recordings/${recordingId}`);
   });
 });

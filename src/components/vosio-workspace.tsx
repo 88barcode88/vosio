@@ -17,13 +17,18 @@ import type { AiArchiveItem } from "@/lib/ai/types";
 import type { InstallationStatus } from "@/lib/installation-status.server";
 import type { PromptTemplateActions } from "@/components/prompt-template-editor";
 import type { PromptTemplateNavigationState } from "@/lib/prompt-templates/navigation";
-import type { PromptTemplateRow } from "@/lib/prompt-templates/types";
+import type { EffectivePromptTemplate } from "@/lib/prompt-templates/types";
 import { toRecordingClientView } from "@/lib/recordings/client-view";
 import {
   unavailableRecordingStorageConfig,
   type RecordingStorageConfig
 } from "@/lib/recordings/storage-config";
-import type { RecordingRow, RecordingSearchPage } from "@/lib/recordings/types";
+import type { RecordingStatusCounts } from "@/lib/recordings/queries";
+import type {
+  ActiveRecordingStatus,
+  RecordingRow,
+  RecordingSearchPage
+} from "@/lib/recordings/types";
 import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import type {
   RecordingOrganization,
@@ -37,6 +42,10 @@ import type { ResolvedTranscriptDeepLink } from "@/lib/transcripts/deep-link";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
 import type { NavigationHrefOverrides, WorkspaceView } from "@/lib/workspace-data";
 import type { TrashRecordingAction } from "@/components/purge-recording-form";
+import type {
+  TrashPurgeItemAction,
+  TrashRestoreBulkAction
+} from "@/components/workspace/trash-recordings-manager";
 
 type VosioWorkspaceProps = {
   activeRecordingId?: string;
@@ -57,7 +66,7 @@ type VosioWorkspaceProps = {
   newRecordingCaptureSlots?: NewRecordingCaptureSlots;
   newRecordingUploadRedirectAfterSuccess?: "detail" | "list" | "stay";
   newRecordingUploadTransport?: RecordingUploadTransport;
-  promptTemplates?: PromptTemplateRow[];
+  promptTemplates?: EffectivePromptTemplate[];
   promptTemplateActions?: PromptTemplateActions;
   promptTemplateBaseHref?: string;
   promptTemplateNavigationState?: PromptTemplateNavigationState;
@@ -66,8 +75,11 @@ type VosioWorkspaceProps = {
   recordingOrganization?: RecordingOrganization;
   recordingOrganizationFilters?: RecordingOrganizationFilters;
   recordingOrganizationOptions?: RecordingOrganizationOptions;
+  recordingStatus?: ActiveRecordingStatus | null;
+  recordingStatusCounts?: RecordingStatusCounts;
   recordings: RecordingRow[];
   recordingsError?: string | null;
+  recordingsSearchParams?: string;
   recordingsSearchQuery?: string;
   recordingSearchError?: string | null;
   recordingSearchNextHref?: string | null;
@@ -79,7 +91,10 @@ type VosioWorkspaceProps = {
   templateStatus?: "created" | "duplicated" | "error" | "saved" | null;
   trashActionAlert?: string | null;
   trashActionContext?: Record<string, string>;
+  trashNowMs?: number;
+  trashPurgeItemAction?: TrashPurgeItemAction;
   trashPurgeAction?: TrashRecordingAction;
+  trashRestoreBulkAction?: TrashRestoreBulkAction;
   trashRestoreAction?: TrashRecordingAction;
   transcripts: TranscriptRow[];
   transcriptSearchWarning?: boolean;
@@ -141,8 +156,11 @@ export function VosioWorkspace({
   recordingOrganization = { client: null, folder: null, project: null, tags: [] },
   recordingOrganizationFilters = { clientId: null, folderId: null, projectId: null, tagIds: [] },
   recordingOrganizationOptions = { clients: [], folders: [], projects: [], tags: [] },
+  recordingStatus = null,
+  recordingStatusCounts,
   recordings,
   recordingsError = null,
+  recordingsSearchParams = "",
   recordingsSearchQuery = "",
   recordingSearchError = null,
   recordingSearchNextHref = null,
@@ -154,7 +172,10 @@ export function VosioWorkspace({
   templateStatus = null,
   trashActionAlert = null,
   trashActionContext,
+  trashNowMs,
+  trashPurgeItemAction,
   trashPurgeAction,
+  trashRestoreBulkAction,
   trashRestoreAction,
   transcripts,
   transcriptSearchWarning = false,
@@ -214,7 +235,10 @@ export function VosioWorkspace({
               errorCode={recordingsError}
               filters={recordingOrganizationFilters}
               organizationOptions={recordingOrganizationOptions}
+              recordingStatus={recordingStatus}
+              recordingStatusCounts={recordingStatusCounts}
               recordings={recordings}
+              recordingsSearchParams={recordingsSearchParams}
               searchQuery={recordingsSearchQuery}
               searchError={recordingSearchError}
               searchNextHref={recordingSearchNextHref}
@@ -242,7 +266,10 @@ export function VosioWorkspace({
               templateStatus={templateStatus}
               trashActionAlert={trashActionAlert}
               trashActionContext={trashActionContext}
+              trashNowMs={trashNowMs}
+              trashPurgeItemAction={trashPurgeItemAction}
               trashPurgeAction={trashPurgeAction}
+              trashRestoreBulkAction={trashRestoreBulkAction}
               trashRestoreAction={trashRestoreAction}
               usageState={usageState}
               view={view}

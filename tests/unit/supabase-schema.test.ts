@@ -22,6 +22,10 @@ const transcriptSearchMigration = readFileSync(
   join(process.cwd(), "supabase", "migrations", "20260804130000_add_transcript_fulltext_search.sql"),
   "utf8"
 );
+const recordingStatusFiltersMigration = readFileSync(
+  join(process.cwd(), "supabase", "migrations", "20260813000000_add_recording_status_filters.sql"),
+  "utf8"
+);
 
 describe("Supabase schema migrations", () => {
   it("adds ownership and forced RLS for structured AI tables", () => {
@@ -143,6 +147,15 @@ describe("Supabase schema migrations", () => {
     expect(normalizedMigration).toContain(
       "create trigger transcripts_refresh_search_fallback"
     );
+  });
+
+  it("adds status-aware RPC versions without replacing the V1 contracts", () => {
+    expect(recordingOrganizationMigration).toContain("create or replace function public.list_own_recordings_v1(");
+    expect(transcriptSearchMigration).toContain("create or replace function public.search_own_recordings_v1(");
+    expect(recordingStatusFiltersMigration).toContain("create or replace function public.list_own_recordings_v2(");
+    expect(recordingStatusFiltersMigration).toContain("create or replace function public.search_own_recordings_v2(");
+    expect(recordingStatusFiltersMigration).not.toContain("create or replace function public.list_own_recordings_v1(");
+    expect(recordingStatusFiltersMigration).not.toContain("create or replace function public.search_own_recordings_v1(");
   });
 
   it("keeps the baseline aligned with current provider and storage requirements", () => {

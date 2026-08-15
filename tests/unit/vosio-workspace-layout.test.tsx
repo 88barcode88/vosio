@@ -62,6 +62,18 @@ describe("Vosio workspace content area", () => {
     );
   });
 
+  it("keeps the desktop sidebar rail compact while preserving 44px icon targets", () => {
+    expect(baseStyles).toMatch(
+      /\.sidebar\[data-collapsed="true"\][\s\S]*?padding-inline:\s*10px;/u
+    );
+    expect(baseStyles).toMatch(
+      /\.sidebar\[data-collapsed="true"\] :is\(\.nav-item, \.new-recording-button, \.sidebar-support-link\)[\s\S]*?width:\s*44px;[\s\S]*?min-width:\s*44px;/u
+    );
+    expect(baseStyles).toMatch(
+      /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.workspace-shell\s*\{[\s\S]*?transition:\s*none;/u
+    );
+  });
+
   it("defines one shared 44px hit-target contract for real app controls", () => {
     expect(baseStyles).toContain("--control-hit-size: 44px");
     expect(globalsStyles.trimEnd()).toMatch(/@import "\.\/styles\/control-hit-targets\.css";$/u);

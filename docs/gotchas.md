@@ -72,11 +72,15 @@ Výchozí jazyk je uložený v uživatelských Auth metadata a lze ho před konk
 
 ## Theme se musí znát už na serveru
 
-Světlý/tmavý režim nestačí držet jen v `localStorage`, protože první serverový render by vždy poslal tmavý `:root` fallback a světlý režim by po refreshi krátce probliknul. Vosio proto ukládá theme i do cookie `vosio-theme`, kterou `app/layout.tsx` čte před vyrenderováním `<html data-theme="...">`. Klientský init skript dál synchronizuje `localStorage`, aby fungovali i uživatelé, kteří cookie ještě nemají.
+Světlý/tmavý režim nestačí držet jen v `localStorage`, protože první serverový render by vždy poslal tmavý `:root` fallback a světlý režim by po refreshi krátce probliknul. Vosio proto při změně ukládá motiv současně do `localStorage` i cookie `vosio-theme`. `app/layout.tsx` cookie čte před vyrenderováním `<html data-theme="...">`, takže první HTML už obsahuje správný motiv a nepotřebuje hydratační ani veřejný bootstrap skript.
 
-## Systémové prompty se neupravují přímo
+Starší instalace mohly mít motiv pouze v `localStorage`. Když cookie chybí, server označí výchozí HTML jako `data-theme-source="default"` a malá klientská komponenta po hydrataci jednou převede platnou starší hodnotu do cookie. U této jednorázové historické migrace může po prvním načtení nastat jeden přechod motivu; další načtení už používá cookie bez probliknutí. Existující platná cookie má vždy přednost před zastaralým `localStorage`.
 
-`prompt_templates` obsahuje systémové prompty s `is_system = true` a `user_id = null`. RLS je dovoluje číst, ale ne upravovat běžným uživatelem. UI proto u systémového promptu ukládá upravené hodnoty jako vlastní kopii pod aktuálního uživatele; přímý update platí jen pro `is_system = false`.
+## Systémový základ zůstává neměnný
+
+`prompt_templates` obsahuje systémové prompty s `is_system = true` a `user_id = null`. Jejich název, `processing_type`, `prompt_text` originál a `output_schema` se při uživatelské úpravě nepřepisují. `prompt_template_overrides` drží nejvýše jeden vlastní revisioned `prompt_text`; schema sloupec záměrně nemá. Resolver vždy připojí systémové schema, takže read-only pole v UI není bezpečnostní hranice.
+
+Save a reset smějí proběhnout jen přes owner-scoped `SECURITY INVOKER` RPC s `auth.uid()`, forced RLS a expected revision. PostgreSQL `40001` znamená stale edit a musí se zobrazit jako konflikt, ne tiše přepsat novější změnu. Reset pouze nastaví override na inactive a zvýší revizi; staré job snapshots a AI výstupy se nepřepisují.
 
 Nový systémový prompt nestačí vložit jen do databáze, pokud používá nové placeholdery. Server-side renderer v `POST /api/transcripts/{transcriptId}/process` musí umět každý placeholder nahradit, jinak do AI providera odejde doslovný text jako `{{speakers}}` nebo `{{raw_text}}`. Aktuální podporované placeholdery jsou `{{raw_text}}`, `{{segments}}`, `{{speakers}}`, `{{metadata}}`, `{{custom_prompt}}` a starší aliasy `{{transcript_text}}`, `{{transcript}}`, `{{transcript_segments}}`.
 
@@ -92,7 +96,7 @@ Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI 
 
 `transcripts.segments` může obsahovat token-level Soniox JSON s časem a speaker id pro každé slovo. U delších callů to může vytvořit stovky tisíc až milion tokenů, pokud se JSON pošle přímo do AI promptu. AI endpoint proto před renderem promptu používá kompaktní speaker utterances a do metadat přidává, jestli byly segmenty zkrácené. Plný token-level JSON zůstává v DB pro UI přepis, ale providerům se neposílá celý.
 
-Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a pokračuje přes evidence `20260804100000`, organization `20260804110000`, markers `20260804120000`, transcript search `20260804130000` a Trash restore/purge `20260810005550_restore_recordings_from_trash.sql`. Samotná baseline není celý aktuální bootstrap ani kompletní source of truth; tím je pouze celý timestampově seřazený řetězec. Veřejný repozitář stav konkrétní runtime databáze neeviduje, proto před deployem ověř skutečné schema i migration history targetu. Baseline už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
+Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a pokračuje přes evidence `20260804100000`, organization `20260804110000`, markers `20260804120000`, transcript search `20260804130000`, Trash restore/purge `20260810005550_restore_recordings_from_trash.sql`, status filters `20260813000000_add_recording_status_filters.sql`, prompt overrides/job snapshots `20260813090000_add_prompt_overrides_and_job_snapshots.sql` a privilege hardening `20260815073029_harden_prompt_override_privileges.sql`. Samotná baseline není celý aktuální bootstrap ani kompletní source of truth; tím je pouze celý timestampově seřazený řetězec. Veřejný repozitář neeviduje stav konkrétních runtime databází, takže každý target musí projít vlastním apply a postflightem. Baseline už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
 
 ## Strukturované AI tabulky jsou odvozené projekce
 
@@ -128,13 +132,15 @@ Klientské FK mají deferred `NO ACTION`, ne cascade. To záměrně blokuje bě�
 
 `assign_recording_organization_v1` nahrazuje klienta, projekt, složku i kompletní tag set v jedné transakci. Nerozděluj assignment do více browser zápisů, protože chyba u cizího štítku nebo neodpovídajícího projektu by mohla zanechat částečný stav. Forced RLS, owner policies a přesné grants musí být ověřené i dvěma reálnými uživateli; textový security test není runtime důkaz.
 
-Filtr více štítků znamená ALL, nikoli ANY. Bez `q` používá seznam `list_own_recordings_v1`, řadí `created_at desc, id desc` a další stránku omezuje tuple cursorem `(created_at, id)`, protože offset při souběžném insert/delete může řádky přeskočit nebo zopakovat. Všechny keyset stránky musí používat stejné organizační filtry a opakovaný cursor je chyba. Každé neprázdné `q` jde místo tohoto list flow přes samostatné indexed `search_own_recordings_v1`, které používá vlastní `limit/offset` stránkování a stejné organizační filtry. Kanonizace `client/project/folder/tag` nesmí zahodit `q` ani nesouvisející URL parametry; same-URL navigace nesmí vytvořit trvalý loading lock.
+Filtr více štítků znamená ALL, nikoli ANY. V1 RPC `list_own_recordings_v1` a `search_own_recordings_v1` zůstávají pouze pro kompatibilitu; současné UI bezpodmínečně používá `list_own_recordings_v2` bez `q` a `search_own_recordings_v2` s neprázdným `q`. V2 list řadí `created_at desc, id desc` a další stránku omezuje tuple cursorem `(created_at, id)`, protože offset při souběžném insert/delete může řádky přeskočit nebo zopakovat. Všechny keyset stránky musí používat stejné organizační filtry a opakovaný cursor je chyba. V2 search používá vlastní `limit/offset` stránkování a stejné organizační filtry. Kanonizace `client/project/folder/tag/status` nesmí zahodit `q` ani nesouvisející URL parametry; same-URL navigace nesmí vytvořit trvalý loading lock.
 
 Breakpoint viewportu sám nestačí pro geometrii inboxu uvnitř desktopového workspace. Například viewport 901 px nechá po 248px sidebaru a shell gutters panel široký jen přibližně 599 px, takže pevné desktopové metadata tracky by kolidovaly s akcemi. Řádky proto používají container query nad skutečnou šířkou `.recordings-inbox`: do 680 px obsahové šířky přecházejí na karty, zatímco 1024px a 1440px shell zůstává v desktopovém režimu. Browser regresi měř ve skutečném shellu a ověř zvlášť hlavní obsah, action track i pending/failure stav, ne pouze celkový `scrollWidth`.
 
 ## Forward migrace jsou release blocker
 
-Pořadí releasu je evidence `10000`, organization `11000`, markers `12000`, search `13000`, DB postflight každé cílové databáze a teprve potom deploy aplikace. Veřejný Git stav není důkazem, že konkrétní target migrace aplikoval. U neověřeného targetu musí postflight zkontrolovat skutečné sloupce/tabulky/funkce/trigger, PostgreSQL syntaxi, GIN index a authenticated `EXPLAIN`, constrainty, grants, forced RLS, anon-vs-auth a dvouuživatelskou izolaci, current-vs-old transcript výběr, manual/raw/deleted search, runtime keyset/offset stránkování a potřebný backfill. Nikdy nezaměňuj `npm test`, `check` nebo `build` za důkaz stavu vzdálené databáze.
+Forward migrace jsou na každém targetu release blocker, dokud není samostatně ověřené jejich pořadí, skutečné schema, granty, forced RLS, datové invarianty a migration history. Legacy historii nemaž, neresetuj ani zpětně neoznačuj bez samostatně schváleného reconciliation plánu. Git release ani DB postflight samy o sobě nejsou tvrzením o deployi aplikace.
+
+Neověřené zůstává skutečné two-user runtime RLS, úplná auth-user cascade, authenticated GIN `EXPLAIN` a current-vs-old/manual/raw/deleted search behavior. `npm test`, `check` ani `build` tyto DB runtime mezery nepotvrzují.
 
 ## License marker není tracking
 
@@ -146,7 +152,7 @@ Vosio obsahuje pasivní `vosio-license-marker` v HTML metadatech pro rozpoznán�
 
 `transcript_search_chunks` musí být synchronizované se stejnými renderovatelnými speaker bloky jako UI. Bez speaker bloků patří do indexu jeden raw/manual fallback bez času; trigger ho zapíše v transcript transakci a service-only replace ho při úspěchu atomicky nahradí přesnými chunks. Když přesné indexování selže, uložený transcript se nesmí rollbacknout ani smazat. Zůstane raw fallback a uživatel dostane one-shot warning. Warning se z URL odstraňuje pouze přes `history.replaceState`; nesmí zahodit jiné query parametry ani vytvořit novou history položku.
 
-Vyhledávání s `q` stránkuje po 25 výsledcích pomocí bounded page + RPC offsetu. Běžný seznam bez `q` dál používá keyset `(created_at, id)`. Backfill používá třetí, vzestupný keyset podle transcript UUID. `npm run search:backfill` vyžaduje explicitní environment a live guard; v tomto plánu ho **nespouštět**, protože nebyl schválen žádný DB zápis.
+Vyhledávání s `q` stránkuje po 25 výsledcích pomocí bounded page + RPC offsetu. Běžný seznam bez `q` dál používá keyset `(created_at, id)`. Backfill script používá třetí, vzestupný keyset podle transcript UUID. Samostatné spuštění `npm run search:backfill` je vždy target-specific provozní krok; migrace `13000` už obsahuje inline raw fallback backfill.
 
 Deep link z výsledku má tvar `tab=transcript&at&highlight`. Čas vybírá obsahující blok, potom následující a až nakonec předchozí; raw transcript může použít vlastní anchor. Highlight-only odkaz je bezpečný jen při jediném výskytu v celém renderovatelném transcriptu. Nejednoznačnost nebo chybějící text musí skončit bez highlightu, ne prvním náhodným výskytem. URL deep link nikdy nevytváří autoplay: `single` audio smí dostat nejvýše jeden seek bez play, `none` a `segmented` pouze scroll/highlight. Po spotřebování se mažou jen `at` a `highlight`, `tab`, ostatní query a browser history state zůstávají.
 
@@ -226,6 +232,10 @@ Vosio žádá Soniox o speaker diarization přes `enable_speaker_diarization: tr
 
 `transcripts.speakers` ukládá souhrn speaker ID, počet tokenů, volitelné ručně zadané jméno a obchodní roli. Soniox neumí říct, jestli je mluvčí klient nebo dodavatel; obchodní role musí vzniknout ručním přiřazením nebo AI inference nad kontextem a musí být označená jako taková. AI processing dostává `speaker_context` z tohoto JSONu, takže ručně potvrzená jména a role se mají promítnout do úkolů, meeting notes a dalších výstupů.
 
+Jména mluvčích se ukládají po changed blur a role okamžitě po změně. Jeden mounted detail používá jedinou promise queue pro všechny mluvčí, protože každý request čte a přepisuje celé `transcripts.speakers`. Per-speaker revisions ignorují stale settlement; failed save zachová draft a retry odešle nejnovější snapshot. Durable save dál volá `replaceTranscriptSearchChunks`, takže chyba indexu je nefatální warning po uloženém speaker JSONu.
+
+The browser queue prevents lost speaker updates originating from one mounted recording detail. It is not a database lock and cannot serialize another tab, device, or external writer. Cross-client atomic speaker patching requires a future row-locking PostgreSQL RPC; until then, avoid editing the same transcript speakers concurrently in multiple clients.
+
 Aktivní tab detailu nahrávky se ukládá do `localStorage` i do cookie `vosio-active-recording-tab` ve tvaru `{recording_id}:{tab}`. Cookie je server-readable a brání viditelnému přeskoku z výchozího tabu `Přepis` po refreshi. Pokud cookie chybí, aplikace může ještě použít starší `localStorage` hodnotu po hydraci; po dalším kliknutí na tab se cookie doplní.
 
 ## Nepřenášet transcripty přes shell stránky
@@ -272,9 +282,11 @@ Vosio nastavuje v `next.config.ts` základní bezpečnostní hlavičky (`X-Conte
 
 `src/lib/env.server.ts` a `src/lib/supabase/admin.ts` importují `server-only`, aby omylný import do client komponenty selhal už při buildu. Balíček `server-only` ale vyhazuje i v plain Node prostředí bez `react-server` condition — tedy i ve Vitest. Proto `vitest.config.ts` aliasuje `server-only` na prázdný stub `tests/stubs/server-only.ts`. Když přidáš `import "server-only"` do dalšího modulu testovaného unit testy, nic dalšího nastavovat nemusíš; alias platí globálně.
 
-## Kopie systémového promptu nesmí věřit formuláři
+## Prompt override nesmí věřit formuláři
 
-Read-only input ve formuláři není bezpečnostní hranice. Uživatel může `FormData` změnit ručně. Akce pro kopii systémového promptu proto přijímá pouze UUID, znovu načte řádek přes authenticated RLS klienta s `id` a `is_system = true` a kopíruje výhradně načtené hodnoty. Název, prompt, processing type ani output schema z formuláře se při této akci nepoužijí.
+Read-only input ve formuláři není bezpečnostní hranice. Uživatel může `FormData` změnit ručně. Save action proto přijímá jen systémové UUID, expected revision a `prompt_text`; reset jen UUID a revizi. Processing type, název, `output_schema` ani `user_id` se z browseru do RPC neposílají. Quick-action processing endpoint navíc přijímá pouze processing type a model a effective prompt řeší server-side.
+
+Prompt snapshot sloupce nelze přidat jako čistý contract krok, pokud ještě běží starší app insert, který zná jen `prompt_id`. Migrace `130900` proto obsahuje expand-kompatibilní `BEFORE INSERT` trigger, který starému payloadu doplní autoritativní snapshot ještě před `NOT NULL` a exact-snapshot checkem, ale již úplný payload nového buildu zachová. Následující migrace `15073029` zužuje zděděné tabulkové granty, odebírá browser-role `EXECUTE` validační funkce a přidává reverse-FK index. Každý target musí po apply ověřit oba insert kontrakty, přesný ACL, validní index a nezměněné datové invarianty.
 
 Form action vytvoří odesílaný `FormData` snapshot ještě před serverovým settlementem. Během pending stavu proto musí zůstat fieldset i prompt navigace zamknuté; jinak může uživatel vidět novější draft, i když server uložil starší snapshot. Failure editor odemkne a ponechá přesně rozepsaná data.
 
@@ -294,3 +306,11 @@ Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čt
 `outputLanguage`, `audioRetentionPolicy`, `autoProcessAfterTranscription`, `autoProcessingTypes` a `aiTemperature` zůstávají kvůli zpětné kompatibilitě uložené v Auth metadata, ale současný runtime je nepoužívá. UI je proto nesmí prezentovat jako funkční ovládání, dokud neexistuje skutečná server/worker cesta.
 
 `/settings` je jeden dokument: na desktopu scrolluje pouze `.content-area` s `content-area-document`; na mobilu do 900 px je `.content-area` `overflow: visible` a scrolluje dokument nad fixed spodní navigací. Do Settings nepřidávat druhý scroll container ani sticky section navigation.
+
+## Stavové facety nejsou počty aktuální stránky
+
+Stavové počty na `/recordings` vznikají přes `count_own_recording_statuses_v1`: přesné facety pokrývají celý aktuální `q`, organizační filtry klienta/projektu/složky a ALL sadu štítků. Facety ignorují aktivní `status`, aby šlo jedním kliknutím přepnout na jiný stav; `Smazáno` je samostatný úplný počet Koše. Filtrování jedné 25řádkové search stránky v Reactu by rozbilo `total_count` a stránkování.
+
+## Hromadný purge není jeden serverový request
+
+Klientský bulk purge spouští pro každý vybraný záznam samostatnou server mutation a drží nejvýše dvě souběžně. Jeden Vercel request proto nikdy nestránkuje ani nemaže Storage pro více nahrávek. Každá položka samostatně zachovává 24hodinový upload fence, owner plus recording path validaci, purge claim, heartbeat a bounded late cleanup. Zastavení fronty neukončuje již běžící jeden nebo dva requesty; zabrání pouze spuštění zbývajících ID. UI průběžně skládá partial result a úspěch jedné položky nesmí skrýt jinou položku, která selhala nebo ještě nebyla spuštěna.

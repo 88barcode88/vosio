@@ -1,16 +1,12 @@
-import { Plus } from "lucide-react";
 import Link from "next/link";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { LiveRecordingRecoveryPanel } from "@/components/live-recording-recovery-panel";
 import { SearchResultExcerpt } from "@/components/search-result-excerpt";
-import { Disclosure } from "@/components/ui/disclosure";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Panel } from "@/components/ui/panel";
 import { StatusBadge } from "@/components/ui/status-badge";
-import {
-  OrganizationManager,
-  type OrganizationManagerActions
-} from "@/components/workspace/organization-manager";
+import type { OrganizationManagerActions } from "@/components/workspace/organization-manager";
+import { OrganizationManagerDrawer } from "@/components/workspace/organization-manager-drawer";
 import { RecordingFilters } from "@/components/workspace/recording-filters";
 import { RecordingsSearchErrorActions } from "@/components/workspace/recordings-search-error-actions";
 import { RecordingTitleEditor } from "@/components/workspace/recording-title-editor";
@@ -24,26 +20,20 @@ import {
   type RecordingOrganizationFilters
 } from "@/lib/recording-organization/filters";
 import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
+import { buildRecordingStatusSearchParams } from "@/lib/recordings/list-filters";
+import type { RecordingStatusCounts } from "@/lib/recordings/queries";
 import { buildRecordingSearchResultHref } from "@/lib/recordings/search";
 import {
+  activeRecordingStatuses,
   formatFileSize,
   formatRecordingDate,
   getStatusLabel,
+  type ActiveRecordingStatus,
   type RecordingRow,
   type RecordingSearchPage,
   type RecordingSearchResult,
   type RecordingStatus
 } from "@/lib/recordings/types";
-
-const statusOrder: RecordingStatus[] = [
-  "created",
-  "uploading",
-  "uploaded",
-  "transcribing",
-  "completed",
-  "failed",
-  "deleted"
-];
 
 // getRecordingsErrorMessage maps recordings URL errors into compact Czech UI copy.
 function getRecordingsErrorMessage(errorCode: string | null) {
@@ -96,27 +86,43 @@ function getRecordingOrganizationMeta(
   ].filter((value): value is string => Boolean(value)).join(" · ");
 }
 
-// RecordingStatusSummary renders all persisted statuses as one compact, scan-friendly line.
+// toRecordingsHref serializes a canonical recordings filter URL without a trailing question mark.
+function toRecordingsHref(params: URLSearchParams) {
+  const query = params.toString();
+  return query ? `/recordings?${query}` : "/recordings";
+}
+
+// RecordingStatusSummary renders URL-backed active status facets plus the complete Trash count.
 function RecordingStatusSummary({
-  records,
-  total
+  activeStatus,
+  counts,
+  searchParams
 }: {
-  records: Array<{ status: RecordingStatus }>;
-  total: number;
+  activeStatus: ActiveRecordingStatus | null;
+  counts: RecordingStatusCounts;
+  searchParams: URLSearchParams;
 }) {
-  const counts = getRecordingCounts(records);
+  const total = activeRecordingStatuses.reduce((sum, status) => sum + counts[status], 0);
 
   return (
-    <div className="recordings-status-summary" aria-label="Stavy nahrávek" role="group">
-      <span className="recordings-status-total"><strong>{total}</strong> celkem</span>
-      <div className="recordings-status-segments">
-        {statusOrder.map((status) => (
-          <span className="recordings-status-segment" key={status}>
-            {getStatusLabel(status)} <strong>{counts[status]}</strong>
-          </span>
-        ))}
-      </div>
-    </div>
+    <nav className="recordings-status-summary" aria-label="Filtrovat podle stavu">
+      <Link
+        aria-current={activeStatus === null ? "page" : undefined}
+        href={toRecordingsHref(buildRecordingStatusSearchParams(searchParams, null))}
+      >
+        Celkem <strong>{total}</strong>
+      </Link>
+      {activeRecordingStatuses.map((status) => (
+        <Link
+          aria-current={activeStatus === status ? "page" : undefined}
+          href={toRecordingsHref(buildRecordingStatusSearchParams(searchParams, status))}
+          key={status}
+        >
+          {getStatusLabel(status)} <strong>{counts[status]}</strong>
+        </Link>
+      ))}
+      <Link href="/trash">Smazáno <strong>{counts.deleted}</strong></Link>
+    </nav>
   );
 }
 
@@ -221,7 +227,10 @@ export function RecordingsManager({
   filters,
   organizationActions,
   organizationOptions,
+  recordingStatus = null,
+  recordingStatusCounts,
   recordings,
+  recordingsSearchParams = "",
   searchError = null,
   searchNextHref = null,
   searchPage = null,
@@ -232,7 +241,10 @@ export function RecordingsManager({
   filters: RecordingOrganizationFilters;
   organizationActions?: OrganizationManagerActions;
   organizationOptions: RecordingOrganizationOptions;
+  recordingStatus?: ActiveRecordingStatus | null;
+  recordingStatusCounts?: RecordingStatusCounts;
   recordings: RecordingRow[];
+  recordingsSearchParams?: string;
   searchError?: string | null;
   searchNextHref?: string | null;
   searchPage?: RecordingSearchPage | null;
@@ -240,13 +252,14 @@ export function RecordingsManager({
   searchQuery: string;
 }) {
   const hasActiveQuery = Boolean(
-    searchQuery || filters.clientId || filters.projectId || filters.folderId || filters.tagIds.length
+    recordingStatus || searchQuery || filters.clientId || filters.projectId || filters.folderId || filters.tagIds.length
   );
   const errorMessage = getRecordingsErrorMessage(errorCode);
   const clientGroups = groupRecordingsByClient(recordings, organizationOptions);
   const filterKey = JSON.stringify([searchQuery, filters.clientId, filters.projectId, filters.folderId, filters.tagIds]);
   const statusRecords = searchQuery && searchPage ? searchPage.results : recordings;
-  const statusTotal = statusRecords.length;
+  const statusCounts = recordingStatusCounts ?? getRecordingCounts(statusRecords);
+  const statusSearchParams = new URLSearchParams(recordingsSearchParams);
 
   return (
     <Panel className="recordings-inbox" aria-label="Správa nahrávek">
@@ -255,20 +268,9 @@ export function RecordingsManager({
           <h1>Nahrávky</h1>
           <p>Najděte uložený hovor, zkontrolujte jeho stav a pokračujte do přepisu.</p>
         </div>
-        <Link className="recordings-header-new" href="/recordings/new">
-          <Plus aria-hidden="true" size={16} />
-          Nová nahrávka
-        </Link>
       </div>
       {errorMessage ? <p className="recordings-alert" role="alert">{errorMessage}</p> : null}
-      <Disclosure
-        className="recordings-management-disclosure"
-        keepMounted
-        label="Správa organizace"
-        triggerLabel="Spravovat"
-      >
-        <OrganizationManager actions={organizationActions} options={organizationOptions} />
-      </Disclosure>
+      <OrganizationManagerDrawer actions={organizationActions} options={organizationOptions} />
       <LiveRecordingRecoveryPanel />
       <RecordingFilters
         filters={filters}
@@ -281,7 +283,13 @@ export function RecordingsManager({
           Filtrovaný výsledek: {formatRecordingResultCount(recordings.length)}.
         </p>
       ) : null}
-      {!searchError ? <RecordingStatusSummary records={statusRecords} total={statusTotal} /> : null}
+      {!searchError ? (
+        <RecordingStatusSummary
+          activeStatus={recordingStatus}
+          counts={statusCounts}
+          searchParams={statusSearchParams}
+        />
+      ) : null}
       {searchQuery && searchPage ? (
         <RecordingSearchResults
           error={searchError}

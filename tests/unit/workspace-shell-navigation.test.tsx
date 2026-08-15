@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MobileNav } from "@/components/workspace-navigation";
 import { WorkspaceSidebar } from "@/components/workspace/sidebar";
 
+const uiDirectionSource = readFileSync("docs/requirements/ui-direction.md", "utf8");
+
 let container: HTMLDivElement;
 let pathname = "/recordings";
 let root: Root;
@@ -61,6 +63,38 @@ afterEach(async () => {
 });
 
 describe("Notion Warm application shell navigation", () => {
+  it("keeps the documented desktop and mobile prompt label aligned with the stable route", () => {
+    expect(uiDirectionSource).toContain("`AI prompty` (`/templates`)");
+    expect(uiDirectionSource).toContain("`Nahrávky`, `Nová`, `AI prompty`, `Nastavení`, `Více`");
+    expect(uiDirectionSource).not.toContain("`Nahrávky`, `Nová`, `Prompty`, `Nastavení`, `Více`");
+  });
+
+  it("collapses the desktop sidebar, persists the preference and restores it after remount", async () => {
+    await act(async () => {
+      root.render(<WorkspaceSidebar activeView="recordings" userEmail="uzivatel@example.cz" />);
+    });
+
+    const collapseButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Sbalit postranní lištu"]'
+    );
+    await click(collapseButton);
+
+    expect(container.querySelector(".sidebar")?.getAttribute("data-collapsed")).toBe("true");
+    expect(window.localStorage.getItem("vosio-sidebar-collapsed")).toBe("true");
+    expect(container.querySelector('.nav-item[aria-label="Nahrávky"]')).not.toBeNull();
+    expect(container.querySelector('.new-recording-button[aria-label="Nová nahrávka"]')).not.toBeNull();
+    expect(collapseButton?.getAttribute("aria-expanded")).toBe("false");
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => {
+      root.render(<WorkspaceSidebar activeView="recordings" userEmail="uzivatel@example.cz" />);
+    });
+
+    expect(container.querySelector(".sidebar")?.getAttribute("data-collapsed")).toBe("true");
+    expect(container.querySelector('button[aria-label="Rozbalit postranní lištu"]')).not.toBeNull();
+  });
+
   it("keeps desktop primary and utility navigation separate without a global AI item", async () => {
     const navigationHrefOverrides = {
       "/documentation": "/fixture/documentation",
@@ -85,12 +119,13 @@ describe("Notion Warm application shell navigation", () => {
     const utility = container.querySelector("nav[aria-label='Nástroje workspace']");
 
     expect(Array.from(primary?.querySelectorAll("a") ?? [], (link) => link.textContent?.trim()))
-      .toEqual(["Nahrávky", "Prompty"]);
+      .toEqual(["Nahrávky", "AI prompty"]);
     expect(Array.from(utility?.querySelectorAll("a") ?? [], (link) => link.textContent?.trim()))
       .toEqual(["Koš", "Nastavení", "Dokumentace"]);
     expect(container.textContent).not.toContain("AI zpracování");
     expect(container.querySelector("a[href='/fixture/recordings']")?.textContent).toContain("Nahrávky");
-    expect(container.querySelector("a[href='/fixture/templates']")?.textContent).toContain("Prompty");
+    expect(container.querySelector("a[href='/fixture/templates']")?.textContent).toContain("AI prompty");
+    expect(container.querySelector("a[href='/fixture/templates']")?.textContent).not.toBe("Prompty");
     expect(container.querySelector("a[href='/fixture/trash']")?.textContent).toContain("Koš");
     expect(container.querySelector("a[href='/fixture/settings']")?.textContent).toContain("Nastavení");
     expect(container.querySelector("a[href='/fixture/documentation']")?.textContent).toContain("Dokumentace");
@@ -126,7 +161,7 @@ describe("Notion Warm application shell navigation", () => {
     expect(getDirectNavigationLabels()).toEqual([
       "Nahrávky",
       "Nová",
-      "Prompty",
+      "AI prompty",
       "Nastavení",
       "Více"
     ]);
@@ -220,6 +255,7 @@ describe("Notion Warm application shell navigation", () => {
     const responsiveStyles = readFileSync(resolve(process.cwd(), "app/styles/responsive.css"), "utf8");
 
     expect(baseStyles).toMatch(/\.workspace-shell\s*\{[\s\S]*?grid-template-columns:\s*24[0-9]px minmax\(0, 1fr\);/u);
+    expect(baseStyles).toMatch(/\.workspace-shell:has\(\.sidebar\[data-collapsed="true"\]\)\s*\{[\s\S]*?grid-template-columns:\s*64px minmax\(0, 1fr\);/u);
     expect(baseStyles).toMatch(/\.workspace-shell\s*\{[\s\S]*?overflow-x:\s*clip;/u);
     expect(responsiveStyles).toMatch(/@media \(max-width:\s*900px\)[\s\S]*?\.sidebar\s*\{[\s\S]*?display:\s*none;/u);
     expect(responsiveStyles).toMatch(/\.mobile-nav\s*\{[\s\S]*?grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/u);

@@ -41,7 +41,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/lib/transcripts/actions", () => ({
-  updateTranscriptSpeakerAction: vi.fn(async () => undefined)
+  saveTranscriptSpeakerAutosaveAction: vi.fn(async () => undefined)
 }));
 
 let container: HTMLDivElement | null;

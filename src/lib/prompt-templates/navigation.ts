@@ -1,6 +1,5 @@
 export type PromptTemplateNavigationState =
   | { kind: "list" }
-  | { kind: "create" }
   | { kind: "selected"; templateId: string };
 
 // createPromptTemplateSearchParams preserves repeatable values from a Next.js query object.
@@ -18,7 +17,7 @@ export function createPromptTemplateSearchParams(
   return searchParams;
 }
 
-// canonicalizePromptTemplateSearchParams accepts one selected template or the explicit create mode.
+// canonicalizePromptTemplateSearchParams accepts only one selected system template or the list surface.
 export function canonicalizePromptTemplateSearchParams(
   current: URLSearchParams,
   knownTemplateIds: Set<string>
@@ -36,13 +35,6 @@ export function canonicalizePromptTemplateSearchParams(
   ) {
     state = { kind: "selected", templateId: templateValues[0]! };
     valid = true;
-  } else if (
-    templateValues.length === 0
-    && modeValues.length === 1
-    && modeValues[0] === "create"
-  ) {
-    state = { kind: "create" };
-    valid = true;
   }
 
   if (!valid) {
@@ -56,14 +48,13 @@ export function canonicalizePromptTemplateSearchParams(
 // buildPromptTemplateHref keeps fixture or production base params while selecting one editor state.
 export function buildPromptTemplateHref(
   baseHref: string,
-  state: Exclude<PromptTemplateNavigationState, { kind: "list" }>
+  state: Extract<PromptTemplateNavigationState, { kind: "selected" }>
 ) {
   const url = new URL(baseHref, "https://vosio.local");
   url.searchParams.delete("template");
   url.searchParams.delete("mode");
 
-  if (state.kind === "create") url.searchParams.set("mode", "create");
-  if (state.kind === "selected") url.searchParams.set("template", state.templateId);
+  url.searchParams.set("template", state.templateId);
 
   return `${url.pathname}${url.search}`;
 }

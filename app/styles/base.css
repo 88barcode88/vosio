@@ -102,6 +102,10 @@ a {
   overflow-x: clip;
   padding: 0;
   gap: 0;
+  transition: grid-template-columns 160ms ease-out;
+}
+.workspace-shell:has(.sidebar[data-collapsed="true"]) {
+  grid-template-columns: 64px minmax(0, 1fr);
 }
 .sidebar,
 .content-area,
@@ -126,6 +130,44 @@ a {
   border-radius: 0;
   box-shadow: none;
   padding: 16px 12px;
+}
+.sidebar[data-collapsed="true"] {
+  align-items: center;
+  padding-inline: 10px;
+}
+.sidebar[data-collapsed="true"] :is(.navigation-label, .brand-block strong, .user-card > div:nth-child(2)) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.sidebar[data-collapsed="true"] :is(.nav-item, .new-recording-button, .sidebar-support-link) {
+  width: 44px;
+  min-width: 44px;
+  border-radius: 6px;
+  padding: 0;
+  justify-content: center;
+}
+.sidebar[data-collapsed="true"] :is(.nav-list, .sidebar-utility-nav) {
+  width: 44px;
+}
+.sidebar[data-collapsed="true"] .brand-block {
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.sidebar[data-collapsed="true"] .brand-block > div {
+  width: 44px;
+  justify-content: center;
+}
+.sidebar[data-collapsed="true"] .user-card {
+  grid-template-columns: 44px;
+  width: 44px;
+  gap: 4px;
+  justify-items: center;
+  padding: 4px 0;
 }
 select option {
   color: var(--text);
@@ -158,6 +200,26 @@ select:focus-visible {
   align-items: center;
   min-width: 0;
   gap: 10px;
+}
+.sidebar-collapse-button {
+  display: grid;
+  place-items: center;
+  align-self: flex-end;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+}
+.sidebar-collapse-button:hover {
+  color: var(--text);
+  background: var(--panel-soft);
+}
+.sidebar[data-collapsed="true"] .sidebar-collapse-button {
+  align-self: center;
 }
 .brand-logo,
 .brand-mark,
@@ -554,4 +616,9 @@ select:focus-visible {
   color: #ffd5d5;
   border-color: rgba(255, 105, 105, 0.48);
   background: rgba(255, 105, 105, 0.1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-shell {
+    transition: none;
+  }
 }

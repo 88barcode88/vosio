@@ -33,7 +33,7 @@ export type NavigationHrefOverrides = Readonly<Partial<Record<WorkspaceNavigatio
 
 export const primaryNavigationItems: NavigationItem[] = [
   { href: "/recordings", label: "Nahrávky", icon: FileAudio, view: "recordings" },
-  { href: "/templates", label: "Prompty", icon: FileText, view: "templates" }
+  { href: "/templates", label: "AI prompty", icon: FileText, view: "templates" }
 ];
 
 export const utilityNavigationItems: NavigationItem[] = [
@@ -57,4 +57,4 @@ export const quickActions = [
   { label: "Zápis ze schůzky", icon: CalendarCheck, processingType: "meeting_minutes" },
   { label: "CRM poznámka", icon: BriefcaseBusiness, processingType: "crm_note" },
   { label: "E-mail po hovoru", icon: Mail, processingType: "follow_up_email" }
-];
+] as const;

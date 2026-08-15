@@ -1,165 +1,128 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { useRouter } from "next/navigation";
-import { Copy, FilePlus2, LockKeyhole, PencilLine } from "lucide-react";
+import { PencilLine, RotateCcw } from "lucide-react";
 import {
-  createPromptTemplateAction,
-  duplicatePromptTemplateAction,
-  updatePromptTemplateAction
+  resetPromptOverrideAction,
+  savePromptOverrideAction,
 } from "@/lib/prompt-templates/actions";
 import {
   createInitialPromptTemplateActionState,
-  type PromptTemplateActionState
+  type PromptTemplateActionState,
 } from "@/lib/prompt-templates/action-state";
+import type { QuickPromptProcessingType } from "@/lib/prompt-templates/effective";
 import {
   buildPromptTemplateHref,
-  type PromptTemplateNavigationState
+  type PromptTemplateNavigationState,
 } from "@/lib/prompt-templates/navigation";
-import type { PromptTemplateRow } from "@/lib/prompt-templates/types";
+import type { EffectivePromptTemplate } from "@/lib/prompt-templates/types";
 
-const processingTypeOptions = [
-  { label: "Shrnutí", value: "summary" },
-  { label: "Úkoly", value: "action_items" },
-  { label: "Zápis ze schůzky", value: "meeting_minutes" },
-  { label: "Časová osa", value: "timeline_chapters" },
-  { label: "Strukturovaná extrakce", value: "structured_extraction" },
-  { label: "CRM poznámka", value: "crm_note" },
-  { label: "E-mail po hovoru", value: "follow_up_email" },
-  { label: "Vlastní prompt", value: "custom_prompt" }
-] as const;
+const processingTypeLabels: Record<QuickPromptProcessingType, string> = {
+  summary: "Shrnutí",
+  action_items: "Úkoly",
+  timeline_chapters: "Časová osa",
+  meeting_minutes: "Zápis ze schůzky",
+  crm_note: "CRM poznámka",
+  follow_up_email: "E-mail po hovoru",
+};
+
+const resetConfirmation = "Obnovit tento AI prompt na systémové nastavení? Vaše úprava zůstane pouze v historii již vytvořených AI výstupů.";
 
 export type PromptTemplateAction = (
   state: PromptTemplateActionState,
-  formData: FormData
+  formData: FormData,
 ) => Promise<PromptTemplateActionState>;
 
 export type PromptTemplateActions = {
-  create: PromptTemplateAction;
-  duplicate: PromptTemplateAction;
-  update: PromptTemplateAction;
+  saveOverride: PromptTemplateAction;
+  resetOverride: PromptTemplateAction;
 };
 
 const defaultActions: PromptTemplateActions = {
-  create: createPromptTemplateAction,
-  duplicate: duplicatePromptTemplateAction,
-  update: updatePromptTemplateAction
+  saveOverride: savePromptOverrideAction,
+  resetOverride: resetPromptOverrideAction,
 };
 
-// formatOutputSchema renders JSONB schema values for textarea editing.
-function formatOutputSchema(schema: unknown) {
-  if (schema === null || typeof schema === "undefined") return "";
-  return JSON.stringify(schema, null, 2);
-}
-
-// getProcessingTypeLabel maps prompt identifiers to compact Czech labels.
-function getProcessingTypeLabel(processingType: string) {
-  return processingTypeOptions.find((option) => option.value === processingType)?.label
-    ?? processingType;
-}
-
-// PromptTemplateEditor renders the real desktop master-detail and mobile list/editor workspace.
+// PromptTemplateEditor renders one effective editor for each authoritative quick-action prompt.
 export function PromptTemplateEditor({
   actions = defaultActions,
   baseHref = "/templates",
   navigationState,
-  promptTemplates
+  promptTemplates,
 }: {
   actions?: PromptTemplateActions;
   baseHref?: string;
   navigationState: PromptTemplateNavigationState;
-  promptTemplates: PromptTemplateRow[];
+  promptTemplates: EffectivePromptTemplate[];
 }) {
   const [isEditorPending, setIsEditorPending] = useState(false);
-  const userTemplates = promptTemplates.filter((template) => !template.is_system);
-  const systemTemplates = promptTemplates.filter((template) => template.is_system);
   const selectedTemplate = navigationState.kind === "selected"
-    ? promptTemplates.find((template) => template.id === navigationState.templateId) ?? null
+    ? promptTemplates.find((template) => template.systemPromptId === navigationState.templateId) ?? null
     : null;
 
   return (
     <div
-      className={`prompt-workspace ${navigationState.kind === "list" ? "prompt-workspace-list" : "prompt-workspace-editor"}`}
       aria-busy={isEditorPending ? "true" : undefined}
+      className={`prompt-workspace ${navigationState.kind === "list" ? "prompt-workspace-list" : "prompt-workspace-editor"}`}
       data-prompt-surface={navigationState.kind}
     >
-      <aside className="prompt-master" aria-label="Seznam promptů">
+      <aside className="prompt-master" aria-label="Seznam AI promptů">
         <div className="prompt-master-toolbar">
           <div>
-            <strong>Šablony</strong>
-            <span>{userTemplates.length} vlastních · {systemTemplates.length} systémových</span>
+            <strong>AI prompty</strong>
+            <span>{promptTemplates.length} rychlých akcí</span>
           </div>
-          <Link
-            aria-disabled={isEditorPending ? "true" : undefined}
-            className="prompt-new-link"
-            href={buildPromptTemplateHref(baseHref, { kind: "create" })}
-            onClick={(event) => blockPendingNavigation(event, isEditorPending)}
-            tabIndex={isEditorPending ? -1 : undefined}
-          >
-            <FilePlus2 aria-hidden="true" size={16} />
-            Nový
-          </Link>
         </div>
-        <PromptTemplateList
-          baseHref={baseHref}
-          heading="Vlastní prompty"
-          selectedId={selectedTemplate?.id ?? null}
-          templates={userTemplates}
-          navigationLocked={isEditorPending}
-        />
-        <PromptTemplateList
-          baseHref={baseHref}
-          heading="Systémová knihovna"
-          selectedId={selectedTemplate?.id ?? null}
-          templates={systemTemplates}
-          navigationLocked={isEditorPending}
-        />
+        <section className="prompt-master-group">
+          <h2>Existující AI tlačítka</h2>
+          {promptTemplates.map((template) => (
+            <Link
+              aria-current={selectedTemplate?.systemPromptId === template.systemPromptId ? "page" : undefined}
+              aria-disabled={isEditorPending ? "true" : undefined}
+              className={selectedTemplate?.systemPromptId === template.systemPromptId
+                ? "prompt-master-row prompt-master-row-active"
+                : "prompt-master-row"}
+              href={buildPromptTemplateHref(baseHref, {
+                kind: "selected",
+                templateId: template.systemPromptId,
+              })}
+              key={template.systemPromptId}
+              onClick={(event) => blockPendingNavigation(event, isEditorPending)}
+              tabIndex={isEditorPending ? -1 : undefined}
+            >
+              <strong>{getProcessingTypeLabel(template.processingType)}</strong>
+              <span>{template.isModified ? "Upravený" : "Výchozí"}</span>
+            </Link>
+          ))}
+        </section>
       </aside>
 
-      <section className="prompt-editor-surface" aria-label="Editor promptu">
-        {navigationState.kind !== "list" ? (
+      <section className="prompt-editor-surface" aria-label="Editor AI promptu">
+        {selectedTemplate ? (
           <Link
             aria-disabled={isEditorPending ? "true" : undefined}
             className="prompt-mobile-back"
             href={stripEditorState(baseHref)}
             onClick={(event) => blockPendingNavigation(event, isEditorPending)}
             tabIndex={isEditorPending ? -1 : undefined}
-          >← Zpět na prompty</Link>
+          >← Zpět na AI prompty</Link>
         ) : null}
-        {navigationState.kind === "create" ? (
-          <PromptTemplateForm
-            action={actions.create}
-            baseHref={baseHref}
-            heading="Nový vlastní prompt"
-            key="create"
-            mode="create"
+        {selectedTemplate ? (
+          <EffectivePromptForm
+            key={`${selectedTemplate.systemPromptId}:${selectedTemplate.source}:${selectedTemplate.revision}`}
             onPendingChange={setIsEditorPending}
-            template={null}
-          />
-        ) : selectedTemplate?.is_system ? (
-          <SystemPromptView
-            action={actions.duplicate}
-            baseHref={baseHref}
-            onPendingChange={setIsEditorPending}
-            template={selectedTemplate}
-          />
-        ) : selectedTemplate ? (
-          <PromptTemplateForm
-            action={actions.update}
-            baseHref={baseHref}
-            heading={selectedTemplate.name}
-            key={selectedTemplate.id}
-            mode="edit"
-            onPendingChange={setIsEditorPending}
+            resetAction={actions.resetOverride}
+            saveAction={actions.saveOverride}
             template={selectedTemplate}
           />
         ) : (
           <div className="prompt-editor-empty">
             <PencilLine aria-hidden="true" size={20} />
-            <strong>Vyberte prompt</strong>
-            <p>Otevřete vlastní prompt pro úpravu nebo systémový prompt pro vytvoření kopie.</p>
+            <strong>Vyberte AI prompt</strong>
+            <p>Upravte instrukce, které používá jedno z existujících AI tlačítek.</p>
           </div>
         )}
       </section>
@@ -167,224 +130,154 @@ export function PromptTemplateEditor({
   );
 }
 
-// PromptTemplateList renders one semantic group in the master column.
-function PromptTemplateList({
-  baseHref,
-  heading,
-  navigationLocked,
-  selectedId,
-  templates
-}: {
-  baseHref: string;
-  heading: string;
-  navigationLocked: boolean;
-  selectedId: string | null;
-  templates: PromptTemplateRow[];
-}) {
-  return (
-    <section className="prompt-master-group">
-      <h2>{heading}</h2>
-      {templates.length ? templates.map((template) => (
-        <Link
-          aria-current={selectedId === template.id ? "page" : undefined}
-          className={selectedId === template.id ? "prompt-master-row prompt-master-row-active" : "prompt-master-row"}
-          href={buildPromptTemplateHref(baseHref, { kind: "selected", templateId: template.id })}
-          key={template.id}
-          onClick={(event) => blockPendingNavigation(event, navigationLocked)}
-          tabIndex={navigationLocked ? -1 : undefined}
-          aria-disabled={navigationLocked ? "true" : undefined}
-        >
-          <strong>{template.name}</strong>
-          <span>{getProcessingTypeLabel(template.processing_type)}</span>
-        </Link>
-      )) : <p className="prompt-master-empty">Zatím bez položek.</p>}
-    </section>
-  );
-}
-
-// PromptTemplateForm keeps the native form draft mounted across pending and validation errors.
-function PromptTemplateForm({
-  action,
-  baseHref,
-  heading,
-  mode,
+// EffectivePromptForm submits only prompt text and revision while displaying system-owned metadata read-only.
+function EffectivePromptForm({
   onPendingChange,
-  template
+  resetAction,
+  saveAction,
+  template,
 }: {
-  action: PromptTemplateAction;
-  baseHref: string;
-  heading: string;
-  mode: "create" | "edit";
   onPendingChange: (pending: boolean) => void;
-  template: PromptTemplateRow | null;
+  resetAction: PromptTemplateAction;
+  saveAction: PromptTemplateAction;
+  template: EffectivePromptTemplate;
 }) {
-  const router = useRouter();
-  const [state, formAction, isPending] = useActionState(action, createInitialPromptTemplateActionState());
-  const [draft, setDraft] = useState(() => ({
-    name: template?.name ?? "",
-    outputSchema: formatOutputSchema(template?.output_schema),
-    processingType: template?.processing_type ?? "custom_prompt",
-    promptText: template?.prompt_text ?? ""
-  }));
+  const { refresh } = useRouter();
+  const [saveState, saveFormAction, isSavePending] = useActionState(
+    saveAction,
+    createInitialPromptTemplateActionState(),
+  );
+  const [resetState, resetFormAction, isResetPending] = useActionState(
+    resetAction,
+    createInitialPromptTemplateActionState(),
+  );
+  const [draft, setDraft] = useState(() => ({ promptText: template.promptText }));
+  const isPending = isSavePending || isResetPending;
+  const visibleState = resetState.status !== "idle" ? resetState : saveState;
 
   useEffect(() => {
-    if (state.status !== "success" || !state.templateId) return;
-    router.replace(buildPromptTemplateHref(baseHref, {
-      kind: "selected",
-      templateId: state.templateId
-    }));
-    router.refresh();
-  }, [baseHref, router, state.status, state.templateId]);
+    if (saveState.status === "success" || resetState.status === "success") {
+      refresh();
+    }
+  }, [refresh, resetState.status, saveState.status]);
 
   useEffect(() => {
     onPendingChange(isPending);
-    return () => { if (isPending) onPendingChange(false); };
+    return () => {
+      if (isPending) onPendingChange(false);
+    };
   }, [isPending, onPendingChange]);
 
   return (
-    <form
-      action={formAction}
-      className="prompt-template-form prompt-editor-form"
-      onSubmit={() => onPendingChange(true)}
-    >
-      <fieldset aria-busy={isPending ? "true" : undefined} data-prompt-editor-fields disabled={isPending}>
-        <div className="prompt-editor-heading">
-        <div>
-          <span>{mode === "create" ? "Vlastní prompt" : "Upravitelný prompt"}</span>
-          <h2>{heading}</h2>
-        </div>
-        <SubmitPromptButton label={mode === "create" ? "Vytvořit prompt" : "Uložit změny"} />
-        </div>
-        {template ? <input name="templateId" type="hidden" value={template.id} /> : null}
-        {state.message ? (
-        <p className={`prompt-action-state prompt-action-state-${state.status}`} role={state.status === "error" ? "alert" : "status"}>
-          {state.message}
-        </p>
-        ) : null}
-        <label>
-        Název
-        <input
-          maxLength={120}
-          minLength={2}
-          name="name"
-          onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-          required
-          value={draft.name}
-        />
-        </label>
-        <label>
-        Prompt
-        <textarea
-          minLength={20}
-          name="promptText"
-          onChange={(event) => setDraft((current) => ({ ...current, promptText: event.target.value }))}
-          placeholder="Instrukce pro AI zpracování přepisu…"
-          required
-          rows={14}
-          value={draft.promptText}
-        />
-        </label>
-        <details className="prompt-advanced-fields">
-        <summary>Pokročilé parametry</summary>
-        <div>
-          <label>
-            Typ výstupu
-            <select
-              name="processingType"
-              onChange={(event) => setDraft((current) => ({ ...current, processingType: event.target.value }))}
-              value={draft.processingType}
+    <div className="prompt-template-form prompt-editor-form-shell">
+      <form
+        action={saveFormAction}
+        className="prompt-editor-form"
+        onSubmit={() => onPendingChange(true)}
+      >
+        <fieldset aria-busy={isPending ? "true" : undefined} data-prompt-editor-fields disabled={isPending}>
+          <div className="prompt-editor-heading">
+            <div>
+              <span>{template.isModified ? "Upravený" : "Výchozí"}</span>
+              <h2>{getProcessingTypeLabel(template.processingType)}</h2>
+            </div>
+            <SubmitPromptButton label="Uložit změny" />
+          </div>
+
+          <input name="systemPromptId" type="hidden" value={template.systemPromptId} />
+          <input name="revision" type="hidden" value={template.revision} />
+          {visibleState.message ? (
+            <p
+              className={`prompt-action-state prompt-action-state-${visibleState.status}`}
+              role={visibleState.status === "error" || visibleState.status === "conflict" ? "alert" : "status"}
             >
-              {processingTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
+              {visibleState.message}
+            </p>
+          ) : null}
           <label>
-            JSON schéma výstupu
+            Prompt
             <textarea
-              name="outputSchema"
-              onChange={(event) => setDraft((current) => ({ ...current, outputSchema: event.target.value }))}
-              placeholder={'{"type":"object"}'}
-              rows={8}
-              value={draft.outputSchema}
+              maxLength={20000}
+              minLength={20}
+              name="promptText"
+              onChange={(event) => setDraft({ promptText: event.target.value })}
+              placeholder="Instrukce pro AI zpracování přepisu…"
+              required
+              rows={14}
+              value={draft.promptText}
             />
           </label>
-        </div>
-        </details>
-      </fieldset>
-    </form>
-  );
-}
+          <details className="prompt-advanced-fields">
+            <summary>Pokročilé parametry</summary>
+            <div>
+              <label>
+                Typ výstupu
+                <input readOnly value={getProcessingTypeLabel(template.processingType)} />
+              </label>
+              <label>
+                JSON schéma výstupu · systémové
+                <textarea
+                  aria-label="JSON schéma výstupu"
+                  readOnly
+                  rows={8}
+                  value={formatOutputSchema(template.outputSchema)}
+                />
+              </label>
+              <p>Schéma je pevnou součástí výstupu a nelze je upravit.</p>
+            </div>
+          </details>
+        </fieldset>
+      </form>
 
-// SystemPromptView keeps system content read-only and submits only its authoritative id for copying.
-function SystemPromptView({
-  action,
-  baseHref,
-  onPendingChange,
-  template
-}: {
-  action: PromptTemplateAction;
-  baseHref: string;
-  onPendingChange: (pending: boolean) => void;
-  template: PromptTemplateRow;
-}) {
-  const router = useRouter();
-  const [state, formAction, isPending] = useActionState(action, createInitialPromptTemplateActionState());
-
-  useEffect(() => {
-    if (state.status !== "success" || !state.templateId) return;
-    router.replace(buildPromptTemplateHref(baseHref, {
-      kind: "selected",
-      templateId: state.templateId
-    }));
-    router.refresh();
-  }, [baseHref, router, state.status, state.templateId]);
-
-  useEffect(() => {
-    onPendingChange(isPending);
-    return () => { if (isPending) onPendingChange(false); };
-  }, [isPending, onPendingChange]);
-
-  return (
-    <div className="prompt-template-form prompt-template-form-readonly prompt-editor-form">
-      <div className="prompt-editor-heading">
-        <div>
-          <span><LockKeyhole aria-hidden="true" size={14} /> Systémový prompt · pouze pro čtení</span>
-          <h2>{template.name}</h2>
-        </div>
+      {template.isModified ? (
         <form
-          action={formAction}
-          aria-busy={isPending ? "true" : undefined}
-          onSubmit={() => onPendingChange(true)}
+          action={resetFormAction}
+          className="prompt-reset-form"
+          onSubmit={(event) => {
+            if (!window.confirm(resetConfirmation)) {
+              event.preventDefault();
+              return;
+            }
+            onPendingChange(true);
+          }}
         >
           <fieldset disabled={isPending}>
-            <input name="templateId" type="hidden" value={template.id} />
-            <SubmitPromptButton icon={<Copy aria-hidden="true" size={15} />} label="Vytvořit vlastní kopii" />
+            <input name="systemPromptId" type="hidden" value={template.systemPromptId} />
+            <input name="revision" type="hidden" value={template.revision} />
+            <ResetPromptButton />
           </fieldset>
         </form>
-      </div>
-      {state.message ? (
-        <p className={`prompt-action-state prompt-action-state-${state.status}`} role={state.status === "error" ? "alert" : "status"}>
-          {state.message}
-        </p>
       ) : null}
-      <label>Název<input readOnly value={template.name} /></label>
-      <label>Prompt<textarea readOnly rows={14} value={template.prompt_text} /></label>
-      <details className="prompt-advanced-fields">
-        <summary>Pokročilé parametry</summary>
-        <div>
-          <label>Typ výstupu<input readOnly value={getProcessingTypeLabel(template.processing_type)} /></label>
-          <label>JSON schéma výstupu<textarea readOnly rows={8} value={formatOutputSchema(template.output_schema)} /></label>
-        </div>
-      </details>
     </div>
   );
 }
 
-// SubmitPromptButton exposes the pending state inside the exact active form.
-function SubmitPromptButton({ icon, label }: { icon?: React.ReactNode; label: string }) {
+// SubmitPromptButton exposes the pending state inside the save form.
+function SubmitPromptButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
-  return <button disabled={pending} type="submit">{icon}{pending ? "Ukládám…" : label}</button>;
+  return <button disabled={pending} type="submit">{pending ? "Ukládám…" : label}</button>;
+}
+
+// ResetPromptButton exposes the pending state inside the destructive reset boundary.
+function ResetPromptButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button name="resetOverride" type="submit">
+      <RotateCcw aria-hidden="true" size={15} />
+      {pending ? "Obnovuji…" : "Obnovit výchozí"}
+    </button>
+  );
+}
+
+// getProcessingTypeLabel maps the shared six-type contract to compact Czech labels.
+function getProcessingTypeLabel(processingType: QuickPromptProcessingType) {
+  return processingTypeLabels[processingType];
+}
+
+// formatOutputSchema renders system JSONB schema values without making them form fields.
+function formatOutputSchema(schema: unknown) {
+  if (schema === null || typeof schema === "undefined") return "";
+  return JSON.stringify(schema, null, 2);
 }
 
 // stripEditorState returns the mobile master-list URL without discarding fixture guards.

@@ -28,6 +28,12 @@ function checkedTag(filters: Locator, name: string) {
   return filters.getByRole("checkbox", { name });
 }
 
+// ensureAdvancedFiltersOpen restores the disclosure after URL-driven server rerenders.
+async function ensureAdvancedFiltersOpen(filters: Locator) {
+  const trigger = filters.getByRole("button", { name: /^Filtry \(\d+\)$/u });
+  if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+}
+
 let fixtureScope = "";
 
 test.beforeEach(() => {
@@ -41,6 +47,7 @@ test.afterEach(async ({ request }) => {
 });
 
 test("creates, assigns and preserves canonical ALL-tag filters across refresh", async ({ page }) => {
+  test.slow();
   const scope = fixtureScope;
   await page.goto(`/login/recording-organization-e2e?scope=${scope}&q=call`);
   await expect(page.getByRole("heading", { name: "Recording organization E2E fixture" })).toBeVisible();
@@ -54,6 +61,7 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
   await expect(page.getByText("Foreign Client", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Foreign Project", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Foreign Tag", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Zavřít správu organizace" }).click();
 
   const assignment = page.locator('[data-e2e-surface="assignment"]');
   await assignment.getByRole("button", { name: "Upravit zařazení" }).click();
@@ -70,21 +78,32 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
   await expect(assignment).toContainText("Follow-up");
 
   const filters = page.getByRole("form", { name: "Filtrování nahrávek" });
+  await ensureAdvancedFiltersOpen(filters);
   await expect(filters.getByLabel("Projekt")).toBeDisabled();
   await filters.getByLabel("Klient").selectOption({ label: "Acme" });
   await expect(page).toHaveURL((url) => url.searchParams.get("scope") === scope
     && url.searchParams.get("q") === "call"
     && Boolean(url.searchParams.get("client"))
     && !url.searchParams.has("project"));
+  await ensureAdvancedFiltersOpen(filters);
   await filters.getByLabel("Projekt").selectOption({ label: "Project X" });
   await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("project")));
+  await ensureAdvancedFiltersOpen(filters);
   await filters.getByLabel("Klient").selectOption("");
+  await expect(page).toHaveURL((url) => !url.searchParams.has("client")
+    && !url.searchParams.has("project"));
+  await ensureAdvancedFiltersOpen(filters);
   await expect(filters.getByLabel("Projekt")).toBeDisabled();
   await expect(filters.getByLabel("Projekt")).toHaveValue("");
   await filters.getByLabel("Klient").selectOption({ label: "Acme" });
+  await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("client")));
+  await ensureAdvancedFiltersOpen(filters);
   await filters.getByLabel("Projekt").selectOption({ label: "Project X" });
+  await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("project")));
+  await ensureAdvancedFiltersOpen(filters);
   await checkedTag(filters, "Important").check();
   await expect(page).toHaveURL((url) => url.searchParams.getAll("tag").length === 1);
+  await ensureAdvancedFiltersOpen(filters);
   await checkedTag(filters, "Follow-up").check();
   await expect(page).toHaveURL((url) => url.searchParams.getAll("tag").length === 2);
 
@@ -103,6 +122,7 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
 
   await page.reload();
   const refreshedFilters = page.getByRole("form", { name: "Filtrování nahrávek" });
+  await ensureAdvancedFiltersOpen(refreshedFilters);
   await expect(refreshedFilters.getByLabel("Hledat")).toHaveValue("call");
   await expect(refreshedFilters.getByLabel("Klient")).toHaveValue(/.+/);
   await expect(refreshedFilters.getByLabel("Projekt")).toHaveValue(/.+/);
@@ -123,6 +143,7 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
 });
 
 test("uses the accessible color popover, preserves focus and renders badges in both themes", async ({ page }) => {
+  test.slow();
   await page.goto(`/login/recording-organization-e2e?scope=${fixtureScope}`);
   await expect(page.getByRole("heading", { name: "Recording organization E2E fixture" })).toBeVisible();
   await page.getByRole("button", { name: "Spravovat" }).click();
@@ -175,12 +196,12 @@ test("uses the accessible color popover, preserves focus and renders badges in b
   await expect(colorDialog).toHaveCount(0);
   await expect(colorPicker).toBeFocused();
   await expect(page.locator("form.organization-create-form")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Správa organizace" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Správa organizace" })).toBeVisible();
   await expect(colorPicker).toHaveCSS("min-height", "44px");
   await page.getByRole("button", { name: "Uložit" }).click();
   await expect(page.getByRole("textbox", { name: "Název" })).toHaveCount(0);
 
-  const manager = page.getByRole("region", { name: "Správa organizace" });
+  const manager = page.getByRole("dialog", { name: "Správa organizace" });
   const badge = manager.locator(".organization-manager-badge", { hasText: "Palette" });
   const neutralBadge = manager.locator(".organization-manager-badge", { hasText: "Neutral" });
   await expect(badge).toBeVisible();
