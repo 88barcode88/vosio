@@ -306,10 +306,12 @@ export function RecordingsManager({
           {recordings.length > 0 ? (
             <>
               <div className="recordings-table-head" aria-hidden="true">
-                <span>Název</span>
-                <span>Stav</span>
-                <span>Velikost</span>
-                <span>Akce</span>
+                <div className="recordings-table-head-main">
+                  <span>Název</span>
+                  <span>Stav</span>
+                  <span>Velikost</span>
+                </div>
+                <span className="recordings-table-head-actions">Akce</span>
               </div>
               {clientGroups.map((group) => (
                 <section className="recording-client-group" key={group.clientId ?? "unclassified"}>

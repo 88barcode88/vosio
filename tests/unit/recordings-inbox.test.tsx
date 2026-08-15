@@ -269,6 +269,16 @@ describe("recordings inbox", () => {
     expect(container.querySelector('a[aria-label="Detail nahrávky Testovací hovor"]'))
       .not.toBeNull();
 
+    const tableHead = container.querySelector(".recordings-table-head");
+    const tableHeadMain = tableHead?.children.item(0);
+    expect(tableHead?.children).toHaveLength(2);
+    expect(tableHeadMain?.classList.contains("recordings-table-head-main")).toBe(true);
+    expect(Array.from(tableHeadMain?.children ?? []).map((cell) => cell.textContent))
+      .toEqual(["Název", "Stav", "Velikost"]);
+    expect(tableHead?.children.item(1)?.classList.contains("recordings-table-head-actions"))
+      .toBe(true);
+    expect(tableHead?.children.item(1)?.textContent).toBe("Akce");
+
     const firstRow = container.querySelector<HTMLElement>('[data-recording-id="recording-1"]');
     const titleLink = firstRow?.querySelector<HTMLAnchorElement>('a[href="/recordings/recording-1"]');
     expect(titleLink?.textContent).toContain("Testovací hovor");

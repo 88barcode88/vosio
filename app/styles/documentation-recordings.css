@@ -144,7 +144,9 @@
 .recordings-inbox {
   --recordings-action-width: 120px;
   --recordings-main-columns: minmax(180px, 1fr) 112px 84px;
-  --recordings-columns: var(--recordings-main-columns) var(--recordings-action-width);
+  --recordings-columns: minmax(0, 1fr) var(--recordings-action-width);
+  --recordings-column-gap: 14px;
+  --recordings-cell-padding: 7px 10px;
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -1709,9 +1711,34 @@
   border-radius: 6px;
   background: var(--surface-raised);
 }
-.recordings-inbox .recordings-table-head {
+.recordings-inbox .recordings-table-head,
+.recordings-inbox .recordings-row {
   grid-template-columns: var(--recordings-columns);
+  gap: 0;
+}
+.recordings-inbox .recordings-table-head {
   background: var(--surface-raised);
+  padding: 0;
+}
+.recordings-table-head-main {
+  display: grid;
+  align-items: center;
+  min-width: 0;
+  min-height: 34px;
+}
+.recordings-inbox .recordings-table-head-main,
+.recordings-inbox .recordings-row-main {
+  grid-template-columns: var(--recordings-main-columns);
+  gap: var(--recordings-column-gap);
+  padding: var(--recordings-cell-padding);
+}
+.recordings-table-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  border-left: 1px solid var(--border);
+  padding: 0 8px;
 }
 .recordings-inbox .recording-client-group > h2 {
   min-height: 34px;
@@ -1721,7 +1748,6 @@
   background: var(--surface-muted);
 }
 .recordings-inbox .recordings-row {
-  grid-template-columns: minmax(0, 1fr) var(--recordings-action-width);
   border-radius: 0;
   background: var(--surface-raised);
 }
@@ -1729,9 +1755,7 @@
   background: var(--surface-muted);
 }
 .recordings-inbox .recordings-row-main {
-  grid-template-columns: var(--recordings-main-columns);
   min-height: 54px;
-  padding: 7px 10px;
 }
 .recordings-inbox .recordings-row-main span,
 .recordings-inbox .recordings-row-size {
@@ -1756,6 +1780,9 @@
   height: 100%;
   border-left: 1px solid var(--border);
   padding: 0 8px;
+}
+.recordings-inbox .recordings-row-actions .delete-recording-icon {
+  border: 0;
 }
 .recordings-row-actions:has(.delete-recording-error) {
   align-content: center;

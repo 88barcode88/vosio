@@ -110,19 +110,24 @@ describe("recordings indexed search UI", () => {
       "--recordings-main-columns: minmax(180px, 1fr) 112px 84px;"
     );
     expect(inboxRule).toContain(
-      "--recordings-columns: var(--recordings-main-columns) var(--recordings-action-width);"
+      "--recordings-columns: minmax(0, 1fr) var(--recordings-action-width);"
     );
+    expect(inboxRule).toContain("--recordings-column-gap: 14px;");
+    expect(inboxRule).toContain("--recordings-cell-padding: 7px 10px;");
     expect(styles).toMatch(
       /\.recordings-inbox\.ui-panel\s*\{[^}]*?background:\s*var\(--surface-raised\);/u
     );
     expect(styles).toMatch(
-      /\.recordings-inbox \.recordings-table-head\s*\{[^}]*?grid-template-columns:\s*var\(--recordings-columns\);/u
+      /\.recordings-inbox \.recordings-table-head,\s*\.recordings-inbox \.recordings-row\s*\{[^}]*?grid-template-columns:\s*var\(--recordings-columns\);[^}]*?gap:\s*0;/u
     );
     expect(styles).toMatch(
-      /\.recordings-inbox \.recordings-row-main\s*\{[^}]*?grid-template-columns:\s*var\(--recordings-main-columns\);/u
+      /\.recordings-inbox \.recordings-table-head-main,\s*\.recordings-inbox \.recordings-row-main\s*\{[^}]*?grid-template-columns:\s*var\(--recordings-main-columns\);[^}]*?gap:\s*var\(--recordings-column-gap\);[^}]*?padding:\s*var\(--recordings-cell-padding\);/u
     );
     expect(styles).toMatch(
-      /\.recordings-inbox \.recordings-row\s*\{[^}]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+var\(--recordings-action-width\);[^}]*?border-radius:\s*0;/u
+      /\.recordings-inbox \.recordings-row\s*\{[^}]*?border-radius:\s*0;/u
+    );
+    expect(styles).toMatch(
+      /\.recordings-inbox \.recordings-row-actions \.delete-recording-icon\s*\{[^}]*?border:\s*0;/u
     );
   });
 
