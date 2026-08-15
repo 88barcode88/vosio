@@ -10,14 +10,15 @@ Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seř
 - `supabase/migrations/20260804120000_add_recording_markers.sql`
 - `supabase/migrations/20260804130000_add_transcript_fulltext_search.sql`
 - `supabase/migrations/20260810005550_restore_recordings_from_trash.sql`
+- `supabase/migrations/20260813000000_add_recording_status_filters.sql`
+- `supabase/migrations/20260813090000_add_prompt_overrides_and_job_snapshots.sql`
+- `supabase/migrations/20260815073029_harden_prompt_override_privileges.sql`
 
-Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000` a restore/purge metadata až po `05550`. Baseline proto není kompletní source of truth; úplný source kontrakt je pouze celý uvedený ordered chain. Runtime databáze obsahuje jen tu část řetězce, která na ní byla skutečně schváleně aplikována a postflightem ověřena.
+Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000`, přesný restore/purge metadata a Storage write fence až po `05550`, stavové facety až po `130000`, prompt overrides/job snapshots až po `130900` a privilege hardening až po `15073029`. Baseline proto není kompletní source of truth; úplný fresh-project kontrakt je pouze celý uvedený ordered chain.
 
 Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby skutečné schema odpovídalo explicitně schválené a aplikované části aktuálního řetězce; produkční DB se kvůli baseline neresetuje.
 
-Budoucí schema změny se přidávají jako nové timestampové migrace na konec řetězce a po schválení se aplikují do každého cílového Supabase projektu stejně.
-
-Tento veřejný repozitář je zdrojový kontrakt, nikoli deployment ledger. Uvedené release blokery proto platí pro každý target, jehož skutečné schema, grants, RLS a migration history nebyly samostatně ověřeny. Stav privátních ani cizích Supabase projektů se zde neeviduje.
+Budoucí schema změny se přidávají jako nové timestampové migrace na konec řetězce. Tento veřejný repozitář je zdrojový kontrakt, nikoli deployment ledger: u žádného hostovaného targetu automaticky netvrdí aplikaci migrací. Nový prázdný projekt aplikuje celý řetězec v pořadí; existující projekt musí nejdřív samostatně porovnat skutečné schema a migration history a aplikovat pouze chybějící forwards.
 
 Systémové prompt templates jsou seedované stabilními UUID a aktuálním kontraktem JSON + `markdown`. Prompty používají vstupní model `raw_text` + `segments` + `speakers`, obsahují pravidla pro speaker role a zahrnují typy `summary`, `action_items`, `meeting_minutes`, `crm_note`, `follow_up_email`, `custom_prompt` a `timeline_chapters`.
 
@@ -42,7 +43,7 @@ Ověřeno v source a automatických testech:
 3. raw `ai_outputs` se ukládá před odvozenými projekcemi a AI job přejde do `done` až po pokusu o jejich uložení,
 4. component/E2E kontrakt navigace pro single audio, transcript-only a legacy segmented záznam.
 
-Source testy nejsou runtime důkazem konkrétního targetu. Před deployem aplikačního kódu očekávajícího evidence sloupce musí daný target projít schváleným apply a postflightem skutečných sloupců, constraintů, nezměněných grants, forced RLS a two-user cross-tenant čtení.
+Source testy ověřují očekávané evidence sloupce a všechny 3 checks. Každý deployment target stále potřebuje vlastní runtime databázový a dvouuživatelský RLS postflight.
 
 ## Recording organization forward migrace
 
@@ -71,7 +72,7 @@ Unikátní funkční indexy nad `lower(btrim(name))` zajišťují case-insensiti
 
 ### Stav ověření organizační migrace
 
-Source testy ověřují textový schema/security kontrakt a aplikační testy canonical URL, transakční assignment kontrakt, ALL-tag filtrování a keyset klienta. Pro každý target je stále nutný runtime postflight PostgreSQL syntaxe column-list `ON DELETE SET NULL`, odloženého client `NO ACTION` během úplné `auth.users` cascade, skutečné case-insensitive uniqueness, RLS/grant/anon chování se dvěma uživateli a keysetu nad reálným RPC.
+Source testy ověřují textový schema/security kontrakt a aplikační testy canonical URL, transakční assignment kontrakt, ALL-tag filtrování a keyset klienta. Každý deployment target musí samostatně ověřit tabulky, forced RLS, policies, constraints, indexy, RPC, skutečný two-user runtime RLS a úplnou `auth.users` cascade.
 
 ## Recording markers forward migrace
 
@@ -93,7 +94,7 @@ První úspěšný insert vrací `201`. Konflikt unikátního `(user_id, client_
 
 ### Stav ověření marker migrace
 
-Source a automatické testy ověřují textový SQL contract, validaci route, přesný retry konflikt, pořadí dotazu a aplikační full/compact/timeline chování. Každý target musí samostatně prokázat runtime postflight tabulky, constraintů, indexu, FK/cascade, grantů, forced RLS a dvouuživatelský cross-tenant integration test.
+Source a automatické testy ověřují textový SQL contract, validaci route, přesný retry konflikt, pořadí dotazu a aplikační full/compact/timeline chování. Každý deployment target musí samostatně ověřit forced RLS, policies, constraints, index, trigger, granty a dvouuživatelský runtime RLS.
 
 ## Transcript fulltext search forward migrace
 
@@ -111,19 +112,21 @@ Přesný aplikační index odvozuje po sobě jdoucí renderovatelné speaker blo
 
 Search RPC normalizuje whitespace a omezuje dotaz na 120 znaků, parsuje ho přes `websearch_to_tsquery('simple', query_text)` a vrací právě jednu vítěznou shodu pro každou nahrávku. Transcript část pro každou nahrávku používá právě nejnovější vlastní transcript podle `created_at desc, id desc`; starší transcript se po existenci novějšího neprohledává. Eligible množina vyžaduje `auth.uid()`, `recordings.user_id = auth.uid()`, `status <> 'deleted'` a stejné client/project/folder/ALL-tag filtry jako workspace. Výsledky jsou řazené podle ranku, data a recording ID, obsahují pouze excerpt, volitelný `match_start_ms`/`match_end_ms` a `total_count`, nikoli celé transcripty.
 
-Search UI používá bounded `page` a `limit/offset` stránkování po 25 výsledcích. To se nesmí zaměnit s keysetem běžného `list_own_recordings_v1`, který zůstává `(created_at, id)`, ani s keysetem servisního backfillu, který postupuje vzestupně podle transcript `id`.
+V1 RPC `list_own_recordings_v1` a `search_own_recordings_v1` zůstávají pouze pro kompatibilitu. Současné UI bezpodmínečně používá `list_own_recordings_v2` bez `q` a `search_own_recordings_v2` s neprázdným `q`; V2 přidává přesný status filtr. Search UI používá bounded `page` a `limit/offset` stránkování po 25 výsledcích. To se nesmí zaměnit s keysetem běžného V2 listu `(created_at, id)` ani s keysetem servisního backfillu, který postupuje vzestupně podle transcript `id`.
+
+Source migrace `20260813000000_add_recording_status_filters.sql` přidává oba V2 list/search kontrakty a `count_own_recording_statuses_v1`. Toto RPC vrací přesné facety přes celý aktuální `q`, organizační filtry a ALL sadu štítků. Facety ignorují aktivní `status`; `Smazáno` je samostatný úplný počet Koše.
 
 Tabulka `transcript_search_chunks` má enabled i forced RLS. `authenticated` má pouze `select` vlastních řádků, `anon` nemá grant, `service_role` má plný grant. Search RPC je invoker a executable jen pro `authenticated`; replace RPC je executable jen pro `service_role`. Triggerová funkce je `SECURITY DEFINER`, ale není executable pro `public`, `anon` ani `authenticated`.
 
-Repo obsahuje servisní příkaz `npm run search:backfill`. Vyžaduje explicitní `--environment=disposable|live`; live navíc `--allow-live`, podporuje `--dry-run` a bounded batch `1..500`. Jeho spuštění proti live targetu je samostatné provozní rozhodnutí. Migrace `13000` už obsahuje inline raw-text fallback backfill.
+Repo obsahuje servisní příkaz `npm run search:backfill`. Vyžaduje explicitní `--environment=disposable|live`; live navíc `--allow-live`, podporuje `--dry-run` a bounded batch `1..500`. Jeho spuštění je samostatné target-specific provozní rozhodnutí; migrace `13000` už obsahuje inline fallback backfill.
 
 ### Stav ověření search migrace
 
-Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivaci, latest pořadí, query parsing, owner/deleted/organization filtry, stránkování, deep-link resolvery, raw/manual fallback, ambiguity/no-false-highlight, one-shot warning a single/none/segmented playback chování. Nejde však o DB runtime důkaz. Každý target musí samostatně projít postflightem tabulky, funkcí, triggeru, indexů, authenticated GIN `EXPLAIN`, anon-vs-auth a dvouuživatelským RLS testem, current-vs-old transcript integration testem, manual/raw/deleted integration testem a runtime stránkováním.
+Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivaci, latest pořadí, query parsing, owner/deleted/organization filtry, stránkování, deep-link resolvery, raw/manual fallback, ambiguity/no-false-highlight, one-shot warning a single/none/segmented playback chování. Každý deployment target musí samostatně ověřit forced RLS, indexy, funkce, trigger, granty, authenticated GIN `EXPLAIN`, two-user runtime RLS a current-vs-old/manual/raw/deleted behavior.
 
 ## Forward migrations release gate
 
-Pro každý target bez samostatně ověřeného deployment ledgeru se forward migrace považují za neaplikované. Release pořadí je závazné: (1) `20260804100000_add_evidence_locations.sql`, (2) `20260804110000_add_recording_organization.sql`, (3) `20260804120000_add_recording_markers.sql`, (4) `20260804130000_add_transcript_fulltext_search.sql`, (5) `20260810005550_restore_recordings_from_trash.sql`, (6) úspěšný DB postflight cílové databáze a teprve (7) deploy aplikace. `npm test`, `npm run check` ani `npm run build` nejsou důkazem stavu vzdálené databáze.
+Fresh-project pořadí zůstává závazné: baseline, evidence `10000`, organization `11000`, markers `12000`, search `13000`, Trash restore/purge `05550`, status filters `130000`, prompt overrides/job snapshots `130900` a privilege hardening `15073029`. Každý target potřebuje vlastní schema/history preflight, apply pouze chybějících migrací a databázový postflight před app deployem. Legacy historii nemaž ani neresetuj jen proto, aby odpovídala fresh baseline.
 
 ## Public tabulky
 
@@ -131,6 +134,7 @@ Pro každý target bez samostatně ověřeného deployment ledgeru se forward mi
 - `transcription_jobs`
 - `transcripts`
 - `prompt_templates`
+- `prompt_template_overrides` po aplikaci forward migrace `20260813090000`
 - `ai_processing_jobs`
 - `ai_outputs`
 - `transcript_tasks`
@@ -181,6 +185,20 @@ Systémové prompty rozlišují business roli mluvčích, pokud je dostupná z t
 
 `transcripts.speakers` se plní při uložení async i realtime přepisu jako JSON pole speaker souhrnů z `segments`: speaker id, UI label, volitelné ruční jméno, počet tokenů, první/poslední čas, role a zdroj přiřazení. Výchozí role je `unknown`, dokud ji neurčí uživatel nebo samostatná AI inference.
 
+## Prompt overrides a job snapshots
+
+`20260813090000_add_prompt_overrides_and_job_snapshots.sql` zachovává `prompt_templates` jako neměnné systémové základy s autoritativním `processing_type` a `output_schema`. Nová forced-RLS tabulka `prompt_template_overrides` má nejvýše jeden řádek na `(user_id, system_prompt_id)` a ukládá pouze `prompt_text`, `is_active` a kladnou monotónní `revision`; schema sloupec nemá.
+
+Authenticated save/reset používají `SECURITY INVOKER` funkce `save_prompt_template_override_v1` a `reset_prompt_template_override_v1`. Obě odvozují vlastníka z `auth.uid()`, zamykají existující řádek a vyžadují expected revision. Resolver `resolve_effective_prompt_template_v1` vrací owner override text, pokud je aktivní, ale název, processing type a schema vždy čte ze systémového základu. Browser-callable RPC grant je pouze pro `authenticated`; provozní `service_role` si ponechává `EXECUTE`. Tabulka má forced owner RLS a `anon` nemá grant.
+
+Opravná migrace `20260815073029_harden_prompt_override_privileges.sql` nejdřív revokuje zděděné tabulkové granty role `authenticated` a vrací pouze `SELECT`, `INSERT` a `UPDATE`. Trigger-only `validate_prompt_template_override_base_v1()` po ní nemá přímý `EXECUTE` pro `PUBLIC`, `anon` ani `authenticated`. Samostatný index na `prompt_template_overrides(system_prompt_id)` pokrývá reverse foreign-key lookup; partial jobs index na nenulovém `prompt_override_id` zůstává záměrně beze změny. Postflight každého targetu musí ověřit přesný ACL, effective function privileges, validní a ready index, forced RLS, policies a job snapshot invarianty.
+
+`ai_processing_jobs` po migraci ukládá `prompt_override_id`, `prompt_source`, `prompt_name_snapshot`, `prompt_text_snapshot`, `prompt_output_schema_snapshot`, `prompt_revision_snapshot` a `prompt_snapshot_exact`. Nový quick-action job zapisuje přesný snapshot před provider callem a má `prompt_snapshot_exact=true`. Historické řádky se rekonstruují z dostupného `prompt_id`, ale vždy mají `prompt_snapshot_exact=false`; chybějící identita se označí `unknown`. Reset override staré snapshoty ani `ai_outputs` nemění.
+
+Expand fáze migrace zachovává kompatibilitu s dosud nasazeným `0.1.5` insertem do `ai_processing_jobs`, který posílá `prompt_id`, ale nové snapshot sloupce ještě nezná. `SECURITY INVOKER` `BEFORE INSERT` trigger před kontrolou omezení dohledá autoritativní `prompt_templates` řádek a uloží jeho přesný snapshot; při null nebo chybějícím promptu zapíše `prompt_source='unknown'` a `prompt_snapshot_exact=false`. Pokud nový build dodá `prompt_source` a celý snapshot sám, trigger payload nemění a platnost dál vynucují checky a cizí klíče. Helper nemá přímý execute grant pro `PUBLIC`, `anon` ani `authenticated`.
+
+Legacy nesystémové řádky v `prompt_templates` zůstávají uložené, ale editor `AI prompty` je v této fázi nezobrazuje. Aktivní quick-action kontrakt obsahuje přesně `summary`, `action_items`, `timeline_chapters`, `meeting_minutes`, `crm_note` a `follow_up_email`; browser posílá jen processing type a model, nikdy prompt ID, schema ani user ID.
+
 ## Přístupový model
 
 Authenticated uživatel:
@@ -192,6 +210,7 @@ Authenticated uživatel:
 - po aplikaci marker migrace může přes forced RLS číst a měnit pouze vlastní `recording_markers`,
 - po aplikaci search migrace může přes forced RLS číst pouze vlastní `transcript_search_chunks` a spouštět owner-safe `search_own_recordings_v1`,
 - může vytvářet/upravovat/mazat vlastní nesystémové `prompt_templates`,
+- po aplikaci prompt override migrace může přes forced RLS a revision-safe RPC uložit nebo resetovat jen vlastní `prompt_text` override,
 - může pracovat jen se Storage objekty v cestě `user_id/...`.
 
 Server/worker přes `service_role`:
@@ -240,16 +259,6 @@ Nová live nahrávka pod limitem používá jeden finální objekt:
 
 `recordings.storage_path` ukazuje přímo na tento objekt. Pro kompatibilitu aplikace stále rozpozná starší segmentovaný prefix `{user_id}/{recording_id}/live/`; u takového záznamu vytvoří async znovupřepis jeden řádek v `transcription_jobs` pro každý nalezený objekt, se společným `provider_config.batch_id` a `provider_config.audio_source = supabase_recording_segment`.
 
-## Ověření cílového prostředí
+## Deployment verification boundary
 
-Veřejný repozitář nepotvrzuje stav žádné konkrétní vzdálené databáze. Před deployem aplikace ověř na každém targetu alespoň:
-
-1. timestampově seřazený migrační řetězec a jeho skutečnou migration history,
-2. očekávané tabulky, sloupce, constrainty, funkce, triggery a validní indexy,
-3. enabled a forced RLS, přesné grants a anon-vs-auth chování,
-4. cross-tenant izolaci dvěma reálnými uživateli,
-5. private bucket `recordings`, jeho MIME allowlist a efektivní file-size limit,
-6. runtime zápis nahrávky, přepisu, AI projekcí, markerů, organizace a search chunks,
-7. latest-transcript, raw/manual fallback a deleted-recording search chování.
-
-Produkční databázi kvůli srovnání s fresh baseline neresetuj. U existujícího projektu nejdřív odděleně vyhodnoť shodu schématu a shodu migration history.
+Tento veřejný schema dokument neuchovává stav konkrétního hostovaného projektu. Před deployem proti existujícímu targetu ověř celý ordered chain, skutečné tabulky a sloupce, constraints, indexy, granty, forced RLS, dvouuživatelskou izolaci, job snapshot invarianty a migration history. Produkční databázi kvůli porovnání s fresh baseline neresetuj a starší historii nepřepisuj bez samostatně schváleného reconciliation plánu.

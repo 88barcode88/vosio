@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { Disclosure } from "@/components/ui/disclosure";
 import {
   buildRecordingFilterSearchParams,
   type RecordingOrganizationFilters
@@ -33,6 +34,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
   const projects = options.projects.filter((project) => project.client_id === clientId);
   const hasFilters = Boolean(filters.clientId || filters.projectId || filters.folderId || filters.tagIds.length);
   const hasDraftFilters = Boolean(clientId || projectId || folderId || tagIds.size);
+  const activeAdvancedFilterCount = [clientId, projectId, folderId].filter(Boolean).length + tagIds.size;
   const isNavigationPending = isPending;
 
   // The committed URL settles the tracked target without relying on a component remount.
@@ -131,18 +133,31 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
           <p>Hledání a zařazení se promítají do adresy stránky.</p>
         </div>
       </div>
-      <div className="recording-filter-grid">
+      <div className="recording-filter-basic-row">
         <label className="recording-filter-search">
           <span>Hledat</span>
           <input
             maxLength={120}
             name="q"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Název, přepis, klient, projekt, složka nebo štítek"
+            placeholder="Název, přepis nebo zařazení"
             type="search"
             value={query}
           />
         </label>
+        <fieldset className="recording-filter-basic-actions" disabled={isNavigationPending}>
+          {query ? (
+            <button disabled={isNavigationPending} onClick={() => setQuery("")} type="button">
+              Vyčistit hledání
+            </button>
+          ) : null}
+          <Disclosure
+            className="recording-filter-advanced"
+            keepMounted
+            label="Pokročilé filtry nahrávek"
+            triggerLabel={`Filtry (${activeAdvancedFilterCount})`}
+          >
+            <div className="recording-filter-grid">
         <label>
           <span>Klient</span>
           <select
@@ -199,8 +214,8 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
             {options.folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
           </select>
         </label>
-      </div>
-      <div className="recording-filter-tag-row">
+            </div>
+            <div className="recording-filter-tag-row">
         <fieldset className="recording-filter-tags">
           <legend>Štítky <small>Vybrané štítky platí současně</small></legend>
           {options.tags.length > 0 ? options.tags.map((tag) => (
@@ -225,12 +240,10 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
           >
             Vyčistit filtry
           </button>
-          {query ? (
-            <button disabled={isNavigationPending} onClick={() => setQuery("")} type="button">
-              Vyčistit hledání
-            </button>
-          ) : null}
         </div>
+            </div>
+          </Disclosure>
+        </fieldset>
       </div>
       <span aria-live="polite" className="visually-hidden">
         {isNavigationPending ? "Aktualizuji seznam nahrávek." : ""}

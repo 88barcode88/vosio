@@ -28,6 +28,10 @@ const recordingPurgeFormSchema = z.object({
   recordingId: z.string().uuid()
 });
 const recordingRestoreFormSchema = recordingPurgeFormSchema;
+const BULK_TRASH_LIMIT = 100;
+const recordingBulkFormSchema = z.object({
+  recordingIds: z.array(z.string().uuid()).min(1).max(BULK_TRASH_LIMIT)
+});
 const restorableRecordingStatusSchema = z.enum([
   "created",
   "uploading",
@@ -42,6 +46,32 @@ const PURGE_UPLOAD_FENCE_MS = 24 * 60 * 60 * 1000;
 const STORAGE_LATE_CLEANUP_ROUNDS = 3;
 const STORAGE_LIST_PAGE_SIZE = 100;
 const STORAGE_REMOVE_BATCH_SIZE = 100;
+
+export type TrashMutationCode =
+  | "invalid_bulk"
+  | "invalid_item"
+  | "restore_not_found"
+  | "restore_failed"
+  | "purge_not_found"
+  | "purge_too_recent"
+  | "purge_in_progress"
+  | "purge_storage_failed"
+  | "purge_failed";
+
+export type TrashBulkResult = {
+  succeededIds: string[];
+  failures: Array<{ id: string; code: TrashMutationCode }>;
+};
+
+export type TrashItemResult =
+  | { id: string; ok: true }
+  | { id: string; ok: false; code: TrashMutationCode };
+
+class TrashMutationError extends Error {
+  constructor(readonly code: TrashMutationCode) {
+    super(code);
+  }
+}
 
 // getRequiredString reads a required text field for recording server actions.
 function getRequiredString(formData: FormData, name: string) {
@@ -99,6 +129,22 @@ function parseRecordingRestoreForm(formData: FormData) {
   }
 
   return parsed.data;
+}
+
+// parseRecordingBulkForm validates a bounded, stable and deduplicated UUID list.
+function parseRecordingBulkForm(formData: FormData) {
+  const recordingIds = Array.from(new Set(
+    formData.getAll("recordingId").filter((value): value is string => typeof value === "string")
+  ));
+  return recordingBulkFormSchema.safeParse({ recordingIds });
+}
+
+// parseSingleRecordingMutationForm accepts exactly one UUID for one bounded purge request.
+function parseSingleRecordingMutationForm(formData: FormData) {
+  const values = formData.getAll("recordingId");
+  if (values.length !== 1 || typeof values[0] !== "string") return null;
+  const parsed = z.string().uuid().safeParse(values[0]);
+  return parsed.success ? parsed.data : null;
 }
 
 type RecordingStorageTarget = {
@@ -288,42 +334,64 @@ async function releasePurgeClaim(
     .maybeSingle();
 }
 
-// restoreRecordingAction restores a user-owned Trash item to its captured status through RLS.
-export async function restoreRecordingAction(formData: FormData) {
-  const parsed = parseRecordingRestoreForm(formData);
-  const nextPath = getSafeNextPath(parsed.next ?? "/trash");
+// requireTrashUser authenticates a single redirecting form action.
+async function requireTrashUser(nextPath: string) {
   const supabase = await createClient();
   const {
     data: { user },
-    error: userError
+    error
   } = await supabase.auth.getUser();
-
-  if (userError || !user) {
+  if (error || !user) {
     redirect(`/login?next=${encodeURIComponent(clearQueryStatus(nextPath, "error"))}`);
   }
+  return { supabase, user };
+}
 
+// requireTrashUserWithoutRedirect authenticates bulk actions without constructing a user-controlled redirect.
+async function requireTrashUserWithoutRedirect() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error
+  } = await supabase.auth.getUser();
+  if (error || !user) throw new Error("Unauthorized");
+  return { supabase, user };
+}
+
+// revalidateTrashPaths refreshes every list affected by a successful single mutation.
+function revalidateTrashPaths(recordingId: string) {
+  revalidatePath("/");
+  revalidatePath("/recordings");
+  revalidatePath(`/recordings/${recordingId}`);
+  revalidatePath("/trash");
+}
+
+// restoreRecordingForUser restores one exact deleted row while its purge lease is unclaimed.
+async function restoreRecordingForUser(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  recordingId: string
+): Promise<void> {
   const { data: recording, error: lookupError } = await supabase
     .from("recordings")
     .select("id,deleted_from_status")
-    .eq("id", parsed.recordingId)
-    .eq("user_id", user.id)
+    .eq("id", recordingId)
+    .eq("user_id", userId)
     .eq("status", "deleted")
     .is("purge_started_at", null)
     .is("purge_claim_id", null)
     .maybeSingle();
-  const previousStatus = restorableRecordingStatusSchema.safeParse(
-    recording?.deleted_from_status
-  );
+  const previousStatus = restorableRecordingStatusSchema.safeParse(recording?.deleted_from_status);
 
   if (lookupError || !recording || !previousStatus.success) {
-    redirect(appendQueryStatus(nextPath, "error", "restore_not_found"));
+    throw new TrashMutationError("restore_not_found");
   }
 
   const { data: restored, error: restoreError } = await supabase
     .from("recordings")
     .update({ status: previousStatus.data })
-    .eq("id", parsed.recordingId)
-    .eq("user_id", user.id)
+    .eq("id", recordingId)
+    .eq("user_id", userId)
     .eq("status", "deleted")
     .is("purge_started_at", null)
     .is("purge_claim_id", null)
@@ -331,14 +399,49 @@ export async function restoreRecordingAction(formData: FormData) {
     .maybeSingle();
 
   if (restoreError || !restored) {
-    redirect(appendQueryStatus(nextPath, "error", "restore_failed"));
+    throw new TrashMutationError("restore_failed");
   }
+}
 
+// restoreRecordingAction restores a user-owned Trash item to its captured status through RLS.
+export async function restoreRecordingAction(formData: FormData) {
+  const parsed = parseRecordingRestoreForm(formData);
+  const nextPath = getSafeNextPath(parsed.next ?? "/trash");
+  const { supabase, user } = await requireTrashUser(nextPath);
+  try {
+    await restoreRecordingForUser(supabase, user.id, parsed.recordingId);
+  } catch (error) {
+    const code = error instanceof TrashMutationError ? error.code : "restore_failed";
+    redirect(appendQueryStatus(nextPath, "error", code));
+  }
+  revalidateTrashPaths(parsed.recordingId);
+  redirect(clearQueryStatus(nextPath, "error"));
+}
+
+// restoreRecordingsBulkAction restores a bounded ordered set and reports sanitized partial results.
+export async function restoreRecordingsBulkAction(formData: FormData): Promise<TrashBulkResult> {
+  const parsed = parseRecordingBulkForm(formData);
+  if (!parsed.success) {
+    return { succeededIds: [], failures: [{ id: "bulk", code: "invalid_bulk" }] };
+  }
+  const { supabase, user } = await requireTrashUserWithoutRedirect();
+  const result: TrashBulkResult = { succeededIds: [], failures: [] };
+
+  for (const recordingId of parsed.data.recordingIds) {
+    try {
+      await restoreRecordingForUser(supabase, user.id, recordingId);
+      result.succeededIds.push(recordingId);
+    } catch (error) {
+      result.failures.push({
+        id: recordingId,
+        code: error instanceof TrashMutationError ? error.code : "restore_failed"
+      });
+    }
+  }
   revalidatePath("/");
   revalidatePath("/recordings");
-  revalidatePath(`/recordings/${parsed.recordingId}`);
   revalidatePath("/trash");
-  redirect(clearQueryStatus(nextPath, "error"));
+  return result;
 }
 
 // Updates a user-owned recording title and returns a scoped editor settlement.
@@ -446,49 +549,41 @@ export async function deleteRecordingAction(formData: FormData) {
   }
 }
 
-// purgeRecordingAction permanently deletes a user-owned Trash item and its storage object.
-export async function purgeRecordingAction(formData: FormData) {
-  const parsed = parseRecordingPurgeForm(formData);
-  const nextPath = getSafeNextPath(parsed.next ?? "/trash");
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: userError
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    redirect(`/login?next=${encodeURIComponent(clearQueryStatus(nextPath, "error"))}`);
-  }
-
-  const admin = createAdminClient();
-  const purgeEligibleBefore = new Date(Date.now() - PURGE_UPLOAD_FENCE_MS).toISOString();
+// purgeRecordingForUser permanently deletes one exact user-owned row and its verified storage prefix.
+async function purgeRecordingForUser(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  recordingId: string,
+  nowMs: number
+): Promise<void> {
+  const purgeEligibleBefore = new Date(nowMs - PURGE_UPLOAD_FENCE_MS).toISOString();
   const { data: recording, error: lookupError } = await admin
     .from("recordings")
     .select("id,storage_path,deleted_at")
-    .eq("id", parsed.recordingId)
-    .eq("user_id", user.id)
+    .eq("id", recordingId)
+    .eq("user_id", userId)
     .eq("status", "deleted")
     .lte("deleted_at", purgeEligibleBefore)
     .maybeSingle();
 
   if (lookupError) {
-    redirect(appendQueryStatus(nextPath, "error", "purge_not_found"));
+    throw new TrashMutationError("purge_not_found");
   }
 
   if (!recording) {
     const { data: recentRecording, error: recentLookupError } = await admin
       .from("recordings")
       .select("id")
-      .eq("id", parsed.recordingId)
-      .eq("user_id", user.id)
+      .eq("id", recordingId)
+      .eq("user_id", userId)
       .eq("status", "deleted")
       .maybeSingle();
 
     if (recentLookupError || !recentRecording) {
-      redirect(appendQueryStatus(nextPath, "error", "purge_not_found"));
+      throw new TrashMutationError("purge_not_found");
     }
 
-    redirect(appendQueryStatus(nextPath, "error", "purge_too_recent"));
+    throw new TrashMutationError("purge_too_recent");
   }
 
   let storageTarget: RecordingStorageTarget | null = null;
@@ -496,23 +591,23 @@ export async function purgeRecordingAction(formData: FormData) {
   if (recording.storage_path) {
     storageTarget = getCanonicalRecordingStorageTarget(
       recording.storage_path,
-      user.id,
-      parsed.recordingId
+      userId,
+      recordingId
     );
 
     if (!storageTarget) {
-      redirect(appendQueryStatus(nextPath, "error", "purge_failed"));
+      throw new TrashMutationError("purge_failed");
     }
   }
 
   const claimId = randomUUID();
-  const claimStartedAt = new Date().toISOString();
-  const staleBefore = new Date(Date.now() - PURGE_CLAIM_TIMEOUT_MS).toISOString();
+  const claimStartedAt = new Date(nowMs).toISOString();
+  const staleBefore = new Date(nowMs - PURGE_CLAIM_TIMEOUT_MS).toISOString();
   let claimQuery = admin
     .from("recordings")
     .update({ purge_claim_id: claimId, purge_started_at: claimStartedAt })
-    .eq("id", parsed.recordingId)
-    .eq("user_id", user.id)
+    .eq("id", recordingId)
+    .eq("user_id", userId)
     .eq("status", "deleted")
     .lte("deleted_at", purgeEligibleBefore)
     .or(`purge_started_at.is.null,purge_started_at.lt.${staleBefore}`);
@@ -526,11 +621,11 @@ export async function purgeRecordingAction(formData: FormData) {
     .maybeSingle();
 
   if (claimError) {
-    redirect(appendQueryStatus(nextPath, "error", "purge_failed"));
+    throw new TrashMutationError("purge_failed");
   }
 
   if (!claimed || claimed.storage_path !== recording.storage_path) {
-    redirect(appendQueryStatus(nextPath, "error", "purge_in_progress"));
+    throw new TrashMutationError("purge_in_progress");
   }
 
   let storageObjects: string[] = [];
@@ -539,37 +634,37 @@ export async function purgeRecordingAction(formData: FormData) {
     try {
       storageObjects = await getRecordingStorageObjects(admin, storageTarget);
     } catch {
-      await releasePurgeClaim(admin, parsed.recordingId, user.id, claimId);
-      redirect(appendQueryStatus(nextPath, "error", "purge_storage_failed"));
+      await releasePurgeClaim(admin, recordingId, userId, claimId);
+      throw new TrashMutationError("purge_storage_failed");
     }
 
     try {
       await removeRecordingStorageObjects(
         admin,
         storageObjects,
-        parsed.recordingId,
-        user.id,
+        recordingId,
+        userId,
         claimId
       );
     } catch (error) {
       const errorCode = error instanceof PurgeClaimLostError
         ? "purge_failed"
         : "purge_storage_failed";
-      redirect(appendQueryStatus(nextPath, "error", errorCode));
+      throw new TrashMutationError(errorCode);
     }
   }
 
   const verificationTarget: RecordingStorageTarget = {
     isSegmented: true,
-    path: `${user.id}/${parsed.recordingId}/`
+    path: `${userId}/${recordingId}/`
   };
   let storageIsEmpty = false;
 
   for (let round = 0; round <= STORAGE_LATE_CLEANUP_ROUNDS; round += 1) {
-    const ownsClaim = await refreshPurgeClaim(admin, parsed.recordingId, user.id, claimId);
+    const ownsClaim = await refreshPurgeClaim(admin, recordingId, userId, claimId);
 
     if (!ownsClaim) {
-      redirect(appendQueryStatus(nextPath, "error", "purge_failed"));
+      throw new TrashMutationError("purge_failed");
     }
 
     let lateStorageObjects: string[];
@@ -577,7 +672,7 @@ export async function purgeRecordingAction(formData: FormData) {
     try {
       lateStorageObjects = await getRecordingStorageObjects(admin, verificationTarget);
     } catch {
-      redirect(appendQueryStatus(nextPath, "error", "purge_storage_failed"));
+      throw new TrashMutationError("purge_storage_failed");
     }
 
     if (lateStorageObjects.length === 0) {
@@ -593,40 +688,71 @@ export async function purgeRecordingAction(formData: FormData) {
       await removeRecordingStorageObjects(
         admin,
         lateStorageObjects,
-        parsed.recordingId,
-        user.id,
+        recordingId,
+        userId,
         claimId
       );
     } catch (error) {
       const errorCode = error instanceof PurgeClaimLostError
         ? "purge_failed"
         : "purge_storage_failed";
-      redirect(appendQueryStatus(nextPath, "error", errorCode));
+      throw new TrashMutationError(errorCode);
     }
   }
 
   if (!storageIsEmpty) {
-    redirect(appendQueryStatus(nextPath, "error", "purge_storage_failed"));
+    throw new TrashMutationError("purge_storage_failed");
   }
 
   const { data: deleted, error: deleteError } = await admin
     .from("recordings")
     .delete()
-    .eq("id", parsed.recordingId)
-    .eq("user_id", user.id)
+    .eq("id", recordingId)
+    .eq("user_id", userId)
     .eq("status", "deleted")
     .eq("purge_claim_id", claimId)
     .select("id")
     .maybeSingle();
 
   if (deleteError || !deleted) {
-    redirect(appendQueryStatus(nextPath, "error", "purge_failed"));
+    throw new TrashMutationError("purge_failed");
   }
+}
 
-  revalidatePath("/");
-  revalidatePath("/recordings");
-  revalidatePath("/trash");
+// purgeRecordingAction preserves the existing redirecting single-item form contract.
+export async function purgeRecordingAction(formData: FormData) {
+  const parsed = parseRecordingPurgeForm(formData);
+  const nextPath = getSafeNextPath(parsed.next ?? "/trash");
+  const { user } = await requireTrashUser(nextPath);
+  const admin = createAdminClient();
+  try {
+    await purgeRecordingForUser(admin, user.id, parsed.recordingId, Date.now());
+  } catch (error) {
+    const code = error instanceof TrashMutationError ? error.code : "purge_failed";
+    redirect(appendQueryStatus(nextPath, "error", code));
+  }
+  revalidateTrashPaths(parsed.recordingId);
   redirect(clearQueryStatus(nextPath, "error"));
+}
+
+// purgeRecordingMutationAction performs one non-redirecting purge request with sanitized output.
+export async function purgeRecordingMutationAction(formData: FormData): Promise<TrashItemResult> {
+  const recordingId = parseSingleRecordingMutationForm(formData);
+  if (!recordingId) return { id: "item", ok: false, code: "invalid_item" };
+
+  const { user } = await requireTrashUserWithoutRedirect();
+  const admin = createAdminClient();
+  try {
+    await purgeRecordingForUser(admin, user.id, recordingId, Date.now());
+    revalidateTrashPaths(recordingId);
+    return { id: recordingId, ok: true };
+  } catch (error) {
+    return {
+      id: recordingId,
+      ok: false,
+      code: error instanceof TrashMutationError ? error.code : "purge_failed"
+    };
+  }
 }
 
 // appendQueryStatus preserves existing safe URL state while replacing one feedback value.

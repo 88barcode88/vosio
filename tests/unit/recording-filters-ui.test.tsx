@@ -110,6 +110,31 @@ afterEach(async () => {
 });
 
 describe("RecordingFilters URL navigation", () => {
+  it("keeps search visible while preserving mounted advanced filter values", async () => {
+    navigation.currentSearch = `scope=fixture&client=${clientA}&folder=${folderA}`;
+    await act(async () => root.render(
+      <RecordingFilters
+        filters={{ clientId: clientA, folderId: folderA, projectId: null, tagIds: [] }}
+        options={options}
+        searchQuery=""
+      />
+    ));
+
+    const advancedTrigger = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "Filtry (2)");
+    expect(advancedTrigger?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector('input[name="q"]')).not.toBeNull();
+    expect(container.querySelector('select[name="client"]')?.closest("[hidden]")).not.toBeNull();
+
+    await act(async () => advancedTrigger?.click());
+    await setSelect("client", clientB);
+    await setSelect("folder", folderA);
+    await act(async () => advancedTrigger?.click());
+    expect(container.querySelector<HTMLSelectElement>('select[name="client"]')?.value).toBe(clientB);
+    expect(container.querySelector<HTMLSelectElement>('select[name="folder"]')?.value).toBe(folderA);
+    expect(container.querySelector('select[name="client"]')?.closest("[hidden]")).not.toBeNull();
+  });
+
   it("immediately changes the client, clears an incompatible project and preserves unrelated URL parameters", async () => {
     const filters = { clientId: clientA, folderId: null, projectId: projectA, tagIds: [] };
     navigation.currentSearch = `scope=fixture&q=call&client=${clientA}&project=${projectA}&page=2`;
@@ -292,9 +317,8 @@ describe("RecordingFilters URL navigation", () => {
       <RecordingFilters filters={emptyFilters} options={options} searchQuery="call" />
     ));
 
-    const clearSearchButton = Array.from(container.querySelectorAll<HTMLButtonElement>(
-      ".recording-filter-actions button"
-    )).at(-1);
+    const clearSearchButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent === "Vyčistit hledání");
     await act(async () => clearSearchButton?.click());
     await act(async () => { await vi.advanceTimersByTimeAsync(350); });
 
@@ -320,7 +344,7 @@ describe("RecordingFilters URL navigation", () => {
     for (const control of container.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>(
       'form.recording-filters input[name="tag"], form.recording-filters select, form.recording-filters button'
     )) {
-      expect(control.disabled, control.outerHTML).toBe(true);
+      expect(control.matches(":disabled"), control.outerHTML).toBe(true);
     }
 
     await act(async () => {

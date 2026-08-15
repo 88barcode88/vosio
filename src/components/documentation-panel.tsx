@@ -65,12 +65,12 @@ const documentationSections: DocumentationSection[] = [
   },
   {
     body: [
-      "Prompty jsou instrukce uložené v Supabase. Systémové prompty jsou read-only, aby zůstala zachovaná základní kvalita výstupů, ale uživatel si z nich může vytvořit vlastní kopii.",
-      "Vlastní prompty slouží pro specifické způsoby vytěžení přepisu: interní zápisy, klientské e-maily, CRM poznámky nebo vlastní strukturovaná data."
+      "AI prompty jsou instrukce za šesti existujícími AI tlačítky. Uživatel upravuje pouze text; název, typ výstupu a JSON schéma zůstávají systémové a pouze ke čtení.",
+      "Upravený text se automaticky použije pod stejným tlačítkem. Obnovení výchozího nastavení deaktivuje úpravu, ale nemění starší uložené AI výstupy ani jejich auditní údaje."
     ],
     id: "prompty",
-    kicker: "Systémové a vlastní instrukce",
-    title: "Prompty"
+    kicker: "Systémové základy a vlastní text",
+    title: "AI prompty"
   },
   {
     body: [

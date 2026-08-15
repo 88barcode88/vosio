@@ -22,7 +22,7 @@ import {
 const mobileNavigationItems: NavigationItem[] = [
   { href: "/recordings", label: "Nahrávky", icon: FileAudio, view: "recordings" },
   { href: "/recordings/new", label: "Nová", icon: Plus, view: "recordings" },
-  { href: "/templates", label: "Prompty", icon: FileText, view: "templates" },
+  { href: "/templates", label: "AI prompty", icon: FileText, view: "templates" },
   { href: "/settings", label: "Nastavení", icon: Settings2, view: "settings" }
 ];
 
@@ -32,7 +32,13 @@ function resolveNavigationHref(href: WorkspaceNavigationHref, overrides?: Naviga
 }
 
 // NewRecordingNavigationLink gives the desktop create route the same active and pending feedback as navigation rows.
-export function NewRecordingNavigationLink({ hrefOverrides }: { hrefOverrides?: NavigationHrefOverrides }) {
+export function NewRecordingNavigationLink({
+  compact = false,
+  hrefOverrides
+}: {
+  compact?: boolean;
+  hrefOverrides?: NavigationHrefOverrides;
+}) {
   const pathname = usePathname();
   const [pending, setPending] = useState(false);
 
@@ -42,6 +48,7 @@ export function NewRecordingNavigationLink({ hrefOverrides }: { hrefOverrides?: 
 
   return (
     <Link
+      aria-label={compact ? "Nová nahrávka" : undefined}
       aria-current={pathname === "/recordings/new" ? "page" : undefined}
       className={[
         "new-recording-button",
@@ -53,9 +60,10 @@ export function NewRecordingNavigationLink({ hrefOverrides }: { hrefOverrides?: 
         if (event.defaultPrevented) return;
         setPending(true);
       }}
+      title={compact ? "Nová nahrávka" : undefined}
     >
       <Plus size={16} />
-      Nová nahrávka
+      <span className="navigation-label">Nová nahrávka</span>
     </Link>
   );
 }
@@ -76,9 +84,11 @@ export function isNavigationItemActive(
 // WorkspaceNavigation renders only the primary desktop destinations with route pending feedback.
 export function WorkspaceNavigation({
   activeView,
+  compact = false,
   hrefOverrides
 }: {
   activeView: WorkspaceView;
+  compact?: boolean;
   hrefOverrides?: NavigationHrefOverrides;
 }) {
   const pathname = usePathname();
@@ -101,6 +111,7 @@ export function WorkspaceNavigation({
 
         return (
           <Link
+            aria-label={compact ? item.label : undefined}
             aria-current={isActive ? "page" : undefined}
             className={className}
             href={resolveNavigationHref(item.href, hrefOverrides)}
@@ -109,9 +120,10 @@ export function WorkspaceNavigation({
               if (event.defaultPrevented) return;
               setPendingHref(item.href);
             }}
+            title={compact ? item.label : undefined}
           >
             <item.icon size={16} />
-            {item.label}
+            <span className="navigation-label">{item.label}</span>
           </Link>
         );
       })}
@@ -122,9 +134,11 @@ export function WorkspaceNavigation({
 // SidebarUtilityNavigation groups secondary desktop destinations above support and account controls.
 export function SidebarUtilityNavigation({
   activeView,
+  compact = false,
   hrefOverrides
 }: {
   activeView: WorkspaceView;
+  compact?: boolean;
   hrefOverrides?: NavigationHrefOverrides;
 }) {
   const pathname = usePathname();
@@ -143,6 +157,7 @@ export function SidebarUtilityNavigation({
 
         return (
           <Link
+            aria-label={compact ? item.label : undefined}
             aria-current={isActive ? "page" : undefined}
             className={[
               "nav-item",
@@ -155,9 +170,10 @@ export function SidebarUtilityNavigation({
               if (event.defaultPrevented) return;
               setPendingHref(item.href);
             }}
+            title={compact ? item.label : undefined}
           >
             <item.icon size={16} />
-            {item.label}
+            <span className="navigation-label">{item.label}</span>
           </Link>
         );
       })}

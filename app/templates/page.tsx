@@ -4,7 +4,7 @@ import {
   canonicalizePromptTemplateSearchParams,
   createPromptTemplateSearchParams
 } from "@/lib/prompt-templates/navigation";
-import { listPromptTemplates } from "@/lib/prompt-templates/queries";
+import { listEffectivePromptTemplates } from "@/lib/prompt-templates/queries";
 import { createClient } from "@/lib/supabase/server";
 
 type TemplatesPageProps = {
@@ -19,10 +19,10 @@ export default async function TemplatesPage({ searchParams }: TemplatesPageProps
 
   if (!user) redirect("/login?next=/templates");
 
-  const promptTemplates = await listPromptTemplates(supabase);
+  const promptTemplates = await listEffectivePromptTemplates(supabase);
   const canonical = canonicalizePromptTemplateSearchParams(
     createPromptTemplateSearchParams(query),
-    new Set(promptTemplates.map((template) => template.id))
+    new Set(promptTemplates.map((template) => template.systemPromptId))
   );
 
   if (canonical.changed) {

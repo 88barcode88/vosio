@@ -3,6 +3,8 @@ import RecordingPage from "../../app/recordings/page";
 import { RECORDING_SEARCH_MAX_PAGE } from "@/lib/recordings/search";
 
 const mocks = vi.hoisted(() => ({
+  countDeleted: vi.fn(),
+  countStatuses: vi.fn(),
   createClient: vi.fn(),
   listOptions: vi.fn(),
   listRecordings: vi.fn(),
@@ -15,7 +17,11 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 vi.mock("@/lib/recording-organization/queries", () => ({
   listRecordingOrganizationOptions: mocks.listOptions
 }));
-vi.mock("@/lib/recordings/queries", () => ({ listRecordings: mocks.listRecordings }));
+vi.mock("@/lib/recordings/queries", () => ({
+  countDeletedRecordings: mocks.countDeleted,
+  countOwnRecordingStatuses: mocks.countStatuses,
+  listRecordings: mocks.listRecordings
+}));
 vi.mock("@/lib/recordings/search", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/recordings/search")>()),
   searchOwnRecordings: mocks.searchOwnRecordings
@@ -45,6 +51,16 @@ beforeEach(() => {
   });
   mocks.listOptions.mockResolvedValue(options);
   mocks.listRecordings.mockResolvedValue([]);
+  mocks.countDeleted.mockResolvedValue(2);
+  mocks.countStatuses.mockResolvedValue({
+    completed: 5,
+    created: 1,
+    deleted: 0,
+    failed: 3,
+    transcribing: 4,
+    uploaded: 6,
+    uploading: 7
+  });
   mocks.searchOwnRecordings.mockResolvedValue({
     page: 2,
     pageSize: 25,
@@ -62,6 +78,7 @@ describe("recordings search page routing", () => {
         page: "2",
         project: projectId,
         q: "Lucern CRM",
+        status: "failed",
         tag: [tagA, tagB]
       })
     });
@@ -74,10 +91,14 @@ describe("recordings search page routing", () => {
         tagIds: [tagA, tagB]
       },
       page: 2,
-      searchQuery: "Lucern CRM"
+      searchQuery: "Lucern CRM",
+      status: "failed"
     });
     expect(mocks.listRecordings).not.toHaveBeenCalled();
     expect(element.props.recordingSearchPage).toMatchObject({ page: 2, totalCount: 51 });
+    expect(element.props.recordingStatus).toBe("failed");
+    expect(element.props.recordingStatusCounts).toMatchObject({ failed: 3, deleted: 2 });
+    expect(element.props.recordingsSearchParams).toContain("status=failed");
     const previous = new URL(element.props.recordingSearchPreviousHref, "https://vosio.local");
     const next = new URL(element.props.recordingSearchNextHref, "https://vosio.local");
     expect(previous.searchParams.get("page")).toBeNull();
@@ -93,7 +114,8 @@ describe("recordings search page routing", () => {
     const element = await RecordingPage({ searchParams: Promise.resolve({ client: clientId }) });
 
     expect(mocks.listRecordings).toHaveBeenCalledWith(expect.anything(), {
-      organizationFilters: { clientId, folderId: null, projectId: null, tagIds: [] }
+      organizationFilters: { clientId, folderId: null, projectId: null, tagIds: [] },
+      status: null
     });
     expect(mocks.searchOwnRecordings).not.toHaveBeenCalled();
     expect(element.props.recordings).toBe(rows);

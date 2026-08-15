@@ -47,17 +47,26 @@ for (const width of [375, 768, 1024, 1440]) {
     await page.goto(fixturePath(fixtureScope));
 
     const disclosure = page.getByRole("button", { name: "Spravovat" });
-    const management = page.getByRole("region", { name: "Správa organizace" });
     await expect(disclosure).toHaveAttribute("aria-expanded", "false");
-    await expect(management).toBeHidden();
+    expect((await getBox(disclosure)).height).toBeGreaterThanOrEqual(44);
+    await expect(page.getByRole("dialog", { name: "Správa organizace" })).toHaveCount(0);
     await disclosure.click();
+    const management = page.getByRole("dialog", { name: "Správa organizace" });
     await expect(management).toBeVisible();
     await expect(management.getByRole("heading", { name: "Klienti" })).toBeVisible();
     await expect(management.getByRole("heading", { name: "Projekty" })).toBeVisible();
     await expect(management.getByRole("heading", { name: "Složky" })).toBeVisible();
     await expect(management.getByRole("heading", { name: "Štítky" })).toBeVisible();
     await expect(page.getByRole("form", { name: "Filtrování nahrávek" })).toBeVisible();
+    await page.getByRole("button", { name: "Zavřít správu organizace" }).click();
+    const advancedFilters = page.getByRole("button", { name: /^Filtry \(\d+\)$/u });
+    await expect(advancedFilters).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("region", { name: "Pokročilé filtry nahrávek" })).toBeHidden();
     await expect(page.getByRole("heading", { name: /Bez klienta/ })).toBeVisible();
+
+    for (const chip of await page.locator(".recordings-status-summary a").all()) {
+      expect((await getBox(chip)).height).toBeGreaterThanOrEqual(44);
+    }
 
     const row = page.locator(".recordings-row").first();
     const main = row.locator(".recordings-row-main");
@@ -77,7 +86,7 @@ for (const width of [375, 768, 1024, 1440]) {
     if (width <= 900) {
       expect(actionsBox.y).toBeGreaterThanOrEqual(mainBox.y + mainBox.height - 0.5);
       for (const control of await page.locator(
-        ".recording-filters input, .recording-filters select, .recording-filters button, .recordings-row-actions button"
+        ".recording-filters input:visible, .recording-filters select:visible, .recording-filters button:visible, .recordings-row-actions button:visible"
       ).all()) {
         const box = await getBox(control);
         expect(box.height).toBeGreaterThanOrEqual(44);
@@ -101,6 +110,7 @@ for (const width of [375, 768, 1024, 1440]) {
 }
 
 test("URL-backed filters survive Back and Forward and the title remains the detail opener", async ({ page }) => {
+  test.slow();
   const scope = fixtureScope;
   await page.goto(fixturePath(scope));
   await page.getByRole("button", { name: "Spravovat" }).click();
@@ -117,13 +127,21 @@ test("URL-backed filters survive Back and Forward and the title remains the deta
   await create("Přidat projekt", "CRM", "Acme");
   await create("Přidat složku", "Hovory");
   await create("Přidat štítek", "Důležité");
+  await page.getByRole("button", { name: "Zavřít správu organizace" }).click();
 
   const filters = page.getByRole("form", { name: "Filtrování nahrávek" });
   await filters.getByLabel("Hledat").fill("Call");
   await expect(page).toHaveURL((url) => url.searchParams.get("q") === "Call");
+  await filters.getByRole("button", { name: /^Filtry \(\d+\)$/u }).click();
   await filters.getByLabel("Klient").selectOption({ label: "Acme" });
+  await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("client")));
+  await filters.getByRole("button", { name: /^Filtry \(\d+\)$/u }).click();
   await filters.getByLabel("Projekt").selectOption({ label: "CRM" });
+  await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("project")));
+  await filters.getByRole("button", { name: /^Filtry \(\d+\)$/u }).click();
   await filters.getByLabel("Složka").selectOption({ label: "Hovory" });
+  await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("folder")));
+  await filters.getByRole("button", { name: /^Filtry \(\d+\)$/u }).click();
   await filters.getByRole("checkbox", { name: "Důležité" }).check();
   await expect(page).toHaveURL((url) => url.searchParams.getAll("tag").length === 1);
 
@@ -132,23 +150,32 @@ test("URL-backed filters survive Back and Forward and the title remains the deta
   await page.goto(selectedUrl.toString());
   const pageTwoUrl = page.url();
   const restoredFilters = page.getByRole("form", { name: "Filtrování nahrávek" });
+  await restoredFilters.getByRole("button", { name: /^Filtry \(\d+\)$/u }).click();
   await restoredFilters.getByLabel("Složka").selectOption("");
   await expect(page).toHaveURL((url) => !url.searchParams.has("page") && !url.searchParams.has("folder"));
 
   await page.goBack();
   await expect(page).toHaveURL(pageTwoUrl);
+  await restoredFilters.getByRole("button", { name: /^Filtry \(\d+\)$/u }).click();
   await expect(restoredFilters.getByLabel("Hledat")).toHaveValue("Call");
   await expect(restoredFilters.getByLabel("Klient")).toHaveValue(/.+/);
   await expect(restoredFilters.getByLabel("Projekt")).toHaveValue(/.+/);
   await expect(restoredFilters.getByLabel("Složka")).toHaveValue(/.+/);
   await expect(restoredFilters.getByRole("checkbox", { name: "Důležité" })).toBeChecked();
   await page.goForward();
+  await restoredFilters.getByRole("button", { name: /^Filtry \(\d+\)$/u }).click();
   await expect(restoredFilters.getByLabel("Složka")).toHaveValue("");
 
   await filters.getByRole("button", { name: "Vyčistit filtry" }).click();
-  const title = page.getByRole("link", { name: /Detail nahrávky Call Acme hlavní/ });
+  await page.getByRole("link", { name: "Chyba 3" }).click();
+  await expect(page).toHaveURL((url) => url.searchParams.get("status") === "failed");
+  await page.goBack();
+  const title = page.locator(".recordings-row-title > a").first();
   await expect(title).toHaveAttribute("href", /\/recordings\/[^?]+$/u);
+  await expect(title).toHaveAccessibleName(/Detail nahrávky/u);
   expect(await title.textContent()).not.toContain("Otevřít");
+  const titleHref = await title.getAttribute("href");
+  await expect(page.locator(`a[href="${titleHref}"]`)).toHaveCount(1);
 });
 
 test("indexed deep links, filtered empty and sanitized search errors expose recovery actions", async ({ page }) => {
@@ -221,7 +248,7 @@ for (const width of [901, 1024, 1440]) {
       } else {
         expect(normalActionsBox.x)
           .toBeGreaterThanOrEqual(normalMainBox.x + normalMainBox.width - 0.5);
-        expect(normalActionsBox.width).toBeCloseTo(116, 0);
+        expect(normalActionsBox.width).toBeCloseTo(surface.fields ? 96 : 116, 0);
       }
       if (surface.fields) {
         const fieldBoxes = await Promise.all(

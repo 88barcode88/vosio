@@ -54,20 +54,13 @@ export function NewRecordingWorkspace({
         </p>
       ) : null}
 
-      <dl className="recording-storage-summary" aria-label="Limity úložiště">
-        <div>
-          <dt>Bucket recordings</dt>
-          <dd>{storageLimitSummary.bucketLimit}</dd>
-        </div>
-        <div>
-          <dt>Globální limit</dt>
-          <dd>{storageLimitSummary.globalLimit}</dd>
-        </div>
-        <div>
-          <dt>Preference</dt>
-          <dd>{storageLimitSummary.planLabel}</dd>
-        </div>
-      </dl>
+      <p className="recording-storage-info-row" aria-label="Limity úložiště">
+        <span><strong>Bucket recordings:</strong> {storageLimitSummary.bucketLimit}</span>
+        <span aria-hidden="true">·</span>
+        <span><strong>Globální limit:</strong> {storageLimitSummary.globalLimit}</span>
+        <span aria-hidden="true">·</span>
+        <span><strong>Preference:</strong> {storageLimitSummary.planLabel}</span>
+      </p>
 
       <div className="capture-grid capture-primary-grid">
         <article className="capture-card capture-card-primary" data-primary-capture="live">

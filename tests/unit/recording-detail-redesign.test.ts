@@ -44,6 +44,15 @@ describe("Notion Warm recording detail contract", () => {
     expect(transcriptCss).toMatch(/\.transcript-table-scroll\s*\{[\s\S]*?overflow:\s*visible;/);
   });
 
+  it("keeps speaker autosave feedback inside the full-width one-scroll detail", () => {
+    expect(workbenchSource).not.toContain('className="recording-rail"');
+    expect(workspaceCss).toMatch(/\.recording-workbench\s*\{[\s\S]*?width:\s*100%;/);
+    expect(transcriptCss).toMatch(/\.transcript-table-scroll\s*\{[\s\S]*?overflow:\s*visible;/);
+    expect(transcriptCss).toMatch(/\.speaker-summary-feedback\s*\{[\s\S]*?min-height:\s*20px;/);
+    expect(transcriptCss).not.toMatch(/\.transcript-panel\s*\{[^}]*max-width:/);
+    expect(transcriptCss).not.toMatch(/\.transcript-table-scroll\s*\{[^}]*overflow-y:\s*(auto|scroll)/);
+  });
+
   it("keeps player and task icon controls at least 44px touch-safe", () => {
     expect(transcriptCss).toMatch(/\.recording-audio-toggle\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/);
     expect(transcriptCss).toMatch(/\.recording-audio-progress input\s*\{[\s\S]*?min-height:\s*44px;/);

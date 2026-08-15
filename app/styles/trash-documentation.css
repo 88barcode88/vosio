@@ -14,18 +14,68 @@
   line-height: 1.45;
 }
 
+.trash-route-notice {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.trash-bulk-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  padding: 7px;
+}
+
+.trash-bulk-toolbar > span {
+  flex-basis: 100%;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.trash-selection-control {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+}
+
+.trash-bulk-progress {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.trash-bulk-progress progress {
+  width: 100%;
+}
+
+.trash-bulk-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .trash-recording-list {
   gap: 6px;
 }
 
 .trash-recording-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 16px;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 6px;
   background: var(--surface);
   padding: 10px 12px;
 }
@@ -270,12 +320,14 @@
 
 @media (max-width: 640px) {
   .trash-recording-row {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr);
     gap: 8px;
     padding: 12px;
   }
 
+  .trash-recording-actions,
   .trash-recording-row time {
+    grid-column: 2;
     justify-self: start;
   }
 
@@ -291,6 +343,10 @@
 
   .trash-action-error {
     grid-column: 1 / -1;
+  }
+
+  .trash-bulk-progress {
+    grid-template-columns: 1fr;
   }
 
   .not-found-page {

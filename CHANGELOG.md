@@ -4,6 +4,28 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-08-15
+
+### Added
+
+- Kompaktní Nahrávky se stavovými filtry, přesnými počty stavů, pokročilými organizačními filtry a skládacím desktopovým sidebarem.
+- Hromadné obnovení z Koše a bezpečné permanentní mazání s klientskou frontou o souběžnosti dvě.
+- Uživatelské úpravy textu šesti AI promptů včetně návratu k systémovému originálu a neměnných výstupních schémat.
+- Přímé vytvoření časové osy z prázdného stavu a automatické ukládání jmen i rolí mluvčích.
+
+### Changed
+
+- AI quick actions automaticky používají efektivní uživatelský prompt a každý job ukládá přesný snapshot použitého promptu.
+- Správa klientů, projektů, složek a štítků se přesunula do kompaktního draweru bez ztráty URL filtrů.
+- Detail nahrávky sdílí stabilnější lifecycle AI běhů a dovoluje opakované paralelní spuštění stejného typu výstupu.
+
+### Fixed
+
+- Mobilní workspace zůstává přes celou šířku i po dříve uloženém sbalení desktopového sidebaru.
+- Fronta ukládání mluvčích zachovává nejnovější rozepsanou hodnotu při konfliktech, transportních chybách a rychlém přepínání detailů.
+- Prompt override revize odmítají chybějící nebo zastaralé hodnoty a staré odkazy na odstraněný create režim se bezpečně kanonikalizují.
+- Oprávnění tabulky prompt overrides jsou v migračním řetězci zúžená na `SELECT`, `INSERT` a `UPDATE`; browser role nemohou přímo spouštět validační trigger funkci.
+
 ## [0.1.5] - 2026-08-12
 
 ### Added

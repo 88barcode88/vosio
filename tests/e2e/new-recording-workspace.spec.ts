@@ -51,6 +51,12 @@ test("real primary capture cards stay equal on desktop and ordered when stacked"
   await expect(page.locator("[data-primary-capture='live']")).toContainText("Nahrávat live");
   await expect(page.locator("[data-primary-capture='upload']")).toContainText("Nahrát soubor");
   await expect(page.locator("[data-secondary-capture='transcript']")).toContainText("Vložit přepis");
+  const storageInfo = page.getByLabel("Limity úložiště");
+  await expect(storageInfo).toHaveClass(/recording-storage-info-row/u);
+  await expect(storageInfo.locator("div")).toHaveCount(0);
+  await expect(storageInfo).toContainText("Bucket recordings");
+  await expect(storageInfo).toContainText("Globální limit");
+  await expect(storageInfo).toContainText("Preference");
   await expect(page.getByText("Capture console")).toHaveCount(0);
 });
 
@@ -173,7 +179,7 @@ for (const width of [1024, 1440]) {
       expect(before.documentExtra).toBe(0);
       expect(before.bodyExtra).toBe(0);
       expect(before.shellExtra).toBe(0);
-      expect(before.contentExtra).toBeGreaterThan(0);
+      expect(before.contentExtra).toBe(0);
       expect(before.contentOverflow).toBe("auto");
     }
 

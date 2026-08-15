@@ -9,41 +9,18 @@ import {
   canonicalizePromptTemplateSearchParams,
   createPromptTemplateSearchParams
 } from "@/lib/prompt-templates/navigation";
-import type { PromptTemplateRow } from "@/lib/prompt-templates/types";
-import { inertPromptAction, rejectAiDeleteAction, rejectPromptAction } from "./actions";
+import {
+  rejectAiDeleteAction,
+  resetFixturePromptOverrideAction,
+  saveFixturePromptOverrideAction,
+} from "./actions";
 import { validatePromptsAiFixtureAccess } from "./development-runtime";
+import { getFixturePromptTemplates } from "./fixture-state";
 
 export const dynamic = "force-dynamic";
 
-const fixtureUserId = "00000000-0000-4000-8000-000000000901";
-const fixtureUserTemplateId = "00000000-0000-4000-8000-000000000902";
-const fixtureSystemTemplateId = "00000000-0000-4000-8000-000000000903";
 const activeRecordingId = "00000000-0000-4000-8000-000000000904";
 const trashedRecordingId = "00000000-0000-4000-8000-000000000905";
-const fixtureTemplates: PromptTemplateRow[] = [
-  {
-    created_at: "2026-08-09T10:00:00.000Z",
-    id: fixtureUserTemplateId,
-    is_system: false,
-    name: "Obchodní follow-up",
-    output_schema: { type: "object" },
-    processing_type: "follow_up_email",
-    prompt_text: "Vytvoř konkrétní follow-up e-mail z uloženého přepisu a zachovej dohodnuté kroky.",
-    updated_at: "2026-08-09T10:00:00.000Z",
-    user_id: fixtureUserId
-  },
-  {
-    created_at: "2026-08-09T10:00:00.000Z",
-    id: fixtureSystemTemplateId,
-    is_system: true,
-    name: "Systémové shrnutí",
-    output_schema: { type: "object" },
-    processing_type: "summary",
-    prompt_text: "Shrň hovor podle systémového kontraktu a uveď pouze doložené závěry z přepisu.",
-    updated_at: "2026-08-09T10:00:00.000Z",
-    user_id: null
-  }
-];
 const fixtureArchiveItems: AiArchiveItem[] = [
   {
     created_at: "2026-08-09T12:00:00.000Z",
@@ -79,8 +56,8 @@ export default async function PromptsAiE2EPage({
   const access = validatePromptsAiFixtureAccess(process.env.NODE_ENV, scope, view);
   if (!access) notFound();
 
-  const actionMode = getSingleValue(query.action) === "error" ? "error" : null;
-  const baseHref = `/login/prompts-ai-e2e?scope=${access.scope}&view=${access.view}${actionMode ? "&action=error" : ""}`;
+  const actionMode = getSingleValue(query.action) === "conflict" ? "conflict" : null;
+  const baseHref = `/login/prompts-ai-e2e?scope=${access.scope}&view=${access.view}${actionMode ? "&action=conflict" : ""}`;
   const navigationHrefOverrides = {
     "/documentation": baseHref,
     "/recordings": baseHref,
@@ -91,9 +68,10 @@ export default async function PromptsAiE2EPage({
   } as const;
 
   if (access.view === "templates") {
+    const fixtureTemplates = getFixturePromptTemplates(access.scope);
     const canonical = canonicalizePromptTemplateSearchParams(
       createPromptTemplateSearchParams(query),
-      new Set(fixtureTemplates.map((template) => template.id))
+      new Set(fixtureTemplates.map((template) => template.systemPromptId))
     );
     if (canonical.changed) redirect(buildFixtureRedirect(access.scope, access.view, canonical.searchParams));
 
@@ -101,9 +79,10 @@ export default async function PromptsAiE2EPage({
       <VosioWorkspace
         aiOutputs={[]}
         navigationHrefOverrides={navigationHrefOverrides}
-        promptTemplateActions={actionMode === "error"
-          ? { create: rejectPromptAction, duplicate: rejectPromptAction, update: rejectPromptAction }
-          : { create: inertPromptAction, duplicate: inertPromptAction, update: inertPromptAction }}
+        promptTemplateActions={{
+          resetOverride: resetFixturePromptOverrideAction.bind(null, access.scope),
+          saveOverride: saveFixturePromptOverrideAction.bind(null, access.scope, actionMode),
+        }}
         promptTemplateBaseHref={baseHref}
         promptTemplateNavigationState={canonical.state}
         promptTemplates={fixtureTemplates}

@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RecordingOrganizationFilters } from "@/lib/recording-organization/filters";
-import type { RecordingRow } from "@/lib/recordings/types";
+import type {
+  ActiveRecordingStatus,
+  RecordingRow,
+  RecordingStatus
+} from "@/lib/recordings/types";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 
 const recordingColumns = `
@@ -29,6 +33,8 @@ type RecordingCursor = {
   id: string;
 };
 
+export type RecordingStatusCounts = Record<RecordingStatus, number>;
+
 // recordingCursorFromRow validates and returns the stable tuple used by keyset pagination.
 function recordingCursorFromRow(recording: RecordingRow): RecordingCursor {
   if (!recording.id || !Number.isFinite(Date.parse(recording.created_at))) {
@@ -43,6 +49,7 @@ export async function listRecordings(
   supabase: SupabaseClient,
   options: {
     organizationFilters?: RecordingOrganizationFilters;
+    status?: ActiveRecordingStatus | null;
   } = {}
 ) {
   const filters = options.organizationFilters ?? {
@@ -57,13 +64,14 @@ export async function listRecordings(
   let cursor: RecordingCursor | null = null;
 
   for (;;) {
-    const { data, error } = await supabase.rpc("list_own_recordings_v1", {
+    const { data, error } = await supabase.rpc("list_own_recordings_v2", {
       p_before_created_at: cursor?.createdAt ?? null,
       p_before_id: cursor?.id ?? null,
       p_client_id: filters.clientId,
       p_folder_id: filters.folderId,
       p_limit: ORGANIZATION_RECORDING_PAGE_SIZE,
       p_project_id: filters.projectId,
+      p_status: options.status ?? null,
       p_tag_ids: filters.tagIds
     });
 
@@ -92,6 +100,46 @@ export async function listRecordings(
   }
 
   return recordings;
+}
+
+// countOwnRecordingStatuses returns complete active-status facets for current q and organization scope.
+export async function countOwnRecordingStatuses(
+  supabase: SupabaseClient,
+  options: { organizationFilters: RecordingOrganizationFilters; searchQuery: string }
+): Promise<RecordingStatusCounts> {
+  const { data, error } = await supabase.rpc("count_own_recording_statuses_v1", {
+    p_client_id: options.organizationFilters.clientId,
+    p_folder_id: options.organizationFilters.folderId,
+    p_project_id: options.organizationFilters.projectId,
+    p_query: options.searchQuery || null,
+    p_tag_ids: options.organizationFilters.tagIds
+  });
+  if (error || !Array.isArray(data)) throw new Error("Unable to count recording statuses");
+
+  const counts: RecordingStatusCounts = {
+    completed: 0,
+    created: 0,
+    deleted: 0,
+    failed: 0,
+    transcribing: 0,
+    uploaded: 0,
+    uploading: 0
+  };
+  for (const row of data as Array<{ status: RecordingStatus; total_count: number | string }>) {
+    const value = Number(row.total_count);
+    if (row.status in counts && Number.isSafeInteger(value) && value >= 0) counts[row.status] = value;
+  }
+  return counts;
+}
+
+// countDeletedRecordings returns only the current user's soft-deleted row count through RLS.
+export async function countDeletedRecordings(supabase: SupabaseClient) {
+  const { count, error } = await supabase
+    .from("recordings")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "deleted");
+  if (error || count === null) throw new Error("Unable to count deleted recordings");
+  return count;
 }
 
 // getRecordingById loads one recording for a detail route through Supabase RLS.

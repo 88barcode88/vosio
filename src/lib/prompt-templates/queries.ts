@@ -1,20 +1,22 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PromptTemplateRow } from "@/lib/prompt-templates/types";
+import {
+  mapEffectivePromptRow,
+  quickPromptProcessingTypes,
+  type EffectivePromptRpcRow,
+} from "@/lib/prompt-templates/effective";
 
-// listPromptTemplates loads system and user-owned prompt templates through Supabase RLS.
-export async function listPromptTemplates(supabase: SupabaseClient) {
-  const { data, error } = await supabase
-    .from("prompt_templates")
-    .select(
-      "id,created_at,updated_at,is_system,name,output_schema,processing_type,prompt_text,user_id"
-    )
-    .order("is_system", { ascending: false })
-    .order("processing_type", { ascending: true })
-    .returns<PromptTemplateRow[]>();
+// listEffectivePromptTemplates resolves the six owner-scoped quick-action prompts through authenticated RPC calls.
+export async function listEffectivePromptTemplates(supabase: SupabaseClient) {
+  return Promise.all(quickPromptProcessingTypes.map(async (processingType) => {
+    const { data, error } = await supabase
+      .rpc("resolve_effective_prompt_template_v1", { p_processing_type: processingType })
+      .returns<EffectivePromptRpcRow[]>()
+      .single();
 
-  if (error) {
-    throw new Error(`Unable to load prompt templates: ${error.message}`);
-  }
+    if (error || !data) {
+      throw new Error(`Unable to resolve ${processingType} prompt`);
+    }
 
-  return data ?? [];
+    return mapEffectivePromptRow(data);
+  }));
 }

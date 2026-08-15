@@ -265,6 +265,7 @@
 .speaker-summary {
   display: grid;
   gap: 10px;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--panel);
@@ -286,8 +287,11 @@
 .speaker-summary-list {
   display: grid;
   gap: 6px;
+  min-width: 0;
   max-height: none;
   overflow: visible;
+  container-name: speaker-summary-list;
+  container-type: inline-size;
   padding-right: 4px;
   scrollbar-color: rgba(56, 217, 208, 0.36) transparent;
   scrollbar-width: thin;
@@ -301,11 +305,11 @@
 }
 .speaker-summary-form {
   display: grid;
-  grid-template-columns: minmax(120px, 150px) minmax(180px, 1fr) minmax(150px, 190px) minmax(150px, 220px) 76px;
+  grid-template-columns: minmax(120px, 150px) minmax(180px, 1fr) minmax(150px, 190px) minmax(170px, 220px);
   align-items: end;
   gap: 6px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 4px;
   background: var(--panel-soft);
   padding: 7px;
 }
@@ -334,14 +338,23 @@
   background: var(--panel);
   padding: 0 9px;
 }
-.speaker-summary-form button {
-  min-height: 34px;
+.speaker-summary-feedback {
+  display: flex;
+  grid-column: 2 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.speaker-summary-feedback button {
+  min-height: 32px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--accent-text);
-  background: var(--accent-bg);
-  font-size: 12px;
-  font-weight: 800;
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--surface);
+  padding: 0 10px;
 }
 .speaker-summary-state {
   color: var(--text);
@@ -353,6 +366,15 @@
   color: var(--muted);
   font-size: 11px;
   line-height: 1.35;
+}
+@container speaker-summary-list (max-width: 780px) {
+  .speaker-summary-form {
+    grid-template-columns: minmax(120px, 150px) minmax(0, 1fr);
+  }
+
+  .speaker-summary-feedback {
+    grid-column: 1 / -1;
+  }
 }
 .transcript-table {
   overflow: visible;

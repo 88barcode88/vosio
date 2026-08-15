@@ -1154,28 +1154,15 @@
   background: color-mix(in srgb, var(--red) 8%, var(--panel));
   padding: 10px 12px;
 }
-.recording-storage-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+.recording-storage-info-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 7px;
   margin: 0;
-}
-.recording-storage-summary div {
-  display: grid;
-  gap: 3px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-soft);
-  padding: 9px 11px;
-}
-.recording-storage-summary dt {
-  color: var(--muted);
-  font-size: 12px;
-}
-.recording-storage-summary dd {
-  margin: 0;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
+  border-block: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 7px 2px;
+  font-size: 11px;
 }
 .capture-grid {
   display: grid;
@@ -1188,6 +1175,9 @@
   gap: 12px;
   min-width: 0;
   padding: 14px;
+}
+.new-recording-workspace .capture-card {
+  border-radius: 6px;
 }
 .capture-card-primary {
   min-height: 440px;
@@ -1572,7 +1562,7 @@
 .recordings-inbox.ui-panel {
   container: recordings-inbox / inline-size;
   gap: 12px;
-  border-radius: 12px;
+  border-radius: 6px;
   background: var(--surface);
   padding: 14px;
 }
@@ -1586,38 +1576,11 @@
 .recordings-inbox-header p {
   color: var(--text-secondary);
 }
-.recordings-header-new {
+.recordings-inbox > button[aria-expanded] {
   min-height: 44px;
-  color: var(--accent-text);
-  background: var(--accent);
-}
-.recordings-management-disclosure {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-}
-.recordings-management-disclosure .ui-disclosure-trigger {
-  min-height: 40px;
   background: var(--surface-muted);
   font-size: 12px;
   font-weight: 750;
-}
-.recordings-management-disclosure .ui-disclosure-panel {
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-muted);
-  padding: 10px;
-}
-.recordings-management-disclosure .ui-disclosure-panel[hidden] {
-  display: none;
-}
-.recordings-management-disclosure .organization-manager {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
 }
 .recording-filter-heading {
   display: flex;
@@ -1635,7 +1598,7 @@
   font-size: 11px;
 }
 .recordings-inbox .recording-filters {
-  border-radius: 12px;
+  border-radius: 6px;
   background: var(--surface-muted);
   padding: 12px;
 }
@@ -1653,29 +1616,65 @@
 .recordings-inbox .recording-filter-tags input {
   accent-color: var(--accent);
 }
+.recording-filter-basic-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+.recording-filter-basic-actions {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.recording-filter-basic-actions > button,
+.recording-filter-advanced .ui-disclosure-trigger {
+  min-height: 44px;
+}
+.recording-filter-advanced .ui-disclosure-panel {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  border-radius: 6px;
+}
+@media (max-width: 900px) {
+  .recording-filter-basic-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .recording-filter-basic-actions {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+}
 .recordings-status-summary {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 0;
+  gap: 6px;
   min-height: 36px;
   border-block: 1px solid var(--border);
   color: var(--text-secondary);
   padding: 7px 2px;
   font-size: 11px;
 }
-.recordings-status-total {
-  padding-right: 10px;
-}
-.recordings-status-segments {
-  display: flex;
+.recordings-status-summary a {
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-}
-.recordings-status-segment {
-  border-left: 1px solid var(--border);
-  padding: 0 10px;
+  gap: 5px;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  padding: 0 9px;
   white-space: nowrap;
+}
+.recordings-status-summary a[aria-current="page"] {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-muted);
 }
 .recordings-status-summary strong {
   color: var(--text);
@@ -1686,14 +1685,17 @@
   background: var(--surface-raised);
 }
 .recordings-inbox .recordings-row {
-  grid-template-columns: minmax(0, 1fr) 116px;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  border-radius: 6px;
   background: var(--surface);
 }
 .recordings-inbox .recordings-row:hover {
   background: var(--surface-muted);
 }
 .recordings-inbox .recordings-row-main {
-  grid-template-columns: minmax(260px, 1fr) 130px 110px;
+  grid-template-columns: minmax(220px, 1fr) 116px 88px;
+  min-height: 54px;
+  padding: 7px 10px;
 }
 .recordings-inbox .recordings-row-main span,
 .recordings-inbox .recordings-row-size {

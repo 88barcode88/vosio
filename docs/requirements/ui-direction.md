@@ -64,13 +64,15 @@ Sidebar má zůstat čistý a kompaktní:
 
 - `Nová nahrávka`
 - `Nahrávky`
-- `Prompty`
+- `AI prompty` (`/templates`)
 - `Koš`
 - `Nastavení`
 - spodní utility skupina `Koš`, `Nastavení`, `Dokumentace` nad supportem a účtem uživatele na desktopu
 - malá ikona přepnutí světlý/tmavý režim vedle názvu Vosio
 
-Sidebar nemá obsahovat duplicitní seznam nahrávek ani storage kartu. Nahrávky patří na stránku `/recordings`. Na mobilu do 900 px má fixed spodní navigace přesně pět cílů `Nahrávky`, `Nová`, `Prompty`, `Nastavení`, `Více`; Drawer `Více` zpřístupní `Koš`, `Dokumentaci`, motiv, support a účet s odhlášením.
+Sidebar nemá obsahovat duplicitní seznam nahrávek ani storage kartu. Nahrávky patří na stránku `/recordings` a route `/templates` zůstává stabilní pro `AI prompty`. Na mobilu do 900 px má fixed spodní navigace přesně pět cílů `Nahrávky`, `Nová`, `AI prompty`, `Nastavení`, `Více`; Drawer `Více` zpřístupní `Koš`, `Dokumentaci`, motiv, support a účet s odhlášením.
+
+Desktopový sidebar má 248 px rozbalený a 64 px sbalený. Sbalení je pouze lokální vizuální preference; všechny ikony zůstávají dostupné jako nejméně 44px cíle s popisem.
 
 `AI zpracování` se nemá zobrazovat jako samostatná primární položka v sidebaru, pokud pouze pracuje s výstupy konkrétní nahrávky. AI patří do detailu nahrávky jako tab.
 
@@ -146,11 +148,13 @@ Tab `Přepis` má být čitelný i u dlouhých hovorů.
 
 Požadavky:
 
-- dlouhý přepis se roluje uvnitř panelu,
+- dlouhý přepis používá jediný dokumentový scroll celé detailové stránky; player a taby zůstávají sticky a nevzniká druhý vertikální scroll,
 - mluvčí mají stabilní barevné odlišení,
 - pokud jsou dostupné Soniox speaker tokeny, zobrazit bloky podle mluvčích,
 - pokud speaker data nejsou dostupná, zobrazit souvislý text bez falešného rozdělení,
-- bloky přepisu mají být rozbalovací nebo kompaktně členěné, aby hodinový hovor nezničil stránku.
+- bloky přepisu jsou kompaktní řádky jedné tabulky, ne samostatné rozbalovací mini-tabulky,
+- změněné jméno mluvčího se automaticky uloží po opuštění pole a role okamžitě po výběru bez ztráty focusu,
+- starší settlement nesmí přepsat novější draft; chyba ponechá rozepsané hodnoty a nabídne retry posledního snapshotu.
 
 Cílové režimy zobrazení:
 
@@ -168,6 +172,7 @@ Má obsahovat:
 - dostupné prompty:
   - `Shrnutí`,
   - `Úkoly`,
+  - `Časová osa`,
   - `Zápis ze schůzky`,
   - `CRM poznámka`,
   - `E-mail po hovoru`,
@@ -201,6 +206,8 @@ Každá kapitola má obsahovat:
 
 Technické segmenty a tokeny mohou zůstat interní data, ale výchozí UI má ukazovat obsahový význam hovoru.
 
+Pokud kapitoly chybí, tab spustí `timeline_chapters` přímo s aktuálním výchozím AI modelem. Nepřepíná uživatele do `AI zpracování`, používá existující processing endpoint a během pending nebo error stavu ponechá uložené markery dostupné. Úspěch načte uložené kapitoly, chyba zachová retryable empty state.
+
 ## Nahrávky
 
 Route: `/recordings`
@@ -213,12 +220,15 @@ Požadavky:
 - název je hlavní Next odkaz na detail; editace a koš jsou jeho samostatní sourozenci,
 - editace názvu přes samostatný ovládací prvek,
 - editor názvu se po úspěšném uložení automaticky zavře; při chybě zůstane otevřený s rozepsanou hodnotou,
-- kompaktní stavová linka ukazuje všech sedm persisted stavů nad aktuálně filtrovaným seznamem nebo stránkou hledání,
+- kompaktní stavové URL chips ukazují přesné facety všech aktivních persisted stavů; samostatné `Smazáno` vede na `/trash`,
 - velikost, datum a zdroj zobrazit kompaktně,
 - filtry `q`, `client`, závislý `project`, `folder` a opakovatelný `tag` zůstávají URL-backed a synchronizované s Back/Forward,
+- hledání zůstává viditelné; klient, projekt, složka a štítky jsou v keep-mounted disclosure pokročilých filtrů,
 - desktop používá pracovní řádky a mobil do 900 px skládané karty bez horizontálního posunu.
 
-Klienti, projekty, ploché složky a štítky se spravují v defaultně zavřeném panelu `Spravovat`. Panel při zavření zůstává připojený, ale je skrytý pro focus i accessibility strom, takže rozepsaný nebo pending editor neztratí stav. Create, rename a assignment editory používají success-only collapse kontrakt; delete zůstává samostatná potvrzovaná destruktivní akce.
+Klienti, projekty, ploché složky a štítky se spravují v keep-mounted pravém Draweru `Spravovat`. Drawer při zavření zůstává připojený, ale je skrytý pro focus i accessibility strom, takže rozepsaný nebo pending editor neztratí stav. Create, rename a assignment editory používají success-only collapse kontrakt; delete zůstává samostatná potvrzovaná destruktivní akce.
+
+Nová nahrávka zobrazuje bucket, globální limit a preferenci jako jeden jemný informační řádek, ne tři technické karty. Koš podporuje výběr nejvýše 100 viditelných položek, partial bulk restore a permanentní mazání po jedné server mutation s klientskou souběžností 2. Neúspěšné nebo dosud nespouštěné položky zůstávají vybrané a viditelné.
 
 ## Mobil
 

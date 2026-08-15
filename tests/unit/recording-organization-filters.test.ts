@@ -6,7 +6,11 @@ import {
   parseRecordingOrganizationFilters
 } from "@/lib/recording-organization/filters";
 import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
-import { listRecordings } from "@/lib/recordings/queries";
+import {
+  countDeletedRecordings,
+  countOwnRecordingStatuses,
+  listRecordings
+} from "@/lib/recordings/queries";
 import type { RecordingRow } from "@/lib/recordings/types";
 
 const userId = "00000000-0000-4000-8000-000000000001";
@@ -160,7 +164,8 @@ describe("recording organization list query", () => {
       .mockResolvedValueOnce({ data: secondPage, error: null });
 
     await expect(listRecordings({ rpc } as never, {
-      organizationFilters: { clientId: clientA, folderId: folderA, projectId: projectA, tagIds: [tagA, tagB] }
+      organizationFilters: { clientId: clientA, folderId: folderA, projectId: projectA, tagIds: [tagA, tagB] },
+      status: "failed"
     })).resolves.toEqual([...firstPage, ...secondPage]);
 
     expect(rpc).toHaveBeenCalledTimes(2);
@@ -169,14 +174,15 @@ describe("recording organization list query", () => {
       p_folder_id: folderA,
       p_limit: 1000,
       p_project_id: projectA,
+      p_status: "failed",
       p_tag_ids: [tagA, tagB]
     };
-    expect(rpc).toHaveBeenNthCalledWith(1, "list_own_recordings_v1", {
+    expect(rpc).toHaveBeenNthCalledWith(1, "list_own_recordings_v2", {
       ...expectedFilters,
       p_before_created_at: null,
       p_before_id: null
     });
-    expect(rpc).toHaveBeenNthCalledWith(2, "list_own_recordings_v1", {
+    expect(rpc).toHaveBeenNthCalledWith(2, "list_own_recordings_v2", {
       ...expectedFilters,
       p_before_created_at: firstPage[999].created_at,
       p_before_id: firstPage[999].id
@@ -230,6 +236,36 @@ describe("recording organization list query", () => {
       "recording pagination cursor did not advance"
     );
     expect(stalledRpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads exact status facets and the separate RLS-scoped trash count", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [
+        { status: "completed", total_count: 7 },
+        { status: "failed", total_count: "3" }
+      ],
+      error: null
+    });
+
+    await expect(countOwnRecordingStatuses({ rpc } as never, {
+      organizationFilters: { clientId: clientA, folderId: null, projectId: null, tagIds: [tagA] },
+      searchQuery: "lucern"
+    })).resolves.toMatchObject({ completed: 7, failed: 3, deleted: 0 });
+    expect(rpc).toHaveBeenCalledWith("count_own_recording_statuses_v1", {
+      p_client_id: clientA,
+      p_folder_id: null,
+      p_project_id: null,
+      p_query: "lucern",
+      p_tag_ids: [tagA]
+    });
+
+    const eq = vi.fn().mockResolvedValue({ count: 2, error: null });
+    const select = vi.fn().mockReturnValue({ eq });
+    const from = vi.fn().mockReturnValue({ select });
+    await expect(countDeletedRecordings({ from } as never)).resolves.toBe(2);
+    expect(from).toHaveBeenCalledWith("recordings");
+    expect(select).toHaveBeenCalledWith("id", { count: "exact", head: true });
+    expect(eq).toHaveBeenCalledWith("status", "deleted");
   });
 
 });

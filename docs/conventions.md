@@ -88,4 +88,4 @@
 - Release metadata drž v samostatném commitu po feature commitech, které popisují.
 - Tag, push, deploy a databázový postflight jsou oddělené stavy a reportují se zvlášť.
 
-Forward migrace `20260810005550_restore_recordings_from_trash.sql` je source-only změna, dokud neproběhne samostatně schválený apply a postflight na konkrétním Supabase targetu. Lokální test ani build její aplikaci na vzdálenou databázi neprokazuje.
+Každá nová forward migrace je source-only změna, dokud neproběhne samostatně schválený apply a postflight na konkrétním Supabase targetu. Lokální test ani build její aplikaci na vzdálenou databázi neprokazuje.

@@ -347,6 +347,66 @@ for (const viewport of [
   });
 }
 
+for (const width of [901, 1024]) {
+  for (const collapsed of [false, true]) {
+    test(`speaker editor fits ${width}px with the sidebar ${collapsed ? "collapsed" : "expanded"}`, async ({ page }) => {
+      await page.setViewportSize({ height: 760, width });
+      await page.addInitScript((shouldCollapse) => {
+        if (shouldCollapse) {
+          window.localStorage.setItem("vosio-sidebar-collapsed", "true");
+        } else {
+          window.localStorage.removeItem("vosio-sidebar-collapsed");
+        }
+      }, collapsed);
+      await openFixture(page);
+      await expect(page.locator(".sidebar")).toHaveAttribute("data-collapsed", String(collapsed));
+
+      const geometry = await page.evaluate(() => {
+        const panel = document.querySelector<HTMLElement>(".speaker-summary");
+        const list = document.querySelector<HTMLElement>(".speaker-summary-list");
+        const form = document.querySelector<HTMLElement>(".speaker-summary-form");
+        const transcriptScroll = document.querySelector<HTMLElement>(".transcript-table-scroll");
+        if (!panel || !list || !form || !transcriptScroll) {
+          throw new Error("Missing speaker editor geometry target.");
+        }
+        const panelBox = panel.getBoundingClientRect();
+        const listBox = list.getBoundingClientRect();
+        const formBox = form.getBoundingClientRect();
+        const horizontalOffenders = Array.from(form.querySelectorAll<HTMLElement>("*"))
+          .filter((element) => {
+            const box = element.getBoundingClientRect();
+            return box.width > 0 && box.height > 0
+              && (box.left < listBox.left - 1 || box.right > listBox.right + 1);
+          })
+          .map((element) => ({ className: element.className, tagName: element.tagName }));
+        return {
+          documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          formOutsideList: formBox.right - listBox.right,
+          formOverflow: form.scrollWidth - form.clientWidth,
+          horizontalOffenders,
+          listOutsidePanel: listBox.right - panelBox.right,
+          nestedSpeakerScrollers: [panel, list, form]
+            .filter((element) => {
+              const overflowY = getComputedStyle(element).overflowY;
+              return ["auto", "scroll"].includes(overflowY)
+                && element.scrollHeight > element.clientHeight + 1;
+            })
+            .map((element) => element.className),
+          transcriptOverflowY: getComputedStyle(transcriptScroll).overflowY
+        };
+      });
+
+      expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
+      expect(geometry.formOutsideList).toBeLessThanOrEqual(1);
+      expect(geometry.formOverflow).toBeLessThanOrEqual(1);
+      expect(geometry.horizontalOffenders).toEqual([]);
+      expect(geometry.listOutsidePanel).toBeLessThanOrEqual(1);
+      expect(geometry.nestedSpeakerScrollers).toEqual([]);
+      expect(geometry.transcriptOverflowY).toBe("visible");
+    });
+  }
+}
+
 test("direct load and reload do not emit React hydration mismatch #418", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (message) => {

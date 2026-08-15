@@ -9,6 +9,7 @@ import {
   getTimelineRangeLabel
 } from "@/components/transcript-tabs/timeline-utils";
 import type { TranscriptTarget } from "@/components/transcript-tabs/types";
+import { useAiProcessingRun } from "@/components/transcript-tabs/use-ai-processing-run";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { RecordingMarkerRow, RecordingMarkerType } from "@/lib/recording-markers/types";
@@ -38,18 +39,20 @@ function formatMarkerOffset(offsetMs: number) {
 export function TimelineContent({
   activeTranscript,
   aiOutputs,
+  defaultAiModel,
   markers,
-  onOpenAiTab,
   onOpenMarker,
   structuredItems
 }: {
   activeTranscript: TranscriptRow | null;
   aiOutputs: AiOutputView[];
+  defaultAiModel: string;
   markers: RecordingMarkerRow[];
-  onOpenAiTab: () => void;
   onOpenMarker: (target: TranscriptTarget, recordingId: string) => void;
   structuredItems: StructuredAiItems;
 }) {
+  const processing = useAiProcessingRun(activeTranscript?.id ?? null);
+  const timelinePending = processing.isRunning("timeline_chapters");
   const timelineOutput = useMemo(() => getTimelineOutput(aiOutputs), [aiOutputs]);
   const chapters = useMemo(() => getPreferredTimelineChapters({
     aiOutputs,
@@ -121,9 +124,26 @@ export function TimelineContent({
           <AudioLines size={22} />
           <strong>Vytvořte obsahovou časovou osu</strong>
           <p>Časová osa vznikne z AI zpracování nad hotovým přepisem.</p>
-          <button className="secondary-inline-action" onClick={onOpenAiTab} type="button">
-            Otevřít AI zpracování
+          <button
+            aria-describedby="timeline-generation-state"
+            className="secondary-inline-action"
+            disabled={timelinePending}
+            onClick={() => void processing.run({
+              model: defaultAiModel,
+              processingType: "timeline_chapters"
+            })}
+            type="button"
+          >
+            {timelinePending ? "Vytvářím časovou osu…" : "Vytvořit časovou osu"}
           </button>
+          <p
+            className="timeline-generation-state"
+            id="timeline-generation-state"
+            role="status"
+            aria-live="polite"
+          >
+            {processing.message ?? "Výsledek se uloží do této nahrávky."}
+          </p>
         </div>
       ) : (
         <section className="timeline-chapter-section" aria-labelledby="timeline-chapters-title">

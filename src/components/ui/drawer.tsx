@@ -9,10 +9,11 @@ type DrawerProps = {
   label: string;
   children: ReactNode;
   className?: string;
+  keepMounted?: boolean;
 };
 
 // Drawer renders a side-placed, focus-managed dialog for larger editing tasks.
-export function Drawer({ open, onClose, label, children, className }: DrawerProps) {
+export function Drawer({ open, onClose, label, children, className, keepMounted = false }: DrawerProps) {
   const { dialogRef, handleKeyDown } = useDialogFocusTrap(open, onClose);
 
   // handleBackdropPointerDown closes only the backdrop and prevents the completed click from stealing restored focus.
@@ -22,17 +23,24 @@ export function Drawer({ open, onClose, label, children, className }: DrawerProp
     onClose();
   }
 
-  if (!open) return null;
+  if (!open && !keepMounted) return null;
 
   return (
-    <div className="ui-drawer-backdrop" onPointerDown={handleBackdropPointerDown} onKeyDown={handleKeyDown}>
+    <div
+      aria-hidden={!open || undefined}
+      aria-label={label}
+      className="ui-drawer-backdrop"
+      hidden={!open}
+      onKeyDown={open ? handleKeyDown : undefined}
+      onPointerDown={open ? handleBackdropPointerDown : undefined}
+    >
       <div
         ref={dialogRef}
-        className={["ui-drawer", className].filter(Boolean).join(" ")}
-        role="dialog"
-        aria-modal="true"
         aria-label={label}
-        tabIndex={-1}
+        aria-modal={open ? "true" : undefined}
+        className={["ui-drawer", className].filter(Boolean).join(" ")}
+        role={open ? "dialog" : undefined}
+        tabIndex={open ? -1 : undefined}
         onPointerDown={(event) => event.stopPropagation()}
       >
         {children}

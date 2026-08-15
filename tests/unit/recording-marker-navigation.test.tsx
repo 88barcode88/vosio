@@ -35,7 +35,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/lib/transcripts/actions", () => ({
-  updateTranscriptSpeakerAction: vi.fn(async () => undefined)
+  saveTranscriptSpeakerAutosaveAction: vi.fn(async () => undefined)
 }));
 
 const recordingId = "00000000-0000-4000-8000-000000000202";

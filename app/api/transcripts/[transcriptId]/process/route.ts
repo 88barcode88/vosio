@@ -14,19 +14,13 @@ import {
 } from "@/lib/model-options";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import {
+  quickPromptProcessingTypes,
+  type EffectivePromptRpcRow,
+  type QuickPromptProcessingType,
+} from "@/lib/prompt-templates/effective";
 import { buildAiTranscriptPromptContext } from "@/lib/transcripts/ai-context";
 import { getTranscriptSpeakerContext } from "@/lib/transcripts/speakers";
-
-const processingTypes = [
-  "summary",
-  "action_items",
-  "meeting_minutes",
-  "timeline_chapters",
-  "structured_extraction",
-  "crm_note",
-  "follow_up_email",
-  "custom_prompt"
-] as const;
 
 const routeParamsSchema = z.object({
   transcriptId: z.uuid()
@@ -36,11 +30,9 @@ const routeParamsSchema = z.object({
 const aiProcessingRateLimit = createRateLimiter({ limit: 10, windowMs: 60_000 });
 
 const requestBodySchema = z.object({
-  customPrompt: z.string().trim().min(1).max(4000).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   model: z.enum(aiModelIds).optional(),
-  processingType: z.enum(processingTypes),
-  promptId: z.uuid().optional(),
+  processingType: z.enum(quickPromptProcessingTypes),
   temperature: z.number().min(0).max(2).optional()
 });
 
@@ -72,9 +64,8 @@ function getSafeProviderErrorDetail(error: unknown) {
     .replace(/AIza[0-9A-Za-z_-]+/g, "AIza***");
 }
 
-// renderPrompt fills the stored prompt template with transcript and custom instructions.
+// renderPrompt fills the resolved prompt snapshot with transcript-owned context.
 function renderPrompt(input: {
-  customPrompt: string | null;
   metadata: Record<string, unknown>;
   promptText: string;
   speakerContext: unknown;
@@ -93,7 +84,7 @@ function renderPrompt(input: {
     .replaceAll("{{transcript_segments}}", segmentsJson)
     .replaceAll("{{speakers}}", speakersJson)
     .replaceAll("{{metadata}}", metadataJson)
-    .replaceAll("{{custom_prompt}}", input.customPrompt ?? "");
+    .replaceAll("{{custom_prompt}}", "");
 }
 
 // getAiProviderForModel resolves an allowed app model to its provider adapter.
@@ -149,20 +140,13 @@ async function getAuthenticatedTranscript(transcriptId: string) {
   return { transcript, user };
 }
 
-// getPromptTemplate loads a system or user-owned prompt template for the request type.
-async function getPromptTemplate(input: {
-  processingType: (typeof processingTypes)[number];
-  promptId?: string;
-}) {
+// resolveEffectivePrompt loads owner-specific text with the authoritative system schema through RLS.
+async function resolveEffectivePrompt(processingType: QuickPromptProcessingType) {
   const supabase = await createClient();
-  let query = supabase
-    .from("prompt_templates")
-    .select("id,name,output_schema,prompt_text,processing_type")
-    .eq("processing_type", input.processingType);
-
-  query = input.promptId ? query.eq("id", input.promptId) : query.eq("is_system", true);
-
-  const { data, error } = await query.limit(1).single();
+  const { data, error } = await supabase
+    .rpc("resolve_effective_prompt_template_v1", { p_processing_type: processingType })
+    .returns<EffectivePromptRpcRow[]>()
+    .single();
 
   if (error || !data) {
     throw new Error("Prompt šablona nebyla nalezena.");
@@ -184,10 +168,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (!body.success) {
       return NextResponse.json({ error: "Neplatný požadavek na AI zpracování." }, { status: 400 });
-    }
-
-    if (body.data.processingType === "custom_prompt" && !body.data.customPrompt) {
-      return NextResponse.json({ error: "Vlastní prompt je povinný." }, { status: 422 });
     }
 
     const authenticated = await getAuthenticatedTranscript(params.data.transcriptId);
@@ -216,17 +196,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: providerConfigurationError }, { status: 503 });
     }
 
-    const promptTemplate = await getPromptTemplate({
-      processingType: body.data.processingType,
-      promptId: body.data.promptId
-    });
+    const promptTemplate = await resolveEffectivePrompt(body.data.processingType);
     const admin = createAdminClient();
     const { data: job, error: jobError } = await admin
       .from("ai_processing_jobs")
       .insert({
         model: requestedModel,
         processing_type: body.data.processingType,
-        prompt_id: promptTemplate.id,
+        prompt_id: promptTemplate.system_prompt_id,
+        prompt_override_id: promptTemplate.override_id,
+        prompt_source: promptTemplate.source,
+        prompt_name_snapshot: promptTemplate.name,
+        prompt_text_snapshot: promptTemplate.prompt_text,
+        prompt_output_schema_snapshot: promptTemplate.output_schema,
+        prompt_revision_snapshot: promptTemplate.revision,
+        prompt_snapshot_exact: true,
         provider: requestedProvider,
         provider_config: {
           provider: requestedProvider,
@@ -263,7 +247,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const speakerContext = getTranscriptSpeakerContext(transcript.speakers, transcript.segments);
       const transcriptPromptContext = buildAiTranscriptPromptContext(transcript.segments, transcript.speakers);
       const prompt = renderPrompt({
-        customPrompt: body.data.customPrompt ?? null,
         metadata: {
           ...(body.data.metadata ?? {}),
           transcript_segments_compacted: true,

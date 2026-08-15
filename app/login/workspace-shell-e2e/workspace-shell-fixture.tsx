@@ -5,7 +5,14 @@ import { defaultUserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
 import type { NavigationHrefOverrides, WorkspaceView } from "@/lib/workspace-data";
-import { inertTrashAction, rejectTrashAction } from "./actions";
+import {
+  inertTrashAction,
+  inertTrashBulkRestoreAction,
+  inertTrashPurgeItemAction,
+  rejectTrashAction,
+  rejectTrashBulkRestoreAction,
+  rejectTrashPurgeItemAction
+} from "./actions";
 
 const recordingId = "00000000-0000-4000-8000-000000000601";
 const transcriptId = "00000000-0000-4000-8000-000000000602";
@@ -196,7 +203,10 @@ export function WorkspaceShellFixture({
       settingsFormDisabled={view === "settings"}
       transcripts={isDetail ? [createFixtureTranscript()] : []}
       trashActionContext={{ fixtureScope: scope }}
+      trashNowMs={Date.parse("2026-08-13T12:00:00.000Z")}
+      trashPurgeItemAction={trashMode === "failure" ? rejectTrashPurgeItemAction : inertTrashPurgeItemAction}
       trashPurgeAction={trashMode === "failure" ? rejectTrashAction : inertTrashAction}
+      trashRestoreBulkAction={trashMode === "failure" ? rejectTrashBulkRestoreAction : inertTrashBulkRestoreAction}
       trashRestoreAction={trashMode === "failure" ? rejectTrashAction : inertTrashAction}
       usageState={settingsFixtureUsage}
       userSettings={{ ...defaultUserSettings, supabaseStoragePlan: "free" }}

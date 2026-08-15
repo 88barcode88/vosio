@@ -1,89 +1,67 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
-import { getSafeNextPath } from "@/lib/auth/redirects";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
-import { addTranscriptSearchIndexWarningToPath } from "@/lib/transcripts/search-warning";
-import { updateTranscriptSpeakerSummary } from "@/lib/transcripts/speakers";
+import {
+  SPEAKER_SAVE_ERROR,
+  SPEAKER_SEARCH_WARNING,
+  type TranscriptSpeakerSaveInput,
+  type TranscriptSpeakerSaveResult
+} from "@/lib/transcripts/speaker-save-state";
+import {
+  getStoredTranscriptSpeakerSummaries,
+  updateTranscriptSpeakerSummary
+} from "@/lib/transcripts/speakers";
 
 const speakerRoleSchema = z.enum(["client_customer", "delivery_team", "unknown"]);
 
-const transcriptSpeakerFormSchema = z.object({
-  name: z.string().trim().max(80).optional(),
-  next: z.string().optional(),
+const transcriptSpeakerSaveSchema = z.object({
+  name: z.string().trim().max(80).nullable(),
+  revision: z.number().int().nonnegative(),
   role: speakerRoleSchema,
   speakerId: z.string().trim().min(1).max(80),
   transcriptId: z.string().uuid()
 });
 
-// getRequiredString reads a required text field for transcript server actions.
-function getRequiredString(formData: FormData, name: string) {
-  const value = formData.get(name);
-
-  return typeof value === "string" ? value : "";
-}
-
-// getOptionalString reads an optional text field for transcript server actions.
-function getOptionalString(formData: FormData, name: string) {
-  const value = formData.get(name);
-
-  return typeof value === "string" && value ? value : undefined;
-}
-
-// parseTranscriptSpeakerForm validates manual speaker assignment form data.
-function parseTranscriptSpeakerForm(formData: FormData) {
-  const parsed = transcriptSpeakerFormSchema.safeParse({
-    name: getOptionalString(formData, "name"),
-    next: getOptionalString(formData, "next"),
-    role: getRequiredString(formData, "role"),
-    speakerId: getRequiredString(formData, "speakerId"),
-    transcriptId: getRequiredString(formData, "transcriptId")
-  });
+// saveTranscriptSpeakerAutosaveAction persists one queued speaker snapshot without redirecting the editor.
+export async function saveTranscriptSpeakerAutosaveAction(
+  input: TranscriptSpeakerSaveInput
+): Promise<TranscriptSpeakerSaveResult> {
+  const parsed = transcriptSpeakerSaveSchema.safeParse(input);
 
   if (!parsed.success) {
-    redirect("/recordings?error=invalid_speaker_update");
+    return { message: SPEAKER_SAVE_ERROR, revision: input.revision, status: "error" };
   }
 
-  return parsed.data;
-}
-
-// updateTranscriptSpeakerAction saves a user-confirmed speaker name and business role.
-export async function updateTranscriptSpeakerAction(formData: FormData) {
-  const parsed = parseTranscriptSpeakerForm(formData);
-  const nextPath = getSafeNextPath(parsed.next);
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: userError
-  } = await supabase.auth.getUser();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    redirect(`/login?next=${encodeURIComponent(nextPath)}`);
+    return {
+      message: "Přihlášení vypršelo. Obnovte stránku.",
+      revision: parsed.data.revision,
+      status: "error"
+    };
   }
 
   const { data: transcript, error: transcriptError } = await supabase
     .from("transcripts")
     .select("id,recording_id,user_id,raw_text,segments,speakers")
-    .eq("id", parsed.transcriptId)
+    .eq("id", parsed.data.transcriptId)
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (transcriptError || !transcript) {
-    redirect(`${nextPath}?error=speaker_transcript_not_found`);
+    return { message: SPEAKER_SAVE_ERROR, revision: parsed.data.revision, status: "error" };
   }
 
   const nextSpeakers = updateTranscriptSpeakerSummary(
     transcript.speakers,
     transcript.segments,
-    {
-      name: parsed.name ?? null,
-      role: parsed.role,
-      speakerId: parsed.speakerId
-    }
+    parsed.data
   );
   const admin = createAdminClient();
   const { data: savedTranscript, error: updateError } = await admin
@@ -95,17 +73,25 @@ export async function updateTranscriptSpeakerAction(formData: FormData) {
     .single();
 
   if (updateError || !savedTranscript) {
-    redirect(`${nextPath}?error=speaker_update_failed`);
+    return { message: SPEAKER_SAVE_ERROR, revision: parsed.data.revision, status: "error" };
   }
 
   const indexResult = await replaceTranscriptSearchChunks(admin, savedTranscript);
+  const savedSpeaker = getStoredTranscriptSpeakerSummaries(
+    savedTranscript.speakers,
+    savedTranscript.segments
+  ).find((speaker) => speaker.id === parsed.data.speakerId);
 
-  revalidatePath("/");
-  revalidatePath("/recordings");
-  revalidatePath(`/recordings/${transcript.recording_id}`);
-  revalidatePath(nextPath);
-
-  if (indexResult.status === "incomplete") {
-    redirect(addTranscriptSearchIndexWarningToPath(nextPath));
+  if (!savedSpeaker) {
+    return { message: SPEAKER_SAVE_ERROR, revision: parsed.data.revision, status: "error" };
   }
+
+  revalidatePath("/recordings");
+
+  return {
+    revision: parsed.data.revision,
+    savedSpeaker,
+    searchWarning: indexResult.status === "incomplete" ? SPEAKER_SEARCH_WARNING : null,
+    status: "success"
+  };
 }

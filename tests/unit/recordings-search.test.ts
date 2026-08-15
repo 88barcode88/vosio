@@ -88,7 +88,8 @@ describe("recordings indexed search", () => {
     await expect(searchOwnRecordings({ rpc } as never, {
       organizationFilters: filters,
       page: 2,
-      searchQuery: "  Lucern   CRM "
+      searchQuery: "  Lucern   CRM ",
+      status: "completed"
     })).resolves.toMatchObject({
       page: 2,
       pageSize: 25,
@@ -96,13 +97,14 @@ describe("recordings indexed search", () => {
       totalCount: 27
     });
     expect(rpc).toHaveBeenCalledOnce();
-    expect(rpc).toHaveBeenCalledWith("search_own_recordings_v1", {
+    expect(rpc).toHaveBeenCalledWith("search_own_recordings_v2", {
       p_client_id: filters.clientId,
       p_folder_id: filters.folderId,
       p_limit: RECORDING_SEARCH_PAGE_SIZE,
       p_offset: 25,
       p_project_id: filters.projectId,
       p_query: "Lucern CRM",
+      p_status: "completed",
       p_tag_ids: filters.tagIds
     });
     const source = readFileSync(join(process.cwd(), "src/lib/recordings/search.ts"), "utf8");

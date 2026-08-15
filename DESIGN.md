@@ -200,11 +200,13 @@ Radius scale:
 
 Nested radius musí být opticky konzistentní: vnitřní radius má být menší než vnější.
 
+Pracovní plochy inboxu, filtrů, řádků, Draweru, capture a Koše používají kompaktní radius 4-6 px. Interaktivní hit area zůstává nejméně 44 px i tam, kde je viditelná geometrie menší.
+
 ## Layout
 
 Desktop shell:
 
-- sidebar: 240-260 px,
+- sidebar: 248 px rozbalený a 64 px sbalený,
 - content: full viewport width,
 - max app width se nepoužívá pro hlavní workspace,
 - detail nahrávky používá jeden hlavní pracovní sloupec bez dominantního pravého AI panelu.
@@ -215,6 +217,8 @@ Mobile shell:
 - spodní navigace zůstává dostupná,
 - primární akce live nahrávání musí být rychle dosažitelná,
 - žádný horizontální scroll.
+
+Breakpoint do 900 px zachovává přesně pět cílů spodní mobilní navigace.
 
 ## Components
 
@@ -228,7 +232,7 @@ Obsah:
 - icon-only theme toggle vedle loga,
 - `Nová nahrávka`,
 - `Nahrávky`,
-- `Prompty`,
+- `AI prompty`,
 - `Koš`,
 - `Nastavení`,
 - sekundární `Dokumentace` nad user/account area na desktopu,
@@ -353,6 +357,7 @@ Requirements:
 Před UI implementací číst:
 
 - `docs/requirements/ui-direction.md`,
+- `docs/requirements/ui-redesign-plan.md`,
 - tento `DESIGN.md`.
 
 Po změně chování nebo UI rozhodnutí aktualizovat odpovídající dokumentaci.
