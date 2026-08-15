@@ -142,6 +142,9 @@
   justify-content: flex-end;
 }
 .recordings-inbox {
+  --recordings-action-width: 120px;
+  --recordings-main-columns: minmax(180px, 1fr) 112px 84px;
+  --recordings-columns: var(--recordings-main-columns) var(--recordings-action-width);
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -1563,7 +1566,7 @@
   container: recordings-inbox / inline-size;
   gap: 12px;
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--surface-raised);
   padding: 14px;
 }
 .recordings-inbox-header {
@@ -1583,15 +1586,19 @@
   gap: 8px;
 }
 .recordings-toolbar > .organization-manager-trigger {
+  height: 44px;
   min-height: 44px;
   background: var(--surface-muted);
+  padding: 0 12px;
   font-size: 12px;
   font-weight: 750;
 }
 .recordings-inbox .recording-filters {
-  border-radius: 6px;
-  background: var(--surface-muted);
-  padding: 12px;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
 }
 .recordings-inbox .recording-filter-grid label,
 .recordings-inbox .recording-filter-tags,
@@ -1615,7 +1622,7 @@
 }
 .recording-filter-search {
   position: relative;
-  display: flex;
+  display: grid;
   align-items: center;
   min-width: 0;
 }
@@ -1628,6 +1635,7 @@
 }
 .recording-filter-search input {
   width: 100%;
+  min-height: 44px;
   padding-left: 36px;
 }
 .recording-filter-basic-actions {
@@ -1688,20 +1696,40 @@
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.recordings-inbox .recordings-table-head {
-  grid-template-columns: minmax(260px, 1fr) 130px 110px 116px;
+.recordings-inbox .recordings-search-status {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 2px;
+}
+.recordings-inbox .recordings-table {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
   background: var(--surface-raised);
 }
+.recordings-inbox .recordings-table-head {
+  grid-template-columns: var(--recordings-columns);
+  background: var(--surface-raised);
+}
+.recordings-inbox .recording-client-group > h2 {
+  min-height: 34px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface-muted);
+}
 .recordings-inbox .recordings-row {
-  grid-template-columns: minmax(0, 1fr) 96px;
-  border-radius: 6px;
-  background: var(--surface);
+  grid-template-columns: minmax(0, 1fr) var(--recordings-action-width);
+  border-radius: 0;
+  background: var(--surface-raised);
 }
 .recordings-inbox .recordings-row:hover {
   background: var(--surface-muted);
 }
 .recordings-inbox .recordings-row-main {
-  grid-template-columns: minmax(220px, 1fr) 116px 88px;
+  grid-template-columns: var(--recordings-main-columns);
   min-height: 54px;
   padding: 7px 10px;
 }

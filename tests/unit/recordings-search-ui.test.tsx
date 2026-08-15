@@ -95,6 +95,37 @@ describe("recordings indexed search UI", () => {
     expect(styles).toMatch(/\.recording-filter-search input\s*\{[^}]*?padding-left:\s*36px;/u);
   });
 
+  it("keeps the flat recordings table aligned through shared column contracts", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+    const inboxRule = styles.match(/\.recordings-inbox\s*\{([^}]*)\}/u)?.[1] ?? "";
+    const actionWidth = Number(
+      inboxRule.match(/--recordings-action-width:\s*(\d+)px;/u)?.[1] ?? "0"
+    );
+
+    expect(actionWidth).toBeGreaterThanOrEqual(116);
+    expect(inboxRule).toContain(
+      "--recordings-main-columns: minmax(180px, 1fr) 112px 84px;"
+    );
+    expect(inboxRule).toContain(
+      "--recordings-columns: var(--recordings-main-columns) var(--recordings-action-width);"
+    );
+    expect(styles).toMatch(
+      /\.recordings-inbox\.ui-panel\s*\{[^}]*?background:\s*var\(--surface-raised\);/u
+    );
+    expect(styles).toMatch(
+      /\.recordings-inbox \.recordings-table-head\s*\{[^}]*?grid-template-columns:\s*var\(--recordings-columns\);/u
+    );
+    expect(styles).toMatch(
+      /\.recordings-inbox \.recordings-row-main\s*\{[^}]*?grid-template-columns:\s*var\(--recordings-main-columns\);/u
+    );
+    expect(styles).toMatch(
+      /\.recordings-inbox \.recordings-row\s*\{[^}]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+var\(--recordings-action-width\);[^}]*?border-radius:\s*0;/u
+    );
+  });
+
   it("renders flat ranked results, safe excerpts, metadata and accessible pagination", () => {
     const markup = renderToStaticMarkup(createElement(RecordingsManager, {
       errorCode: null,

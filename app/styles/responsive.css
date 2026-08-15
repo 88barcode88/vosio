@@ -249,10 +249,12 @@
     gap: 6px 0;
     margin-left: -10px;
   }
-  .recordings-table {
+  .recordings-inbox .recordings-table {
     gap: 10px;
     overflow: visible;
     border: 0;
+    border-radius: 0;
+    background: transparent;
   }
   .recordings-table-head {
     display: none;
@@ -260,9 +262,11 @@
   .recording-client-group {
     gap: 8px;
   }
-  .recording-client-group > h2 {
-    border: 1px solid var(--border);
-    border-radius: 9px;
+  .recordings-inbox .recording-client-group > h2 {
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
   }
   .recordings-inbox .recordings-row,
   .recording-search-result {
@@ -297,10 +301,25 @@
   }
 }
 @container recordings-inbox (max-width: 680px) {
-  .recordings-table {
+  .recordings-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+  .recordings-toolbar > .organization-manager-trigger {
+    width: 100%;
+  }
+  .recordings-inbox .recording-filters,
+  .recording-filter-basic-row {
+    min-width: 0;
+  }
+  .recordings-inbox .recordings-table {
+    width: 100%;
+    min-width: 0;
     gap: 10px;
     overflow: visible;
     border: 0;
+    border-radius: 0;
+    background: transparent;
   }
   .recordings-table-head {
     display: none;
@@ -308,9 +327,11 @@
   .recording-client-group {
     gap: 8px;
   }
-  .recording-client-group > h2 {
-    border: 1px solid var(--border);
-    border-radius: 9px;
+  .recordings-inbox .recording-client-group > h2 {
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
   }
   .recordings-inbox .recordings-row,
   .recording-search-result {
