@@ -13,7 +13,7 @@ vi.mock("@/components/live-recording-recovery-panel", () => ({
   LiveRecordingRecoveryPanel: () => null
 }));
 vi.mock("@/components/workspace/recording-filters", () => ({
-  RecordingFilters: () => <div data-testid="real-filter-slot">Filtry</div>
+  RecordingFilters: () => <form className="recording-filters" data-testid="real-filter-slot">Filtry</form>
 }));
 vi.mock("@/components/delete-recording-form", () => ({
   DeleteRecordingForm: ({ recordingId }: { recordingId: string }) => (
@@ -122,6 +122,18 @@ afterEach(async () => {
 });
 
 describe("recordings inbox", () => {
+  it("groups recording filters and organization management in one toolbar", async () => {
+    await renderInbox();
+
+    const toolbar = container.querySelector(".recordings-toolbar");
+    expect(toolbar).not.toBeNull();
+    expect(toolbar?.querySelector(".recording-filters")).not.toBeNull();
+    const managementTrigger = toolbar?.querySelector<HTMLButtonElement>(".organization-manager-trigger");
+    expect(managementTrigger?.textContent).toBe("Spravovat");
+    expect(toolbar?.querySelector(".organization-manager-drawer")?.closest(".recording-filters"))
+      .toBeNull();
+  });
+
   it("keeps organization editors mounted and their draft when Spravovat closes", async () => {
     await renderInbox();
 

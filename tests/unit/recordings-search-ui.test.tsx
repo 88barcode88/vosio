@@ -81,7 +81,18 @@ describe("recordings indexed search UI", () => {
       "utf8"
     );
 
-    expect(styles).toMatch(/\.recordings-inbox > button\[aria-expanded\]\s*\{[^}]*?min-height:\s*44px;/u);
+    expect(styles).toMatch(/\.recordings-toolbar > \.organization-manager-trigger\s*\{[^}]*?min-height:\s*44px;/u);
+  });
+
+  it("reserves input space for the recording search icon", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+
+    expect(styles).toMatch(/\.recording-filter-search\s*\{[^}]*?position:\s*relative;/u);
+    expect(styles).toMatch(/\.recording-filter-search-icon\s*\{[^}]*?position:\s*absolute;/u);
+    expect(styles).toMatch(/\.recording-filter-search input\s*\{[^}]*?padding-left:\s*36px;/u);
   });
 
   it("renders flat ranked results, safe excerpts, metadata and accessible pagination", () => {

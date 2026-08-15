@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { Search } from "lucide-react";
 import { Disclosure } from "@/components/ui/disclosure";
 import {
   buildRecordingFilterSearchParams,
@@ -127,16 +128,12 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
       className="recording-filters"
       onSubmit={(event) => event.preventDefault()}
     >
-      <div className="recording-filter-heading">
-        <div>
-          <h2>Filtry</h2>
-          <p>Hledání a zařazení se promítají do adresy stránky.</p>
-        </div>
-      </div>
       <div className="recording-filter-basic-row">
         <label className="recording-filter-search">
-          <span>Hledat</span>
+          <span className="visually-hidden">Hledat v nahrávkách</span>
+          <Search aria-hidden="true" className="recording-filter-search-icon" size={16} />
           <input
+            aria-label="Hledat v nahrávkách"
             maxLength={120}
             name="q"
             onChange={(event) => setQuery(event.target.value)}

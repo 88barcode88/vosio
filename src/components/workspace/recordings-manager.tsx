@@ -270,14 +270,16 @@ export function RecordingsManager({
         </div>
       </div>
       {errorMessage ? <p className="recordings-alert" role="alert">{errorMessage}</p> : null}
-      <OrganizationManagerDrawer actions={organizationActions} options={organizationOptions} />
       <LiveRecordingRecoveryPanel />
-      <RecordingFilters
-        filters={filters}
-        key={filterKey}
-        options={organizationOptions}
-        searchQuery={searchQuery}
-      />
+      <div className="recordings-toolbar">
+        <RecordingFilters
+          filters={filters}
+          key={filterKey}
+          options={organizationOptions}
+          searchQuery={searchQuery}
+        />
+        <OrganizationManagerDrawer actions={organizationActions} options={organizationOptions} />
+      </div>
       {hasActiveQuery && (!searchQuery || !searchPage) ? (
         <p className="recordings-search-status">
           Filtrovaný výsledek: {formatRecordingResultCount(recordings.length)}.
