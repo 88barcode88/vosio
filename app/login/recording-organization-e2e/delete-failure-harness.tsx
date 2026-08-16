@@ -21,7 +21,7 @@ function FixtureEditAction({ label }: { label: string }) {
         className="recording-title-edit-button"
         type="button"
       >
-        Upravit <span aria-hidden="true">+</span>
+        <span className="recording-action-label">Upravit</span> <span aria-hidden="true">+</span>
       </button>
     </div>
   );
@@ -38,10 +38,12 @@ export function DeleteFailureHarness() {
             <h2>Delete failure layout fixture</h2>
             <div className="recordings-table" data-delete-failure-table>
               <div className="recordings-table-head" aria-hidden="true">
-                <span>Název</span>
-                <span>Stav</span>
-                <span>Velikost</span>
-                <span>Akce</span>
+                <div className="recordings-table-head-main">
+                  <span>Název</span>
+                  <span>Stav</span>
+                  <span>Velikost</span>
+                </div>
+                <span className="recordings-table-head-actions">Akce</span>
               </div>
               <section className="recording-client-group">
                 <h2>Bez klienta <span>1</span></h2>
@@ -62,8 +64,8 @@ export function DeleteFailureHarness() {
                     <FixtureEditAction label="Upravit fixture řádek" />
                     <DeleteRecordingForm
                       deleteAction={rejectFixtureDelete}
-                      label="Smazat fixture řádek"
                       recordingId={fixtureRecordingId}
+                      variant="compact"
                     />
                   </div>
                 </article>
@@ -86,8 +88,8 @@ export function DeleteFailureHarness() {
                   <FixtureEditAction label="Upravit fixture search kartu" />
                   <DeleteRecordingForm
                     deleteAction={rejectFixtureDelete}
-                    label="Smazat fixture search kartu"
                     recordingId={fixtureRecordingId}
+                    variant="compact"
                   />
                 </div>
               </article>

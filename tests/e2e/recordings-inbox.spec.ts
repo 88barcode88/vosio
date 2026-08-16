@@ -165,10 +165,8 @@ async function expectNoHorizontalOverflow(page: Page, surfaceSelector = ".record
 
 // waitForInboxSettlement lets client recovery state and dependent editor effects settle before interaction.
 async function waitForInboxSettlement(page: Page) {
-  const recovery = page.getByRole("region", { name: "Nedokončené live nahrávky" });
-  await expect(recovery.getByRole("status")).toHaveText(
-    "Nepodařilo se načíst nedokončené nahrávky."
-  );
+  await page.waitForLoadState("networkidle");
+  await expect(page.locator(".live-recovery-panel")).toHaveCount(0);
   await page.evaluate(() => new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   }));
@@ -176,8 +174,15 @@ async function waitForInboxSettlement(page: Page) {
 
 let fixtureScope = "";
 
-test.beforeEach(() => {
+test.beforeEach(async ({ page }) => {
   fixtureScope = createFixtureScope();
+  await page.route("**/api/recordings/recoverable", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({ recordings: [] }),
+      contentType: "application/json",
+      status: 200
+    });
+  });
 });
 
 test.afterEach(async ({ request }) => {
@@ -206,9 +211,39 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     await page.getByRole("button", { name: "Zavřít správu organizace" }).click();
     const advancedFilters = page.getByRole("button", { name: /^Filtry \(\d+\)$/u });
     await expect(advancedFilters).toHaveAttribute("aria-expanded", "false");
+    await advancedFilters.click();
+    const advancedPanel = page.locator(".recording-filter-advanced .ui-disclosure-panel");
+    await expect(advancedPanel).toBeVisible();
+    const expandedFilterGeometry = await page.locator(".recording-filters").evaluate((form) => {
+      const search = form.querySelector<HTMLElement>(".recording-filter-search")!;
+      const trigger = form.querySelector<HTMLElement>(".recording-filter-advanced .ui-disclosure-trigger")!;
+      const panel = form.querySelector<HTMLElement>(".recording-filter-advanced .ui-disclosure-panel")!;
+      const formBox = form.getBoundingClientRect();
+      const searchBox = search.getBoundingClientRect();
+      const triggerBox = trigger.getBoundingClientRect();
+      const panelBox = panel.getBoundingClientRect();
+      return {
+        domOrder: Boolean(
+          search.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING
+        ) && Boolean(
+          trigger.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+        form: { x: formBox.x, width: formBox.width },
+        panel: { x: panelBox.x, y: panelBox.y, width: panelBox.width },
+        searchBottom: searchBox.y + searchBox.height,
+        triggerBottom: triggerBox.y + triggerBox.height
+      };
+    });
+    expect(expandedFilterGeometry.domOrder).toBe(true);
+    expect(expandedFilterGeometry.panel.x).toBeCloseTo(expandedFilterGeometry.form.x, 0);
+    expect(expandedFilterGeometry.panel.width).toBeCloseTo(expandedFilterGeometry.form.width, 0);
+    expect(expandedFilterGeometry.panel.y).toBeGreaterThanOrEqual(
+      Math.max(expandedFilterGeometry.searchBottom, expandedFilterGeometry.triggerBottom) - 0.5
+    );
+    await advancedFilters.click();
     await expect(page.getByRole("region", { name: "Pokročilé filtry nahrávek" })).toBeHidden();
     await expect(page.getByRole("heading", { name: /Bez klienta/ })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Nedokončené live nahrávky" })).toBeVisible();
+    await expect(page.locator(".live-recovery-panel")).toHaveCount(0);
 
     const search = page.getByRole("searchbox", { name: "Hledat v nahrávkách" });
     const row = page.locator(".recordings-row").first();
@@ -531,7 +566,6 @@ for (const width of [901, 1024, 1440]) {
 
     for (const surface of [
       {
-        buttonName: "Smazat fixture řádek",
         boundary: "[data-delete-failure-table]",
         fields: ".recordings-row-main > *",
         main: ".recordings-row-main",
@@ -539,7 +573,6 @@ for (const width of [901, 1024, 1440]) {
         target: "[data-delete-failure-row]"
       },
       {
-        buttonName: "Smazat fixture search kartu",
         boundary: "[data-delete-failure-search-card]",
         fields: null,
         main: ".recording-search-result-main",
@@ -550,8 +583,21 @@ for (const width of [901, 1024, 1440]) {
       const target = page.locator(surface.target);
       const actions = target.locator(".recordings-row-actions");
       const main = target.locator(surface.main);
-      const button = target.getByRole("button", { name: surface.buttonName });
+      const button = target.locator(".delete-recording-compact button");
       await target.scrollIntoViewIfNeeded();
+      await expect(button).toHaveAccessibleName("Koš");
+      await expect(button.locator(".recording-action-label")).toHaveText("Koš");
+      await expect(button.locator(".recording-action-label")).toBeVisible();
+      if (surface.fields && width > 901) {
+        const headerActions = page.locator(".recordings-table-head-actions");
+        await expect(headerActions).toBeVisible();
+        const [headerActionsBox, actionsBox] = await Promise.all([
+          getBox(headerActions),
+          getBox(actions)
+        ]);
+        expect(headerActionsBox.x).toBeCloseTo(actionsBox.x, 0);
+        expect(headerActionsBox.width).toBeCloseTo(actionsBox.width, 0);
+      }
       const [normalActionsBox, normalMainBox, normalTargetBox] = await Promise.all([
         getBox(actions),
         getBox(main),

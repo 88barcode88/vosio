@@ -123,6 +123,17 @@ describe("RecordingFilters URL navigation", () => {
     expect(container.querySelector(".recording-filter-heading")).toBeNull();
   });
 
+  it("keeps the advanced disclosure outside a width-limiting action fieldset", async () => {
+    await act(async () => root.render(
+      <RecordingFilters filters={emptyFilters} options={options} searchQuery="" />
+    ));
+
+    const basicRow = container.querySelector(".recording-filter-basic-row");
+    const advancedDisclosure = container.querySelector(".recording-filter-advanced");
+    expect(advancedDisclosure?.parentElement).toBe(basicRow);
+    expect(advancedDisclosure?.closest("fieldset.recording-filter-basic-actions")).toBeNull();
+  });
+
   it("keeps search visible while preserving mounted advanced filter values", async () => {
     navigation.currentSearch = `scope=fixture&client=${clientA}&folder=${folderA}`;
     await act(async () => root.render(
