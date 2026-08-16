@@ -131,6 +131,23 @@ describe("recordings indexed search UI", () => {
     );
   });
 
+  it("keeps toolbar stacking viewport-based and card layout container-based", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "responsive.css"),
+      "utf8"
+    );
+    const mobileMediaStart = styles.indexOf("@media (max-width: 900px)");
+    const toolbarStackStart = styles.indexOf(".recordings-toolbar {", mobileMediaStart);
+    const cardContainerStart = styles.indexOf("@container recordings-inbox (max-width: 680px)");
+    const hiddenHeaderRules = [...styles.matchAll(/\.recordings-table-head\s*\{\s*display:\s*none;/gu)];
+
+    expect(mobileMediaStart).toBeGreaterThanOrEqual(0);
+    expect(toolbarStackStart).toBeGreaterThan(mobileMediaStart);
+    expect(toolbarStackStart).toBeLessThan(cardContainerStart);
+    expect(hiddenHeaderRules).toHaveLength(1);
+    expect(hiddenHeaderRules[0]?.index).toBeGreaterThan(cardContainerStart);
+  });
+
   it("renders flat ranked results, safe excerpts, metadata and accessible pagination", () => {
     const markup = renderToStaticMarkup(createElement(RecordingsManager, {
       errorCode: null,

@@ -256,51 +256,6 @@
     gap: 6px 0;
     margin-left: -10px;
   }
-  .recordings-inbox .recordings-table {
-    gap: 10px;
-    overflow: visible;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-  .recordings-table-head {
-    display: none;
-  }
-  .recording-client-group {
-    gap: 8px;
-  }
-  .recordings-inbox .recording-client-group > h2 {
-    border: 0;
-    border-bottom: 1px solid var(--border);
-    border-radius: 0;
-    background: transparent;
-  }
-  .recordings-inbox .recordings-row,
-  .recording-search-result {
-    grid-template-columns: minmax(0, 1fr);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: visible;
-  }
-  .recordings-inbox .recordings-row-main {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 12px;
-    min-width: 0;
-  }
-  .recordings-row-title {
-    grid-column: 1 / -1;
-  }
-  .recordings-row-actions {
-    min-height: 52px;
-    justify-content: flex-end;
-    border-top: 1px solid var(--border);
-    border-left: 0;
-  }
-  .recordings-row-actions .recording-title-edit-button,
-  .recordings-row-actions .delete-recording-form button {
-    min-width: 44px;
-    min-height: 44px;
-  }
   .recording-title-popover,
   .organization-create-form,
   .organization-rename-form {
@@ -419,12 +374,6 @@
   .recordings-inbox-stats,
   .recording-rail-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .recordings-table-head {
-    display: none;
-  }
-  .recordings-row {
-    grid-template-columns: 1fr;
   }
   .recordings-header-action,
   .recordings-header-new {

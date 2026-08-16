@@ -90,6 +90,17 @@ async function expectNoHorizontalOverflow(page: Page, surfaceSelector = ".record
   }, surfaceSelector)).toEqual({ document: 0, inbox: 0 });
 }
 
+// waitForInboxSettlement lets client recovery state and dependent editor effects settle before interaction.
+async function waitForInboxSettlement(page: Page) {
+  const recovery = page.getByRole("region", { name: "Nedokončené live nahrávky" });
+  await expect(recovery.getByRole("status")).toHaveText(
+    "Nepodařilo se načíst nedokončené nahrávky."
+  );
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+}
+
 let fixtureScope = "";
 
 test.beforeEach(() => {
@@ -106,6 +117,7 @@ for (const width of [375, 768, 901, 1024, 1440]) {
   test(`real recordings inbox is responsive and theme-safe at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 820 });
     await page.goto(fixturePath(fixtureScope));
+    await waitForInboxSettlement(page);
 
     const disclosure = page.getByRole("button", { name: "Spravovat" });
     await expect(disclosure).toHaveAttribute("aria-expanded", "false");
@@ -185,9 +197,16 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(actionsBox.x + actionsBox.width + 0.5);
       expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(actionsBox.y + actionsBox.height + 0.5);
     }
-    expect(listMode).toBe(width >= 1024);
-    if (width === 901) {
+    expect(listMode).toBe(inboxContentWidth > 680);
+    if (width === 375) {
       expect(inboxContentWidth).toBeLessThanOrEqual(680);
+      expect(listMode).toBe(false);
+    } else if (width === 768) {
+      expect(inboxContentWidth).toBeGreaterThan(680);
+      expect(listMode).toBe(true);
+    } else if (width === 901) {
+      expect(inboxContentWidth).toBeLessThanOrEqual(680);
+      expect(listMode).toBe(false);
     }
     for (const box of [tableBox, rowBox, mainBox, actionsBox]) {
       expect(box.x).toBeGreaterThanOrEqual(inboxBox.x - 1);
@@ -212,7 +231,7 @@ for (const width of [375, 768, 901, 1024, 1440]) {
         const box = await getBox(control);
         expect(box.height).toBeGreaterThanOrEqual(44);
       }
-      if (width === 768) {
+      if (width === 375 || width === 901) {
         const rows = page.locator(".recordings-row");
         expect(await getBorderRadii(rows.first())).toEqual(["10px", "10px", "10px", "10px"]);
         expect(await getBorderRadii(rows.last())).toEqual(["10px", "10px", "10px", "10px"]);
@@ -223,6 +242,11 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       expect(headerActionsBox).not.toBeNull();
       expect(actionsBox.x).toBeCloseTo(headerActionsBox!.x, 0);
       expect(actionsBox.width).toBeCloseTo(headerActionsBox!.width, 0);
+      if (width === 768) {
+        const rows = page.locator(".recordings-row");
+        expect(await getBorderRadii(rows.first())).toEqual(["0px", "0px", "0px", "0px"]);
+        expect(await getBorderRadii(rows.last())).toEqual(["0px", "0px", "0px", "0px"]);
+      }
     }
 
     const colors: string[] = [];
@@ -243,6 +267,7 @@ for (const width of [375, 901, 1024]) {
   test(`recording rename popover stays inside the inbox at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1200 });
     await page.goto(fixturePath(fixtureScope));
+    await waitForInboxSettlement(page);
 
     const inbox = page.locator(".recordings-inbox");
     const row = page.locator(".recordings-row").last();
