@@ -1706,7 +1706,7 @@
 }
 .recordings-inbox .recordings-table {
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-raised);
@@ -1739,6 +1739,14 @@
   align-self: stretch;
   border-left: 1px solid var(--border);
   padding: 0 8px;
+}
+@container recordings-inbox (min-width: 681px) {
+  .recordings-inbox .recordings-table-head {
+    border-radius: 5px 5px 0 0;
+  }
+  .recordings-inbox .recording-client-group:last-child .recordings-row:last-child {
+    border-radius: 0 0 5px 5px;
+  }
 }
 .recordings-inbox .recording-client-group > h2 {
   min-height: 34px;
@@ -1773,6 +1781,7 @@
   text-decoration-color: var(--accent);
 }
 .recordings-row-actions {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1783,6 +1792,14 @@
 }
 .recordings-inbox .recordings-row-actions .delete-recording-icon {
   border: 0;
+}
+.recordings-inbox .recordings-row-actions .recording-title-edit {
+  position: static;
+}
+.recordings-inbox .recording-title-popover {
+  left: auto;
+  right: 8px;
+  width: min(320px, calc(100vw - 40px), calc(100cqi - 28px));
 }
 .recordings-row-actions:has(.delete-recording-error) {
   align-content: center;

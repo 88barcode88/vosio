@@ -109,6 +109,40 @@ for (const width of [375, 768, 1024, 1440]) {
   });
 }
 
+for (const width of [375, 901, 1024]) {
+  test(`recording rename popover stays inside the inbox at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1200 });
+    await page.goto(fixturePath(fixtureScope));
+
+    const inbox = page.locator(".recordings-inbox");
+    const row = page.locator(".recordings-row").last();
+    await row.locator(".recording-title-edit-button").click();
+    const popover = row.locator(".recording-title-popover");
+    await expect(popover).toBeVisible();
+    await popover.scrollIntoViewIfNeeded();
+
+    await expect.poll(() => popover.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + (rect.width / 2), rect.bottom - 2);
+      return {
+        hitClass: hit instanceof HTMLElement ? hit.className : null,
+        hitTag: hit?.tagName ?? null,
+        ownsHit: Boolean(hit && (hit === element || element.contains(hit))),
+        popoverBottom: rect.bottom,
+        viewportHeight: window.innerHeight
+      };
+    })).toMatchObject({ ownsHit: true });
+
+    const [inboxBox, popoverBox] = await Promise.all([getBox(inbox), getBox(popover)]);
+    expect(popoverBox.x).toBeGreaterThanOrEqual(inboxBox.x - 0.5);
+    expect(popoverBox.x + popoverBox.width)
+      .toBeLessThanOrEqual(inboxBox.x + inboxBox.width + 0.5);
+    expect(popoverBox.x).toBeGreaterThanOrEqual(-0.5);
+    expect(popoverBox.x + popoverBox.width).toBeLessThanOrEqual(width + 0.5);
+    await expectNoHorizontalOverflow(page);
+  });
+}
+
 test("URL-backed filters survive Back and Forward and the title remains the detail opener", async ({ page }) => {
   test.slow();
   const scope = fixtureScope;
@@ -248,7 +282,7 @@ for (const width of [901, 1024, 1440]) {
       } else {
         expect(normalActionsBox.x)
           .toBeGreaterThanOrEqual(normalMainBox.x + normalMainBox.width - 0.5);
-        expect(normalActionsBox.width).toBeCloseTo(surface.fields ? 96 : 116, 0);
+        expect(normalActionsBox.width).toBeCloseTo(surface.fields ? 120 : 116, 0);
       }
       if (surface.fields) {
         const fieldBoxes = await Promise.all(
