@@ -197,7 +197,7 @@ function RecordingSearchResults({
                   role="group"
                 >
                   <RecordingTitleEditor recordingId={result.id} title={result.title} />
-                  <DeleteRecordingForm recordingId={result.id} />
+                  <DeleteRecordingForm recordingId={result.id} variant="compact" />
                 </div>
               </article>
             );
@@ -348,7 +348,7 @@ export function RecordingsManager({
                           role="group"
                         >
                           <RecordingTitleEditor recordingId={recording.id} title={recording.title} />
-                          <DeleteRecordingForm recordingId={recording.id} />
+                          <DeleteRecordingForm recordingId={recording.id} variant="compact" />
                         </div>
                       </article>
                     );

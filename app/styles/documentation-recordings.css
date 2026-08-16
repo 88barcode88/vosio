@@ -1830,20 +1830,25 @@
   padding: 0;
 }
 .recordings-row-actions .recording-title-edit-button,
-.recordings-row-actions .delete-recording-icon button {
+.recordings-row-actions .delete-recording-form button {
   min-width: 44px;
   min-height: 44px;
 }
 .recordings-row-actions .recording-title-edit-button {
   justify-content: center;
-  padding: 0 8px;
-  font-size: 0;
-}
-.recordings-row-actions .recording-title-edit-button::before {
-  content: "Upravit";
+  gap: 4px;
+  padding: 0 4px;
   font-size: 11px;
 }
 .recordings-row-actions .recording-title-edit-button > span {
+  font-size: 11px;
+}
+.recordings-row-actions .delete-recording-compact button {
+  width: auto;
+  height: auto;
+  gap: 4px;
+  padding: 0 4px;
+  border-radius: 8px;
   font-size: 11px;
 }
 .recordings-search-error,

@@ -14,7 +14,7 @@ type DeleteRecordingFormProps = {
   label?: string;
   next?: "/recordings";
   recordingId: string;
-  variant?: "danger" | "icon";
+  variant?: "compact" | "danger" | "icon";
 };
 
 const recordingDeleteTargetSelector =
@@ -29,11 +29,12 @@ function isRedirectSignal(error: unknown) {
 // DeleteRecordingForm soft-deletes a recording after user confirmation.
 export function DeleteRecordingForm({
   deleteAction = deleteRecordingAction,
-  label = "Smazat",
+  label,
   next,
   recordingId,
   variant = "icon"
 }: DeleteRecordingFormProps) {
+  const effectiveLabel = label ?? (variant === "compact" ? "Koš" : "Smazat");
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteErrorRef = useRef<HTMLParagraphElement | null>(null);
@@ -83,9 +84,13 @@ export function DeleteRecordingForm({
       >
         <input defaultValue={recordingId} name="recordingId" type="hidden" />
         {next ? <input defaultValue={next} name="next" type="hidden" /> : null}
-        <button aria-label={label} disabled={isDeleting} title={label} type="submit">
+        <button aria-label={effectiveLabel} disabled={isDeleting} title={effectiveLabel} type="submit">
           <Trash2 size={16} />
-          {variant === "danger" ? <span>{isDeleting ? "Mažu..." : label}</span> : <span className="visually-hidden">{label}</span>}
+          {variant === "danger" ? <span>{isDeleting ? "Mažu..." : effectiveLabel}</span> : null}
+          {variant === "compact" ? (
+            <span className="recording-action-label">{isDeleting ? "Mažu..." : effectiveLabel}</span>
+          ) : null}
+          {variant === "icon" ? <span className="visually-hidden">{effectiveLabel}</span> : null}
         </button>
       </form>
       {deleteError ? (

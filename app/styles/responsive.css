@@ -297,7 +297,7 @@
     border-left: 0;
   }
   .recordings-row-actions .recording-title-edit-button,
-  .recordings-row-actions .delete-recording-icon button {
+  .recordings-row-actions .delete-recording-form button {
     min-width: 44px;
     min-height: 44px;
   }
@@ -308,13 +308,6 @@
   }
 }
 @container recordings-inbox (max-width: 680px) {
-  .recordings-toolbar {
-    grid-template-columns: minmax(0, 1fr);
-    min-width: 0;
-  }
-  .recordings-toolbar > .organization-manager-trigger {
-    width: 100%;
-  }
   .recordings-inbox .recording-filters,
   .recording-filter-basic-row {
     min-width: 0;
@@ -362,7 +355,7 @@
     border-left: 0;
   }
   .recordings-row-actions .recording-title-edit-button,
-  .recordings-row-actions .delete-recording-icon button {
+  .recordings-row-actions .delete-recording-form button {
     min-width: 44px;
     min-height: 44px;
   }

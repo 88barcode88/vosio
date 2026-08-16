@@ -85,6 +85,28 @@ afterEach(async () => {
 });
 
 describe("recording soft delete", () => {
+  it("keeps the default icon action visually hidden and named Smazat", async () => {
+    await renderSearchResult();
+
+    const button = container.querySelector<HTMLButtonElement>("button[type='submit']");
+    const hiddenLabel = button?.querySelector<HTMLElement>(".visually-hidden");
+    expect(button?.getAttribute("aria-label")).toBe("Smazat");
+    expect(hiddenLabel?.textContent).toBe("Smazat");
+    expect(button?.querySelector(".recording-action-label")).toBeNull();
+  });
+
+  it("renders the compact action with one visible Koš label and matching accessible name", async () => {
+    await act(async () => root.render(
+      <DeleteRecordingForm recordingId="recording-compact-1" variant="compact" />
+    ));
+
+    const button = container.querySelector<HTMLButtonElement>("button[type='submit']");
+    const visibleLabel = button?.querySelector<HTMLElement>(".recording-action-label");
+    expect(button?.getAttribute("aria-label")).toBe("Koš");
+    expect(visibleLabel?.textContent).toBe("Koš");
+    expect(visibleLabel?.classList.contains("visually-hidden")).toBe(false);
+  });
+
   it("hides a semantic search-result target while the action is pending and restores it on failure", async () => {
     const deferred = createDeferred<void>();
     deleteActionMock.mockReturnValue(deferred.promise);

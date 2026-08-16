@@ -31,6 +31,54 @@ async function getBorderRadii(locator: Locator) {
   });
 }
 
+// getInboxGeometry captures related parent and child boxes in one stable browser snapshot.
+async function getInboxGeometry(inbox: Locator) {
+  await expect(inbox).toBeVisible();
+  return inbox.evaluate((root) => {
+    // requireElement fails the snapshot instead of returning partial geometry.
+    const requireElement = (selector: string) => {
+      const element = root.querySelector<HTMLElement>(selector);
+      if (!element) throw new Error(`Missing geometry element: ${selector}`);
+      return element;
+    };
+    // getRect serializes one DOMRect while every related element shares the same layout frame.
+    const getRect = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return { height: rect.height, width: rect.width, x: rect.x, y: rect.y };
+    };
+    const inboxElement = root as HTMLElement;
+    const inboxStyles = getComputedStyle(inboxElement);
+    const tableHead = requireElement(".recordings-table-head");
+    const listMode = getComputedStyle(tableHead).display !== "none";
+
+    return {
+      actions: getRect(requireElement(".recordings-row .recordings-row-actions")),
+      basicFilterRow: getRect(requireElement(".recording-filter-basic-row")),
+      deleteButton: getRect(requireElement(".recordings-row .delete-recording-form button")),
+      disclosure: getRect(requireElement(".recordings-toolbar > .organization-manager-trigger")),
+      editButton: getRect(requireElement(".recordings-row .recording-title-edit-button")),
+      headerActions: listMode
+        ? getRect(requireElement(".recordings-table-head-actions"))
+        : null,
+      inbox: getRect(inboxElement),
+      inboxContentWidth: inboxElement.clientWidth
+        - Number.parseFloat(inboxStyles.paddingLeft)
+        - Number.parseFloat(inboxStyles.paddingRight),
+      listMode,
+      main: getRect(requireElement(".recordings-row .recordings-row-main")),
+      row: getRect(requireElement(".recordings-row")),
+      search: getRect(requireElement('.recording-filter-search input[name="q"]')),
+      searchControl: getRect(requireElement(".recording-filter-search")),
+      searchIcon: getRect(requireElement(".recording-filter-search-icon")),
+      searchPaddingLeft: Number.parseFloat(getComputedStyle(
+        requireElement('.recording-filter-search input[name="q"]')
+      ).paddingLeft),
+      table: getRect(requireElement(".recordings-table")),
+      toolbar: getRect(requireElement(".recordings-toolbar"))
+    };
+  });
+}
+
 // expectNoHorizontalOverflow checks both the document and one explicit recordings surface.
 async function expectNoHorizontalOverflow(page: Page, surfaceSelector = ".recordings-inbox") {
   expect(await page.evaluate((selector) => {
@@ -75,24 +123,42 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     await expect(advancedFilters).toHaveAttribute("aria-expanded", "false");
     await expect(page.getByRole("region", { name: "Pokročilé filtry nahrávek" })).toBeHidden();
     await expect(page.getByRole("heading", { name: /Bez klienta/ })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Nedokončené live nahrávky" })).toBeVisible();
 
-    const toolbar = page.locator(".recordings-toolbar");
-    const basicFilterRow = page.locator(".recording-filter-basic-row");
     const search = page.getByRole("searchbox", { name: "Hledat v nahrávkách" });
-    const searchControl = page.locator(".recording-filter-search");
-    const searchIcon = searchControl.locator(".recording-filter-search-icon");
-    const [toolbarBox, basicFilterRowBox, searchBox, searchControlBox, searchIconBox, disclosureBox] =
-      await Promise.all([
-        getBox(toolbar),
-        getBox(basicFilterRow),
-        getBox(search),
-        getBox(searchControl),
-        getBox(searchIcon),
-        getBox(disclosure)
-      ]);
-    const searchPaddingLeft = await search.evaluate((element) =>
-      Number.parseFloat(getComputedStyle(element).paddingLeft)
-    );
+    const row = page.locator(".recordings-row").first();
+    const editButton = row.locator(".recording-title-edit-button");
+    const deleteButton = row.locator(".delete-recording-form button");
+    await expect(row).toBeVisible();
+    await expect(search).toBeVisible();
+    await expect(editButton).toHaveAccessibleName("Upravit");
+    await expect(editButton.locator(".recording-action-label")).toHaveText("Upravit");
+    await expect(editButton.locator(".recording-action-label")).toBeVisible();
+    expect(await editButton.evaluate((element) => getComputedStyle(element, "::before").content)).toBe("none");
+    await expect(deleteButton).toHaveAccessibleName("Koš");
+    await expect(deleteButton.locator(".recording-action-label")).toHaveText("Koš");
+    await expect(deleteButton.locator(".recording-action-label")).toBeVisible();
+
+    const geometry = await getInboxGeometry(page.locator(".recordings-inbox"));
+    const {
+      actions: actionsBox,
+      basicFilterRow: basicFilterRowBox,
+      deleteButton: deleteButtonBox,
+      disclosure: disclosureBox,
+      editButton: editButtonBox,
+      headerActions: headerActionsBox,
+      inbox: inboxBox,
+      inboxContentWidth,
+      listMode,
+      main: mainBox,
+      row: rowBox,
+      search: searchBox,
+      searchControl: searchControlBox,
+      searchIcon: searchIconBox,
+      searchPaddingLeft,
+      table: tableBox,
+      toolbar: toolbarBox
+    } = geometry;
     expect(searchBox.height).toBeGreaterThanOrEqual(44);
     expect(searchBox.width).toBeGreaterThanOrEqual(44);
     expect(disclosureBox.height).toBeGreaterThanOrEqual(44);
@@ -111,14 +177,7 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       expect((await getBox(chip)).height).toBeGreaterThanOrEqual(44);
     }
 
-    const row = page.locator(".recordings-row").first();
-    const main = row.locator(".recordings-row-main");
-    const actions = row.locator(".recordings-row-actions");
-    const [rowBox, mainBox, actionsBox] = await Promise.all([getBox(row), getBox(main), getBox(actions)]);
-    const editButton = actions.locator(".recording-title-edit-button");
-    const deleteButton = actions.locator(".delete-recording-icon button");
-    for (const button of [editButton, deleteButton]) {
-      const buttonBox = await getBox(button);
+    for (const buttonBox of [editButtonBox, deleteButtonBox]) {
       expect(buttonBox.width).toBeGreaterThanOrEqual(44);
       expect(buttonBox.height).toBeGreaterThanOrEqual(44);
       expect(buttonBox.x).toBeGreaterThanOrEqual(actionsBox.x - 0.5);
@@ -126,18 +185,6 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(actionsBox.x + actionsBox.width + 0.5);
       expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(actionsBox.y + actionsBox.height + 0.5);
     }
-    const [inboxBox, tableBox] = await Promise.all([
-      getBox(page.locator(".recordings-inbox")),
-      getBox(page.locator(".recordings-table"))
-    ]);
-    const inboxContentWidth = await page.locator(".recordings-inbox").evaluate((element) => {
-      const styles = getComputedStyle(element);
-      return element.clientWidth
-        - Number.parseFloat(styles.paddingLeft)
-        - Number.parseFloat(styles.paddingRight);
-    });
-    const tableHead = page.locator(".recordings-table-head");
-    const listMode = await tableHead.evaluate((element) => getComputedStyle(element).display !== "none");
     expect(listMode).toBe(width >= 1024);
     if (width === 901) {
       expect(inboxContentWidth).toBeLessThanOrEqual(680);
@@ -149,10 +196,15 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
     }
     expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(width + 0.5);
-    if (!listMode) {
+    if (width <= 900) {
       expect(disclosureBox.y).toBeGreaterThanOrEqual(basicFilterRowBox.y + basicFilterRowBox.height - 0.5);
       expect(disclosureBox.x).toBeCloseTo(toolbarBox.x, 0);
       expect(disclosureBox.width).toBeCloseTo(toolbarBox.width, 0);
+    } else {
+      expect(searchBox.y).toBeCloseTo(disclosureBox.y, 0);
+      expect(disclosureBox.x).toBeGreaterThanOrEqual(searchBox.x + searchBox.width - 0.5);
+    }
+    if (!listMode) {
       expect(actionsBox.y).toBeGreaterThanOrEqual(mainBox.y + mainBox.height - 0.5);
       for (const control of await page.locator(
         ".recording-filters input:visible, .recording-filters select:visible, .recording-filters button:visible, .recordings-row-actions button:visible"
@@ -166,13 +218,11 @@ for (const width of [375, 768, 901, 1024, 1440]) {
         expect(await getBorderRadii(rows.last())).toEqual(["10px", "10px", "10px", "10px"]);
       }
     } else {
-      expect(searchBox.y).toBeCloseTo(disclosureBox.y, 0);
-      expect(disclosureBox.x).toBeGreaterThanOrEqual(searchBox.x + searchBox.width - 0.5);
       expect(actionsBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width - 0.5);
       expect(actionsBox.width).toBeCloseTo(128, 0);
-      const headerActionsBox = await getBox(tableHead.locator(".recordings-table-head-actions"));
-      expect(actionsBox.x).toBeCloseTo(headerActionsBox.x, 0);
-      expect(actionsBox.width).toBeCloseTo(headerActionsBox.width, 0);
+      expect(headerActionsBox).not.toBeNull();
+      expect(actionsBox.x).toBeCloseTo(headerActionsBox!.x, 0);
+      expect(actionsBox.width).toBeCloseTo(headerActionsBox!.width, 0);
     }
 
     const colors: string[] = [];

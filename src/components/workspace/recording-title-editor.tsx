@@ -138,7 +138,8 @@ export function RecordingTitleEditor({
         ref={triggerRef}
         type="button"
       >
-        Upravit <span aria-hidden="true">{isOpen ? "-" : "+"}</span>
+        <span className="recording-action-label">Upravit</span>
+        <span aria-hidden="true">{isOpen ? "-" : "+"}</span>
       </button>
       <span aria-atomic="true" aria-live="polite" className="visually-hidden recording-title-save-status">
         {isCurrentSettlement && actionState.status === "success" && !isPending
