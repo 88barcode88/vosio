@@ -223,6 +223,13 @@
   .recordings-inbox.ui-panel {
     padding: 12px;
   }
+  .recordings-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+  .recordings-toolbar > .organization-manager-trigger {
+    width: 100%;
+  }
   .recordings-inbox-header {
     display: flex;
   }

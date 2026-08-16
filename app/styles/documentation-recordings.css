@@ -142,7 +142,7 @@
   justify-content: flex-end;
 }
 .recordings-inbox {
-  --recordings-action-width: 120px;
+  --recordings-action-width: 128px;
   --recordings-main-columns: minmax(180px, 1fr) 112px 84px;
   --recordings-columns: minmax(0, 1fr) var(--recordings-action-width);
   --recordings-column-gap: 14px;
@@ -894,6 +894,12 @@
   gap: 14px;
   width: min(1180px, calc(100% - 28px));
   margin: 14px auto;
+}
+@media (min-width: 901px) {
+  .recording-organization-e2e-fixture {
+    width: min(1180px, calc(100% - 276px));
+    margin-right: 14px;
+  }
 }
 .recording-organization-e2e-fixture > [data-e2e-surface="assignment"] {
   display: grid;
