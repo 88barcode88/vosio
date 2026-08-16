@@ -148,6 +148,41 @@ describe("recordings indexed search UI", () => {
     expect(hiddenHeaderRules[0]?.index).toBeGreaterThan(cardContainerStart);
   });
 
+  it("keeps indexed search results flat until the inbox container becomes narrow", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+    const responsiveStyles = readFileSync(
+      join(process.cwd(), "app", "styles", "responsive.css"),
+      "utf8"
+    );
+    const cardContainerStart = responsiveStyles.indexOf(
+      "@container recordings-inbox (max-width: 680px)"
+    );
+    const cardContainerEnd = responsiveStyles.indexOf("@media (max-width: 760px)", cardContainerStart);
+    const cardContainer = responsiveStyles.slice(cardContainerStart, cardContainerEnd);
+
+    expect(styles).toMatch(
+      /\.recording-search-result-list\s*\{[^}]*?gap:\s*0;[^}]*?border:\s*1px solid var\(--border\);[^}]*?border-radius:\s*6px;[^}]*?background:\s*var\(--surface-raised\);/u
+    );
+    expect(styles).toMatch(
+      /\.recording-search-result\s*\{[^}]*?grid-template-columns:\s*minmax\(0, 1fr\) var\(--recordings-action-width\);[^}]*?border:\s*0;[^}]*?border-bottom:\s*1px solid var\(--border\);[^}]*?border-radius:\s*0;[^}]*?background:\s*var\(--surface-raised\);/u
+    );
+    expect(styles).toMatch(
+      /\.recording-search-result:last-child\s*\{[^}]*?border-bottom:\s*0;/u
+    );
+    expect(cardContainer).toMatch(
+      /\.recording-search-result-list\s*\{[^}]*?gap:\s*10px;[^}]*?border:\s*0;[^}]*?background:\s*transparent;/u
+    );
+    expect(cardContainer).toMatch(
+      /\.recording-search-result\s*\{[^}]*?grid-template-columns:\s*minmax\(0, 1fr\);[^}]*?border:\s*1px solid var\(--border\);[^}]*?border-radius:\s*10px;/u
+    );
+    expect(cardContainer).toMatch(
+      /\.recordings-inbox \.recording-search-result:last-child\s*\{[^}]*?border-bottom:\s*1px solid var\(--border\);/u
+    );
+  });
+
   it("renders flat ranked results, safe excerpts, metadata and accessible pagination", () => {
     const markup = renderToStaticMarkup(createElement(RecordingsManager, {
       errorCode: null,

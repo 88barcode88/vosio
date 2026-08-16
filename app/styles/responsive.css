@@ -267,6 +267,12 @@
   .recording-filter-basic-row {
     min-width: 0;
   }
+  .recording-search-result-list {
+    gap: 10px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
   .recordings-inbox .recordings-table {
     width: 100%;
     min-width: 0;
@@ -294,6 +300,9 @@
     border: 1px solid var(--border);
     border-radius: 10px;
     overflow: visible;
+  }
+  .recordings-inbox .recording-search-result:last-child {
+    border-bottom: 1px solid var(--border);
   }
   .recordings-inbox .recordings-row-main {
     grid-template-columns: minmax(0, 1fr) auto;

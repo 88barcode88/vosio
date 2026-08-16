@@ -79,6 +79,79 @@ async function getInboxGeometry(inbox: Locator) {
   });
 }
 
+// getSearchResultGeometry captures the search list, row, and action controls in one layout frame.
+async function getSearchResultGeometry(inbox: Locator) {
+  await expect(inbox).toBeVisible();
+  return inbox.evaluate((root) => {
+    // requireElement fails the snapshot instead of returning incomplete search geometry.
+    const requireElement = (selector: string) => {
+      const element = root.querySelector<HTMLElement>(selector);
+      if (!element) throw new Error(`Missing search geometry element: ${selector}`);
+      return element;
+    };
+    // getRect serializes one DOMRect while all related search elements share a layout frame.
+    const getRect = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return { height: rect.height, width: rect.width, x: rect.x, y: rect.y };
+    };
+    const inboxElement = root as HTMLElement;
+    const inboxStyles = getComputedStyle(inboxElement);
+    const list = requireElement(".recording-search-result-list");
+    const results = root.querySelectorAll<HTMLElement>(".recording-search-result");
+    const result = results[0];
+    const lastResult = results[results.length - 1];
+    if (!result || !lastResult) throw new Error("Missing search result rows");
+    const main = requireElement(".recording-search-result-main");
+    const actions = requireElement(".recording-search-result .recordings-row-actions");
+    const editButton = requireElement(".recording-search-result .recording-title-edit-button");
+    const deleteButton = requireElement(".recording-search-result .delete-recording-form button");
+    const listStyles = getComputedStyle(list);
+    const lastResultStyles = getComputedStyle(lastResult);
+    const resultStyles = getComputedStyle(result);
+
+    return {
+      actions: getRect(actions),
+      deleteButton: getRect(deleteButton),
+      editButton: getRect(editButton),
+      inbox: getRect(inboxElement),
+      inboxBackground: inboxStyles.backgroundColor,
+      inboxContentWidth: inboxElement.clientWidth
+        - Number.parseFloat(inboxStyles.paddingLeft)
+        - Number.parseFloat(inboxStyles.paddingRight),
+      list: getRect(list),
+      listBackground: listStyles.backgroundColor,
+      listBorders: [
+        listStyles.borderTopWidth,
+        listStyles.borderRightWidth,
+        listStyles.borderBottomWidth,
+        listStyles.borderLeftWidth
+      ],
+      listGap: listStyles.gap,
+      lastResultBorders: [
+        lastResultStyles.borderTopWidth,
+        lastResultStyles.borderRightWidth,
+        lastResultStyles.borderBottomWidth,
+        lastResultStyles.borderLeftWidth
+      ],
+      main: getRect(main),
+      result: getRect(result),
+      resultBackground: resultStyles.backgroundColor,
+      resultBorders: [
+        resultStyles.borderTopWidth,
+        resultStyles.borderRightWidth,
+        resultStyles.borderBottomWidth,
+        resultStyles.borderLeftWidth
+      ],
+      resultRadii: [
+        resultStyles.borderTopLeftRadius,
+        resultStyles.borderTopRightRadius,
+        resultStyles.borderBottomRightRadius,
+        resultStyles.borderBottomLeftRadius
+      ]
+    };
+  });
+}
+
 // expectNoHorizontalOverflow checks both the document and one explicit recordings surface.
 async function expectNoHorizontalOverflow(page: Page, surfaceSelector = ".recordings-inbox") {
   expect(await page.evaluate((selector) => {
@@ -384,6 +457,66 @@ test("indexed deep links, filtered empty and sanitized search errors expose reco
   await expect(page.locator("body")).not.toContainText("provider detail");
 });
 
+for (const width of [901, 1024]) {
+  test(`indexed search results follow the inbox container at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1200 });
+    await page.goto(fixturePath(fixtureScope, "&fixture=indexed&q=Call"));
+    await waitForInboxSettlement(page);
+    await page.locator("html").evaluate((element) => { element.dataset.theme = "light"; });
+
+    const inbox = page.locator(".recordings-inbox");
+    const result = page.locator(".recording-search-result").first();
+    const editButton = result.locator(".recording-title-edit-button");
+    const deleteButton = result.locator(".delete-recording-form button");
+    await expect(editButton).toHaveAccessibleName("Upravit");
+    await expect(editButton.locator(".recording-action-label")).toHaveText("Upravit");
+    await expect(editButton.locator(".recording-action-label")).toBeVisible();
+    await expect(deleteButton).toHaveAccessibleName("Koš");
+    await expect(deleteButton.locator(".recording-action-label")).toHaveText("Koš");
+    await expect(deleteButton.locator(".recording-action-label")).toBeVisible();
+    await page.mouse.move(0, 0);
+    await result.evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    });
+
+    const geometry = await getSearchResultGeometry(inbox);
+    expect(geometry.resultBackground).toBe(geometry.inboxBackground);
+    expect(geometry.actions.x).toBeGreaterThanOrEqual(geometry.result.x - 0.5);
+    expect(geometry.actions.x + geometry.actions.width)
+      .toBeLessThanOrEqual(geometry.result.x + geometry.result.width + 0.5);
+    for (const button of [geometry.editButton, geometry.deleteButton]) {
+      expect(button.width).toBeGreaterThanOrEqual(44);
+      expect(button.height).toBeGreaterThanOrEqual(44);
+      expect(button.x).toBeGreaterThanOrEqual(geometry.actions.x - 0.5);
+      expect(button.x + button.width)
+        .toBeLessThanOrEqual(geometry.actions.x + geometry.actions.width + 0.5);
+    }
+
+    if (geometry.inboxContentWidth > 680) {
+      expect(width).toBe(1024);
+      expect(geometry.listBackground).toBe(geometry.inboxBackground);
+      expect(geometry.listBorders).toEqual(["1px", "1px", "1px", "1px"]);
+      expect(geometry.listGap).toBe("0px");
+      expect(geometry.resultBorders).toEqual(["0px", "0px", "1px", "0px"]);
+      expect(geometry.lastResultBorders).toEqual(["0px", "0px", "0px", "0px"]);
+      expect(geometry.resultRadii).toEqual(["0px", "0px", "0px", "0px"]);
+      expect(geometry.actions.x).toBeGreaterThanOrEqual(geometry.main.x + geometry.main.width - 0.5);
+      expect(geometry.actions.width).toBeCloseTo(128, 0);
+    } else {
+      expect(width).toBe(901);
+      expect(geometry.listBackground).toBe("rgba(0, 0, 0, 0)");
+      expect(geometry.listBorders).toEqual(["0px", "0px", "0px", "0px"]);
+      expect(geometry.listGap).toBe("10px");
+      expect(geometry.resultBorders).toEqual(["1px", "1px", "1px", "1px"]);
+      expect(geometry.lastResultBorders).toEqual(["1px", "1px", "1px", "1px"]);
+      expect(geometry.resultRadii).toEqual(["10px", "10px", "10px", "10px"]);
+      expect(geometry.actions.y)
+        .toBeGreaterThanOrEqual(geometry.main.y + geometry.main.height - 0.5);
+    }
+    await expectNoHorizontalOverflow(page);
+  });
+}
+
 for (const width of [901, 1024, 1440]) {
   test(`failed delete feedback reserves visible desktop space at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 820 });
@@ -442,7 +575,7 @@ for (const width of [901, 1024, 1440]) {
       } else {
         expect(normalActionsBox.x)
           .toBeGreaterThanOrEqual(normalMainBox.x + normalMainBox.width - 0.5);
-        expect(normalActionsBox.width).toBeCloseTo(surface.fields ? 128 : 116, 0);
+        expect(normalActionsBox.width).toBeCloseTo(128, 0);
       }
       if (surface.fields) {
         const fieldBoxes = await Promise.all(

@@ -1876,10 +1876,23 @@
   font-size: 12px;
   font-weight: 750;
 }
+.recording-search-result-list {
+  gap: 0;
+  overflow: visible;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+}
 .recording-search-result {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 116px;
-  background: var(--surface);
+  grid-template-columns: minmax(0, 1fr) var(--recordings-action-width);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface-raised);
+}
+.recording-search-result:last-child {
+  border-bottom: 0;
 }
 .recording-search-result:hover {
   border-color: var(--border-strong);
