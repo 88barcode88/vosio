@@ -18,6 +18,19 @@ async function getBox(locator: Locator) {
   return box!;
 }
 
+// getBorderRadii returns computed corners in clockwise order for responsive card assertions.
+async function getBorderRadii(locator: Locator) {
+  return locator.evaluate((element) => {
+    const styles = getComputedStyle(element);
+    return [
+      styles.borderTopLeftRadius,
+      styles.borderTopRightRadius,
+      styles.borderBottomRightRadius,
+      styles.borderBottomLeftRadius
+    ];
+  });
+}
+
 // expectNoHorizontalOverflow checks both the document and one explicit recordings surface.
 async function expectNoHorizontalOverflow(page: Page, surfaceSelector = ".recordings-inbox") {
   expect(await page.evaluate((selector) => {
@@ -90,6 +103,11 @@ for (const width of [375, 768, 1024, 1440]) {
       ).all()) {
         const box = await getBox(control);
         expect(box.height).toBeGreaterThanOrEqual(44);
+      }
+      if (width === 768) {
+        const rows = page.locator(".recordings-row");
+        expect(await getBorderRadii(rows.first())).toEqual(["10px", "10px", "10px", "10px"]);
+        expect(await getBorderRadii(rows.last())).toEqual(["10px", "10px", "10px", "10px"]);
       }
     } else {
       expect(actionsBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width - 0.5);
@@ -272,6 +290,11 @@ for (const width of [901, 1024, 1440]) {
       const normalGridColumns = await target.evaluate(
         (element) => getComputedStyle(element).gridTemplateColumns
       );
+      if (surface.fields) {
+        expect(await getBorderRadii(target)).toEqual(width === 901
+          ? ["10px", "10px", "10px", "10px"]
+          : ["0px", "0px", "5px", "5px"]);
+      }
       expect(normalMainBox.x).toBeGreaterThanOrEqual(normalTargetBox.x - 0.5);
       expect(normalMainBox.x + normalMainBox.width)
         .toBeLessThanOrEqual(normalTargetBox.x + normalTargetBox.width + 0.5);

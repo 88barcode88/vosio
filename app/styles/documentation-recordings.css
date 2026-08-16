@@ -1740,12 +1740,14 @@
   border-left: 1px solid var(--border);
   padding: 0 8px;
 }
-@container recordings-inbox (min-width: 681px) {
-  .recordings-inbox .recordings-table-head {
-    border-radius: 5px 5px 0 0;
-  }
-  .recordings-inbox .recording-client-group:last-child .recordings-row:last-child {
-    border-radius: 0 0 5px 5px;
+@media (min-width: 901px) {
+  @container recordings-inbox (min-width: 681px) {
+    .recordings-inbox .recordings-table-head {
+      border-radius: 5px 5px 0 0;
+    }
+    .recordings-inbox .recording-client-group:last-child .recordings-row:last-child {
+      border-radius: 0 0 5px 5px;
+    }
   }
 }
 .recordings-inbox .recording-client-group > h2 {
