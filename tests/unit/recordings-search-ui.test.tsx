@@ -81,7 +81,106 @@ describe("recordings indexed search UI", () => {
       "utf8"
     );
 
-    expect(styles).toMatch(/\.recordings-inbox > button\[aria-expanded\]\s*\{[^}]*?min-height:\s*44px;/u);
+    expect(styles).toMatch(/\.recordings-toolbar > \.organization-manager-trigger\s*\{[^}]*?min-height:\s*44px;/u);
+  });
+
+  it("reserves input space for the recording search icon", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+
+    expect(styles).toMatch(/\.recording-filter-search\s*\{[^}]*?position:\s*relative;/u);
+    expect(styles).toMatch(/\.recording-filter-search-icon\s*\{[^}]*?position:\s*absolute;/u);
+    expect(styles).toMatch(/\.recording-filter-search input\s*\{[^}]*?padding-left:\s*36px;/u);
+  });
+
+  it("keeps the flat recordings table aligned through shared column contracts", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+    const inboxRule = styles.match(/\.recordings-inbox\s*\{([^}]*)\}/u)?.[1] ?? "";
+    const actionWidth = Number(
+      inboxRule.match(/--recordings-action-width:\s*(\d+)px;/u)?.[1] ?? "0"
+    );
+
+    expect(actionWidth).toBeGreaterThanOrEqual(116);
+    expect(inboxRule).toContain(
+      "--recordings-main-columns: minmax(180px, 1fr) 112px 84px;"
+    );
+    expect(inboxRule).toContain(
+      "--recordings-columns: minmax(0, 1fr) var(--recordings-action-width);"
+    );
+    expect(inboxRule).toContain("--recordings-column-gap: 14px;");
+    expect(inboxRule).toContain("--recordings-cell-padding: 7px 10px;");
+    expect(styles).toMatch(
+      /\.recordings-inbox\.ui-panel\s*\{[^}]*?background:\s*var\(--surface-raised\);/u
+    );
+    expect(styles).toMatch(
+      /\.recordings-inbox \.recordings-table-head,\s*\.recordings-inbox \.recordings-row\s*\{[^}]*?grid-template-columns:\s*var\(--recordings-columns\);[^}]*?gap:\s*0;/u
+    );
+    expect(styles).toMatch(
+      /\.recordings-inbox \.recordings-table-head-main,\s*\.recordings-inbox \.recordings-row-main\s*\{[^}]*?grid-template-columns:\s*var\(--recordings-main-columns\);[^}]*?gap:\s*var\(--recordings-column-gap\);[^}]*?padding:\s*var\(--recordings-cell-padding\);/u
+    );
+    expect(styles).toMatch(
+      /\.recordings-inbox \.recordings-row\s*\{[^}]*?border-radius:\s*0;/u
+    );
+    expect(styles).toMatch(
+      /\.recordings-inbox \.recordings-row-actions \.delete-recording-icon\s*\{[^}]*?border:\s*0;/u
+    );
+  });
+
+  it("keeps toolbar stacking viewport-based and card layout container-based", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "responsive.css"),
+      "utf8"
+    );
+    const mobileMediaStart = styles.indexOf("@media (max-width: 900px)");
+    const toolbarStackStart = styles.indexOf(".recordings-toolbar {", mobileMediaStart);
+    const cardContainerStart = styles.indexOf("@container recordings-inbox (max-width: 680px)");
+    const hiddenHeaderRules = [...styles.matchAll(/\.recordings-table-head\s*\{\s*display:\s*none;/gu)];
+
+    expect(mobileMediaStart).toBeGreaterThanOrEqual(0);
+    expect(toolbarStackStart).toBeGreaterThan(mobileMediaStart);
+    expect(toolbarStackStart).toBeLessThan(cardContainerStart);
+    expect(hiddenHeaderRules).toHaveLength(1);
+    expect(hiddenHeaderRules[0]?.index).toBeGreaterThan(cardContainerStart);
+  });
+
+  it("keeps indexed search results flat until the inbox container becomes narrow", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "documentation-recordings.css"),
+      "utf8"
+    );
+    const responsiveStyles = readFileSync(
+      join(process.cwd(), "app", "styles", "responsive.css"),
+      "utf8"
+    );
+    const cardContainerStart = responsiveStyles.indexOf(
+      "@container recordings-inbox (max-width: 680px)"
+    );
+    const cardContainerEnd = responsiveStyles.indexOf("@media (max-width: 760px)", cardContainerStart);
+    const cardContainer = responsiveStyles.slice(cardContainerStart, cardContainerEnd);
+
+    expect(styles).toMatch(
+      /\.recording-search-result-list\s*\{[^}]*?gap:\s*0;[^}]*?border:\s*1px solid var\(--border\);[^}]*?border-radius:\s*6px;[^}]*?background:\s*var\(--surface-raised\);/u
+    );
+    expect(styles).toMatch(
+      /\.recording-search-result\s*\{[^}]*?grid-template-columns:\s*minmax\(0, 1fr\) var\(--recordings-action-width\);[^}]*?border:\s*0;[^}]*?border-bottom:\s*1px solid var\(--border\);[^}]*?border-radius:\s*0;[^}]*?background:\s*var\(--surface-raised\);/u
+    );
+    expect(styles).toMatch(
+      /\.recording-search-result:last-child\s*\{[^}]*?border-bottom:\s*0;/u
+    );
+    expect(cardContainer).toMatch(
+      /\.recording-search-result-list\s*\{[^}]*?gap:\s*10px;[^}]*?border:\s*0;[^}]*?background:\s*transparent;/u
+    );
+    expect(cardContainer).toMatch(
+      /\.recording-search-result\s*\{[^}]*?grid-template-columns:\s*minmax\(0, 1fr\);[^}]*?border:\s*1px solid var\(--border\);[^}]*?border-radius:\s*10px;/u
+    );
+    expect(cardContainer).toMatch(
+      /\.recordings-inbox \.recording-search-result:last-child\s*\{[^}]*?border-bottom:\s*1px solid var\(--border\);/u
+    );
   });
 
   it("renders flat ranked results, safe excerpts, metadata and accessible pagination", () => {

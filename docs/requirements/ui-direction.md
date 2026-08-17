@@ -216,15 +216,21 @@ Stránka nahrávek je kompaktní Notion Warm inbox. Priorita je rychle najít sp
 
 Požadavky:
 
+- nad obsahem je jeden kompaktní toolbar s pružným hledáním, tlačítkem pokročilých filtrů a `Spravovat`; při viewportu 900 px a méně se složí a `Spravovat` zabere celou šířku,
+- toolbar, stavové facety a informace o výsledku nejsou samostatné vnořené tabulky nebo karty,
+- běžný seznam je jednoúrovňový flat list s jedním vnějším rámečkem, jemnými skupinovými oddělovači a řádky dělenými pouze linkou,
+- hlavní pracovní plocha a seznam používají `surface-raised`, takže jsou ve světlém režimu bílé bez změny globální Notion Warm palety,
 - seznam nahrávek bez tlačítka `Otevřít`,
 - název je hlavní Next odkaz na detail; editace a koš jsou jeho samostatní sourozenci,
+- název je pružný sloupec a akce mají pevný 128 px pruh, ve kterém zůstávají celé viditelné `Upravit` i Koš a oba cíle mají nejméně 44 px,
 - editace názvu přes samostatný ovládací prvek,
 - editor názvu se po úspěšném uložení automaticky zavře; při chybě zůstane otevřený s rozepsanou hodnotou,
 - kompaktní stavové URL chips ukazují přesné facety všech aktivních persisted stavů; samostatné `Smazáno` vede na `/trash`,
 - velikost, datum a zdroj zobrazit kompaktně,
-- filtry `q`, `client`, závislý `project`, `folder` a opakovatelný `tag` zůstávají URL-backed a synchronizované s Back/Forward,
+- existující filtry `q`, `status`, `client`, závislý `project`, `folder` a opakovatelný `tag` zůstávají URL-backed a synchronizované s Back/Forward,
 - hledání zůstává viditelné; klient, projekt, složka a štítky jsou v keep-mounted disclosure pokročilých filtrů,
-- desktop používá pracovní řádky a mobil do 900 px skládané karty bez horizontálního posunu.
+- zdroj nahrávky a datum vytvoření zůstávají pouze zobrazená metadata; nové source/date filtry nejsou součástí tohoto UI-only řezu,
+- při skutečné šířce content containeru nad 680 px používá seznam pracovní řádky; při 680 px a méně skládané karty bez horizontálního posunu.
 
 Klienti, projekty, ploché složky a štítky se spravují v keep-mounted pravém Draweru `Spravovat`. Drawer při zavření zůstává připojený, ale je skrytý pro focus i accessibility strom, takže rozepsaný nebo pending editor neztratí stav. Create, rename a assignment editory používají success-only collapse kontrakt; delete zůstává samostatná potvrzovaná destruktivní akce.
 

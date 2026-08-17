@@ -449,6 +449,40 @@ for (const width of [1024, 1440]) {
     expect(sidebarBox.width).toBeGreaterThanOrEqual(240);
     expect(sidebarBox.width).toBeLessThanOrEqual(252);
     expect(sidebarBox.height).toBe(760);
+    const userCard = page.locator(".sidebar .user-card");
+    const signOut = userCard.locator(".sign-out-form button");
+    const compactUtilityControls = [
+      page.locator(".sidebar .theme-toggle"),
+      page.locator(".sidebar .sidebar-collapse-button"),
+      signOut
+    ];
+    for (const control of compactUtilityControls) {
+      const geometry = await control.evaluate((element) => {
+        const controlBox = element.getBoundingClientRect();
+        const iconBox = element.querySelector("svg")?.getBoundingClientRect();
+        return {
+          borderRadius: getComputedStyle(element).borderRadius,
+          control: { bottom: controlBox.bottom, height: controlBox.height, left: controlBox.left, right: controlBox.right, top: controlBox.top, width: controlBox.width },
+          icon: iconBox
+            ? { bottom: iconBox.bottom, height: iconBox.height, left: iconBox.left, right: iconBox.right, top: iconBox.top, width: iconBox.width }
+            : null
+        };
+      });
+      expect(geometry.borderRadius).toBe("6px");
+      expect(geometry.control.width).toBeGreaterThanOrEqual(44);
+      expect(geometry.control.height).toBeGreaterThanOrEqual(44);
+      expect(geometry.icon).not.toBeNull();
+      expect(geometry.icon?.width).toBe(16);
+      expect(geometry.icon?.height).toBe(16);
+      expect(geometry.icon!.left).toBeGreaterThanOrEqual(geometry.control.left);
+      expect(geometry.icon!.right).toBeLessThanOrEqual(geometry.control.right);
+      expect(geometry.icon!.top).toBeGreaterThanOrEqual(geometry.control.top);
+      expect(geometry.icon!.bottom).toBeLessThanOrEqual(geometry.control.bottom);
+    }
+    const [userCardBox, signOutBox] = await Promise.all([getBox(userCard), getBox(signOut)]);
+    expect((await userCard.evaluate((element) => getComputedStyle(element).gridTemplateColumns))
+      .split(" ").at(-1)).toBe("44px");
+    expect(signOutBox.x + signOutBox.width).toBeLessThanOrEqual(userCardBox.x + userCardBox.width + 0.5);
     expect(await sidebar.evaluate((element) => ({
       position: getComputedStyle(element).position,
       top: getComputedStyle(element).top

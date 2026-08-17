@@ -567,7 +567,7 @@ select:focus-visible {
 }
 .user-card {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  grid-template-columns: 34px minmax(0, 1fr) 44px;
   align-items: center;
   gap: 10px;
   margin-top: 10px;
@@ -605,10 +605,10 @@ select:focus-visible {
 .sign-out-form button {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 6px;
   color: var(--text);
   background: var(--panel-soft);
 }

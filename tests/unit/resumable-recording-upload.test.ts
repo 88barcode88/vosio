@@ -94,7 +94,7 @@ describe("resumable recording upload", () => {
     });
   });
 
-  it("creates a fresh upload with Supabase metadata, retry settings, and initial authorization", async () => {
+  it("creates a fresh pre-authenticated upload with Supabase metadata and retry settings", async () => {
     const harness = createUploadTestHarness();
     createResumableRecordingUpload(
       {
@@ -112,7 +112,6 @@ describe("resumable recording upload", () => {
     expect(harness.getOptions()).toMatchObject({
       chunkSize: 6 * 1024 * 1024,
       endpoint: "https://project-ref.storage.supabase.co/storage/v1/upload/resumable",
-      headers: { authorization: "Bearer initial-token" },
       metadata: {
         bucketName: "recordings",
         cacheControl: "3600",
@@ -123,7 +122,9 @@ describe("resumable recording upload", () => {
       retryDelays: [0, 3000, 5000, 10000, 20000],
       uploadDataDuringCreation: true
     });
-    expect(harness.getOptions()?.headers).not.toHaveProperty("x-upsert");
+    expect(harness.getOptions()?.headers).toBeUndefined();
+    expect(harness.getSession).toHaveBeenCalledOnce();
+    expect(harness.getOptions()).not.toHaveProperty("headers.x-upsert");
   });
 
   it("refreshes the authorization header before every tus request and reports normalized progress", async () => {
@@ -148,6 +149,35 @@ describe("resumable recording upload", () => {
 
     expect(request.setHeader).toHaveBeenCalledWith("authorization", "Bearer refreshed-token");
     expect(onProgress).toHaveBeenCalledWith({ bytesSent: 3, bytesTotal: 12, percentage: 25 });
+  });
+
+  it("sends exactly one refreshed authorization value on the initial tus request", async () => {
+    const harness = createUploadTestHarness();
+    createResumableRecordingUpload(
+      {
+        contentType: "audio/x-m4a",
+        file: new Blob(["audio"]),
+        objectName: "user/recording/call.m4a"
+      },
+      harness.dependencies
+    );
+
+    await flushPromises();
+    const options = harness.getOptions();
+    const effectiveHeaders = new Map(
+      Object.entries(options?.headers ?? {}).map(([name, value]) => [name.toLowerCase(), value])
+    );
+    const request: MockRequest = {
+      setHeader: vi.fn((name: string, value: string) => {
+        const normalizedName = name.toLowerCase();
+        const currentValue = effectiveHeaders.get(normalizedName);
+        effectiveHeaders.set(normalizedName, currentValue ? `${currentValue}, ${value}` : value);
+      })
+    };
+
+    await options?.onBeforeRequest?.(request);
+
+    expect(effectiveHeaders.get("authorization")).toBe("Bearer refreshed-token");
   });
 
   it("cancels before authentication without creating a tus upload", async () => {

@@ -246,6 +246,18 @@ Nepatří sem:
 - storage progress karta,
 - AI zpracování jako primární položka bez samostatného workflow.
 
+### Recordings Inbox
+
+`/recordings` je jeden kompaktní pracovní inbox, ne sestava panelů nebo tabulek vložených do sebe.
+
+- Nad obsahem je jeden kompaktní toolbar: pružné hledání s vlastní ikonou, ovládání pokročilých filtrů a `Spravovat`.
+- Stavové facety a informace o výsledku zůstávají ploché; seznam má jeden vnější rámeček, jemné skupinové oddělovače a neobaluje jednotlivé desktopové řádky dalšími kartami.
+- Název je pružný sloupec. Akce mají pevný 128 px pruh, aby zůstaly současně celé viditelné text `Upravit` a 44px tlačítko koše.
+- Inbox používá `--surface-raised`; ve světlém režimu je proto pracovní plocha bílá, aniž by se měnila globální Notion Warm paleta nebo dark mode tokeny.
+- Existující filtry `q`, `status`, `client`, `project`, `folder` a opakovatelný `tag` zůstávají URL-backed. Pokročilá organizační část zůstává keep-mounted, aby neztrácela draft ani stav při zavření.
+- Zdroj a datum nejsou nové filtry tohoto UI-only řezu.
+- Při viewportu 900 px a méně se toolbar složí a `Spravovat` zabere celou šířku. Samotný seznam přechází na karty podle skutečné šířky content containeru 680 px a méně, ne pouze podle viewportu.
+
 ### Recording Detail
 
 Detail nahrávky je pracovní objekt, ne hero.

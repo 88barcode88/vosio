@@ -138,7 +138,7 @@ export function createResumableRecordingUpload(
   // startUpload authenticates before creating a fresh tus upload for this recording path.
   async function startUpload() {
     try {
-      const initialAccessToken = await getSessionAccessToken(client);
+      await getSessionAccessToken(client);
 
       if (cancelled) {
         return;
@@ -147,7 +147,6 @@ export function createResumableRecordingUpload(
       upload = dependencies.createTusUpload(input.file, {
         chunkSize: RESUMABLE_UPLOAD_CHUNK_SIZE,
         endpoint: getResumableUploadEndpoint(dependencies.getSupabaseUrl()),
-        headers: { authorization: `Bearer ${initialAccessToken}` },
         metadata: {
           bucketName: RECORDINGS_BUCKET,
           cacheControl: "3600",

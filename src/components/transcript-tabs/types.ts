@@ -22,6 +22,13 @@ export type TranscriptTarget = {
   transcriptId: string;
 };
 
+export type TranscriptEvidenceReference = {
+  endMs: number | null;
+  quote: string;
+  startMs: number | null;
+  transcriptId: string;
+};
+
 export type TimelineChapter = {
   decisions: string[];
   end: string | null;

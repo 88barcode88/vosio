@@ -56,45 +56,54 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
     const queryString = canonicalStatus.searchParams.toString();
     redirect(queryString ? `/recordings?${queryString}` : "/recordings");
   }
-  const [statusCounts, deletedCount] = await Promise.all([
-    countOwnRecordingStatuses(supabase, {
-      organizationFilters: canonical.filters,
-      searchQuery
-    }),
-    countDeletedRecordings(supabase)
-  ]);
-  statusCounts.deleted = deletedCount;
-  let recordings: RecordingRow[] = [];
-  let recordingSearchError: string | null = null;
-  let recordingSearchPage: RecordingSearchPage | null = searchQuery ? {
+  const emptyRecordingSearchPage: RecordingSearchPage | null = searchQuery ? {
     page: canonicalSearch.page,
     pageSize: RECORDING_SEARCH_PAGE_SIZE,
     results: [],
     totalCount: 0
   } : null;
-
-  if (searchQuery) {
-    try {
-      recordingSearchPage = await searchOwnRecordings(supabase, {
+  const recordingDataPromise: Promise<{
+    recordings: RecordingRow[];
+    searchError: string | null;
+    searchPage: RecordingSearchPage | null;
+  }> = searchQuery
+    ? searchOwnRecordings(supabase, {
         organizationFilters: canonical.filters,
         page: canonicalSearch.page,
         searchQuery,
         status: canonicalStatus.status
-      });
-    } catch {
-      recordingSearchError = "Hledání se nepodařilo načíst. Zkuste to znovu.";
-    }
-
-    if (!recordingSearchError
-      && canonicalSearch.page > 1
-      && recordingSearchPage?.results.length === 0) {
-      redirect(buildRecordingSearchPageHref(canonicalSearch.searchParams, 1));
-    }
-  } else {
-    recordings = await listRecordings(supabase, {
+      }).then(
+        (searchPage) => ({ recordings: [], searchError: null, searchPage }),
+        () => ({
+          recordings: [],
+          searchError: "Hledání se nepodařilo načíst. Zkuste to znovu.",
+          searchPage: emptyRecordingSearchPage
+        })
+      )
+    : listRecordings(supabase, {
+        organizationFilters: canonical.filters,
+        status: canonicalStatus.status
+      }).then((recordings) => ({ recordings, searchError: null, searchPage: null }));
+  const [statusCounts, deletedCount, recordingData] = await Promise.all([
+    countOwnRecordingStatuses(supabase, {
       organizationFilters: canonical.filters,
-      status: canonicalStatus.status
-    });
+      searchQuery
+    }),
+    countDeletedRecordings(supabase),
+    recordingDataPromise
+  ]);
+  statusCounts.deleted = deletedCount;
+  const {
+    recordings,
+    searchError: recordingSearchError,
+    searchPage: recordingSearchPage
+  } = recordingData;
+
+  if (!recordingSearchError
+    && searchQuery
+    && canonicalSearch.page > 1
+    && recordingSearchPage?.results.length === 0) {
+    redirect(buildRecordingSearchPageHref(canonicalSearch.searchParams, 1));
   }
 
   const paginationParams = new URLSearchParams(canonicalStatus.searchParams);

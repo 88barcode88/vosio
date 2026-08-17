@@ -122,6 +122,29 @@ describe("recordings search page routing", () => {
     expect(element.props.recordingSearchPage).toBeNull();
   });
 
+  it("starts the recording list before status counts settle", async () => {
+    let releaseStatusCounts = () => {};
+    mocks.countStatuses.mockReturnValue(new Promise((resolve) => {
+      releaseStatusCounts = () => resolve({
+        completed: 5,
+        created: 1,
+        deleted: 0,
+        failed: 3,
+        transcribing: 4,
+        uploaded: 6,
+        uploading: 7
+      });
+    }));
+
+    const pagePromise = RecordingPage({ searchParams: Promise.resolve({}) });
+    await vi.waitFor(() => expect(mocks.countStatuses).toHaveBeenCalledOnce());
+    const listStartedBeforeCountsSettled = mocks.listRecordings.mock.calls.length === 1;
+    releaseStatusCounts();
+    await pagePromise;
+
+    expect(listStartedBeforeCountsSettled).toBe(true);
+  });
+
   it("settles an RPC failure as an accessible manager error without falling back to fetch-all", async () => {
     mocks.searchOwnRecordings.mockRejectedValue(new Error("private provider detail"));
 

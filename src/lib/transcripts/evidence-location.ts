@@ -21,6 +21,10 @@ type CanonicalTokenStream = {
   text: string;
 };
 
+type EvidenceTextBlock = {
+  text: string;
+};
+
 // Keeps evidence resolution bounded because prompt evidence is expected to be a short quote.
 export const MAX_NORMALIZED_EVIDENCE_QUOTE_LENGTH = 2_000;
 
@@ -32,6 +36,55 @@ function normalizeEvidenceText(value: string) {
     .replace(/\p{P}+/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
+}
+
+// countWholeEvidenceTextMatches counts normalized phrase matches without accepting partial words.
+function countWholeEvidenceTextMatches(text: string, quote: string) {
+  const haystack = ` ${text} `;
+  const needle = ` ${quote} `;
+  let count = 0;
+  let offset = 0;
+
+  while (offset <= haystack.length - needle.length) {
+    const matchOffset = haystack.indexOf(needle, offset);
+
+    if (matchOffset === -1) {
+      break;
+    }
+
+    count += 1;
+    offset = matchOffset + needle.length;
+  }
+
+  return count;
+}
+
+// resolveUniqueEvidenceTextBlock finds one renderable block when legacy evidence has no timestamps.
+export function resolveUniqueEvidenceTextBlock<T extends EvidenceTextBlock>(
+  blocks: T[],
+  quote: string | null | undefined
+): T | null {
+  const normalizedQuote = typeof quote === "string" ? normalizeEvidenceText(quote) : "";
+
+  if (!normalizedQuote || normalizedQuote.length > MAX_NORMALIZED_EVIDENCE_QUOTE_LENGTH) {
+    return null;
+  }
+
+  let uniqueBlock: T | null = null;
+
+  for (const block of blocks) {
+    const matchCount = countWholeEvidenceTextMatches(normalizeEvidenceText(block.text), normalizedQuote);
+
+    if (matchCount > 1 || (matchCount === 1 && uniqueBlock)) {
+      return null;
+    }
+
+    if (matchCount === 1) {
+      uniqueBlock = block;
+    }
+  }
+
+  return uniqueBlock;
 }
 
 // isUsableEvidenceTimestamp keeps values safe for the nonnegative Postgres bigint contract.

@@ -6,7 +6,7 @@ V původní úvaze se objevil název SONiVOX. Pro speech-to-text provider v tomt
 
 ## Vercel a audio
 
-Audio soubory mohou být velké a dlouhé zpracování nepatří do jednoho Vercel requestu. Hlavní upload cesta je frontend -> Supabase Storage TUS endpoint přes authenticated browser session, ne frontend -> Vercel API route -> storage/provider. TUS adaptér posílá 6 MiB chunky a před každým requestem znovu čte access token, protože dlouhému uploadu může mezitím expirivat session.
+Audio soubory mohou být velké a dlouhé zpracování nepatří do jednoho Vercel requestu. Hlavní upload cesta je frontend -> Supabase Storage TUS endpoint přes authenticated browser session, ne frontend -> Vercel API route -> storage/provider. TUS adaptér posílá 6 MiB chunky a před každým requestem znovu čte access token, protože dlouhému uploadu může mezitím expirivat session. Authorization nastavuj pouze v `onBeforeRequest`; kombinace statického `headers.authorization` a následného `setHeader` v browserovém `tus-js-client` hodnoty přes XHR spojí čárkou a Supabase odmítne neplatnou dvojitou bearer hlavičku.
 
 Manuální vícesouborový upload běží sekvenčně. Průběh celé fronty se počítá z odeslaných bytů, ne z průměru procent jednotlivých souborů; nesmí klesnout při přechodu na další soubor. Zrušení musí ukončit aktivní TUS upload a zapsat `recordings.status = failed`. Když selže i tento zápis, UI musí ukázat tuto skutečnou chybu místo falešného tvrzení, že zrušení proběhlo čistě.
 
@@ -134,7 +134,9 @@ Klientské FK mají deferred `NO ACTION`, ne cascade. To záměrně blokuje bě�
 
 Filtr více štítků znamená ALL, nikoli ANY. V1 RPC `list_own_recordings_v1` a `search_own_recordings_v1` zůstávají pouze pro kompatibilitu; současné UI bezpodmínečně používá `list_own_recordings_v2` bez `q` a `search_own_recordings_v2` s neprázdným `q`. V2 list řadí `created_at desc, id desc` a další stránku omezuje tuple cursorem `(created_at, id)`, protože offset při souběžném insert/delete může řádky přeskočit nebo zopakovat. Všechny keyset stránky musí používat stejné organizační filtry a opakovaný cursor je chyba. V2 search používá vlastní `limit/offset` stránkování a stejné organizační filtry. Kanonizace `client/project/folder/tag/status` nesmí zahodit `q` ani nesouvisející URL parametry; same-URL navigace nesmí vytvořit trvalý loading lock.
 
-Breakpoint viewportu sám nestačí pro geometrii inboxu uvnitř desktopového workspace. Například viewport 901 px nechá po 248px sidebaru a shell gutters panel široký jen přibližně 599 px, takže pevné desktopové metadata tracky by kolidovaly s akcemi. Řádky proto používají container query nad skutečnou šířkou `.recordings-inbox`: do 680 px obsahové šířky přecházejí na karty, zatímco 1024px a 1440px shell zůstává v desktopovém režimu. Browser regresi měř ve skutečném shellu a ověř zvlášť hlavní obsah, action track i pending/failure stav, ne pouze celkový `scrollWidth`.
+Breakpoint viewportu sám nestačí pro geometrii inboxu uvnitř desktopového workspace. Například viewport 901 px nechá po 248px sidebaru a shell gutters panel široký jen přibližně 599 px, takže pevné desktopové metadata tracky by kolidovaly s akcemi. Řádky proto používají container query nad skutečnou šířkou `.recordings-inbox`: do 680 px obsahové šířky přecházejí na karty, zatímco 1024px a 1440px shell zůstává v desktopovém režimu. Nad touto hranicí musí pružný název uvolnit místo pevnému 128 px action tracku; nezmenšuj celý text `Upravit` ani 44px Koš. Samostatně při viewportu 900 px a méně skládá toolbar hledání/filtry a full-width `Spravovat`; tento viewport breakpoint neurčuje režim řádků. Rozbalený panel pokročilých filtrů musí tvořit samostatný druhý řádek přes celou šířku formuláře a zachovat stejné vizuální i DOM pořadí hledání, triggeru a polí. Browser regresi měř ve skutečném shellu a ověř zvlášť toolbar, hlavní obsah, action track i pending/failure stav, ne pouze celkový `scrollWidth`.
+
+Inbox má jen existující URL-backed filtry `q`, `status`, `client`, `project`, `folder` a opakovatelný `tag`; pokročilé organizační filtry zůstávají keep-mounted. Zdroj a datum jsou zobrazená metadata, ale nejsou součástí tohoto UI-only řezu jako nové filtry. Jejich přidání vyžaduje samostatné produktové a datové rozhodnutí, ne pouze nový control v toolbaru. Recordings-scoped bílá plocha ve světlém režimu vzniká přes existující `surface-raised`; neměň kvůli ní globální teplou paletu.
 
 ## Forward migrace jsou release blocker
 
@@ -310,6 +312,8 @@ Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čt
 ## Stavové facety nejsou počty aktuální stránky
 
 Stavové počty na `/recordings` vznikají přes `count_own_recording_statuses_v1`: přesné facety pokrývají celý aktuální `q`, organizační filtry klienta/projektu/složky a ALL sadu štítků. Facety ignorují aktivní `status`, aby šlo jedním kliknutím přepnout na jiný stav; `Smazáno` je samostatný úplný počet Koše. Filtrování jedné 25řádkové search stránky v Reactu by rozbilo `total_count` a stránkování.
+
+Po kanonizaci URL filtrů jsou hlavní list/search dotaz, stavové facety a počet Koše navzájem nezávislé read-only požadavky. Musí začít v jednom souběžném kroku; čekání na facety před spuštěním listu přidává do kritické cesty `/recordings` celý zbytečný Supabase round trip. Organizační options zůstávají před nimi, protože určují kanonické filtry, a všechny dotazy dál používají stejnou authenticated session a RLS.
 
 ## Hromadný purge není jeden serverový request
 

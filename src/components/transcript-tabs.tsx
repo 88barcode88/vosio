@@ -24,16 +24,24 @@ import {
   TranscriptContent
 } from "@/components/transcript-tabs/transcript-content";
 import { getTranscriptSpeakerBlocks } from "@/components/transcript-tabs/speaker-blocks";
-import type { TranscriptTab, TranscriptTarget } from "@/components/transcript-tabs/types";
+import type {
+  TranscriptEvidenceReference,
+  TranscriptTab,
+  TranscriptTarget
+} from "@/components/transcript-tabs/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { RecordingClientView } from "@/lib/recordings/client-view";
 import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import type { UserSettings } from "@/lib/settings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
-import { resolveEvidenceLocation } from "@/lib/transcripts/evidence-location";
+import {
+  resolveEvidenceLocation,
+  resolveUniqueEvidenceTextBlock
+} from "@/lib/transcripts/evidence-location";
 import {
   parseTranscriptDeepLinkSearchParams,
+  TRANSCRIPT_RAW_ANCHOR_ID,
   transcriptDeepLinkRequestsMatch,
   type ResolvedTranscriptDeepLink
 } from "@/lib/transcripts/deep-link";
@@ -348,8 +356,63 @@ export function TranscriptTabs({
 
     openTranscriptLocation({
       ...target,
-      anchorId: preferredBlock?.anchorId
+      anchorId: preferredBlock?.anchorId ?? target.anchorId
     }, { allowPlay: true });
+  }
+
+  // resolveStructuredEvidenceTarget keeps stored ranges and falls back to one unique transcript quote.
+  function resolveStructuredEvidenceTarget(reference: TranscriptEvidenceReference): TranscriptTarget | null {
+    if (!activeTranscript || reference.transcriptId !== activeTranscript.id) {
+      return null;
+    }
+
+    if (
+      reference.startMs !== null
+      && reference.endMs !== null
+      && Number.isSafeInteger(reference.startMs)
+      && Number.isSafeInteger(reference.endMs)
+      && reference.startMs >= 0
+      && reference.endMs >= reference.startMs
+    ) {
+      return {
+        endMs: reference.endMs,
+        highlightText: reference.quote,
+        playback: "play",
+        startMs: reference.startMs,
+        transcriptId: reference.transcriptId
+      };
+    }
+
+    const speakerBlocks = getTranscriptSpeakerBlocks(
+      activeTranscript.segments,
+      activeTranscript.speakers
+    );
+    const searchableBlocks = speakerBlocks.length > 0
+      ? speakerBlocks
+      : [{
+        anchorId: TRANSCRIPT_RAW_ANCHOR_ID,
+        endMs: null,
+        label: "",
+        speakerClassName: "",
+        speakerId: null,
+        speakerLabel: "",
+        startMs: null,
+        text: activeTranscript.raw_text
+      }];
+    const matchingBlock = resolveUniqueEvidenceTextBlock(searchableBlocks, reference.quote);
+
+    if (!matchingBlock) {
+      return null;
+    }
+
+    return {
+      anchorId: matchingBlock.anchorId,
+      endMs: matchingBlock.endMs,
+      highlightText: reference.quote,
+      playback: matchingBlock.startMs === null ? "none" : "play",
+      startMs: matchingBlock.startMs,
+      transcriptId: reference.transcriptId
+    };
   }
 
   // openRecordingMarker guards recording identity before using shared transcript navigation.
@@ -452,6 +515,7 @@ export function TranscriptTabs({
             activeTranscript={activeTranscript}
             aiOutputs={activeAiOutputs}
             onOpenEvidence={openStructuredEvidence}
+            resolveEvidenceTarget={resolveStructuredEvidenceTarget}
             structuredItems={runtimeStructuredItems}
             userSettings={userSettings}
           />

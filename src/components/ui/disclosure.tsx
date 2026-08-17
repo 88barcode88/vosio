@@ -8,6 +8,7 @@ type DisclosureProps = {
   children: ReactNode;
   className?: string;
   defaultOpen?: boolean;
+  disabled?: boolean;
   keepMounted?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
@@ -19,6 +20,7 @@ export function Disclosure({
   children,
   className,
   defaultOpen = false,
+  disabled = false,
   keepMounted = false,
   onOpenChange
 }: DisclosureProps) {
@@ -53,6 +55,7 @@ export function Disclosure({
         className="ui-disclosure-trigger"
         aria-expanded={isOpen}
         aria-controls={panelId}
+        disabled={disabled}
         onClick={handleTriggerClick}
       >
         {triggerLabel}

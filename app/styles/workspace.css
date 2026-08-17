@@ -79,8 +79,9 @@
 .theme-toggle-compact {
   width: 44px;
   min-width: 44px;
+  height: 44px;
   min-height: 44px;
-  border-radius: 10px;
+  border-radius: 6px;
   padding: 0;
 }
 .safe-status {

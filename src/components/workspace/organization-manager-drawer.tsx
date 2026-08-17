@@ -25,7 +25,13 @@ export function OrganizationManagerDrawer({ actions, options }: {
 
   return (
     <>
-      <button ref={triggerRef} aria-expanded={open} onClick={() => setOpen(true)} type="button">
+      <button
+        ref={triggerRef}
+        aria-expanded={open}
+        className="organization-manager-trigger"
+        onClick={() => setOpen(true)}
+        type="button"
+      >
         Spravovat
       </button>
       <Drawer className="organization-manager-drawer" keepMounted label="Správa organizace" onClose={close} open={open}>

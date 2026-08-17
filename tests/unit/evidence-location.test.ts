@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_NORMALIZED_EVIDENCE_QUOTE_LENGTH,
-  resolveEvidenceLocation
+  resolveEvidenceLocation,
+  resolveUniqueEvidenceTextBlock
 } from "@/lib/transcripts/evidence-location";
 
 const uniqueSegments = [
@@ -22,6 +23,25 @@ describe("evidence location resolver", () => {
 
   it("returns null when the same normalized quote appears more than once", () => {
     expect(resolveEvidenceLocation([...uniqueSegments, ...uniqueSegments], "domluvime termin v p\u00E1tek")).toBeNull();
+  });
+
+  it("finds one untimed transcript block across Czech case and punctuation differences", () => {
+    const target = { anchorId: "transcript-block-2", text: "Tak to zobrazíme zase." };
+
+    expect(resolveUniqueEvidenceTextBlock([
+      { anchorId: "transcript-block-1", text: "Úvod hovoru" },
+      target
+    ], "„TAK to zobrazíme zase“")).toBe(target);
+  });
+
+  it("rejects an untimed quote that is duplicated or only a partial word", () => {
+    expect(resolveUniqueEvidenceTextBlock([
+      { anchorId: "transcript-block-1", text: "Stejný důkaz" },
+      { anchorId: "transcript-block-2", text: "Stejný důkaz" }
+    ], "stejný důkaz")).toBeNull();
+    expect(resolveUniqueEvidenceTextBlock([
+      { anchorId: "transcript-block-1", text: "předtermínový" }
+    ], "termín")).toBeNull();
   });
 
   it("preserves symbols, compatibility characters and Czech accents during normalization", () => {

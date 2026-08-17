@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { Search } from "lucide-react";
 import { Disclosure } from "@/components/ui/disclosure";
 import {
   buildRecordingFilterSearchParams,
@@ -127,16 +128,12 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
       className="recording-filters"
       onSubmit={(event) => event.preventDefault()}
     >
-      <div className="recording-filter-heading">
-        <div>
-          <h2>Filtry</h2>
-          <p>Hledání a zařazení se promítají do adresy stránky.</p>
-        </div>
-      </div>
       <div className="recording-filter-basic-row">
         <label className="recording-filter-search">
-          <span>Hledat</span>
+          <span className="visually-hidden">Hledat v nahrávkách</span>
+          <Search aria-hidden="true" className="recording-filter-search-icon" size={16} />
           <input
+            aria-label="Hledat v nahrávkách"
             maxLength={120}
             name="q"
             onChange={(event) => setQuery(event.target.value)}
@@ -145,105 +142,115 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
             value={query}
           />
         </label>
-        <fieldset className="recording-filter-basic-actions" disabled={isNavigationPending}>
-          {query ? (
-            <button disabled={isNavigationPending} onClick={() => setQuery("")} type="button">
-              Vyčistit hledání
-            </button>
-          ) : null}
-          <Disclosure
-            className="recording-filter-advanced"
-            keepMounted
-            label="Pokročilé filtry nahrávek"
-            triggerLabel={`Filtry (${activeAdvancedFilterCount})`}
-          >
-            <div className="recording-filter-grid">
-        <label>
-          <span>Klient</span>
-          <select
-            disabled={isNavigationPending}
-            name="client"
-            onChange={(event) => {
-              const nextClientId = event.target.value;
-              const nextProjectId = options.projects.some((project) =>
-                project.id === projectId && project.client_id === nextClientId
-              ) ? projectId : "";
-              setClientId(nextClientId);
-              setProjectId(nextProjectId);
-              navigate({
-                ...currentDraft(),
-                clientId: nextClientId || null,
-                projectId: nextProjectId || null
-              }, query);
-            }}
-            value={clientId}
-          >
-            <option value="">Všichni klienti</option>
-            {options.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Projekt</span>
-          <select
-            disabled={isNavigationPending || !clientId}
-            name="project"
-            onChange={(event) => {
-              const nextProjectId = event.target.value;
-              setProjectId(nextProjectId);
-              navigate({ ...currentDraft(), projectId: nextProjectId || null }, query);
-            }}
-            value={projectId}
-          >
-            <option value="">Všechny projekty</option>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>Složka</span>
-          <select
-            disabled={isNavigationPending}
-            name="folder"
-            onChange={(event) => {
-              const nextFolderId = event.target.value;
-              setFolderId(nextFolderId);
-              navigate({ ...currentDraft(), folderId: nextFolderId || null }, query);
-            }}
-            value={folderId}
-          >
-            <option value="">Všechny složky</option>
-            {options.folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-          </select>
-        </label>
-            </div>
-            <div className="recording-filter-tag-row">
-        <fieldset className="recording-filter-tags">
-          <legend>Štítky <small>Vybrané štítky platí současně</small></legend>
-          {options.tags.length > 0 ? options.tags.map((tag) => (
-            <label key={tag.id}>
-              <input
-                checked={tagIds.has(tag.id)}
-                disabled={isNavigationPending}
-                name="tag"
-                onChange={() => toggleTag(tag.id)}
-                type="checkbox"
-                value={tag.id}
-              />
-              <span>{tag.name}</span>
-            </label>
-          )) : <span className="recording-filter-empty">Zatím bez štítků</span>}
-        </fieldset>
-        <div className="recording-filter-actions">
+        {query ? (
           <button
-            disabled={isNavigationPending || (!hasFilters && !hasDraftFilters)}
-            onClick={clearFilters}
+            className="recording-filter-clear-search"
+            disabled={isNavigationPending}
+            onClick={() => setQuery("")}
             type="button"
           >
-            Vyčistit filtry
+            Vyčistit hledání
           </button>
-        </div>
+        ) : null}
+        <Disclosure
+          className="recording-filter-advanced"
+          disabled={isNavigationPending}
+          keepMounted
+          label="Pokročilé filtry nahrávek"
+          triggerLabel={`Filtry (${activeAdvancedFilterCount})`}
+        >
+          <div className="recording-filter-grid">
+            <label>
+              <span>Klient</span>
+              <select
+                disabled={isNavigationPending}
+                name="client"
+                onChange={(event) => {
+                  const nextClientId = event.target.value;
+                  const nextProjectId = options.projects.some((project) =>
+                    project.id === projectId && project.client_id === nextClientId
+                  ) ? projectId : "";
+                  setClientId(nextClientId);
+                  setProjectId(nextProjectId);
+                  navigate({
+                    ...currentDraft(),
+                    clientId: nextClientId || null,
+                    projectId: nextProjectId || null
+                  }, query);
+                }}
+                value={clientId}
+              >
+                <option value="">Všichni klienti</option>
+                {options.clients.map((client) => (
+                  <option key={client.id} value={client.id}>{client.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Projekt</span>
+              <select
+                disabled={isNavigationPending || !clientId}
+                name="project"
+                onChange={(event) => {
+                  const nextProjectId = event.target.value;
+                  setProjectId(nextProjectId);
+                  navigate({ ...currentDraft(), projectId: nextProjectId || null }, query);
+                }}
+                value={projectId}
+              >
+                <option value="">Všechny projekty</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>{project.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Složka</span>
+              <select
+                disabled={isNavigationPending}
+                name="folder"
+                onChange={(event) => {
+                  const nextFolderId = event.target.value;
+                  setFolderId(nextFolderId);
+                  navigate({ ...currentDraft(), folderId: nextFolderId || null }, query);
+                }}
+                value={folderId}
+              >
+                <option value="">Všechny složky</option>
+                {options.folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>{folder.name}</option>
+                ))}
+              </select>
+            </label>
             </div>
-          </Disclosure>
-        </fieldset>
+          <div className="recording-filter-tag-row">
+            <fieldset className="recording-filter-tags">
+              <legend>Štítky <small>Vybrané štítky platí současně</small></legend>
+              {options.tags.length > 0 ? options.tags.map((tag) => (
+                <label key={tag.id}>
+                  <input
+                    checked={tagIds.has(tag.id)}
+                    disabled={isNavigationPending}
+                    name="tag"
+                    onChange={() => toggleTag(tag.id)}
+                    type="checkbox"
+                    value={tag.id}
+                  />
+                  <span>{tag.name}</span>
+                </label>
+              )) : <span className="recording-filter-empty">Zatím bez štítků</span>}
+            </fieldset>
+            <div className="recording-filter-actions">
+              <button
+                disabled={isNavigationPending || (!hasFilters && !hasDraftFilters)}
+                onClick={clearFilters}
+                type="button"
+              >
+                Vyčistit filtry
+              </button>
+            </div>
+          </div>
+        </Disclosure>
       </div>
       <span aria-live="polite" className="visually-hidden">
         {isNavigationPending ? "Aktualizuji seznam nahrávek." : ""}

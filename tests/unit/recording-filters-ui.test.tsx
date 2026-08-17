@@ -110,6 +110,30 @@ afterEach(async () => {
 });
 
 describe("RecordingFilters URL navigation", () => {
+  it("renders an accessible search control without a visible filter heading", async () => {
+    await act(async () => root.render(
+      <RecordingFilters filters={emptyFilters} options={options} searchQuery="" />
+    ));
+
+    const search = container.querySelector(".recording-filter-search");
+    expect(search?.querySelector(".recording-filter-search-icon")).not.toBeNull();
+    expect(search?.querySelector(".visually-hidden")?.textContent).toBe("Hledat v nahrávkách");
+    expect(search?.querySelector('input[name="q"]')?.getAttribute("aria-label"))
+      .toBe("Hledat v nahrávkách");
+    expect(container.querySelector(".recording-filter-heading")).toBeNull();
+  });
+
+  it("keeps the advanced disclosure outside a width-limiting action fieldset", async () => {
+    await act(async () => root.render(
+      <RecordingFilters filters={emptyFilters} options={options} searchQuery="" />
+    ));
+
+    const basicRow = container.querySelector(".recording-filter-basic-row");
+    const advancedDisclosure = container.querySelector(".recording-filter-advanced");
+    expect(advancedDisclosure?.parentElement).toBe(basicRow);
+    expect(advancedDisclosure?.closest("fieldset.recording-filter-basic-actions")).toBeNull();
+  });
+
   it("keeps search visible while preserving mounted advanced filter values", async () => {
     navigation.currentSearch = `scope=fixture&client=${clientA}&folder=${folderA}`;
     await act(async () => root.render(

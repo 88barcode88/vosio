@@ -223,6 +223,13 @@
   .recordings-inbox.ui-panel {
     padding: 12px;
   }
+  .recordings-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+  .recordings-toolbar > .organization-manager-trigger {
+    width: 100%;
+  }
   .recordings-inbox-header {
     display: flex;
   }
@@ -249,47 +256,6 @@
     gap: 6px 0;
     margin-left: -10px;
   }
-  .recordings-table {
-    gap: 10px;
-    overflow: visible;
-    border: 0;
-  }
-  .recordings-table-head {
-    display: none;
-  }
-  .recording-client-group {
-    gap: 8px;
-  }
-  .recording-client-group > h2 {
-    border: 1px solid var(--border);
-    border-radius: 9px;
-  }
-  .recordings-inbox .recordings-row,
-  .recording-search-result {
-    grid-template-columns: minmax(0, 1fr);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: visible;
-  }
-  .recordings-inbox .recordings-row-main {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px 12px;
-    min-width: 0;
-  }
-  .recordings-row-title {
-    grid-column: 1 / -1;
-  }
-  .recordings-row-actions {
-    min-height: 52px;
-    justify-content: flex-end;
-    border-top: 1px solid var(--border);
-    border-left: 0;
-  }
-  .recordings-row-actions .recording-title-edit-button,
-  .recordings-row-actions .delete-recording-icon button {
-    min-width: 44px;
-    min-height: 44px;
-  }
   .recording-title-popover,
   .organization-create-form,
   .organization-rename-form {
@@ -297,10 +263,24 @@
   }
 }
 @container recordings-inbox (max-width: 680px) {
-  .recordings-table {
+  .recordings-inbox .recording-filters,
+  .recording-filter-basic-row {
+    min-width: 0;
+  }
+  .recording-search-result-list {
+    gap: 10px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .recordings-inbox .recordings-table {
+    width: 100%;
+    min-width: 0;
     gap: 10px;
     overflow: visible;
     border: 0;
+    border-radius: 0;
+    background: transparent;
   }
   .recordings-table-head {
     display: none;
@@ -308,9 +288,11 @@
   .recording-client-group {
     gap: 8px;
   }
-  .recording-client-group > h2 {
-    border: 1px solid var(--border);
-    border-radius: 9px;
+  .recordings-inbox .recording-client-group > h2 {
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
   }
   .recordings-inbox .recordings-row,
   .recording-search-result {
@@ -318,6 +300,9 @@
     border: 1px solid var(--border);
     border-radius: 10px;
     overflow: visible;
+  }
+  .recordings-inbox .recording-search-result:last-child {
+    border-bottom: 1px solid var(--border);
   }
   .recordings-inbox .recordings-row-main {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -334,7 +319,7 @@
     border-left: 0;
   }
   .recordings-row-actions .recording-title-edit-button,
-  .recordings-row-actions .delete-recording-icon button {
+  .recordings-row-actions .delete-recording-form button {
     min-width: 44px;
     min-height: 44px;
   }
@@ -398,12 +383,6 @@
   .recordings-inbox-stats,
   .recording-rail-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .recordings-table-head {
-    display: none;
-  }
-  .recordings-row {
-    grid-template-columns: 1fr;
   }
   .recordings-header-action,
   .recordings-header-new {

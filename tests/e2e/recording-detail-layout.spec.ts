@@ -52,6 +52,45 @@ async function openFixture(page: Page, mode: FixtureMode = "blocks") {
   await expect(page.locator(".recording-workbench")).toBeVisible();
 }
 
+// readCompactStyle returns the rendered shape and first Lucide glyph size for one action.
+async function readCompactStyle(page: Page, selector: string) {
+  return page.locator(selector).evaluate((element) => {
+    const styles = getComputedStyle(element);
+    const icon = element.querySelector<SVGElement>("svg");
+    const iconBox = icon?.getBoundingClientRect() ?? null;
+    return {
+      backgroundColor: styles.backgroundColor,
+      borderRadius: styles.borderRadius,
+      height: element.getBoundingClientRect().height,
+      iconHeight: iconBox?.height ?? null,
+      iconWidth: iconBox?.width ?? null
+    };
+  });
+}
+
+// readTimelineActionGeometry captures wrapping, alignment and overlap for the empty-state CTA.
+async function readTimelineActionGeometry(page: Page, buttonName: string) {
+  const button = page.getByRole("button", { name: buttonName });
+  return button.evaluate((element) => {
+    const buttonBox = element.getBoundingClientRect();
+    const emptyBox = element.closest(".transcript-empty")!.getBoundingClientRect();
+    const iconBox = element.querySelector("svg")?.getBoundingClientRect() ?? null;
+    const labelBox = element.querySelector("span")?.getBoundingClientRect() ?? null;
+    const stateBox = element.parentElement!.querySelector(".timeline-generation-state")!.getBoundingClientRect();
+    const styles = getComputedStyle(element);
+    return {
+      borderRadius: styles.borderRadius,
+      button: { bottom: buttonBox.bottom, height: buttonBox.height, width: buttonBox.width },
+      emptyWidth: emptyBox.width,
+      icon: iconBox ? { height: iconBox.height, middle: iconBox.y + (iconBox.height / 2), width: iconBox.width } : null,
+      label: labelBox ? { middle: labelBox.y + (labelBox.height / 2) } : null,
+      overflows: element.scrollWidth > element.clientWidth + 0.5,
+      stateTop: stateBox.top,
+      whiteSpace: styles.whiteSpace
+    };
+  });
+}
+
 // readContrastReport returns rendered foreground/background pairs and WCAG text contrast ratios.
 async function readContrastReport(page: Page, selectors: string[]) {
   return page.evaluate((targetSelectors) => {
@@ -142,10 +181,10 @@ test("the guarded fixture renders the real full-page recording detail", async ({
   });
 });
 
-for (const width of [375, 1280]) {
+for (const width of [375, 768, 901, 1024, 1440]) {
   test(`header, player and tabs keep exact source order at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ height: 720, width });
-    await openFixture(page);
+    await openFixture(page, "ai");
 
     await expect(page.locator(".recording-object-header .export-controls")).toBeVisible();
     await expect(page.locator(".recording-object-header .command-bar")).toBeVisible();
@@ -161,6 +200,79 @@ for (const width of [375, 1280]) {
       };
     });
     expect(order).toEqual({ headerBeforePlayer: true, playerBeforeTabs: true });
+
+    await expect(page.getByRole("tab", { name: "AI zpracování" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator(".ai-tab-actions .quick-grid button").first()).toBeVisible();
+    for (const theme of ["dark", "light"] as const) {
+      await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
+      const selectors = [
+        ".recording-object-header .export-controls > summary",
+        ".recording-object-header .recording-inline-edit > summary",
+        ".recording-object-header .delete-recording-danger button",
+        ".recording-object-header .recording-organization-summary > button",
+        ".recording-object-header .recording-header-operations .command-button",
+        ".ai-tab-actions .quick-grid button:first-child"
+      ];
+
+      for (const selector of selectors) {
+        const styles = await readCompactStyle(page, selector);
+        expect(styles.height).toBeGreaterThanOrEqual(44);
+        expect(styles.borderRadius).toBe("6px");
+        expect(styles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+        if (styles.iconWidth !== null || styles.iconHeight !== null) {
+          expect(styles.iconWidth).toBe(16);
+          expect(styles.iconHeight).toBe(16);
+        }
+      }
+
+      expect(await page.locator(".recording-audio-toggle").evaluate((element) =>
+        getComputedStyle(element).borderRadius
+      )).toBe("999px");
+    }
+  });
+}
+
+for (const width of [375, 768, 901, 1024]) {
+  test(`timeline empty action stays compact and single-line at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ height: 720, width });
+    let releaseProcess!: () => void;
+    let markProcessStarted!: () => void;
+    const processStarted = new Promise<void>((resolve) => { markProcessStarted = resolve; });
+    const processRelease = new Promise<void>((resolve) => { releaseProcess = resolve; });
+    await page.route("**/api/transcripts/*/process", async (route) => {
+      markProcessStarted();
+      await processRelease;
+      await route.fulfill({ json: { error: "E2E stop" }, status: 500 });
+    });
+    await openFixture(page, "timeline");
+    await expect(page.getByRole("tab", { name: "Časová osa" })).toHaveAttribute("aria-selected", "true");
+    try {
+      const idle = await readTimelineActionGeometry(page, "Vytvořit časovou osu");
+      expect(idle.button.height).toBeGreaterThanOrEqual(44);
+      expect(idle.button.width).toBeLessThan(idle.emptyWidth);
+      expect(idle.borderRadius).toBe("6px");
+      expect(idle.whiteSpace).toBe("nowrap");
+      expect(idle.overflows).toBe(false);
+      expect(idle.icon).toMatchObject({ height: 16, width: 16 });
+      expect(idle.icon!.middle).toBeCloseTo(idle.label!.middle, 0);
+      expect(idle.button.bottom).toBeLessThanOrEqual(idle.stateTop + 0.5);
+
+      await page.getByRole("button", { name: "Vytvořit časovou osu" }).click();
+      await processStarted;
+      const pendingButton = page.getByRole("button", { name: "Vytvářím časovou osu…" });
+      await expect(pendingButton).toBeDisabled();
+      const pending = await readTimelineActionGeometry(page, "Vytvářím časovou osu…");
+      expect(pending.button.height).toBeGreaterThanOrEqual(44);
+      expect(pending.button.width).toBeLessThan(pending.emptyWidth);
+      expect(pending.borderRadius).toBe("6px");
+      expect(pending.whiteSpace).toBe("nowrap");
+      expect(pending.overflows).toBe(false);
+      expect(pending.icon).toMatchObject({ height: 16, width: 16 });
+      expect(pending.icon!.middle).toBeCloseTo(pending.label!.middle, 0);
+      expect(pending.button.bottom).toBeLessThanOrEqual(pending.stateTop + 0.5);
+    } finally {
+      releaseProcess();
+    }
   });
 }
 

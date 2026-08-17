@@ -197,7 +197,7 @@ function RecordingSearchResults({
                   role="group"
                 >
                   <RecordingTitleEditor recordingId={result.id} title={result.title} />
-                  <DeleteRecordingForm recordingId={result.id} />
+                  <DeleteRecordingForm recordingId={result.id} variant="compact" />
                 </div>
               </article>
             );
@@ -270,14 +270,16 @@ export function RecordingsManager({
         </div>
       </div>
       {errorMessage ? <p className="recordings-alert" role="alert">{errorMessage}</p> : null}
-      <OrganizationManagerDrawer actions={organizationActions} options={organizationOptions} />
       <LiveRecordingRecoveryPanel />
-      <RecordingFilters
-        filters={filters}
-        key={filterKey}
-        options={organizationOptions}
-        searchQuery={searchQuery}
-      />
+      <div className="recordings-toolbar">
+        <RecordingFilters
+          filters={filters}
+          key={filterKey}
+          options={organizationOptions}
+          searchQuery={searchQuery}
+        />
+        <OrganizationManagerDrawer actions={organizationActions} options={organizationOptions} />
+      </div>
       {hasActiveQuery && (!searchQuery || !searchPage) ? (
         <p className="recordings-search-status">
           Filtrovaný výsledek: {formatRecordingResultCount(recordings.length)}.
@@ -304,10 +306,12 @@ export function RecordingsManager({
           {recordings.length > 0 ? (
             <>
               <div className="recordings-table-head" aria-hidden="true">
-                <span>Název</span>
-                <span>Stav</span>
-                <span>Velikost</span>
-                <span>Akce</span>
+                <div className="recordings-table-head-main">
+                  <span>Název</span>
+                  <span>Stav</span>
+                  <span>Velikost</span>
+                </div>
+                <span className="recordings-table-head-actions">Akce</span>
               </div>
               {clientGroups.map((group) => (
                 <section className="recording-client-group" key={group.clientId ?? "unclassified"}>
@@ -344,7 +348,7 @@ export function RecordingsManager({
                           role="group"
                         >
                           <RecordingTitleEditor recordingId={recording.id} title={recording.title} />
-                          <DeleteRecordingForm recordingId={recording.id} />
+                          <DeleteRecordingForm recordingId={recording.id} variant="compact" />
                         </div>
                       </article>
                     );

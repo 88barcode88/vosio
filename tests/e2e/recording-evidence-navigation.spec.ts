@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-type FixtureMode = "single" | "none" | "segmented";
+type FixtureMode = "single" | "none" | "segmented" | "untimed";
 
 // openEvidenceFixture loads the real TranscriptTabs surface for one audio availability mode.
 async function openEvidenceFixture(page: Page, mode: FixtureMode) {
@@ -9,9 +9,37 @@ async function openEvidenceFixture(page: Page, mode: FixtureMode) {
 }
 
 // expectTranscriptEvidenceOpened verifies tab selection and containing-block highlight.
-async function expectTranscriptEvidenceOpened(page: Page) {
+async function expectTranscriptEvidenceOpened(page: Page, anchor = "#transcript-at-8000") {
   await expect(page.getByRole("tab", { name: "Přepis" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("#transcript-at-8000")).toHaveAttribute("aria-current", "true");
+  await expect(page.locator(anchor)).toBeFocused();
+  await expect.poll(() => page.evaluate(() =>
+    (window as typeof window & { __evidenceHighlightAnchors?: string[] }).__evidenceHighlightAnchors ?? []
+  )).toContain(anchor.slice(1));
+}
+
+// openEvidenceQuote clicks the quote itself instead of adding a separate navigation button.
+async function openEvidenceQuote(page: Page) {
+  const evidence = page.getByRole("button", { name: /Důkaz: Schvalili jsme termin/u });
+  await expect(evidence).toBeVisible();
+  await expect(page.getByRole("button", { name: "Otevřít v přepisu" })).toHaveCount(0);
+  await page.evaluate(() => {
+    const fixtureWindow = window as typeof window & { __evidenceHighlightAnchors?: string[] };
+    fixtureWindow.__evidenceHighlightAnchors = [];
+    const rememberHighlights = () => {
+      for (const element of document.querySelectorAll<HTMLElement>('[aria-current="true"]')) {
+        if (element.id && !fixtureWindow.__evidenceHighlightAnchors?.includes(element.id)) {
+          fixtureWindow.__evidenceHighlightAnchors?.push(element.id);
+        }
+      }
+    };
+    new MutationObserver(rememberHighlights).observe(document.documentElement, {
+      attributeFilter: ["aria-current"],
+      attributes: true,
+      childList: true,
+      subtree: true
+    });
+  });
+  await evidence.click();
 }
 
 test("single audio evidence seeks and plays from a direct click", async ({ page }) => {
@@ -53,7 +81,7 @@ test("single audio evidence seeks and plays from a direct click", async ({ page 
   });
   await openEvidenceFixture(page, "single");
 
-  await page.getByRole("button", { name: "Otevřít v přepisu" }).click();
+  await openEvidenceQuote(page);
 
   await expectTranscriptEvidenceOpened(page);
   await expect.poll(() => page.evaluate(() =>
@@ -67,7 +95,7 @@ test("single audio evidence seeks and plays from a direct click", async ({ page 
 test("transcript-only evidence scrolls and highlights without an audio player", async ({ page }) => {
   await openEvidenceFixture(page, "none");
 
-  await page.getByRole("button", { name: "Otevřít v přepisu" }).click();
+  await openEvidenceQuote(page);
 
   await expectTranscriptEvidenceOpened(page);
   await expect(page.locator("audio")).toHaveCount(0);
@@ -77,8 +105,17 @@ test("legacy segmented evidence resolves at runtime without attempting audio pla
   await openEvidenceFixture(page, "segmented");
   await expect(page.getByText('"Schvalili jsme termin"')).toBeVisible();
 
-  await page.getByRole("button", { name: "Otevřít v přepisu" }).click();
+  await openEvidenceQuote(page);
 
   await expectTranscriptEvidenceOpened(page);
+  await expect(page.locator("audio")).toHaveCount(0);
+});
+
+test("untimed legacy evidence opens one uniquely matching transcript block from the quote", async ({ page }) => {
+  await openEvidenceFixture(page, "untimed");
+
+  await openEvidenceQuote(page);
+
+  await expectTranscriptEvidenceOpened(page, "#transcript-block-1");
   await expect(page.locator("audio")).toHaveCount(0);
 });

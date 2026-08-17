@@ -48,4 +48,27 @@ describe("recording status documentation contract", () => {
     expect(design).toContain("- `AI prompty`,");
     expect(design).not.toContain("- `Prompty`,");
   });
+
+  it("documents the current flat recordings inbox geometry and unchanged filter scope", () => {
+    const architecture = read("docs/architecture.md");
+    const design = read("DESIGN.md");
+    const gotchas = read("docs/gotchas.md");
+    const uiDirection = read("docs/requirements/ui-direction.md");
+
+    for (const [path, source] of [
+      ["DESIGN.md", design],
+      ["docs/architecture.md", architecture],
+      ["docs/gotchas.md", gotchas],
+      ["docs/requirements/ui-direction.md", uiDirection]
+    ]) {
+      expect(source, path).toContain("128 px");
+      expect(source, path).toMatch(/680 px/u);
+    }
+
+    expect(design).toContain("jeden vnější rámeček");
+    expect(uiDirection).toContain("jeden kompaktní toolbar");
+    expect(architecture).toContain("`q`, `status`, `client`, `project`, `folder` a opakovatelný `tag`");
+    expect(gotchas).toContain("Zdroj a datum");
+    expect(gotchas).toContain("nejsou součástí tohoto UI-only řezu");
+  });
 });

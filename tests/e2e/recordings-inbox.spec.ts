@@ -18,6 +18,155 @@ async function getBox(locator: Locator) {
   return box!;
 }
 
+// getCompactControlStyle captures the rendered geometry and semantic paint of one control.
+async function getCompactControlStyle(locator: Locator) {
+  return locator.evaluate((element) => {
+    const styles = getComputedStyle(element);
+    return {
+      backgroundColor: styles.backgroundColor,
+      borderColor: styles.borderColor,
+      borderRadius: styles.borderRadius,
+      borderWidth: styles.borderWidth,
+      color: styles.color,
+      height: element.getBoundingClientRect().height
+    };
+  });
+}
+
+// getBorderRadii returns computed corners in clockwise order for responsive card assertions.
+async function getBorderRadii(locator: Locator) {
+  return locator.evaluate((element) => {
+    const styles = getComputedStyle(element);
+    return [
+      styles.borderTopLeftRadius,
+      styles.borderTopRightRadius,
+      styles.borderBottomRightRadius,
+      styles.borderBottomLeftRadius
+    ];
+  });
+}
+
+// getInboxGeometry captures related parent and child boxes in one stable browser snapshot.
+async function getInboxGeometry(inbox: Locator) {
+  await expect(inbox).toBeVisible();
+  return inbox.evaluate((root) => {
+    // requireElement fails the snapshot instead of returning partial geometry.
+    const requireElement = (selector: string) => {
+      const element = root.querySelector<HTMLElement>(selector);
+      if (!element) throw new Error(`Missing geometry element: ${selector}`);
+      return element;
+    };
+    // getRect serializes one DOMRect while every related element shares the same layout frame.
+    const getRect = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return { height: rect.height, width: rect.width, x: rect.x, y: rect.y };
+    };
+    const inboxElement = root as HTMLElement;
+    const inboxStyles = getComputedStyle(inboxElement);
+    const tableHead = requireElement(".recordings-table-head");
+    const listMode = getComputedStyle(tableHead).display !== "none";
+
+    return {
+      actions: getRect(requireElement(".recordings-row .recordings-row-actions")),
+      basicFilterRow: getRect(requireElement(".recording-filter-basic-row")),
+      deleteButton: getRect(requireElement(".recordings-row .delete-recording-form button")),
+      disclosure: getRect(requireElement(".recordings-toolbar > .organization-manager-trigger")),
+      editButton: getRect(requireElement(".recordings-row .recording-title-edit-button")),
+      headerActions: listMode
+        ? getRect(requireElement(".recordings-table-head-actions"))
+        : null,
+      inbox: getRect(inboxElement),
+      inboxContentWidth: inboxElement.clientWidth
+        - Number.parseFloat(inboxStyles.paddingLeft)
+        - Number.parseFloat(inboxStyles.paddingRight),
+      listMode,
+      main: getRect(requireElement(".recordings-row .recordings-row-main")),
+      row: getRect(requireElement(".recordings-row")),
+      search: getRect(requireElement('.recording-filter-search input[name="q"]')),
+      searchControl: getRect(requireElement(".recording-filter-search")),
+      searchIcon: getRect(requireElement(".recording-filter-search-icon")),
+      searchPaddingLeft: Number.parseFloat(getComputedStyle(
+        requireElement('.recording-filter-search input[name="q"]')
+      ).paddingLeft),
+      table: getRect(requireElement(".recordings-table")),
+      toolbar: getRect(requireElement(".recordings-toolbar"))
+    };
+  });
+}
+
+// getSearchResultGeometry captures the search list, row, and action controls in one layout frame.
+async function getSearchResultGeometry(inbox: Locator) {
+  await expect(inbox).toBeVisible();
+  return inbox.evaluate((root) => {
+    // requireElement fails the snapshot instead of returning incomplete search geometry.
+    const requireElement = (selector: string) => {
+      const element = root.querySelector<HTMLElement>(selector);
+      if (!element) throw new Error(`Missing search geometry element: ${selector}`);
+      return element;
+    };
+    // getRect serializes one DOMRect while all related search elements share a layout frame.
+    const getRect = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return { height: rect.height, width: rect.width, x: rect.x, y: rect.y };
+    };
+    const inboxElement = root as HTMLElement;
+    const inboxStyles = getComputedStyle(inboxElement);
+    const list = requireElement(".recording-search-result-list");
+    const results = root.querySelectorAll<HTMLElement>(".recording-search-result");
+    const result = results[0];
+    const lastResult = results[results.length - 1];
+    if (!result || !lastResult) throw new Error("Missing search result rows");
+    const main = requireElement(".recording-search-result-main");
+    const actions = requireElement(".recording-search-result .recordings-row-actions");
+    const editButton = requireElement(".recording-search-result .recording-title-edit-button");
+    const deleteButton = requireElement(".recording-search-result .delete-recording-form button");
+    const listStyles = getComputedStyle(list);
+    const lastResultStyles = getComputedStyle(lastResult);
+    const resultStyles = getComputedStyle(result);
+
+    return {
+      actions: getRect(actions),
+      deleteButton: getRect(deleteButton),
+      editButton: getRect(editButton),
+      inbox: getRect(inboxElement),
+      inboxBackground: inboxStyles.backgroundColor,
+      inboxContentWidth: inboxElement.clientWidth
+        - Number.parseFloat(inboxStyles.paddingLeft)
+        - Number.parseFloat(inboxStyles.paddingRight),
+      list: getRect(list),
+      listBackground: listStyles.backgroundColor,
+      listBorders: [
+        listStyles.borderTopWidth,
+        listStyles.borderRightWidth,
+        listStyles.borderBottomWidth,
+        listStyles.borderLeftWidth
+      ],
+      listGap: listStyles.gap,
+      lastResultBorders: [
+        lastResultStyles.borderTopWidth,
+        lastResultStyles.borderRightWidth,
+        lastResultStyles.borderBottomWidth,
+        lastResultStyles.borderLeftWidth
+      ],
+      main: getRect(main),
+      result: getRect(result),
+      resultBackground: resultStyles.backgroundColor,
+      resultBorders: [
+        resultStyles.borderTopWidth,
+        resultStyles.borderRightWidth,
+        resultStyles.borderBottomWidth,
+        resultStyles.borderLeftWidth
+      ],
+      resultRadii: [
+        resultStyles.borderTopLeftRadius,
+        resultStyles.borderTopRightRadius,
+        resultStyles.borderBottomRightRadius,
+        resultStyles.borderBottomLeftRadius
+      ]
+    };
+  });
+}
+
 // expectNoHorizontalOverflow checks both the document and one explicit recordings surface.
 async function expectNoHorizontalOverflow(page: Page, surfaceSelector = ".recordings-inbox") {
   expect(await page.evaluate((selector) => {
@@ -29,10 +178,26 @@ async function expectNoHorizontalOverflow(page: Page, surfaceSelector = ".record
   }, surfaceSelector)).toEqual({ document: 0, inbox: 0 });
 }
 
+// waitForInboxSettlement lets client recovery state and dependent editor effects settle before interaction.
+async function waitForInboxSettlement(page: Page) {
+  await page.waitForLoadState("networkidle");
+  await expect(page.locator(".live-recovery-panel")).toHaveCount(0);
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+}
+
 let fixtureScope = "";
 
-test.beforeEach(() => {
+test.beforeEach(async ({ page }) => {
   fixtureScope = createFixtureScope();
+  await page.route("**/api/recordings/recoverable", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({ recordings: [] }),
+      contentType: "application/json",
+      status: 200
+    });
+  });
 });
 
 test.afterEach(async ({ request }) => {
@@ -41,14 +206,14 @@ test.afterEach(async ({ request }) => {
   }
 });
 
-for (const width of [375, 768, 1024, 1440]) {
+for (const width of [375, 768, 901, 1024, 1440]) {
   test(`real recordings inbox is responsive and theme-safe at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 820 });
     await page.goto(fixturePath(fixtureScope));
+    await waitForInboxSettlement(page);
 
     const disclosure = page.getByRole("button", { name: "Spravovat" });
     await expect(disclosure).toHaveAttribute("aria-expanded", "false");
-    expect((await getBox(disclosure)).height).toBeGreaterThanOrEqual(44);
     await expect(page.getByRole("dialog", { name: "Správa organizace" })).toHaveCount(0);
     await disclosure.click();
     const management = page.getByRole("dialog", { name: "Správa organizace" });
@@ -61,21 +226,123 @@ for (const width of [375, 768, 1024, 1440]) {
     await page.getByRole("button", { name: "Zavřít správu organizace" }).click();
     const advancedFilters = page.getByRole("button", { name: /^Filtry \(\d+\)$/u });
     await expect(advancedFilters).toHaveAttribute("aria-expanded", "false");
+    await advancedFilters.click();
+    const advancedPanel = page.locator(".recording-filter-advanced .ui-disclosure-panel");
+    await expect(advancedPanel).toBeVisible();
+    const expandedFilterGeometry = await page.locator(".recording-filters").evaluate((form) => {
+      const search = form.querySelector<HTMLElement>(".recording-filter-search")!;
+      const trigger = form.querySelector<HTMLElement>(".recording-filter-advanced .ui-disclosure-trigger")!;
+      const panel = form.querySelector<HTMLElement>(".recording-filter-advanced .ui-disclosure-panel")!;
+      const formBox = form.getBoundingClientRect();
+      const searchBox = search.getBoundingClientRect();
+      const triggerBox = trigger.getBoundingClientRect();
+      const panelBox = panel.getBoundingClientRect();
+      return {
+        domOrder: Boolean(
+          search.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING
+        ) && Boolean(
+          trigger.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+        form: { x: formBox.x, width: formBox.width },
+        panel: { x: panelBox.x, y: panelBox.y, width: panelBox.width },
+        searchBottom: searchBox.y + searchBox.height,
+        triggerBottom: triggerBox.y + triggerBox.height
+      };
+    });
+    expect(expandedFilterGeometry.domOrder).toBe(true);
+    expect(expandedFilterGeometry.panel.x).toBeCloseTo(expandedFilterGeometry.form.x, 0);
+    expect(expandedFilterGeometry.panel.width).toBeCloseTo(expandedFilterGeometry.form.width, 0);
+    expect(expandedFilterGeometry.panel.y).toBeGreaterThanOrEqual(
+      Math.max(expandedFilterGeometry.searchBottom, expandedFilterGeometry.triggerBottom) - 0.5
+    );
+    const expandedControls = advancedPanel.locator(
+      ".recording-filter-grid select, .recording-filter-actions button"
+    );
+    expect(await expandedControls.count()).toBeGreaterThan(0);
+    for (const theme of ["dark", "light"] as const) {
+      await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
+      for (const control of await expandedControls.all()) {
+        const styles = await getCompactControlStyle(control);
+        expect(styles.height).toBeGreaterThanOrEqual(44);
+        expect(styles.borderRadius).toBe("6px");
+      }
+    }
+    await advancedFilters.click();
     await expect(page.getByRole("region", { name: "Pokročilé filtry nahrávek" })).toBeHidden();
     await expect(page.getByRole("heading", { name: /Bez klienta/ })).toBeVisible();
+    await expect(page.locator(".live-recovery-panel")).toHaveCount(0);
+
+    const search = page.getByRole("searchbox", { name: "Hledat v nahrávkách" });
+    const row = page.locator(".recordings-row").first();
+    const editButton = row.locator(".recording-title-edit-button");
+    const deleteButton = row.locator(".delete-recording-form button");
+    await expect(row).toBeVisible();
+    await expect(search).toBeVisible();
+    await expect(editButton).toHaveAccessibleName("Upravit");
+    await expect(editButton.locator(".recording-action-label")).toHaveText("Upravit");
+    await expect(editButton.locator(".recording-action-label")).toBeVisible();
+    expect(await editButton.evaluate((element) => getComputedStyle(element, "::before").content)).toBe("none");
+    await expect(deleteButton).toHaveAccessibleName("Koš");
+    await expect(deleteButton.locator(".recording-action-label")).toHaveText("Koš");
+    await expect(deleteButton.locator(".recording-action-label")).toBeVisible();
+
+    const geometry = await getInboxGeometry(page.locator(".recordings-inbox"));
+    const {
+      actions: actionsBox,
+      basicFilterRow: basicFilterRowBox,
+      deleteButton: deleteButtonBox,
+      disclosure: disclosureBox,
+      editButton: editButtonBox,
+      headerActions: headerActionsBox,
+      inbox: inboxBox,
+      inboxContentWidth,
+      listMode,
+      main: mainBox,
+      row: rowBox,
+      search: searchBox,
+      searchControl: searchControlBox,
+      searchIcon: searchIconBox,
+      searchPaddingLeft,
+      table: tableBox,
+      toolbar: toolbarBox
+    } = geometry;
+    expect(searchBox.height).toBeGreaterThanOrEqual(44);
+    expect(searchBox.width).toBeGreaterThanOrEqual(44);
+    expect(disclosureBox.height).toBeGreaterThanOrEqual(44);
+    expect(disclosureBox.width).toBeGreaterThanOrEqual(44);
+    expect(searchIconBox.x).toBeGreaterThanOrEqual(searchControlBox.x - 0.5);
+    expect(searchIconBox.y).toBeGreaterThanOrEqual(searchControlBox.y - 0.5);
+    expect(searchIconBox.x + searchIconBox.width)
+      .toBeLessThanOrEqual(searchControlBox.x + searchControlBox.width + 0.5);
+    expect(searchIconBox.y + searchIconBox.height)
+      .toBeLessThanOrEqual(searchControlBox.y + searchControlBox.height + 0.5);
+    expect(searchIconBox.x).toBeGreaterThanOrEqual(searchBox.x - 0.5);
+    expect(searchIconBox.x + searchIconBox.width)
+      .toBeLessThanOrEqual(searchBox.x + searchPaddingLeft + 0.5);
 
     for (const chip of await page.locator(".recordings-status-summary a").all()) {
       expect((await getBox(chip)).height).toBeGreaterThanOrEqual(44);
     }
 
-    const row = page.locator(".recordings-row").first();
-    const main = row.locator(".recordings-row-main");
-    const actions = row.locator(".recordings-row-actions");
-    const [rowBox, mainBox, actionsBox] = await Promise.all([getBox(row), getBox(main), getBox(actions)]);
-    const [inboxBox, tableBox] = await Promise.all([
-      getBox(page.locator(".recordings-inbox")),
-      getBox(page.locator(".recordings-table"))
-    ]);
+    for (const buttonBox of [editButtonBox, deleteButtonBox]) {
+      expect(buttonBox.width).toBeGreaterThanOrEqual(44);
+      expect(buttonBox.height).toBeGreaterThanOrEqual(44);
+      expect(buttonBox.x).toBeGreaterThanOrEqual(actionsBox.x - 0.5);
+      expect(buttonBox.y).toBeGreaterThanOrEqual(actionsBox.y - 0.5);
+      expect(buttonBox.x + buttonBox.width).toBeLessThanOrEqual(actionsBox.x + actionsBox.width + 0.5);
+      expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(actionsBox.y + actionsBox.height + 0.5);
+    }
+    expect(listMode).toBe(inboxContentWidth > 680);
+    if (width === 375) {
+      expect(inboxContentWidth).toBeLessThanOrEqual(680);
+      expect(listMode).toBe(false);
+    } else if (width === 768) {
+      expect(inboxContentWidth).toBeGreaterThan(680);
+      expect(listMode).toBe(true);
+    } else if (width === 901) {
+      expect(inboxContentWidth).toBeLessThanOrEqual(680);
+      expect(listMode).toBe(false);
+    }
     for (const box of [tableBox, rowBox, mainBox, actionsBox]) {
       expect(box.x).toBeGreaterThanOrEqual(inboxBox.x - 1);
       expect(box.x + box.width).toBeLessThanOrEqual(inboxBox.x + inboxBox.width + 1);
@@ -84,6 +351,14 @@ for (const width of [375, 768, 1024, 1440]) {
     }
     expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(width + 0.5);
     if (width <= 900) {
+      expect(disclosureBox.y).toBeGreaterThanOrEqual(basicFilterRowBox.y + basicFilterRowBox.height - 0.5);
+      expect(disclosureBox.x).toBeCloseTo(toolbarBox.x, 0);
+      expect(disclosureBox.width).toBeCloseTo(toolbarBox.width, 0);
+    } else {
+      expect(searchBox.y).toBeCloseTo(disclosureBox.y, 0);
+      expect(disclosureBox.x).toBeGreaterThanOrEqual(searchBox.x + searchBox.width - 0.5);
+    }
+    if (!listMode) {
       expect(actionsBox.y).toBeGreaterThanOrEqual(mainBox.y + mainBox.height - 0.5);
       for (const control of await page.locator(
         ".recording-filters input:visible, .recording-filters select:visible, .recording-filters button:visible, .recordings-row-actions button:visible"
@@ -91,8 +366,22 @@ for (const width of [375, 768, 1024, 1440]) {
         const box = await getBox(control);
         expect(box.height).toBeGreaterThanOrEqual(44);
       }
+      if (width === 375 || width === 901) {
+        const rows = page.locator(".recordings-row");
+        expect(await getBorderRadii(rows.first())).toEqual(["10px", "10px", "10px", "10px"]);
+        expect(await getBorderRadii(rows.last())).toEqual(["10px", "10px", "10px", "10px"]);
+      }
     } else {
       expect(actionsBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width - 0.5);
+      expect(actionsBox.width).toBeCloseTo(128, 0);
+      expect(headerActionsBox).not.toBeNull();
+      expect(actionsBox.x).toBeCloseTo(headerActionsBox!.x, 0);
+      expect(actionsBox.width).toBeCloseTo(headerActionsBox!.width, 0);
+      if (width === 768) {
+        const rows = page.locator(".recordings-row");
+        expect(await getBorderRadii(rows.first())).toEqual(["0px", "0px", "0px", "0px"]);
+        expect(await getBorderRadii(rows.last())).toEqual(["0px", "0px", "0px", "0px"]);
+      }
     }
 
     const colors: string[] = [];
@@ -102,10 +391,64 @@ for (const width of [375, 768, 1024, 1440]) {
       colors.push(await page.locator(".recordings-inbox").evaluate((element) =>
         getComputedStyle(element).backgroundColor
       ));
+      for (const control of [search, disclosure]) {
+        const styles = await getCompactControlStyle(control);
+        expect(styles.height).toBeGreaterThanOrEqual(44);
+        expect(styles.borderRadius).toBe("6px");
+        expect(styles.borderWidth).toBe("1px");
+        expect(styles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+        expect(styles.borderColor).not.toBe(styles.backgroundColor);
+        expect(styles.color).not.toBe(styles.backgroundColor);
+      }
+      await search.focus();
+      await expect.poll(() => search.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--focus-ring)";
+        document.body.append(probe);
+        const focusRing = getComputedStyle(probe).color;
+        probe.remove();
+        const styles = getComputedStyle(element);
+        return styles.borderColor === focusRing;
+      })).toBe(true);
       await expectNoHorizontalOverflow(page);
     }
     expect(colors[0]).not.toBe(colors[1]);
     await page.screenshot({ caret: "initial", path: testInfo.outputPath(`recordings-${width}.png`), fullPage: true });
+  });
+}
+
+for (const width of [375, 901, 1024]) {
+  test(`recording rename popover stays inside the inbox at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1200 });
+    await page.goto(fixturePath(fixtureScope));
+    await waitForInboxSettlement(page);
+
+    const inbox = page.locator(".recordings-inbox");
+    const row = page.locator(".recordings-row").last();
+    await row.locator(".recording-title-edit-button").click();
+    const popover = row.locator(".recording-title-popover");
+    await expect(popover).toBeVisible();
+    await popover.scrollIntoViewIfNeeded();
+
+    await expect.poll(() => popover.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + (rect.width / 2), rect.bottom - 2);
+      return {
+        hitClass: hit instanceof HTMLElement ? hit.className : null,
+        hitTag: hit?.tagName ?? null,
+        ownsHit: Boolean(hit && (hit === element || element.contains(hit))),
+        popoverBottom: rect.bottom,
+        viewportHeight: window.innerHeight
+      };
+    })).toMatchObject({ ownsHit: true });
+
+    const [inboxBox, popoverBox] = await Promise.all([getBox(inbox), getBox(popover)]);
+    expect(popoverBox.x).toBeGreaterThanOrEqual(inboxBox.x - 0.5);
+    expect(popoverBox.x + popoverBox.width)
+      .toBeLessThanOrEqual(inboxBox.x + inboxBox.width + 0.5);
+    expect(popoverBox.x).toBeGreaterThanOrEqual(-0.5);
+    expect(popoverBox.x + popoverBox.width).toBeLessThanOrEqual(width + 0.5);
+    await expectNoHorizontalOverflow(page);
   });
 }
 
@@ -195,6 +538,66 @@ test("indexed deep links, filtered empty and sanitized search errors expose reco
   await expect(page.locator("body")).not.toContainText("provider detail");
 });
 
+for (const width of [901, 1024]) {
+  test(`indexed search results follow the inbox container at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1200 });
+    await page.goto(fixturePath(fixtureScope, "&fixture=indexed&q=Call"));
+    await waitForInboxSettlement(page);
+    await page.locator("html").evaluate((element) => { element.dataset.theme = "light"; });
+
+    const inbox = page.locator(".recordings-inbox");
+    const result = page.locator(".recording-search-result").first();
+    const editButton = result.locator(".recording-title-edit-button");
+    const deleteButton = result.locator(".delete-recording-form button");
+    await expect(editButton).toHaveAccessibleName("Upravit");
+    await expect(editButton.locator(".recording-action-label")).toHaveText("Upravit");
+    await expect(editButton.locator(".recording-action-label")).toBeVisible();
+    await expect(deleteButton).toHaveAccessibleName("Koš");
+    await expect(deleteButton.locator(".recording-action-label")).toHaveText("Koš");
+    await expect(deleteButton.locator(".recording-action-label")).toBeVisible();
+    await page.mouse.move(0, 0);
+    await result.evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished));
+    });
+
+    const geometry = await getSearchResultGeometry(inbox);
+    expect(geometry.resultBackground).toBe(geometry.inboxBackground);
+    expect(geometry.actions.x).toBeGreaterThanOrEqual(geometry.result.x - 0.5);
+    expect(geometry.actions.x + geometry.actions.width)
+      .toBeLessThanOrEqual(geometry.result.x + geometry.result.width + 0.5);
+    for (const button of [geometry.editButton, geometry.deleteButton]) {
+      expect(button.width).toBeGreaterThanOrEqual(44);
+      expect(button.height).toBeGreaterThanOrEqual(44);
+      expect(button.x).toBeGreaterThanOrEqual(geometry.actions.x - 0.5);
+      expect(button.x + button.width)
+        .toBeLessThanOrEqual(geometry.actions.x + geometry.actions.width + 0.5);
+    }
+
+    if (geometry.inboxContentWidth > 680) {
+      expect(width).toBe(1024);
+      expect(geometry.listBackground).toBe(geometry.inboxBackground);
+      expect(geometry.listBorders).toEqual(["1px", "1px", "1px", "1px"]);
+      expect(geometry.listGap).toBe("0px");
+      expect(geometry.resultBorders).toEqual(["0px", "0px", "1px", "0px"]);
+      expect(geometry.lastResultBorders).toEqual(["0px", "0px", "0px", "0px"]);
+      expect(geometry.resultRadii).toEqual(["0px", "0px", "0px", "0px"]);
+      expect(geometry.actions.x).toBeGreaterThanOrEqual(geometry.main.x + geometry.main.width - 0.5);
+      expect(geometry.actions.width).toBeCloseTo(128, 0);
+    } else {
+      expect(width).toBe(901);
+      expect(geometry.listBackground).toBe("rgba(0, 0, 0, 0)");
+      expect(geometry.listBorders).toEqual(["0px", "0px", "0px", "0px"]);
+      expect(geometry.listGap).toBe("10px");
+      expect(geometry.resultBorders).toEqual(["1px", "1px", "1px", "1px"]);
+      expect(geometry.lastResultBorders).toEqual(["1px", "1px", "1px", "1px"]);
+      expect(geometry.resultRadii).toEqual(["10px", "10px", "10px", "10px"]);
+      expect(geometry.actions.y)
+        .toBeGreaterThanOrEqual(geometry.main.y + geometry.main.height - 0.5);
+    }
+    await expectNoHorizontalOverflow(page);
+  });
+}
+
 for (const width of [901, 1024, 1440]) {
   test(`failed delete feedback reserves visible desktop space at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 820 });
@@ -209,7 +612,6 @@ for (const width of [901, 1024, 1440]) {
 
     for (const surface of [
       {
-        buttonName: "Smazat fixture řádek",
         boundary: "[data-delete-failure-table]",
         fields: ".recordings-row-main > *",
         main: ".recordings-row-main",
@@ -217,7 +619,6 @@ for (const width of [901, 1024, 1440]) {
         target: "[data-delete-failure-row]"
       },
       {
-        buttonName: "Smazat fixture search kartu",
         boundary: "[data-delete-failure-search-card]",
         fields: null,
         main: ".recording-search-result-main",
@@ -228,8 +629,21 @@ for (const width of [901, 1024, 1440]) {
       const target = page.locator(surface.target);
       const actions = target.locator(".recordings-row-actions");
       const main = target.locator(surface.main);
-      const button = target.getByRole("button", { name: surface.buttonName });
+      const button = target.locator(".delete-recording-compact button");
       await target.scrollIntoViewIfNeeded();
+      await expect(button).toHaveAccessibleName("Koš");
+      await expect(button.locator(".recording-action-label")).toHaveText("Koš");
+      await expect(button.locator(".recording-action-label")).toBeVisible();
+      if (surface.fields && width > 901) {
+        const headerActions = page.locator(".recordings-table-head-actions");
+        await expect(headerActions).toBeVisible();
+        const [headerActionsBox, actionsBox] = await Promise.all([
+          getBox(headerActions),
+          getBox(actions)
+        ]);
+        expect(headerActionsBox.x).toBeCloseTo(actionsBox.x, 0);
+        expect(headerActionsBox.width).toBeCloseTo(actionsBox.width, 0);
+      }
       const [normalActionsBox, normalMainBox, normalTargetBox] = await Promise.all([
         getBox(actions),
         getBox(main),
@@ -238,6 +652,11 @@ for (const width of [901, 1024, 1440]) {
       const normalGridColumns = await target.evaluate(
         (element) => getComputedStyle(element).gridTemplateColumns
       );
+      if (surface.fields) {
+        expect(await getBorderRadii(target)).toEqual(width === 901
+          ? ["10px", "10px", "10px", "10px"]
+          : ["0px", "0px", "5px", "5px"]);
+      }
       expect(normalMainBox.x).toBeGreaterThanOrEqual(normalTargetBox.x - 0.5);
       expect(normalMainBox.x + normalMainBox.width)
         .toBeLessThanOrEqual(normalTargetBox.x + normalTargetBox.width + 0.5);
@@ -248,7 +667,7 @@ for (const width of [901, 1024, 1440]) {
       } else {
         expect(normalActionsBox.x)
           .toBeGreaterThanOrEqual(normalMainBox.x + normalMainBox.width - 0.5);
-        expect(normalActionsBox.width).toBeCloseTo(surface.fields ? 96 : 116, 0);
+        expect(normalActionsBox.width).toBeCloseTo(128, 0);
       }
       if (surface.fields) {
         const fieldBoxes = await Promise.all(
