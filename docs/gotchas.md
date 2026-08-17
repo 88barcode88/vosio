@@ -313,6 +313,8 @@ Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čt
 
 Stavové počty na `/recordings` vznikají přes `count_own_recording_statuses_v1`: přesné facety pokrývají celý aktuální `q`, organizační filtry klienta/projektu/složky a ALL sadu štítků. Facety ignorují aktivní `status`, aby šlo jedním kliknutím přepnout na jiný stav; `Smazáno` je samostatný úplný počet Koše. Filtrování jedné 25řádkové search stránky v Reactu by rozbilo `total_count` a stránkování.
 
+Po kanonizaci URL filtrů jsou hlavní list/search dotaz, stavové facety a počet Koše navzájem nezávislé read-only požadavky. Musí začít v jednom souběžném kroku; čekání na facety před spuštěním listu přidává do kritické cesty `/recordings` celý zbytečný Supabase round trip. Organizační options zůstávají před nimi, protože určují kanonické filtry, a všechny dotazy dál používají stejnou authenticated session a RLS.
+
 ## Hromadný purge není jeden serverový request
 
 Klientský bulk purge spouští pro každý vybraný záznam samostatnou server mutation a drží nejvýše dvě souběžně. Jeden Vercel request proto nikdy nestránkuje ani nemaže Storage pro více nahrávek. Každá položka samostatně zachovává 24hodinový upload fence, owner plus recording path validaci, purge claim, heartbeat a bounded late cleanup. Zastavení fronty neukončuje již běžící jeden nebo dva requesty; zabrání pouze spuštění zbývajících ID. UI průběžně skládá partial result a úspěch jedné položky nesmí skrýt jinou položku, která selhala nebo ještě nebyla spuštěna.
