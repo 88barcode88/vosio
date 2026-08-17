@@ -6,7 +6,7 @@ V původní úvaze se objevil název SONiVOX. Pro speech-to-text provider v tomt
 
 ## Vercel a audio
 
-Audio soubory mohou být velké a dlouhé zpracování nepatří do jednoho Vercel requestu. Hlavní upload cesta je frontend -> Supabase Storage TUS endpoint přes authenticated browser session, ne frontend -> Vercel API route -> storage/provider. TUS adaptér posílá 6 MiB chunky a před každým requestem znovu čte access token, protože dlouhému uploadu může mezitím expirivat session.
+Audio soubory mohou být velké a dlouhé zpracování nepatří do jednoho Vercel requestu. Hlavní upload cesta je frontend -> Supabase Storage TUS endpoint přes authenticated browser session, ne frontend -> Vercel API route -> storage/provider. TUS adaptér posílá 6 MiB chunky a před každým requestem znovu čte access token, protože dlouhému uploadu může mezitím expirivat session. Authorization nastavuj pouze v `onBeforeRequest`; kombinace statického `headers.authorization` a následného `setHeader` v browserovém `tus-js-client` hodnoty přes XHR spojí čárkou a Supabase odmítne neplatnou dvojitou bearer hlavičku.
 
 Manuální vícesouborový upload běží sekvenčně. Průběh celé fronty se počítá z odeslaných bytů, ne z průměru procent jednotlivých souborů; nesmí klesnout při přechodu na další soubor. Zrušení musí ukončit aktivní TUS upload a zapsat `recordings.status = failed`. Když selže i tento zápis, UI musí ukázat tuto skutečnou chybu místo falešného tvrzení, že zrušení proběhlo čistě.
 
