@@ -1004,6 +1004,29 @@
   font-size: 12px;
 }
 
+.timeline-list .transcript-empty > .secondary-inline-action,
+.timeline-list .transcript-empty > .timeline-generation-state {
+  grid-column: 2;
+}
+
+.timeline-list .transcript-empty > .secondary-inline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: max-content;
+  max-width: 100%;
+  min-height: 44px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.timeline-list .transcript-empty > .secondary-inline-action svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
 .timeline-list .secondary-inline-action:disabled {
   cursor: wait;
   opacity: 0.68;

@@ -567,7 +567,7 @@ select:focus-visible {
 }
 .user-card {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  grid-template-columns: 34px minmax(0, 1fr) 44px;
   align-items: center;
   gap: 10px;
   margin-top: 10px;

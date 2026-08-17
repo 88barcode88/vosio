@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { AudioLines, Flag } from "lucide-react";
+import { AudioLines, Flag, Sparkles } from "lucide-react";
 import {
   getTimelineChapterMeta,
   getPreferredTimelineChapters,
@@ -134,7 +134,8 @@ export function TimelineContent({
             })}
             type="button"
           >
-            {timelinePending ? "Vytvářím časovou osu…" : "Vytvořit časovou osu"}
+            <Sparkles aria-hidden="true" size={16} />
+            <span>{timelinePending ? "Vytvářím časovou osu…" : "Vytvořit časovou osu"}</span>
           </button>
           <p
             className="timeline-generation-state"

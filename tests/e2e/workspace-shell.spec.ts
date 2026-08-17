@@ -449,6 +449,12 @@ for (const width of [1024, 1440]) {
     expect(sidebarBox.width).toBeGreaterThanOrEqual(240);
     expect(sidebarBox.width).toBeLessThanOrEqual(252);
     expect(sidebarBox.height).toBe(760);
+    const userCard = page.locator(".sidebar .user-card");
+    const signOut = userCard.locator(".sign-out-form button");
+    const [userCardBox, signOutBox] = await Promise.all([getBox(userCard), getBox(signOut)]);
+    expect((await userCard.evaluate((element) => getComputedStyle(element).gridTemplateColumns))
+      .split(" ").at(-1)).toBe("44px");
+    expect(signOutBox.x + signOutBox.width).toBeLessThanOrEqual(userCardBox.x + userCardBox.width + 0.5);
     expect(await sidebar.evaluate((element) => ({
       position: getComputedStyle(element).position,
       top: getComputedStyle(element).top
