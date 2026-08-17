@@ -58,7 +58,7 @@ export function WorkspaceSidebar({
         title={toggleLabel}
         type="button"
       >
-        {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+        {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
       </button>
       <NewRecordingNavigationLink compact={collapsed} hrefOverrides={navigationHrefOverrides} />
       <WorkspaceNavigation

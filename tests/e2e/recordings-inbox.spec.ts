@@ -18,6 +18,21 @@ async function getBox(locator: Locator) {
   return box!;
 }
 
+// getCompactControlStyle captures the rendered geometry and semantic paint of one control.
+async function getCompactControlStyle(locator: Locator) {
+  return locator.evaluate((element) => {
+    const styles = getComputedStyle(element);
+    return {
+      backgroundColor: styles.backgroundColor,
+      borderColor: styles.borderColor,
+      borderRadius: styles.borderRadius,
+      borderWidth: styles.borderWidth,
+      color: styles.color,
+      height: element.getBoundingClientRect().height
+    };
+  });
+}
+
 // getBorderRadii returns computed corners in clockwise order for responsive card assertions.
 async function getBorderRadii(locator: Locator) {
   return locator.evaluate((element) => {
@@ -364,6 +379,25 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       colors.push(await page.locator(".recordings-inbox").evaluate((element) =>
         getComputedStyle(element).backgroundColor
       ));
+      for (const control of [search, disclosure]) {
+        const styles = await getCompactControlStyle(control);
+        expect(styles.height).toBeGreaterThanOrEqual(44);
+        expect(styles.borderRadius).toBe("6px");
+        expect(styles.borderWidth).toBe("1px");
+        expect(styles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+        expect(styles.borderColor).not.toBe(styles.backgroundColor);
+        expect(styles.color).not.toBe(styles.backgroundColor);
+      }
+      await search.focus();
+      await expect.poll(() => search.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--focus-ring)";
+        document.body.append(probe);
+        const focusRing = getComputedStyle(probe).color;
+        probe.remove();
+        const styles = getComputedStyle(element);
+        return styles.borderColor === focusRing;
+      })).toBe(true);
       await expectNoHorizontalOverflow(page);
     }
     expect(colors[0]).not.toBe(colors[1]);

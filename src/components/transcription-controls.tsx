@@ -232,7 +232,7 @@ export function TranscriptionControls({
           onClick={() => callTranscriptionEndpoint("POST")}
           type="button"
         >
-          <Sparkles size={18} />
+          <Sparkles size={16} />
           {isWorking ? "Pracuji..." : "Spustit přepis"}
         </button>
       ) : null}
@@ -246,7 +246,7 @@ export function TranscriptionControls({
             : "Tento přepis nemá uložené audio, takže ho nejde dopočítat znovu."}
           type="button"
         >
-          <RotateCcw size={18} />
+          <RotateCcw size={16} />
           Přepsat znovu
         </button>
       ) : null}
@@ -257,7 +257,7 @@ export function TranscriptionControls({
           onClick={() => callTranscriptionEndpoint("GET")}
           type="button"
         >
-          <Link2 size={18} />
+          <Link2 size={16} />
           Zkontrolovat přepis
         </button>
       ) : null}

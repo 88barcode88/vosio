@@ -82,7 +82,7 @@ export function ExportControls({
   return (
     <details className="export-controls">
       <summary>
-        <Download size={15} />
+        <Download size={16} />
         <span>Export</span>
       </summary>
       <div className="export-controls-menu">

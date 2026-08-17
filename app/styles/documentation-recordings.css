@@ -1596,10 +1596,16 @@
 .recordings-toolbar > .organization-manager-trigger {
   height: 44px;
   min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
   background: var(--surface-muted);
   padding: 0 12px;
   font-size: 12px;
   font-weight: 750;
+  transition:
+    border-color 150ms ease-out,
+    background-color 150ms ease-out;
 }
 .recordings-inbox .recording-filters {
   min-width: 0;
@@ -1615,8 +1621,13 @@
 }
 .recordings-inbox .recording-filter-grid input,
 .recordings-inbox .recording-filter-grid select,
-.recordings-inbox .recording-filter-tags label,
 .recordings-inbox .recording-filter-actions button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
+}
+.recordings-inbox .recording-filter-tags label {
   background: var(--surface);
 }
 .recordings-inbox .recording-filter-tags input {
@@ -1644,7 +1655,33 @@
 .recording-filter-search input {
   width: 100%;
   min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
   padding-left: 36px;
+  transition:
+    border-color 150ms ease-out,
+    background-color 150ms ease-out;
+}
+.recordings-toolbar > .organization-manager-trigger:hover,
+.recording-filter-search input:hover,
+.recordings-inbox .recording-filter-grid select:hover,
+.recordings-inbox .recording-filter-actions button:hover:not(:disabled),
+.recording-filter-clear-search:hover:not(:disabled),
+.recording-filter-advanced .ui-disclosure-trigger:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+}
+.recording-filter-search input:focus-visible {
+  border-color: var(--focus-ring);
+}
+.recordings-toolbar > .organization-manager-trigger:focus-visible,
+.recordings-inbox .recording-filter-grid select:focus-visible,
+.recordings-inbox .recording-filter-actions button:focus-visible,
+.recording-filter-clear-search:focus-visible,
+.recording-filter-advanced .ui-disclosure-trigger:focus-visible {
+  border-color: var(--focus-ring);
 }
 .recording-filter-clear-search {
   grid-column: 2;
@@ -1655,6 +1692,10 @@
 .recording-filter-clear-search,
 .recording-filter-advanced .ui-disclosure-trigger {
   min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
 }
 .recording-filter-advanced .ui-disclosure-trigger {
   grid-column: 3;
@@ -1663,6 +1704,24 @@
   grid-column: 1 / -1;
   margin-top: 8px;
   border-radius: 6px;
+}
+.recording-object-header .recording-detail-actions :is(
+  .export-controls summary,
+  .recording-inline-edit summary,
+  .delete-recording-danger button
+),
+.recording-object-header .recording-organization-summary > button,
+.recording-object-header .recording-header-operations .command-button {
+  min-height: 44px;
+  border-radius: 6px;
+}
+.ai-tab-actions .quick-grid button {
+  min-height: 44px;
+  border-radius: 6px;
+}
+.ai-tab-actions .quick-grid svg {
+  width: 16px;
+  height: 16px;
 }
 @media (max-width: 900px) {
   .recording-filter-basic-row {

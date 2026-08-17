@@ -111,7 +111,7 @@ export function AiProcessingControls({
             type="button"
             key={action.label}
           >
-            <action.icon size={15} />
+            <action.icon size={16} />
             <span>
               <strong>{action.label}</strong>
               <small>

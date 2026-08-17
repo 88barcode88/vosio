@@ -52,6 +52,22 @@ async function openFixture(page: Page, mode: FixtureMode = "blocks") {
   await expect(page.locator(".recording-workbench")).toBeVisible();
 }
 
+// readCompactStyle returns the rendered shape and first Lucide glyph size for one action.
+async function readCompactStyle(page: Page, selector: string) {
+  return page.locator(selector).evaluate((element) => {
+    const styles = getComputedStyle(element);
+    const icon = element.querySelector<SVGElement>("svg");
+    const iconBox = icon?.getBoundingClientRect() ?? null;
+    return {
+      backgroundColor: styles.backgroundColor,
+      borderRadius: styles.borderRadius,
+      height: element.getBoundingClientRect().height,
+      iconHeight: iconBox?.height ?? null,
+      iconWidth: iconBox?.width ?? null
+    };
+  });
+}
+
 // readContrastReport returns rendered foreground/background pairs and WCAG text contrast ratios.
 async function readContrastReport(page: Page, selectors: string[]) {
   return page.evaluate((targetSelectors) => {
@@ -142,7 +158,7 @@ test("the guarded fixture renders the real full-page recording detail", async ({
   });
 });
 
-for (const width of [375, 1280]) {
+for (const width of [375, 768, 901, 1024, 1440]) {
   test(`header, player and tabs keep exact source order at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ height: 720, width });
     await openFixture(page);
@@ -161,6 +177,35 @@ for (const width of [375, 1280]) {
       };
     });
     expect(order).toEqual({ headerBeforePlayer: true, playerBeforeTabs: true });
+
+    await page.getByRole("tab", { name: "AI zpracování" }).click();
+    await expect(page.locator(".ai-tab-actions .quick-grid button").first()).toBeVisible();
+    for (const theme of ["dark", "light"] as const) {
+      await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
+      const selectors = [
+        ".recording-object-header .export-controls > summary",
+        ".recording-object-header .recording-inline-edit > summary",
+        ".recording-object-header .delete-recording-danger button",
+        ".recording-object-header .recording-organization-summary > button",
+        ".recording-object-header .recording-header-operations .command-button",
+        ".ai-tab-actions .quick-grid button:first-child"
+      ];
+
+      for (const selector of selectors) {
+        const styles = await readCompactStyle(page, selector);
+        expect(styles.height).toBeGreaterThanOrEqual(44);
+        expect(styles.borderRadius).toBe("6px");
+        expect(styles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+        if (styles.iconWidth !== null || styles.iconHeight !== null) {
+          expect(styles.iconWidth).toBe(16);
+          expect(styles.iconHeight).toBe(16);
+        }
+      }
+
+      expect(await page.locator(".recording-audio-toggle").evaluate((element) =>
+        getComputedStyle(element).borderRadius
+      )).toBe("999px");
+    }
   });
 }
 
