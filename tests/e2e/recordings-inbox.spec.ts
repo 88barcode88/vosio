@@ -255,6 +255,18 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     expect(expandedFilterGeometry.panel.y).toBeGreaterThanOrEqual(
       Math.max(expandedFilterGeometry.searchBottom, expandedFilterGeometry.triggerBottom) - 0.5
     );
+    const expandedControls = advancedPanel.locator(
+      ".recording-filter-grid select, .recording-filter-actions button"
+    );
+    expect(await expandedControls.count()).toBeGreaterThan(0);
+    for (const theme of ["dark", "light"] as const) {
+      await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
+      for (const control of await expandedControls.all()) {
+        const styles = await getCompactControlStyle(control);
+        expect(styles.height).toBeGreaterThanOrEqual(44);
+        expect(styles.borderRadius).toBe("6px");
+      }
+    }
     await advancedFilters.click();
     await expect(page.getByRole("region", { name: "Pokročilé filtry nahrávek" })).toBeHidden();
     await expect(page.getByRole("heading", { name: /Bez klienta/ })).toBeVisible();

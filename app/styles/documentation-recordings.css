@@ -1622,6 +1622,7 @@
 .recordings-inbox .recording-filter-grid input,
 .recordings-inbox .recording-filter-grid select,
 .recordings-inbox .recording-filter-actions button {
+  min-height: 44px;
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);

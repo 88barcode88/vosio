@@ -42,6 +42,10 @@ describe("compact workspace control styling", () => {
       ".recordings-toolbar > .organization-manager-trigger"
     );
     const search = getRuleBody(recordingStyles, ".recording-filter-search input");
+    const filterActions = getRuleBody(
+      recordingStyles,
+      ".recordings-inbox .recording-filter-actions button"
+    );
 
     for (const rule of [management, search]) {
       expect(rule).toContain("border: 1px solid var(--border)");
@@ -50,6 +54,10 @@ describe("compact workspace control styling", () => {
     }
     expect(management).toContain("background: var(--surface-muted)");
     expect(search).toContain("background: var(--surface)");
+    expect(filterActions).toContain("min-height: 44px");
+    expect(recordingStyles).toMatch(
+      /\.recordings-inbox \.recording-filter-grid input,[\s\S]*?\.recordings-inbox \.recording-filter-grid select,[\s\S]*?\.recordings-inbox \.recording-filter-actions button\s*\{[^}]*?min-height:\s*44px;/u
+    );
     expect(recordingStyles).toMatch(
       /\.recordings-toolbar > \.organization-manager-trigger:hover,[\s\S]*?\.recording-filter-search input:hover,[\s\S]*?\{[^}]*?border-color:\s*var\(--border-strong\);/u
     );
