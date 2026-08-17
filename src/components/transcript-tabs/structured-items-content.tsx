@@ -26,20 +26,33 @@ import type {
   StructuredRiskRow,
   StructuredTaskRow
 } from "@/lib/ai/structured-types";
-import type { TranscriptTarget } from "@/components/transcript-tabs/types";
+import type {
+  TranscriptEvidenceReference,
+  TranscriptTarget
+} from "@/components/transcript-tabs/types";
 
 const ownerOrder: StructuredOwnerCategory[] = ["Moje práce", "Klient", "Nejasné"];
+
+type EvidenceTargetResolver = (reference: TranscriptEvidenceReference) => TranscriptTarget | null;
+
+type EvidenceNavigationProps = {
+  onOpenEvidence: (target: TranscriptTarget) => void;
+  resolveEvidenceTarget: EvidenceTargetResolver;
+};
 
 // StructuredItemsContent renders normalized AI rows as actionable workspace data.
 export function StructuredItemsContent({
   items,
-  onOpenEvidence
+  onOpenEvidence,
+  resolveEvidenceTarget
 }: {
   items: StructuredAiItems;
   onOpenEvidence: (target: TranscriptTarget) => void;
+  resolveEvidenceTarget?: EvidenceTargetResolver;
 }) {
   const [checklistMessage, setChecklistMessage] = useState<string | null>(null);
   const hasStructuredItems = items.tasks.length > 0 || items.decisions.length > 0 || items.risks.length > 0;
+  const activeEvidenceTargetResolver = resolveEvidenceTarget ?? resolveStoredEvidenceTarget;
 
   // copyChecklist copies the normalized task checklist as readable Markdown.
   async function copyChecklist() {
@@ -88,6 +101,7 @@ export function StructuredItemsContent({
                     <StructuredTaskRowView
                       key={task.id ?? `${task.ai_output_id}-${task.position}`}
                       onOpenEvidence={onOpenEvidence}
+                      resolveEvidenceTarget={activeEvidenceTargetResolver}
                       task={task}
                     />
                   ))}
@@ -98,10 +112,18 @@ export function StructuredItemsContent({
         </div>
       ) : null}
       {items.decisions.length > 0 ? (
-        <StructuredDecisionList decisions={items.decisions} onOpenEvidence={onOpenEvidence} />
+        <StructuredDecisionList
+          decisions={items.decisions}
+          onOpenEvidence={onOpenEvidence}
+          resolveEvidenceTarget={activeEvidenceTargetResolver}
+        />
       ) : null}
       {items.risks.length > 0 ? (
-        <StructuredRiskList onOpenEvidence={onOpenEvidence} risks={items.risks} />
+        <StructuredRiskList
+          onOpenEvidence={onOpenEvidence}
+          resolveEvidenceTarget={activeEvidenceTargetResolver}
+          risks={items.risks}
+        />
       ) : null}
     </section>
   );
@@ -120,11 +142,11 @@ function groupTasksByOwner(tasks: StructuredTaskRow[]) {
 // StructuredTaskRowView renders one persisted task with an optimistic status toggle.
 function StructuredTaskRowView({
   onOpenEvidence,
+  resolveEvidenceTarget,
   task
 }: {
-  onOpenEvidence: (target: TranscriptTarget) => void;
   task: StructuredTaskRow;
-}) {
+} & EvidenceNavigationProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleted, setIsDeleted] = useState(false);
@@ -232,6 +254,7 @@ function StructuredTaskRowView({
           evidenceQuote={task.evidence_quote}
           evidenceStartMs={task.evidence_start_ms}
           onOpenEvidence={onOpenEvidence}
+          resolveEvidenceTarget={resolveEvidenceTarget}
           transcriptId={task.transcript_id}
         />
         {errorMessage ? (
@@ -283,11 +306,11 @@ function getTaskStatusLabel(status: StructuredTaskRow["status"]) {
 // StructuredDecisionList renders confirmations separately from already agreed decisions.
 function StructuredDecisionList({
   decisions,
-  onOpenEvidence
+  onOpenEvidence,
+  resolveEvidenceTarget
 }: {
   decisions: StructuredDecisionRow[];
-  onOpenEvidence: (target: TranscriptTarget) => void;
-}) {
+} & EvidenceNavigationProps) {
   return (
     <div className="structured-ai-block structured-ai-compact-block">
       <header>
@@ -306,6 +329,7 @@ function StructuredDecisionList({
                 evidenceQuote={decision.evidence_quote}
                 evidenceStartMs={decision.evidence_start_ms}
                 onOpenEvidence={onOpenEvidence}
+                resolveEvidenceTarget={resolveEvidenceTarget}
                 transcriptId={decision.transcript_id}
               />
             </span>
@@ -364,11 +388,11 @@ function getDecisionIcon(decision: StructuredDecisionRow) {
 // StructuredRiskList renders compact risks and blockers with impact details.
 function StructuredRiskList({
   onOpenEvidence,
+  resolveEvidenceTarget,
   risks
 }: {
-  onOpenEvidence: (target: TranscriptTarget) => void;
   risks: StructuredRiskRow[];
-}) {
+} & EvidenceNavigationProps) {
   return (
     <div className="structured-ai-block structured-ai-compact-block">
       <header>
@@ -388,6 +412,7 @@ function StructuredRiskList({
                 evidenceQuote={risk.evidence_quote}
                 evidenceStartMs={risk.evidence_start_ms}
                 onOpenEvidence={onOpenEvidence}
+                resolveEvidenceTarget={resolveEvidenceTarget}
                 transcriptId={risk.transcript_id}
               />
             </span>
@@ -398,76 +423,66 @@ function StructuredRiskList({
   );
 }
 
-// StructuredEvidence renders a quote and exposes navigation only for a complete safe range.
+// StructuredEvidence makes one resolvable quote the navigation action itself.
 function StructuredEvidence({
   evidenceEndMs,
   evidenceQuote,
   evidenceStartMs,
   onOpenEvidence,
+  resolveEvidenceTarget,
   transcriptId
 }: {
   evidenceEndMs: number | null;
   evidenceQuote: string | null;
   evidenceStartMs: number | null;
-  onOpenEvidence: (target: TranscriptTarget) => void;
   transcriptId: string;
-}) {
+} & EvidenceNavigationProps) {
   if (!evidenceQuote) {
     return null;
   }
 
-  const evidenceTarget = getEvidenceTarget({
-    evidenceEndMs,
-    evidenceQuote,
-    evidenceStartMs,
+  const evidenceTarget = resolveEvidenceTarget({
+    endMs: evidenceEndMs,
+    quote: evidenceQuote,
+    startMs: evidenceStartMs,
     transcriptId
   });
 
   return (
     <div className="structured-evidence structured-evidence-compact">
-      <p>"{evidenceQuote}"</p>
       {evidenceTarget ? (
         <button
+          aria-label={`Důkaz: ${evidenceQuote}`}
           className="structured-evidence-action"
           data-evidence-action="true"
           onClick={() => onOpenEvidence(evidenceTarget)}
           type="button"
         >
-          Otevřít v přepisu
+          "{evidenceQuote}"
         </button>
-      ) : null}
+      ) : <p>"{evidenceQuote}"</p>}
     </div>
   );
 }
 
-// getEvidenceTarget rejects incomplete or invalid ranges before exposing a navigation action.
-function getEvidenceTarget({
-  evidenceEndMs,
-  evidenceQuote,
-  evidenceStartMs,
-  transcriptId
-}: {
-  evidenceEndMs: number | null;
-  evidenceQuote: string;
-  evidenceStartMs: number | null;
-  transcriptId: string;
-}): TranscriptTarget | null {
+// resolveStoredEvidenceTarget preserves direct navigation for callers that only provide saved ranges.
+function resolveStoredEvidenceTarget(reference: TranscriptEvidenceReference): TranscriptTarget | null {
   if (
-    evidenceStartMs === null ||
-    evidenceEndMs === null ||
-    !Number.isSafeInteger(evidenceStartMs) ||
-    !Number.isSafeInteger(evidenceEndMs) ||
-    evidenceStartMs < 0 ||
-    evidenceEndMs < evidenceStartMs
+    reference.startMs === null
+    || reference.endMs === null
+    || !Number.isSafeInteger(reference.startMs)
+    || !Number.isSafeInteger(reference.endMs)
+    || reference.startMs < 0
+    || reference.endMs < reference.startMs
   ) {
     return null;
   }
 
   return {
-    endMs: evidenceEndMs,
-    highlightText: evidenceQuote,
+    endMs: reference.endMs,
+    highlightText: reference.quote,
     playback: "play",
-    startMs: evidenceStartMs,
-    transcriptId
+    startMs: reference.startMs,
+    transcriptId: reference.transcriptId
   };
 }

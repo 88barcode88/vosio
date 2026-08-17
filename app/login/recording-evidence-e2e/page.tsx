@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 const transcriptId = "00000000-0000-4000-8000-000000000101";
 const recordingId = "00000000-0000-4000-8000-000000000102";
 const userId = "00000000-0000-4000-8000-000000000103";
-const fixtureModes = ["single", "none", "segmented"] as const;
+const fixtureModes = ["single", "none", "segmented", "untimed"] as const;
 type FixtureMode = (typeof fixtureModes)[number];
 
 // isFixtureMode narrows the development query to one supported audio contract.
@@ -19,18 +19,20 @@ function isFixtureMode(value: string | undefined): value is FixtureMode {
 }
 
 // createFixtureTranscript provides one independently addressable evidence speaker block.
-function createFixtureTranscript(): TranscriptRow {
+function createFixtureTranscript(mode: FixtureMode): TranscriptRow {
   return {
     created_at: "2026-08-05T10:00:00.000Z",
     id: transcriptId,
     language: "cs",
     raw_text: "Uvod. Schvalili jsme termin.",
     recording_id: recordingId,
-    segments: [
-      { end_ms: 1_000, speaker: 1, start_ms: 0, text: "Uvod." },
-      { end_ms: 8_400, speaker: 2, start_ms: 8_000, text: "Schvalili" },
-      { end_ms: 8_900, speaker: 2, start_ms: 8_400, text: " jsme termin." }
-    ],
+    segments: mode === "untimed"
+      ? [{ speaker: 2, text: "Schvalili jsme termin." }]
+      : [
+        { end_ms: 1_000, speaker: 1, start_ms: 0, text: "Uvod." },
+        { end_ms: 8_400, speaker: 2, start_ms: 8_000, text: "Schvalili" },
+        { end_ms: 8_900, speaker: 2, start_ms: 8_400, text: " jsme termin." }
+      ],
     speakers: [],
     transcription_job_id: null,
     user_id: userId
@@ -55,8 +57,8 @@ function createFixtureRecording(audioAvailability: RecordingAudioAvailability): 
 
 // createFixtureItems selects stored or legacy evidence rows for each E2E case.
 function createFixtureItems(mode: FixtureMode): StructuredAiItems {
-  const evidenceStartMs = mode === "segmented" ? null : 8_000;
-  const evidenceEndMs = mode === "segmented" ? null : 8_900;
+  const evidenceStartMs = mode === "segmented" || mode === "untimed" ? null : 8_000;
+  const evidenceEndMs = mode === "segmented" || mode === "untimed" ? null : 8_900;
   const base = {
     ai_output_id: "00000000-0000-4000-8000-000000000104",
     evidence_end_ms: evidenceEndMs,
@@ -112,7 +114,7 @@ function createFixtureItems(mode: FixtureMode): StructuredAiItems {
       owner_category: null,
       owner_role: null,
       status: "decided",
-      title: "Legacy segmented rozhodnuti"
+      title: mode === "untimed" ? "Legacy untimed rozhodnuti" : "Legacy segmented rozhodnuti"
     }],
     risks: [],
     tasks: []
@@ -140,9 +142,9 @@ export default async function RecordingEvidenceFixturePage({
       <h1>Recording evidence E2E fixture</h1>
       <TranscriptTabs
         activeAiOutputs={[]}
-        activeRecording={createFixtureRecording(mode)}
+        activeRecording={createFixtureRecording(mode === "untimed" ? "none" : mode)}
         activeStructuredItems={createFixtureItems(mode)}
-        activeTranscript={createFixtureTranscript()}
+        activeTranscript={createFixtureTranscript(mode)}
         initialTab="ai"
         initialTabFromCookie
         userSettings={defaultUserSettings}
