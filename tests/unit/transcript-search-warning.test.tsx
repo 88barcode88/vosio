@@ -231,4 +231,42 @@ describe("transcript search warning contract", () => {
       .toBe(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
     expect(navigationMocks.refresh).toHaveBeenCalled();
   });
+
+  it("checks immediately after returning to the tab and clears a stale lookup error", async () => {
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        json: vi.fn().mockResolvedValue({
+          error: "Nahrávku se teď nepodařilo načíst. Zkuste kontrolu znovu."
+        }),
+        ok: false
+      })
+      .mockResolvedValueOnce({
+        json: vi.fn().mockResolvedValue({ job: { status: "done" }, transcript: { id: "transcript-4" } }),
+        ok: true
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await renderClient(createElement(TranscriptionControls, {
+      recordingId: "recording-4",
+      recordingStatus: "transcribing",
+      storedAudioMode: "single"
+    }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container?.textContent).toContain("Nahrávku se teď nepodařilo načíst");
+
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(container?.textContent).not.toContain("Nahrávku se teď nepodařilo načíst");
+    expect(container?.textContent).toContain("Přepis je hotový");
+    expect(navigationMocks.refresh).toHaveBeenCalled();
+  });
 });

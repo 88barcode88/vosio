@@ -220,8 +220,8 @@ for (const width of [375, 768, 901, 1024, 1440]) {
         expect(styles.borderRadius).toBe("6px");
         expect(styles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
         if (styles.iconWidth !== null || styles.iconHeight !== null) {
-          expect(styles.iconWidth).toBe(16);
-          expect(styles.iconHeight).toBe(16);
+          expect(styles.iconWidth).toBe(12);
+          expect(styles.iconHeight).toBe(12);
         }
       }
 
@@ -253,7 +253,7 @@ for (const width of [375, 768, 901, 1024]) {
       expect(idle.borderRadius).toBe("6px");
       expect(idle.whiteSpace).toBe("nowrap");
       expect(idle.overflows).toBe(false);
-      expect(idle.icon).toMatchObject({ height: 16, width: 16 });
+      expect(idle.icon).toMatchObject({ height: 12, width: 12 });
       expect(idle.icon!.middle).toBeCloseTo(idle.label!.middle, 0);
       expect(idle.button.bottom).toBeLessThanOrEqual(idle.stateTop + 0.5);
 
@@ -267,7 +267,7 @@ for (const width of [375, 768, 901, 1024]) {
       expect(pending.borderRadius).toBe("6px");
       expect(pending.whiteSpace).toBe("nowrap");
       expect(pending.overflows).toBe(false);
-      expect(pending.icon).toMatchObject({ height: 16, width: 16 });
+      expect(pending.icon).toMatchObject({ height: 12, width: 12 });
       expect(pending.icon!.middle).toBeCloseTo(pending.label!.middle, 0);
       expect(pending.button.bottom).toBeLessThanOrEqual(pending.stateTop + 0.5);
     } finally {
@@ -275,6 +275,51 @@ for (const width of [375, 768, 901, 1024]) {
     }
   });
 }
+
+test("desktop sticky player reaches the scrollport top without a gap", async ({ page }) => {
+  await page.setViewportSize({ height: 720, width: 1024 });
+  await openFixture(page);
+  const content = page.locator(".content-area-document");
+  await content.evaluate((element) => { element.scrollTop = 900; });
+  await expect.poll(async () => {
+    const [contentBox, stickyBox] = await Promise.all([
+      content.boundingBox(),
+      page.locator(".recording-detail-sticky").boundingBox()
+    ]);
+    if (!contentBox || !stickyBox) return Number.POSITIVE_INFINITY;
+    return stickyBox.y - contentBox.y;
+  }).toBeLessThanOrEqual(1);
+});
+
+test("desktop organization controls align right and give save a restrained priority", async ({ page }) => {
+  await page.setViewportSize({ height: 720, width: 1024 });
+  await openFixture(page);
+  const header = page.locator(".recording-object-header");
+  const organizationButton = page.getByRole("button", { name: "Upravit zařazení" });
+  const [headerBox, buttonBox] = await Promise.all([header.boundingBox(), organizationButton.boundingBox()]);
+  expect(headerBox).not.toBeNull();
+  expect(buttonBox).not.toBeNull();
+  expect((headerBox!.x + headerBox!.width) - (buttonBox!.x + buttonBox!.width)).toBeLessThanOrEqual(18);
+
+  await organizationButton.click();
+  const actionGroup = page.locator(".recording-organization-actions");
+  await expect(actionGroup).toBeVisible();
+  const save = actionGroup.getByRole("button", { name: "Uložit" });
+  const cancel = actionGroup.getByRole("button", { name: "Zrušit" });
+  const styles = await actionGroup.evaluate((element) => {
+    const computed = getComputedStyle(element);
+    return {
+      backgroundColor: computed.backgroundColor,
+      borderStyle: computed.borderStyle,
+      paddingTop: computed.paddingTop
+    };
+  });
+  expect(styles.borderStyle).toBe("solid");
+  expect(styles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  expect(Number.parseFloat(styles.paddingTop)).toBeGreaterThan(0);
+  expect(await save.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .not.toBe(await cancel.evaluate((element) => getComputedStyle(element).backgroundColor));
+});
 
 const fixtureTabs: ReadonlyArray<readonly [FixtureMode, string]> = [
   ["blocks", "Přepis"],

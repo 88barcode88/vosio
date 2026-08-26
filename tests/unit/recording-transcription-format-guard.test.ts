@@ -26,12 +26,11 @@ import { POST } from "@/../app/api/recordings/[recordingId]/transcription/route"
 
 const recordingId = "00000000-0000-4000-8000-000000000101";
 
-// createRecordingQuery returns the authenticated single-recording query used before provider work starts.
+// createRecordingQuery returns the authenticated optional-recording query used before provider work starts.
 function createRecordingQuery(mimeType: string) {
   const query = {
     eq: vi.fn(),
-    select: vi.fn(),
-    single: vi.fn(async () => ({
+    maybeSingle: vi.fn(async () => ({
       data: {
         id: recordingId,
         mime_type: mimeType,
@@ -41,7 +40,8 @@ function createRecordingQuery(mimeType: string) {
         user_id: "user-id"
       },
       error: null
-    }))
+    })),
+    select: vi.fn(),
   };
   query.select.mockReturnValue(query);
   query.eq.mockReturnValue(query);
