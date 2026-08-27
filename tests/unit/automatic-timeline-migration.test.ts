@@ -33,6 +33,8 @@ describe("automatic timeline source migration", () => {
     expect(sql).toMatch(/foreign\s+key\s*\(transcript_id,\s*user_id\)[\s\S]*references\s+public\.transcripts/iu);
     expect(sql).toMatch(/alter\s+table\s+public\.automatic_timeline_intents\s+force\s+row\s+level\s+security/iu);
     expect(sql).toMatch(/revoke\s+all\s+on\s+table\s+public\.automatic_timeline_intents\s+from\s+public,\s*anon,\s*authenticated/iu);
+    expect(sql).toMatch(/create\s+index\s+automatic_timeline_intents_owner_transcript_idx[\s\S]*\(transcript_id,\s*user_id,\s*created_at\s+desc\)/iu);
+    expect(sql).toMatch(/create\s+index\s+automatic_timeline_intents_user_idx[\s\S]*\(user_id\)/iu);
     expect(sql).toMatch(/alter\s+table\s+public\.transcripts[\s\S]*completion_generation_key\s+text/iu);
   });
 

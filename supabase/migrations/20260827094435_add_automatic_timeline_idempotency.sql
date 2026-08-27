@@ -69,7 +69,10 @@ create table public.automatic_timeline_intents (
 );
 
 create index automatic_timeline_intents_owner_transcript_idx
-  on public.automatic_timeline_intents(user_id, transcript_id, created_at desc);
+  on public.automatic_timeline_intents(transcript_id, user_id, created_at desc);
+
+create index automatic_timeline_intents_user_idx
+  on public.automatic_timeline_intents(user_id);
 
 alter table public.automatic_timeline_intents enable row level security;
 alter table public.automatic_timeline_intents force row level security;

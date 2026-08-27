@@ -59,6 +59,8 @@ describe("Trash retention migration", () => {
   });
 
   it("keeps browser roles and scheduling outside the destructive contract", () => {
+    expect(normalized).toMatch(/revoke all on function public\.recordings_manage_trash_metadata\(\)\s+from public, anon, authenticated/u);
+    expect(normalized).toMatch(/grant execute on function public\.recordings_manage_trash_metadata\(\)\s+to service_role/u);
     expect(normalized).toMatch(/revoke all on function public\.claim_due_recording_purges_v1[\s\S]*from public, anon, authenticated/u);
     expect(normalized).toMatch(/grant execute on function public\.claim_due_recording_purges_v1[\s\S]*to service_role/u);
     expect(normalized).not.toMatch(/delete\s+from\s+storage\./u);

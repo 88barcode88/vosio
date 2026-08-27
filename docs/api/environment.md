@@ -128,7 +128,7 @@ The browser-safe Soniox temporary key has a fixed internal connection lifetime o
 - The worker performs claims only when the secret value is exactly `true`; missing, empty or any other value means disabled.
 - Keep it disabled until the source migration has been separately applied and postflighted, the function has been deployed to the same Supabase project, and a scheduler has been explicitly approved.
 
-Supabase provides `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Edge Function runtime. `trash-retention` uses those same-project values for its service-only RPC and Storage API calls. Its local function config disables the Supabase JWT gateway because the opaque scheduler credential is not a user JWT; the function's own complete-token check is therefore the mandatory fail-closed request boundary. The repository contains only source: this work does not set secrets, deploy the function, enable it or create a schedule.
+Supabase provides `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Edge Function runtime. `trash-retention` uses those same-project values for its service-only RPC and Storage API calls. Its local function config disables the Supabase JWT gateway because the opaque scheduler credential is not a user JWT; the function's own complete-token check is therefore the mandatory fail-closed request boundary. A source checkout never sets these secrets, deploys the function, enables it or creates a schedule by itself; use the disabled-first deployment runbook in `supabase/README.md`. The current private Vosio target is deploynutý, but remains disabled and unscheduled.
 
 ### App behavior constants
 

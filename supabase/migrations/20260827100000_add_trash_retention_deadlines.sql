@@ -109,6 +109,10 @@ begin
 end;
 $$;
 
+-- Direct invocation is service-only; PostgreSQL still fires this installed trigger on row updates.
+revoke all on function public.recordings_manage_trash_metadata() from public, anon, authenticated;
+grant execute on function public.recordings_manage_trash_metadata() to service_role;
+
 create index recordings_due_purge_idx
 on public.recordings (purge_after, id)
 where status = 'deleted';
