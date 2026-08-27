@@ -17,6 +17,30 @@ const promptSnapshot = {
   system_prompt_id: "system-prompt-id"
 };
 
+const durableIntent = {
+  automatic_idempotency_key: createAutomaticTimelineIdempotencyKey("async:job-id"),
+  consent_snapshot: true as const,
+  created_at: "2026-08-27T12:00:00.000Z",
+  id: "intent-id",
+  model: "gpt-5.6-terra",
+  prompt_id: "system-prompt-id",
+  prompt_name_snapshot: "Časová osa",
+  prompt_output_schema_snapshot: { type: "object" },
+  prompt_override_id: "override-id",
+  prompt_revision_snapshot: 4,
+  prompt_source: "user_override" as const,
+  prompt_text_snapshot: "effective timeline prompt",
+  provider: "openai" as const,
+  provider_config: {
+    provider: "openai",
+    reasoning_effort: "high",
+    response_format: "json_schema",
+    thinking_level: null
+  },
+  transcript_id: "transcript-id",
+  user_id: "user-id"
+};
+
 describe("automatic timeline orchestration", () => {
   it("derives stable non-PII identities for all persisted completion paths", () => {
     const single = createAutomaticTimelineGenerationIdentity({
@@ -47,7 +71,7 @@ describe("automatic timeline orchestration", () => {
 
   it("does nothing when dedicated consent is disabled even if legacy automation is enabled", async () => {
     const resolvePrompt = vi.fn();
-    const enqueueJob = vi.fn();
+    const persistIntent = vi.fn();
     const reconcileJob = vi.fn();
 
     const result = await enqueueAutomaticTimelineAfterCompletion({
@@ -64,22 +88,16 @@ describe("automatic timeline orchestration", () => {
           }
         }
       } as never
-    }, { enqueueJob, reconcileJob, resolvePrompt });
+    }, { persistIntent, reconcileJob, resolvePrompt });
 
     expect(result).toEqual({ status: "disabled" });
     expect(resolvePrompt).not.toHaveBeenCalled();
-    expect(enqueueJob).not.toHaveBeenCalled();
+    expect(persistIntent).not.toHaveBeenCalled();
     expect(reconcileJob).not.toHaveBeenCalled();
   });
 
-  it("snapshots the current default model, effective prompt, provider and reasoning before one enqueue", async () => {
-    const enqueueJob = vi.fn(async (input) => ({
-      ...input,
-      attempt_count: 0,
-      id: "job-id",
-      max_attempts: 3,
-      status: "queued"
-    }));
+  it("durably snapshots consent, model, prompt, provider and reasoning before reconciliation", async () => {
+    const persistIntent = vi.fn(async () => durableIntent);
     const reconcileJob = vi.fn(async () => ({ status: "done" as const }));
 
     const result = await enqueueAutomaticTimelineAfterCompletion({
@@ -97,13 +115,13 @@ describe("automatic timeline orchestration", () => {
         }
       } as never
     }, {
-      enqueueJob,
+      persistIntent,
       reconcileJob,
       resolvePrompt: vi.fn(async () => promptSnapshot)
     });
 
-    expect(enqueueJob).toHaveBeenCalledOnce();
-    expect(enqueueJob).toHaveBeenCalledWith(expect.objectContaining({
+    expect(persistIntent).toHaveBeenCalledOnce();
+    expect(persistIntent).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: createAutomaticTimelineIdempotencyKey("async:job-id"),
       model: "gpt-5.6-terra",
       outputSchemaSnapshot: { type: "object" },
@@ -121,7 +139,168 @@ describe("automatic timeline orchestration", () => {
       userId: "user-id"
     }), expect.anything());
     expect(reconcileJob).toHaveBeenCalledOnce();
+    expect(persistIntent.mock.invocationCallOrder[0]).toBeLessThan(
+      reconcileJob.mock.invocationCallOrder[0]
+    );
     expect(result).toEqual({ status: "done" });
+  });
+
+  it("recovers a durable intent on the next detail open after the first enqueue attempt fails", async () => {
+    let persistedIntent: typeof durableIntent | null = null;
+
+    await expect(enqueueAutomaticTimelineAfterCompletion({
+      admin: {} as never,
+      authenticatedClient: {} as never,
+      generationIdentity: "async:job-id",
+      transcriptId: "transcript-id",
+      user: {
+        id: "user-id",
+        user_metadata: {
+          vosio_settings: {
+            autoTimelineAfterTranscription: true,
+            defaultOpenaiModel: "gpt-5.6-terra"
+          }
+        }
+      } as never
+    }, {
+      persistIntent: vi.fn(async () => {
+        persistedIntent = durableIntent;
+        return durableIntent;
+      }),
+      reconcileJob: vi.fn(async () => {
+        throw new Error("first enqueue failed");
+      }),
+      resolvePrompt: vi.fn(async () => promptSnapshot)
+    })).rejects.toThrow("first enqueue failed");
+
+    expect(persistedIntent).toEqual(durableIntent);
+
+    const providerRun = vi.fn(async () => ({ id: "output-id" }));
+    const queuedJob = {
+      attempt_count: 0,
+      automatic_idempotency_key: durableIntent.automatic_idempotency_key,
+      id: "job-id",
+      lease_token: null,
+      max_attempts: 3,
+      model: durableIntent.model,
+      prompt_output_schema_snapshot: durableIntent.prompt_output_schema_snapshot,
+      prompt_text_snapshot: durableIntent.prompt_text_snapshot,
+      provider: durableIntent.provider,
+      provider_config: durableIntent.provider_config,
+      status: "queued" as const,
+      transcript_id: durableIntent.transcript_id,
+      user_id: durableIntent.user_id
+    };
+    const enqueueJob = vi.fn(async () => queuedJob);
+    const result = await reconcileAutomaticTimeline({
+      admin: {} as never,
+      transcriptId: "transcript-id",
+      userId: "user-id"
+    }, {
+      claimJob: vi.fn(async () => ({ ...queuedJob, attempt_count: 1, status: "running" as const })),
+      enqueueJob,
+      executeJob: providerRun as never,
+      findIntent: vi.fn(async () => persistedIntent),
+      findJob: vi.fn(async () => null),
+      findOutput: vi.fn(async () => null),
+      loadTranscript: vi.fn(async () => ({
+        id: "transcript-id",
+        rawText: "persisted transcript",
+        segments: [],
+        speakers: [],
+        userId: "user-id"
+      })),
+      settleJob: vi.fn(async () => true)
+    });
+
+    expect(result).toEqual({ status: "done" });
+    expect(enqueueJob).toHaveBeenCalledOnce();
+    expect(providerRun).toHaveBeenCalledOnce();
+  });
+
+  it("uses one durable job and one provider run across concurrent repeated detail opens", async () => {
+    let durableJob: Record<string, unknown> | null = null;
+    let durableInsertCount = 0;
+    let claimed = false;
+    const providerRun = vi.fn(async () => ({ id: "output-id" }));
+    const enqueueJob = vi.fn(async () => {
+      if (!durableJob) {
+        durableInsertCount += 1;
+        durableJob = {
+          attempt_count: 0,
+          automatic_idempotency_key: durableIntent.automatic_idempotency_key,
+          id: "job-id",
+          lease_token: null,
+          max_attempts: 3,
+          model: durableIntent.model,
+          prompt_output_schema_snapshot: durableIntent.prompt_output_schema_snapshot,
+          prompt_text_snapshot: durableIntent.prompt_text_snapshot,
+          provider: durableIntent.provider,
+          provider_config: durableIntent.provider_config,
+          status: "queued",
+          transcript_id: durableIntent.transcript_id,
+          user_id: durableIntent.user_id
+        };
+      }
+      return durableJob as never;
+    });
+    const dependencies = {
+      claimJob: vi.fn(async () => {
+        if (claimed) {
+          return null;
+        }
+        claimed = true;
+        return { ...durableJob, attempt_count: 1, status: "running" } as never;
+      }),
+      enqueueJob,
+      executeJob: providerRun as never,
+      findIntent: vi.fn(async () => durableIntent),
+      findJob: vi.fn(async () => durableJob as never),
+      findOutput: vi.fn(async () => null),
+      loadTranscript: vi.fn(async () => ({
+        id: "transcript-id",
+        rawText: "persisted transcript",
+        segments: [],
+        speakers: [],
+        userId: "user-id"
+      })),
+      settleJob: vi.fn(async () => true)
+    };
+
+    const results = await Promise.all([
+      reconcileAutomaticTimeline({
+        admin: {} as never,
+        transcriptId: "transcript-id",
+        userId: "user-id"
+      }, dependencies),
+      reconcileAutomaticTimeline({
+        admin: {} as never,
+        transcriptId: "transcript-id",
+        userId: "user-id"
+      }, dependencies)
+    ]);
+
+    expect(results.map((result) => result.status).sort()).toEqual(["busy", "done"]);
+    expect(enqueueJob).toHaveBeenCalledTimes(2);
+    expect(durableInsertCount).toBe(1);
+    expect(durableJob).toEqual(expect.objectContaining({ id: "job-id" }));
+    expect(providerRun).toHaveBeenCalledOnce();
+  });
+
+  it("does not create a job for a historical or disabled completion without durable intent", async () => {
+    const enqueueJob = vi.fn();
+    const result = await reconcileAutomaticTimeline({
+      admin: {} as never,
+      transcriptId: "historical-transcript",
+      userId: "user-id"
+    }, {
+      enqueueJob,
+      findIntent: vi.fn(async () => null),
+      findJob: vi.fn(async () => null)
+    });
+
+    expect(result).toEqual({ status: "not_scheduled" });
+    expect(enqueueJob).not.toHaveBeenCalled();
   });
 
   it("executes only a successfully claimed retry and leaves terminal jobs untouched", async () => {

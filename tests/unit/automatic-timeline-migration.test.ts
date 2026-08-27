@@ -24,6 +24,17 @@ describe("automatic timeline source migration", () => {
     expect(sql).toMatch(/create\s+unique\s+index[\s\S]*ai_outputs\s*\(processing_job_id\)/iu);
   });
 
+  it("stores a durable completion-time consent snapshot before recoverable enqueue", () => {
+    const sql = readFileSync(join(migrationsDirectory, migrationName ?? "missing.sql"), "utf8");
+
+    expect(sql).toMatch(/create\s+table\s+public\.automatic_timeline_intents/iu);
+    expect(sql).toMatch(/consent_snapshot\s+boolean\s+not null[\s\S]*check\s*\(consent_snapshot\s*=\s*true\)/iu);
+    expect(sql).toMatch(/automatic_idempotency_key\s+text\s+not null\s+unique/iu);
+    expect(sql).toMatch(/foreign\s+key\s*\(transcript_id,\s*user_id\)[\s\S]*references\s+public\.transcripts/iu);
+    expect(sql).toMatch(/alter\s+table\s+public\.automatic_timeline_intents\s+force\s+row\s+level\s+security/iu);
+    expect(sql).toMatch(/revoke\s+all\s+on\s+table\s+public\.automatic_timeline_intents\s+from\s+public,\s*anon,\s*authenticated/iu);
+  });
+
   it("fails closed before the output uniqueness guard when historical duplicates need lineage review", () => {
     const sql = readFileSync(join(migrationsDirectory, migrationName ?? "missing.sql"), "utf8");
     const preflightIndex = sql.indexOf("automatic timeline output uniqueness preflight failed");
@@ -51,13 +62,15 @@ describe("automatic timeline source migration", () => {
     }
   });
 
-  it("keeps enqueue, claim and settlement service-role-only and deterministically reclaims stale leases", () => {
+  it("keeps intent, enqueue, replacement cleanup, claim and settlement service-role-only", () => {
     const sql = readFileSync(join(migrationsDirectory, migrationName ?? "missing.sql"), "utf8");
 
     for (const name of [
+      "persist_automatic_timeline_intent_v1",
       "enqueue_automatic_timeline_job_v1",
       "claim_automatic_timeline_job_v1",
-      "settle_automatic_timeline_job_v1"
+      "settle_automatic_timeline_job_v1",
+      "delete_ai_data_for_transcript_replacement_v1"
     ]) {
       expect(sql).toMatch(new RegExp(`create\\s+function\\s+public\\.${name}[\\s\\S]*security\\s+invoker`, "iu"));
       expect(sql).toMatch(new RegExp(`revoke\\s+all\\s+on\\s+function\\s+public\\.${name}[\\s\\S]*from\\s+public,\\s*anon,\\s*authenticated`, "iu"));
@@ -66,6 +79,8 @@ describe("automatic timeline source migration", () => {
 
     expect(sql).toMatch(/status\s*=\s*'running'[\s\S]*lease_expires_at\s*<=\s*p_now/iu);
     expect(sql).toMatch(/attempt_count\s*<\s*max_attempts/iu);
+    expect(sql).toMatch(/delete\s+from\s+public\.automatic_timeline_intents[\s\S]*automatic_idempotency_key\s*<>\s*p_replacement_automatic_idempotency_key/iu);
+    expect(sql).toMatch(/automatic_idempotency_key\s+is\s+distinct\s+from\s+p_replacement_automatic_idempotency_key/iu);
     expect(sql).not.toMatch(/pg_cron|cron\.schedule|vercel/iu);
   });
 });

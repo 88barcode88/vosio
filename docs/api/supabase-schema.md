@@ -146,6 +146,7 @@ Source Edge Function `supabase/functions/trash-retention` volá tato RPC a maže
 - `prompt_templates`
 - `prompt_template_overrides` po aplikaci forward migrace `20260813090000`
 - `ai_processing_jobs`
+- `automatic_timeline_intents` po aplikaci forward migrace `20260827094435`
 - `ai_outputs`
 - `transcript_tasks`
 - `transcript_chapters`
@@ -211,9 +212,9 @@ Legacy nesystémové řádky v `prompt_templates` zůstávají uložené, ale ed
 
 ## Automatic timeline idempotency a lease
 
-`20260827094435_add_automatic_timeline_idempotency.sql` přidává do `ai_processing_jobs` additive pole `execution_mode`, `automatic_idempotency_key`, `attempt_count`, `max_attempts`, `lease_token` a `lease_expires_at`. Existující a nové manuální řádky mají default `execution_mode='manual'`; automatický řádek musí být exact-snapshot `timeline_chapters` job s nenulovým idempotency digestem. Partial unique index povolí jen jeden automatický job na persistovanou generation identity a unique index `ai_outputs(processing_job_id)` jen jeden raw output na job.
+`20260827094435_add_automatic_timeline_idempotency.sql` přidává do `ai_processing_jobs` additive pole `execution_mode`, `automatic_idempotency_key`, `attempt_count`, `max_attempts`, `lease_token` a `lease_expires_at`. Existující a nové manuální řádky mají default `execution_mode='manual'`; automatický řádek musí být exact-snapshot `timeline_chapters` job s nenulovým idempotency digestem. Partial unique index povolí jen jeden automatický job na persistovanou generation identity a unique index `ai_outputs(processing_job_id)` jen jeden raw output na job. Nová forced-RLS tabulka `automatic_timeline_intents` drží service-only completion-time consent a celý immutable model/prompt/provider snapshot před prvním enqueue pokusem. Řádek bez consentu se nevytváří a historický transcript bez intentu se nerecoveruje.
 
-RPC `enqueue_automatic_timeline_job_v1`, `claim_automatic_timeline_job_v1` a `settle_automatic_timeline_job_v1` jsou `SECURITY INVOKER`, mají odebraný `EXECUTE` pro `PUBLIC`, `anon` i `authenticated` a explicitní grant pouze pro `service_role`. Claim přijme queued/failed job s remaining attempts nebo `running` job až po deterministické expiraci lease; každý claim zvýší attempt count. Settlement vyžaduje přesný aktuální lease token. Migrace neobsahuje cron ani plánovanou úlohu. Je ověřená pouze source/static testy; lokální Postgres catalog ani live apply nebyly v této změně provedeny.
+RPC `persist_automatic_timeline_intent_v1`, `enqueue_automatic_timeline_job_v1`, `delete_ai_data_for_transcript_replacement_v1`, `claim_automatic_timeline_job_v1` a `settle_automatic_timeline_job_v1` jsou `SECURITY INVOKER`, mají odebraný `EXECUTE` pro `PUBLIC`, `anon` i `authenticated` a explicitní grant pouze pro `service_role`. Persist i enqueue používají stejný unique digest; souběžné recovery proto vrátí jediný durable job. Replacement cleanup atomicky odstraní starou AI lineage i intent, ale zachová nový replacement digest proti souběžnému terminal pollu. Claim přijme queued/failed job s remaining attempts nebo `running` job až po deterministické expiraci lease; každý claim zvýší attempt count. Settlement vyžaduje přesný aktuální lease token. Migrace neobsahuje cron ani plánovanou úlohu. Je ověřená pouze source/static testy; lokální Postgres catalog ani live apply nebyly v této změně provedeny.
 
 Před jakýmkoli apply `20260827094435` na existující target musí oprávněný operátor spustit přesně tento read-only preflight:
 
@@ -249,6 +250,7 @@ Server/worker přes `service_role`:
 - vytváří a upravuje `transcription_jobs`,
 - ukládá `transcripts`,
 - vytváří a upravuje `ai_processing_jobs`,
+- po aplikaci automatic timeline migrace persistuje a čte `automatic_timeline_intents` pouze přes service-role boundary,
 - ukládá `ai_outputs`,
 - ukládá odvozené `transcript_tasks`, `transcript_chapters`, `transcript_decisions` a `transcript_risks`,
 - zapisuje `audit_logs`,

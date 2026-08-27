@@ -37,6 +37,25 @@ type AutomaticTimelineJobRow = {
   user_id: string;
 };
 
+type AutomaticTimelineIntentRow = {
+  automatic_idempotency_key: string;
+  consent_snapshot: true;
+  created_at: string;
+  id: string;
+  model: string;
+  prompt_id: string;
+  prompt_name_snapshot: string;
+  prompt_output_schema_snapshot: unknown;
+  prompt_override_id: string | null;
+  prompt_revision_snapshot: number | null;
+  prompt_source: "system" | "user_override";
+  prompt_text_snapshot: string;
+  provider: AiProviderId;
+  provider_config: Record<string, unknown> | null;
+  transcript_id: string;
+  user_id: string;
+};
+
 type EnqueueAutomaticTimelineJobInput = {
   idempotencyKey: string;
   model: string;
@@ -65,10 +84,10 @@ type AutomaticTimelineResult = {
 };
 
 type EnqueueDependencies = {
-  enqueueJob?: (
+  persistIntent?: (
     input: EnqueueAutomaticTimelineJobInput,
     admin: SupabaseClient
-  ) => Promise<AutomaticTimelineJobRow>;
+  ) => Promise<AutomaticTimelineIntentRow>;
   reconcileJob?: typeof reconcileAutomaticTimeline;
   resolvePrompt?: (
     client: SupabaseClient
@@ -80,6 +99,13 @@ type ReconcileDependencies = {
     input: { admin: SupabaseClient; jobId: string; leaseToken: string; now: string }
   ) => Promise<AutomaticTimelineJobRow | null>;
   executeJob?: typeof executePersistedAiProcessing;
+  enqueueJob?: (
+    input: EnqueueAutomaticTimelineJobInput,
+    admin: SupabaseClient
+  ) => Promise<AutomaticTimelineJobRow>;
+  findIntent?: (
+    input: { admin: SupabaseClient; transcriptId: string; userId: string }
+  ) => Promise<AutomaticTimelineIntentRow | null>;
   findJob?: (
     input: { admin: SupabaseClient; jobId?: string; transcriptId: string; userId: string }
   ) => Promise<AutomaticTimelineJobRow | null>;
@@ -181,6 +207,37 @@ async function enqueueAutomaticTimelineJob(
   return data;
 }
 
+// persistAutomaticTimelineIntent durably records completion-time consent and configuration.
+async function persistAutomaticTimelineIntent(
+  input: EnqueueAutomaticTimelineJobInput,
+  admin: SupabaseClient
+) {
+  const { data, error } = await admin
+    .rpc("persist_automatic_timeline_intent_v1", {
+      p_automatic_idempotency_key: input.idempotencyKey,
+      p_model: input.model,
+      p_prompt_id: input.promptId,
+      p_prompt_name_snapshot: input.promptNameSnapshot,
+      p_prompt_output_schema_snapshot: input.outputSchemaSnapshot,
+      p_prompt_override_id: input.overrideId,
+      p_prompt_revision_snapshot: input.promptRevisionSnapshot,
+      p_prompt_source: input.promptSource,
+      p_prompt_text_snapshot: input.promptTextSnapshot,
+      p_provider: input.provider,
+      p_provider_config: input.providerConfig,
+      p_transcript_id: input.transcriptId,
+      p_user_id: input.userId
+    })
+    .returns<AutomaticTimelineIntentRow[]>()
+    .single();
+
+  if (error || !data) {
+    throw new Error("Automatickou časovou osu se nepodařilo trvale naplánovat.");
+  }
+
+  return data;
+}
+
 // enqueueAutomaticTimelineAfterCompletion snapshots consent/config only after transcript completion persists.
 export async function enqueueAutomaticTimelineAfterCompletion(
   input: {
@@ -209,7 +266,7 @@ export async function enqueueAutomaticTimelineAfterCompletion(
     response_format: prompt.output_schema ? "json_schema" : "text",
     thinking_level: modelOption?.geminiThinkingLevel ?? null
   };
-  const job = await (dependencies.enqueueJob ?? enqueueAutomaticTimelineJob)({
+  await (dependencies.persistIntent ?? persistAutomaticTimelineIntent)({
     idempotencyKey: createAutomaticTimelineIdempotencyKey(input.generationIdentity),
     model,
     outputSchemaSnapshot: prompt.output_schema,
@@ -227,10 +284,51 @@ export async function enqueueAutomaticTimelineAfterCompletion(
 
   return (dependencies.reconcileJob ?? reconcileAutomaticTimeline)({
     admin: input.admin,
-    jobId: job.id,
     transcriptId: input.transcriptId,
     userId: input.user.id
   });
+}
+
+// findAutomaticTimelineIntent returns only a durable completion-time opt-in snapshot.
+async function findAutomaticTimelineIntent(input: {
+  admin: SupabaseClient;
+  transcriptId: string;
+  userId: string;
+}) {
+  const { data, error } = await input.admin
+    .from("automatic_timeline_intents")
+    .select("id,transcript_id,user_id,automatic_idempotency_key,consent_snapshot,provider,model,prompt_id,prompt_override_id,prompt_source,prompt_name_snapshot,prompt_text_snapshot,prompt_output_schema_snapshot,prompt_revision_snapshot,provider_config,created_at")
+    .eq("transcript_id", input.transcriptId)
+    .eq("user_id", input.userId)
+    .eq("consent_snapshot", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error("Trvalý záměr automatické časové osy se nepodařilo načíst.");
+  }
+
+  return data as AutomaticTimelineIntentRow | null;
+}
+
+// getAutomaticTimelineJobInput restores the exact immutable job snapshot from durable intent.
+function getAutomaticTimelineJobInput(intent: AutomaticTimelineIntentRow) {
+  return {
+    idempotencyKey: intent.automatic_idempotency_key,
+    model: intent.model,
+    outputSchemaSnapshot: intent.prompt_output_schema_snapshot,
+    overrideId: intent.prompt_override_id,
+    promptId: intent.prompt_id,
+    promptNameSnapshot: intent.prompt_name_snapshot,
+    promptRevisionSnapshot: intent.prompt_revision_snapshot,
+    promptSource: intent.prompt_source,
+    promptTextSnapshot: intent.prompt_text_snapshot,
+    provider: intent.provider,
+    providerConfig: intent.provider_config ?? {},
+    transcriptId: intent.transcript_id,
+    userId: intent.user_id
+  } satisfies EnqueueAutomaticTimelineJobInput;
 }
 
 // findAutomaticTimelineJob returns only the owner-scoped automatic timeline idempotency record.
@@ -361,7 +459,7 @@ async function settleAutomaticTimelineJob(input: {
   return data === true;
 }
 
-// reconcileAutomaticTimeline resumes only an existing queued, retryable-failed or stale automatic job.
+// reconcileAutomaticTimeline recovers a missing job from durable intent, then resumes bounded execution.
 export async function reconcileAutomaticTimeline(
   input: {
     admin: SupabaseClient;
@@ -372,10 +470,22 @@ export async function reconcileAutomaticTimeline(
   dependencies: ReconcileDependencies = {}
 ): Promise<AutomaticTimelineResult> {
   const findJob = dependencies.findJob ?? findAutomaticTimelineJob;
-  const job = await findJob(input);
+  let job = await findJob(input);
 
   if (!job) {
-    return { status: "not_scheduled" };
+    const findIntent = dependencies.findIntent ?? findAutomaticTimelineIntent;
+    const intent = await findIntent({
+      admin: input.admin,
+      transcriptId: input.transcriptId,
+      userId: input.userId
+    });
+
+    if (!intent) {
+      return { status: "not_scheduled" };
+    }
+
+    const enqueueJob = dependencies.enqueueJob ?? enqueueAutomaticTimelineJob;
+    job = await enqueueJob(getAutomaticTimelineJobInput(intent), input.admin);
   }
 
   if (job.status === "done" || job.status === "cancelled") {

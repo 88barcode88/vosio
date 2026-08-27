@@ -3,7 +3,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import {
   createAutomaticTimelineGenerationIdentity,
-  enqueueAutomaticTimelineAfterCompletion
+  createAutomaticTimelineIdempotencyKey,
+  enqueueAutomaticTimelineAfterCompletion,
+  reconcileAutomaticTimeline
 } from "@/lib/ai/automatic-timeline.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -386,6 +388,7 @@ async function refreshSegmentBatchJobs(input: {
 // deleteAiDataForTranscriptReplacement clears stale AI outputs only when a replacement transcript is ready.
 async function deleteAiDataForTranscriptReplacement(input: {
   admin: ReturnType<typeof createAdminClient>;
+  replacementAutomaticIdempotencyKey: string;
   transcriptId: string | null;
   userId: string;
 }) {
@@ -398,11 +401,11 @@ async function deleteAiDataForTranscriptReplacement(input: {
     return;
   }
 
-  const { error } = await input.admin
-    .from("ai_processing_jobs")
-    .delete()
-    .eq("transcript_id", transcriptId)
-    .eq("user_id", input.userId);
+  const { error } = await input.admin.rpc("delete_ai_data_for_transcript_replacement_v1", {
+    p_replacement_automatic_idempotency_key: input.replacementAutomaticIdempotencyKey,
+    p_transcript_id: transcriptId,
+    p_user_id: input.userId
+  });
 
   if (error) {
     throw new Error(`Unable to delete old AI outputs: ${error.message}`);
@@ -412,6 +415,7 @@ async function deleteAiDataForTranscriptReplacement(input: {
 // saveCombinedSegmentTranscript stores one transcript assembled from completed segment jobs.
 async function saveCombinedSegmentTranscript(input: {
   admin: ReturnType<typeof createAdminClient>;
+  generationIdentity: string;
   jobs: SegmentTranscriptionJob[];
   recordingId: string;
   userId: string;
@@ -451,12 +455,16 @@ async function saveCombinedSegmentTranscript(input: {
     throw new Error(`Unable to look up saved transcript: ${existingTranscriptError.message}`);
   }
 
-  if (
-    existingTranscript
-    && existingTranscript.transcription_job_id !== replacementTranscriptionJobId
-  ) {
+  const isNewCompletedGeneration =
+    !existingTranscript
+    || existingTranscript.transcription_job_id !== replacementTranscriptionJobId;
+
+  if (existingTranscript && isNewCompletedGeneration) {
     await deleteAiDataForTranscriptReplacement({
       admin: input.admin,
+      replacementAutomaticIdempotencyKey: createAutomaticTimelineIdempotencyKey(
+        input.generationIdentity
+      ),
       transcriptId: existingTranscript.id,
       userId: input.userId
     });
@@ -497,6 +505,7 @@ async function saveCombinedSegmentTranscript(input: {
   return {
     durationSeconds: getSonioxAudioDurationSeconds(cumulativeDurationMs),
     indexResult,
+    isNewCompletedGeneration,
     transcriptId: transcriptWrite.data.id
   };
 }
@@ -773,8 +782,18 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         return NextResponse.json({ job: { provider_job_id: null, status: jobStatus } });
       }
 
-      const { durationSeconds, indexResult, transcriptId } = await saveCombinedSegmentTranscript({
+      const generationIdentity = createAutomaticTimelineGenerationIdentity({
+        jobIds: refreshedJobs.map((job) => job.id),
+        kind: "segmented"
+      });
+      const {
+        durationSeconds,
+        indexResult,
+        isNewCompletedGeneration,
+        transcriptId
+      } = await saveCombinedSegmentTranscript({
         admin,
+        generationIdentity,
         jobs: refreshedJobs,
         recordingId: recording.id,
         userId: user.id
@@ -793,16 +812,16 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         throw new Error(`Unable to complete recording: ${recordingCompleteError.message}`);
       }
 
-      await enqueueAutomaticTimelineAfterCompletion({
-        admin,
-        authenticatedClient: authenticated.supabase,
-        generationIdentity: createAutomaticTimelineGenerationIdentity({
-          jobIds: refreshedJobs.map((job) => job.id),
-          kind: "segmented"
-        }),
-        transcriptId,
-        user
-      }).catch(() => {
+      const automaticTimelineAttempt = isNewCompletedGeneration
+        ? enqueueAutomaticTimelineAfterCompletion({
+          admin,
+          authenticatedClient: authenticated.supabase,
+          generationIdentity,
+          transcriptId,
+          user
+        })
+        : reconcileAutomaticTimeline({ admin, transcriptId, userId: user.id });
+      await automaticTimelineAttempt.catch(() => {
         console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
       });
 
@@ -875,9 +894,19 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       throw new Error(`Unable to look up saved transcript: ${existingTranscriptError.message}`);
     }
 
-    if (existingTranscript && existingTranscript.transcription_job_id !== latestJob.id) {
+    const isNewCompletedGeneration =
+      !existingTranscript || existingTranscript.transcription_job_id !== latestJob.id;
+    const generationIdentity = createAutomaticTimelineGenerationIdentity({
+      kind: "async",
+      transcriptionJobId: latestJob.id
+    });
+
+    if (existingTranscript && isNewCompletedGeneration) {
       await deleteAiDataForTranscriptReplacement({
         admin,
+        replacementAutomaticIdempotencyKey: createAutomaticTimelineIdempotencyKey(
+          generationIdentity
+        ),
         transcriptId: existingTranscript.id,
         userId: user.id
       });
@@ -928,16 +957,20 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       throw new Error(`Unable to complete recording: ${recordingCompleteError.message}`);
     }
 
-    await enqueueAutomaticTimelineAfterCompletion({
-      admin,
-      authenticatedClient: authenticated.supabase,
-      generationIdentity: createAutomaticTimelineGenerationIdentity({
-        kind: "async",
-        transcriptionJobId: latestJob.id
-      }),
-      transcriptId: transcriptWrite.data.id,
-      user
-    }).catch(() => {
+    const automaticTimelineAttempt = isNewCompletedGeneration
+      ? enqueueAutomaticTimelineAfterCompletion({
+        admin,
+        authenticatedClient: authenticated.supabase,
+        generationIdentity,
+        transcriptId: transcriptWrite.data.id,
+        user
+      })
+      : reconcileAutomaticTimeline({
+        admin,
+        transcriptId: transcriptWrite.data.id,
+        userId: user.id
+      });
+    await automaticTimelineAttempt.catch(() => {
       console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
     });
 

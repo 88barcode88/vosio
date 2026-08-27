@@ -51,7 +51,8 @@ const mocks = vi.hoisted(() => ({
   enqueueAutomaticTimelineAfterCompletion: vi.fn(),
   getSonioxTranscript: vi.fn(),
   getSonioxTranscription: vi.fn(),
-  mapSonioxStatus: vi.fn()
+  mapSonioxStatus: vi.fn(),
+  reconcileAutomaticTimeline: vi.fn()
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
@@ -64,7 +65,10 @@ vi.mock("@/lib/ai/automatic-timeline.server", () => ({
   }) => input.kind === "segmented"
     ? `segmented:${[...(input.jobIds ?? [])].sort().join("|")}`
     : `async:${input.transcriptionJobId}`,
-  enqueueAutomaticTimelineAfterCompletion: mocks.enqueueAutomaticTimelineAfterCompletion
+  createAutomaticTimelineIdempotencyKey: (generationIdentity: string) =>
+    `atl-test:${generationIdentity}`,
+  enqueueAutomaticTimelineAfterCompletion: mocks.enqueueAutomaticTimelineAfterCompletion,
+  reconcileAutomaticTimeline: mocks.reconcileAutomaticTimeline
 }));
 vi.mock("@/lib/soniox/client", () => ({
   createSonioxTranscription: vi.fn(),
@@ -225,7 +229,19 @@ function createScenario(mode: "regular" | "segmented", persistedGenerationMatche
       user_id: userId
     }
   };
-  const admin = { from: vi.fn((tableName: string) => createAdminQuery(state, tableName)) };
+  const admin = {
+    from: vi.fn((tableName: string) => createAdminQuery(state, tableName)),
+    rpc: vi.fn(async (functionName: string) => {
+      if (functionName === "delete_ai_data_for_transcript_replacement_v1") {
+        const deletedIds = new Set(state.aiJobs.map((job) => job.id));
+        state.deleteCalls += 1;
+        state.aiJobs = [];
+        state.outputs = state.outputs.filter((output) => !deletedIds.has(output.jobId));
+      }
+
+      return { data: null, error: null };
+    })
+  };
   const recordingQuery = {
     eq: vi.fn(),
     maybeSingle: vi.fn(async () => ({ data: state.recording, error: null })),
@@ -299,6 +315,16 @@ beforeEach(() => {
     state.outputs.push({ id: `automatic-output-${state.providerRuns}`, jobId });
     return { status: "done" };
   });
+  mocks.reconcileAutomaticTimeline.mockImplementation(async (input: {
+    transcriptId: string;
+  }) => {
+    const state = mocks.activeState as ScenarioState;
+    const existing = state.aiJobs.find((job) =>
+      job.executionMode === "automatic" && job.transcriptId === input.transcriptId
+    );
+
+    return existing ? { status: "already_done" } : { status: "not_scheduled" };
+  });
 });
 
 describe("terminal transcription polling idempotency", () => {
@@ -322,7 +348,8 @@ describe("terminal transcription polling idempotency", () => {
         "manual-output"
       ]);
       expect(state.providerRuns).toBe(1);
-      expect(mocks.enqueueAutomaticTimelineAfterCompletion).toHaveBeenCalledTimes(3);
+      expect(mocks.enqueueAutomaticTimelineAfterCompletion).not.toHaveBeenCalled();
+      expect(mocks.reconcileAutomaticTimeline).toHaveBeenCalledTimes(3);
     }
   );
 
@@ -349,6 +376,24 @@ describe("terminal transcription polling idempotency", () => {
       ]);
       expect(state.outputs).toHaveLength(1);
       expect(state.providerRuns).toBe(2);
+      expect(mocks.enqueueAutomaticTimelineAfterCompletion).toHaveBeenCalledOnce();
+    }
+  );
+
+  it.each(["regular", "segmented"] as const)(
+    "does not backfill a historical %s completion from current enabled settings",
+    async (mode) => {
+      const state = createScenario(mode);
+      state.aiJobs = state.aiJobs.filter((job) => job.executionMode === "manual");
+      state.outputs = state.outputs.filter((output) => output.jobId === "manual-job");
+
+      const response = await pollTerminalGeneration();
+
+      expect(response.status).toBe(200);
+      expect(state.providerRuns).toBe(1);
+      expect(state.aiJobs.map((job) => job.id)).toEqual(["manual-job"]);
+      expect(mocks.enqueueAutomaticTimelineAfterCompletion).not.toHaveBeenCalled();
+      expect(mocks.reconcileAutomaticTimeline).toHaveBeenCalledOnce();
     }
   );
 });
