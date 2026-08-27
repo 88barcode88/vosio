@@ -30,6 +30,18 @@ describe("documentation and not found surfaces", () => {
     expect(markup).not.toContain("bude samostatný fulltextový krok");
   });
 
+  it("documents current settings, automatic timeline, and Trash behavior without the obsolete start card", () => {
+    const markup = renderToStaticMarkup(createElement(DocumentationPanel));
+
+    expect(markup).not.toContain("Začít s prvním callem");
+    expect(markup).toContain("Model a kvalita");
+    expect(markup).toContain("Změna hesla");
+    expect(markup).toContain("Automatická časová osa je ve výchozím stavu vypnutá");
+    expect(markup).toContain("24 hodin, 7 dní nebo 30 dní");
+    expect(markup).toContain("Ruční trvalé smazání je dostupné po 24 hodinách");
+    expect(markup).toContain("není nasazen ani aktivní");
+  });
+
   it("renders a Czech 404 with only safe recovery links", () => {
     const markup = renderToStaticMarkup(createElement(NotFound));
 

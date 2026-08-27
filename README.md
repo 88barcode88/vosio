@@ -65,14 +65,14 @@ Choose the Soniox region per user in **Settings**, not through a deployment vari
 
 Supabase setup lives in `supabase/`.
 
-For a new project:
+For a disposable or newly reviewed project:
 
 ```bash
 supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-The timestamp-ordered migration chain creates the application schema, RLS policies, private `recordings` Storage bucket settings, indexes, and system prompt templates.
+The timestamp-ordered migration chain creates the application schema, RLS policies, private `recordings` Storage bucket settings, indexes, system prompt templates, automatic-timeline idempotency, and Trash-retention deadlines. Existing targets must be inspected before applying only their missing migrations; Edge Function deployment, secrets, scheduling, and automatic cleanup remain separate operator actions.
 
 The app expects:
 
