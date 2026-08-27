@@ -66,6 +66,11 @@ export function parseSettingsForm(formData: FormData): UserSettings {
       formData,
       "supabaseStoragePlan",
       defaultUserSettings.supabaseStoragePlan
+    ),
+    trashRetentionHours: getNumberField(
+      formData,
+      "trashRetentionHours",
+      defaultUserSettings.trashRetentionHours
     )
   });
 

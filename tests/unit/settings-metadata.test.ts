@@ -3,6 +3,19 @@ import { getUserSettingsFromMetadata, USER_SETTINGS_METADATA_KEY } from "@/lib/s
 import { DEFAULT_AI_MODEL_ID } from "@/lib/model-options";
 
 describe("settings metadata", () => {
+  it("defaults missing and invalid Trash retention metadata to thirty days", () => {
+    expect(getUserSettingsFromMetadata({} as never).trashRetentionHours).toBe(720);
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { trashRetentionHours: 48 }
+    }).trashRetentionHours).toBe(720);
+  });
+
+  it.each([24, 168, 720] as const)("keeps the supported %s-hour Trash retention", (hours) => {
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { trashRetentionHours: hours }
+    }).trashRetentionHours).toBe(hours);
+  });
+
   it("keeps automatic timeline generation opt-in off for legacy metadata", () => {
     expect(getUserSettingsFromMetadata({} as never).autoTimelineAfterTranscription).toBe(false);
   });

@@ -14,8 +14,9 @@ Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seř
 - `supabase/migrations/20260813090000_add_prompt_overrides_and_job_snapshots.sql`
 - `supabase/migrations/20260815073029_harden_prompt_override_privileges.sql`
 - `supabase/migrations/20260827094435_add_automatic_timeline_idempotency.sql`
+- `supabase/migrations/20260827100000_add_trash_retention_deadlines.sql`
 
-Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000`, přesný restore/purge metadata a Storage write fence až po `05550`, stavové facety až po `130000`, prompt overrides/job snapshots až po `130900`, privilege hardening až po `15073029` a automatic timeline idempotency/lease až po `20260827094435`. Baseline proto není kompletní source of truth; úplný fresh-project kontrakt je pouze celý uvedený ordered chain.
+Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000`, přesná restore/purge metadata a Storage write fence až po `05550`, stavové facety až po `130000`, prompt overrides/job snapshots až po `130900`, privilege hardening až po `15073029`, automatic timeline idempotency/lease až po `20260827094435` a Trash retention deadlines/leases až po `20260827100000`. Baseline proto není kompletní source of truth; úplný fresh-project kontrakt je pouze celý uvedený ordered chain.
 
 Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby skutečné schema odpovídalo explicitně schválené a aplikované části aktuálního řetězce; produkční DB se kvůli baseline neresetuje.
 
@@ -127,7 +128,15 @@ Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivac
 
 ## Forward migrations release gate
 
-Fresh-project pořadí zůstává závazné: baseline, evidence `10000`, organization `11000`, markers `12000`, search `13000`, Trash restore/purge `05550`, status filters `130000`, prompt overrides/job snapshots `130900`, privilege hardening `15073029` a automatic timeline idempotency `20260827094435`. Každý target potřebuje vlastní schema/history preflight, apply pouze chybějících migrací a databázový postflight před app deployem. Legacy historii nemaž ani neresetuj jen proto, aby odpovídala fresh baseline.
+Fresh-project pořadí zůstává závazné: baseline, evidence `10000`, organization `11000`, markers `12000`, search `13000`, Trash restore/purge `05550`, status filters `130000`, prompt overrides/job snapshots `130900`, privilege hardening `15073029`, automatic timeline idempotency `20260827094435` a Trash retention `20260827100000`. Každý target potřebuje vlastní schema/history preflight, apply pouze chybějících migrací a databázový postflight před app deployem. Legacy historii nemaž ani neresetuj jen proto, aby odpovídala fresh baseline.
+
+## Trash retention deadlines and cleanup leases
+
+Source migrace `20260827100000_add_trash_retention_deadlines.sql` přidává na `recordings` validovaný `trash_retention_hours`, `purge_after` a bounded `purge_attempt_count`. Přechod z aktivního stavu do `deleted` atomicky snapshotne neměnný `deleted_at`, retenci a deadline. Update již smazaného řádku snapshot zachová, restore retention/claim metadata vyčistí a pozdější nový delete je vypočte znovu. Existující deleted řádky zachovají své historické `deleted_at`; backfill doplní `720` hodin a `purge_after = deleted_at + interval '30 days'`. Partial due index je `(purge_after, id) where status = 'deleted'`.
+
+Service-only RPC `claim_due_recording_purges_v1` vybírá due řádky ve stabilním pořadí, používá row locking se `skip locked`, přiděluje UUID lease token, bere nejvýše 20 řádků, nepřekračuje pět pokusů a reclaimuje až po 15 minutách stejně jako ruční purge. Refresh, finalize a release RPC mění jen řádek s přesným claim tokenem; claim loss proto nedovolí dokončit cizí lease. Release se používá jen před prvním Storage delete pokusem. Po zahájení mutace zůstává claim držený pro bezpečný stale retry a trigger mezitím blokuje restore. Všechny čtyři funkce jsou `SECURITY INVOKER`, mají prázdný `search_path`, plně kvalifikované objekty, explicitní revoke pro `PUBLIC`, `anon`, `authenticated` a execute pouze pro `service_role`.
+
+Source Edge Function `supabase/functions/trash-retention` volá tato RPC a maže private objekty pouze přes Supabase Storage API, nikdy SQL proti `storage.objects`. Je bounded na batch 20 a přesně dva paralelní itemy, ověřuje kanonický owner/recording prefix a fail-closed vyžaduje vlastní scheduler token i přesný enable secret `true`. Repo neobsahuje cron ani schedule. Zdrojový repozitář sám nepotvrzuje aplikaci migrace, nasazení funkce, nastavení secrets ani povolení cleanupu na žádném cíli.
 
 ## Public tabulky
 

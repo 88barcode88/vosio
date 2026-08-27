@@ -35,6 +35,7 @@ function createCompleteSettingsForm(region: "eu" | "global") {
   formData.set("sonioxRealtimeLanguage", "de");
   formData.set("sonioxRealtimeModel", "stt-rt-v5");
   formData.set("supabaseStoragePlan", "paid");
+  formData.set("trashRetentionHours", "168");
   return formData;
 }
 
@@ -77,6 +78,7 @@ describe("settings form", () => {
     formData.set("sonioxRealtimeLanguage", "de");
     formData.set("sonioxRealtimeModel", "stt-rt-v5");
     formData.set("supabaseStoragePlan", "paid");
+    formData.set("trashRetentionHours", "168");
 
     await updateUserSettingsAction(idleSettingsActionState, formData);
 
@@ -95,7 +97,8 @@ describe("settings form", () => {
           sonioxRegion: "eu",
           sonioxRealtimeLanguage: "de",
           sonioxRealtimeModel: "stt-rt-v5",
-          supabaseStoragePlan: "paid"
+          supabaseStoragePlan: "paid",
+          trashRetentionHours: 168
         }
       }
     });
@@ -148,6 +151,24 @@ describe("settings form", () => {
     formData.set("supabaseStoragePlan", "free");
 
     expect(parseSettingsForm(formData).supabaseStoragePlan).toBe("free");
+  });
+
+  it.each([24, 168, 720] as const)("parses the supported %s-hour Trash retention", (hours) => {
+    const formData = new FormData();
+    formData.set("trashRetentionHours", String(hours));
+
+    expect(parseSettingsForm(formData).trashRetentionHours).toBe(hours);
+  });
+
+  it("defaults legacy form submissions to thirty-day Trash retention", () => {
+    expect(parseSettingsForm(new FormData()).trashRetentionHours).toBe(720);
+  });
+
+  it("rejects an unsupported Trash retention value", () => {
+    const formData = new FormData();
+    formData.set("trashRetentionHours", "48");
+
+    expect(() => parseSettingsForm(formData)).toThrow("Invalid settings form payload.");
   });
 
   it("parses dedicated automatic timeline consent independently from legacy automation fields", () => {

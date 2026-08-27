@@ -17,11 +17,13 @@ const recordingWithStoragePath: RecordingRow = {
   folder_id: null,
   id: "11111111-1111-4111-8111-111111111111",
   mime_type: "audio/webm",
+  purge_after: "2026-09-04T08:30:00.000Z",
   project_id: null,
   source_type: "upload",
   status: "completed",
   storage_path: "private-user/private-recording/audio.webm",
   title: "Soukromý call",
+  trash_retention_hours: 720,
   updated_at: "2026-08-05T08:01:00.000Z",
   user_id: "private-user"
 };
@@ -39,16 +41,20 @@ describe("recording client view", () => {
       "file_size_bytes",
       "id",
       "mime_type",
+      "purge_after",
       "source_type",
       "status",
       "title",
+      "trash_retention_hours",
       "updated_at"
     ]);
     expect(view).toMatchObject({
       audioAvailability: "single",
       deleted_at: "2026-08-05T08:30:00.000Z",
       file_size_bytes: 1024,
-      mime_type: "audio/webm"
+      mime_type: "audio/webm",
+      purge_after: "2026-09-04T08:30:00.000Z",
+      trash_retention_hours: 720
     });
     expect(view).not.toHaveProperty("storage_path");
     expect(view).not.toHaveProperty("user_id");
@@ -89,6 +95,8 @@ describe("recording client view", () => {
     expect(filesMarkup).toContain("audio/webm");
     expect(trashMarkup).toContain("jeden soubor");
     expect(trashMarkup).toContain("5. 8. 2026 10:30");
+    expect(trashMarkup).toContain("4. 9. 2026 10:30");
+    expect(trashMarkup).toContain("30 dní");
     expect(filesMarkup).not.toContain(recordingWithStoragePath.storage_path as string);
     expect(trashMarkup).not.toContain(recordingWithStoragePath.storage_path as string);
   });

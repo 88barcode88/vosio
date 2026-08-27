@@ -24,6 +24,7 @@ export const audioRetentionPolicies = [
 ] as const;
 
 export const supabaseStoragePlans = ["auto", "free", "paid"] as const;
+export const trashRetentionHours = [24, 168, 720] as const;
 
 const sonioxRealtimeModelSchema = z.preprocess(
   (value) => value === "stt-rt-v4" ? "stt-rt-v5" : value,
@@ -43,7 +44,8 @@ export const defaultUserSettings = {
   sonioxRegion: "global",
   sonioxRealtimeLanguage: "auto",
   sonioxRealtimeModel: "stt-rt-v5",
-  supabaseStoragePlan: "auto"
+  supabaseStoragePlan: "auto",
+  trashRetentionHours: 720
 } satisfies UserSettings;
 
 export const userSettingsSchema = z.object({
@@ -57,8 +59,10 @@ export const userSettingsSchema = z.object({
   sonioxRegion: sonioxRegionSchema,
   sonioxRealtimeLanguage: z.enum(sonioxRealtimeLanguageIds),
   sonioxRealtimeModel: sonioxRealtimeModelSchema,
-  supabaseStoragePlan: z.enum(supabaseStoragePlans)
+  supabaseStoragePlan: z.enum(supabaseStoragePlans),
+  trashRetentionHours: z.union([z.literal(24), z.literal(168), z.literal(720)])
 });
 
 export type SupabaseStoragePlan = (typeof supabaseStoragePlans)[number];
+export type TrashRetentionHours = (typeof trashRetentionHours)[number];
 export type UserSettings = z.infer<typeof userSettingsSchema>;

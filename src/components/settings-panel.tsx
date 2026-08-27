@@ -11,7 +11,12 @@ import { getRecordingStorageLimitSummary } from "@/lib/recordings/storage-copy";
 import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
 import { updateUserSettingsAction } from "@/lib/settings/actions";
 import { createInitialSettingsActionState, type SettingsActionState } from "@/lib/settings/action-state";
-import { supabaseStoragePlans, type UserSettings } from "@/lib/settings/types";
+import {
+  supabaseStoragePlans,
+  trashRetentionHours,
+  type TrashRetentionHours,
+  type UserSettings
+} from "@/lib/settings/types";
 import {
   AI_MODEL_QUALITY_GUIDANCE,
   aiModelOptions,
@@ -42,6 +47,7 @@ type VisibleSettingsDraft = Pick<
   | "sonioxRealtimeModel"
   | "sonioxRegion"
   | "supabaseStoragePlan"
+  | "trashRetentionHours"
 >;
 
 // createVisibleSettingsDraft copies only the settings represented by editable form controls.
@@ -52,7 +58,8 @@ function createVisibleSettingsDraft(settings: UserSettings): VisibleSettingsDraf
     sonioxRealtimeLanguage: settings.sonioxRealtimeLanguage,
     sonioxRealtimeModel: settings.sonioxRealtimeModel,
     sonioxRegion: settings.sonioxRegion,
-    supabaseStoragePlan: settings.supabaseStoragePlan
+    supabaseStoragePlan: settings.supabaseStoragePlan,
+    trashRetentionHours: settings.trashRetentionHours
   };
 }
 
@@ -81,6 +88,12 @@ const supabaseStoragePlanLabels: Record<(typeof supabaseStoragePlans)[number], s
   auto: "Auto",
   free: "Free",
   paid: "Paid"
+};
+
+const trashRetentionLabels: Record<TrashRetentionHours, string> = {
+  24: "24 hodin",
+  168: "7 dní",
+  720: "30 dní"
 };
 
 // formatUsageInteger keeps count-like values compact and locale-aware.
@@ -387,7 +400,26 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         </section>
 
         <section className="settings-section" aria-labelledby="settings-recording">
-          <div className="settings-section-heading"><h2 id="settings-recording">Nahrávání</h2><p>Některé starší preference retence a automatického zpracování zůstávají pouze kompatibilní metadata.</p></div>
+          <div className="settings-section-heading"><h2 id="settings-recording">Nahrávání</h2><p>Retence se uloží jako neměnný termín až při budoucím přesunutí nahrávky do Koše.</p></div>
+          <div className="settings-grid settings-grid-single">
+            <label>
+              <span>Budoucí položky v Koši</span>
+              <select
+                disabled={disableSave}
+                name="trashRetentionHours"
+                onChange={(event) => {
+                  const value = Number(event.currentTarget.value) as TrashRetentionHours;
+                  setVisibleDraft((draft) => ({ ...draft, trashRetentionHours: value }));
+                }}
+                value={visibleDraft.trashRetentionHours}
+              >
+                {trashRetentionHours.map((hours) => (
+                  <option key={hours} value={hours}>{trashRetentionLabels[hours]}</option>
+                ))}
+              </select>
+              <small>Změna platí jen pro nahrávky přesunuté do Koše po uložení.</small>
+            </label>
+          </div>
           <p className="settings-stored-note">Některé dříve uložené preference zatím aplikace nepoužívá. Zachováváme je beze změny, ale nevydáváme je za aktivní ovládání.</p>
         </section>
 

@@ -103,6 +103,21 @@ describe("settings workspace layout", () => {
     expect(markup).toContain("user@example.test");
   });
 
+  it("offers only the three supported Trash retention periods and defaults to thirty days", () => {
+    const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
+    const container = document.createElement("div");
+    container.innerHTML = markup;
+    const select = container.querySelector<HTMLSelectElement>('select[name="trashRetentionHours"]');
+
+    expect(Array.from(select?.options ?? []).map((option) => [option.value, option.textContent])).toEqual([
+      ["24", "24 hodin"],
+      ["168", "7 dní"],
+      ["720", "30 dní"]
+    ]);
+    expect(select?.value).toBe("720");
+    expect(markup).toContain("Budoucí položky v Koši");
+  });
+
   it("orders the working settings as one document and keeps technical details closed by default", () => {
     const markup = renderSettings({
       error: null,

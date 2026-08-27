@@ -34,9 +34,11 @@ function createDeletedRecording(index: number): RecordingClientView {
     file_size_bytes: 1024,
     id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
     mime_type: "audio/mpeg",
+    purge_after: "2026-09-09T10:00:00.000Z",
     source_type: "upload",
     status: "deleted",
     title: `Smazaná nahrávka ${index}`,
+    trash_retention_hours: 720,
     updated_at: "2026-08-10T10:00:00.000Z"
   };
 }
@@ -226,6 +228,34 @@ describe("trash recording actions", () => {
       .find((button) => button.textContent === "Smazat vybrané trvale (1)");
     expect(purge?.disabled).toBe(true);
     expect(container.textContent).toContain("Trvalé smazání je dostupné 24 hodin po přesunutí do Koše");
+  });
+
+  it("shows the immutable automatic deadline without changing the manual 24-hour rule", async () => {
+    const recording = {
+      ...createDeletedRecording(1),
+      purge_after: "2026-08-17T10:00:00.000Z",
+      trash_retention_hours: 168 as const
+    };
+    await act(async () => root.render(
+      <TrashRecordingsManager nowMs={Date.parse("2026-08-12T10:00:00.000Z")} recordings={[recording]} />
+    ));
+
+    expect(container.textContent).toContain("Automatické smazání 17. 8. 2026 12:00");
+    expect(container.textContent).toContain("7 dní");
+    expect(container.textContent).toContain("Trvalé smazání je dostupné 24 hodin po přesunutí do Koše");
+  });
+
+  it("uses a safe deadline fallback for pre-migration Trash rows", async () => {
+    const recording = {
+      ...createDeletedRecording(1),
+      purge_after: null,
+      trash_retention_hours: null
+    };
+    await act(async () => root.render(
+      <TrashRecordingsManager nowMs={Date.parse("2026-08-12T10:00:00.000Z")} recordings={[recording]} />
+    ));
+
+    expect(container.textContent).toContain("Automatické smazání zatím nemá termín");
   });
 
   it("locks and hides only the restored row, then rolls it back with a sanitized alert", async () => {

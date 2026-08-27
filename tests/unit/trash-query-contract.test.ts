@@ -11,8 +11,11 @@ describe("trash query contract", () => {
     );
 
     expect(queries).toMatch(/recordingColumns[\s\S]*deleted_at/u);
+    expect(queries).toMatch(/recordingColumns[\s\S]*trash_retention_hours[\s\S]*purge_after/u);
     expect(queries).toContain('.order("deleted_at", { ascending: false })');
     expect(manager).toContain("recording.deleted_at");
     expect(manager).not.toContain("formatRecordingDate(recording.updated_at)");
+    expect(manager).toContain("Automatické smazání");
+    expect(manager).toContain("Trvalé smazání je dostupné 24 hodin");
   });
 });
