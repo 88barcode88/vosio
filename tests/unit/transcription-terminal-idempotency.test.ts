@@ -9,9 +9,14 @@ type ScenarioState = {
     transcriptId: string;
   }>;
   deleteCalls: number;
+  automaticEligible: boolean;
+  completionGenerationKey: string | null;
+  insertManualAfterTransitionWinner: boolean;
   mode: "regular" | "segmented";
   outputs: Array<{ id: string; jobId: string }>;
   providerRuns: number;
+  transitionCalls: number;
+  transitionWins: number;
   recording: {
     id: string;
     mime_type: string;
@@ -48,10 +53,10 @@ const mocks = vi.hoisted(() => ({
   activeState: null as unknown,
   createAdminClient: vi.fn(),
   createClient: vi.fn(),
-  enqueueAutomaticTimelineAfterCompletion: vi.fn(),
   getSonioxTranscript: vi.fn(),
   getSonioxTranscription: vi.fn(),
   mapSonioxStatus: vi.fn(),
+  persistTranscriptCompletionTransition: vi.fn(),
   reconcileAutomaticTimeline: vi.fn()
 }));
 
@@ -67,7 +72,7 @@ vi.mock("@/lib/ai/automatic-timeline.server", () => ({
     : `async:${input.transcriptionJobId}`,
   createAutomaticTimelineIdempotencyKey: (generationIdentity: string) =>
     `atl-test:${generationIdentity}`,
-  enqueueAutomaticTimelineAfterCompletion: mocks.enqueueAutomaticTimelineAfterCompletion,
+  persistTranscriptCompletionTransition: mocks.persistTranscriptCompletionTransition,
   reconcileAutomaticTimeline: mocks.reconcileAutomaticTimeline
 }));
 vi.mock("@/lib/soniox/client", () => ({
@@ -195,13 +200,18 @@ function createScenario(mode: "regular" | "segmented", persistedGenerationMatche
         transcriptId
       }
     ],
+    automaticEligible: true,
+    completionGenerationKey: `atl-test:${persistedGeneration}`,
     deleteCalls: 0,
+    insertManualAfterTransitionWinner: false,
     mode,
     outputs: [
       { id: "manual-output", jobId: "manual-job" },
       { id: "automatic-output", jobId: "automatic-job" }
     ],
     providerRuns: 1,
+    transitionCalls: 0,
+    transitionWins: 0,
     recording: {
       id: recordingId,
       mime_type: "audio/webm",
@@ -229,19 +239,7 @@ function createScenario(mode: "regular" | "segmented", persistedGenerationMatche
       user_id: userId
     }
   };
-  const admin = {
-    from: vi.fn((tableName: string) => createAdminQuery(state, tableName)),
-    rpc: vi.fn(async (functionName: string) => {
-      if (functionName === "delete_ai_data_for_transcript_replacement_v1") {
-        const deletedIds = new Set(state.aiJobs.map((job) => job.id));
-        state.deleteCalls += 1;
-        state.aiJobs = [];
-        state.outputs = state.outputs.filter((output) => !deletedIds.has(output.jobId));
-      }
-
-      return { data: null, error: null };
-    })
-  };
+  const admin = { from: vi.fn((tableName: string) => createAdminQuery(state, tableName)) };
   const recordingQuery = {
     eq: vi.fn(),
     maybeSingle: vi.fn(async () => ({ data: state.recording, error: null })),
@@ -289,39 +287,62 @@ beforeEach(() => {
     tokens: []
   }));
   mocks.mapSonioxStatus.mockReturnValue("done");
-  mocks.enqueueAutomaticTimelineAfterCompletion.mockImplementation(async (input: {
+  mocks.persistTranscriptCompletionTransition.mockImplementation(async (input: {
     generationIdentity: string;
+    transcriptionJobId: string | null;
     transcriptId: string;
   }) => {
     const state = mocks.activeState as ScenarioState;
-    const existing = state.aiJobs.find((job) =>
-      job.executionMode === "automatic"
-      && job.generationIdentity === input.generationIdentity
-      && job.transcriptId === input.transcriptId
-    );
+    const completionGenerationKey = `atl-test:${input.generationIdentity}`;
+    state.transitionCalls += 1;
 
-    if (existing) {
-      return { status: "already_done" };
+    if (state.completionGenerationKey !== completionGenerationKey) {
+      const deletedIds = new Set(state.aiJobs.map((job) => job.id));
+      state.deleteCalls += 1;
+      state.transitionWins += 1;
+      state.aiJobs = [];
+      state.outputs = state.outputs.filter((output) => !deletedIds.has(output.jobId));
+      state.automaticEligible = true;
+      state.completionGenerationKey = completionGenerationKey;
+      state.transcript.transcription_job_id = input.transcriptionJobId;
+
+      if (state.insertManualAfterTransitionWinner) {
+        state.aiJobs.push({
+          executionMode: "manual",
+          generationIdentity: null,
+          id: "manual-job-new-generation",
+          transcriptId
+        });
+        state.outputs.push({ id: "manual-output-new-generation", jobId: "manual-job-new-generation" });
+      }
     }
 
-    state.providerRuns += 1;
-    const jobId = `automatic-job-${state.providerRuns}`;
-    state.aiJobs.push({
-      executionMode: "automatic",
-      generationIdentity: input.generationIdentity,
-      id: jobId,
-      transcriptId: input.transcriptId
-    });
-    state.outputs.push({ id: `automatic-output-${state.providerRuns}`, jobId });
-    return { status: "done" };
+    return {
+      automatic_timeline_scheduled: state.automaticEligible,
+      is_new_generation: state.transitionWins === 1,
+      transcript_id: input.transcriptId
+    };
   });
   mocks.reconcileAutomaticTimeline.mockImplementation(async (input: {
     transcriptId: string;
   }) => {
     const state = mocks.activeState as ScenarioState;
-    const existing = state.aiJobs.find((job) =>
+    let existing = state.aiJobs.find((job) =>
       job.executionMode === "automatic" && job.transcriptId === input.transcriptId
     );
+
+    if (!existing && state.automaticEligible) {
+      state.providerRuns += 1;
+      const jobId = `automatic-job-${state.providerRuns}`;
+      existing = {
+        executionMode: "automatic",
+        generationIdentity: state.completionGenerationKey?.replace("atl-test:", "") ?? null,
+        id: jobId,
+        transcriptId: input.transcriptId
+      };
+      state.aiJobs.push(existing);
+      state.outputs.push({ id: `automatic-output-${state.providerRuns}`, jobId });
+    }
 
     return existing ? { status: "already_done" } : { status: "not_scheduled" };
   });
@@ -348,7 +369,7 @@ describe("terminal transcription polling idempotency", () => {
         "manual-output"
       ]);
       expect(state.providerRuns).toBe(1);
-      expect(mocks.enqueueAutomaticTimelineAfterCompletion).not.toHaveBeenCalled();
+      expect(mocks.persistTranscriptCompletionTransition).toHaveBeenCalledTimes(3);
       expect(mocks.reconcileAutomaticTimeline).toHaveBeenCalledTimes(3);
     }
   );
@@ -376,7 +397,7 @@ describe("terminal transcription polling idempotency", () => {
       ]);
       expect(state.outputs).toHaveLength(1);
       expect(state.providerRuns).toBe(2);
-      expect(mocks.enqueueAutomaticTimelineAfterCompletion).toHaveBeenCalledOnce();
+      expect(mocks.persistTranscriptCompletionTransition).toHaveBeenCalledOnce();
     }
   );
 
@@ -386,14 +407,39 @@ describe("terminal transcription polling idempotency", () => {
       const state = createScenario(mode);
       state.aiJobs = state.aiJobs.filter((job) => job.executionMode === "manual");
       state.outputs = state.outputs.filter((output) => output.jobId === "manual-job");
+      state.automaticEligible = false;
 
       const response = await pollTerminalGeneration();
 
       expect(response.status).toBe(200);
       expect(state.providerRuns).toBe(1);
       expect(state.aiJobs.map((job) => job.id)).toEqual(["manual-job"]);
-      expect(mocks.enqueueAutomaticTimelineAfterCompletion).not.toHaveBeenCalled();
-      expect(mocks.reconcileAutomaticTimeline).toHaveBeenCalledOnce();
+      expect(mocks.persistTranscriptCompletionTransition).toHaveBeenCalledOnce();
+      expect(mocks.reconcileAutomaticTimeline).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(["regular", "segmented"] as const)(
+    "lets exactly one %s replacement transition clean old AI and preserves a new manual output",
+    async (mode) => {
+      const state = createScenario(mode, false);
+      state.insertManualAfterTransitionWinner = true;
+
+      const responses = await Promise.all([pollTerminalGeneration(), pollTerminalGeneration()]);
+
+      expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      expect(state.transitionCalls).toBe(2);
+      expect(state.transitionWins).toBe(1);
+      expect(state.deleteCalls).toBe(1);
+      expect(state.aiJobs.map((job) => job.id).sort()).toEqual([
+        "automatic-job-2",
+        "manual-job-new-generation"
+      ]);
+      expect(state.outputs.map((output) => output.id).sort()).toEqual([
+        "automatic-output-2",
+        "manual-output-new-generation"
+      ]);
+      expect(state.providerRuns).toBe(2);
     }
   );
 });

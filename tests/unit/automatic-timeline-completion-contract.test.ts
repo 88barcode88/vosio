@@ -6,12 +6,11 @@ describe("automatic timeline completion entry points", () => {
     ["async and segmented", "app/api/recordings/[recordingId]/transcription/route.ts", ["kind: \"async\"", "kind: \"segmented\""]],
     ["live", "app/api/recordings/[recordingId]/live-transcript/route.ts", ["kind: \"live\""]],
     ["import", "app/api/recordings/import-transcript/route.ts", ["kind: \"import\""]]
-  ])("enqueues only after persisted %s completion", (_label, path, identities) => {
+  ])("uses one atomic transition after persisted %s transcript content", (_label, path, identities) => {
     const source = readFileSync(path, "utf8");
-    const completionIndex = source.lastIndexOf('status: "completed"');
-    const enqueueIndex = source.lastIndexOf("enqueueAutomaticTimelineAfterCompletion");
 
-    expect(enqueueIndex).toBeGreaterThan(completionIndex);
+    expect(source).toContain("persistTranscriptCompletionTransition");
+    expect(source).not.toContain("enqueueAutomaticTimelineAfterCompletion");
     for (const identity of identities) {
       expect(source).toContain(identity);
     }
@@ -23,8 +22,9 @@ describe("automatic timeline completion entry points", () => {
       "utf8"
     );
 
-    expect(source).toContain("isNewCompletedGeneration");
+    expect(source).toContain("persistTranscriptCompletionTransition");
     expect(source).toContain("reconcileAutomaticTimeline");
+    expect(source).not.toContain("deleteAiDataForTranscriptReplacement");
   });
 
   it("live repeats reconcile durable intent while each new import snapshots completion consent", () => {
@@ -34,8 +34,8 @@ describe("automatic timeline completion entry points", () => {
     );
     const importSource = readFileSync("app/api/recordings/import-transcript/route.ts", "utf8");
 
-    expect(liveSource).toContain("isNewCompletedGeneration");
+    expect(liveSource).toContain("persistTranscriptCompletionTransition");
     expect(liveSource).toContain("reconcileAutomaticTimeline");
-    expect(importSource).toContain("enqueueAutomaticTimelineAfterCompletion");
+    expect(importSource).toContain("persistTranscriptCompletionTransition");
   });
 });

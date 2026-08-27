@@ -5,9 +5,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { executePersistedAiProcessing } from "@/lib/ai/processing-service.server";
 import { getAiModelOption, type AiProviderId } from "@/lib/model-options";
 import {
-  type EffectivePromptRpcRow
-} from "@/lib/prompt-templates/effective";
-import {
   getUserSettingsFromMetadata,
   hasAutomaticTimelineConsent
 } from "@/lib/settings/metadata";
@@ -20,6 +17,8 @@ type AutomaticTimelineGenerationInput =
   | { kind: "async"; transcriptionJobId: string }
   | { jobIds: string[]; kind: "segmented" }
   | { kind: "import" | "live"; transcriptId: string };
+
+type AutomaticTimelineGenerationKind = AutomaticTimelineGenerationInput["kind"];
 
 type AutomaticTimelineJobRow = {
   attempt_count: number;
@@ -75,7 +74,6 @@ type EnqueueAutomaticTimelineJobInput = {
 type AutomaticTimelineResult = {
   status:
     | "busy"
-    | "disabled"
     | "done"
     | "already_done"
     | "failed"
@@ -83,15 +81,30 @@ type AutomaticTimelineResult = {
     | "terminal_failed";
 };
 
-type EnqueueDependencies = {
-  persistIntent?: (
-    input: EnqueueAutomaticTimelineJobInput,
-    admin: SupabaseClient
-  ) => Promise<AutomaticTimelineIntentRow>;
-  reconcileJob?: typeof reconcileAutomaticTimeline;
-  resolvePrompt?: (
-    client: SupabaseClient
-  ) => Promise<EffectivePromptRpcRow>;
+type CompletionTransitionRow = {
+  automatic_timeline_scheduled: boolean;
+  is_new_generation: boolean;
+  transcript_id: string;
+};
+
+type CompleteGenerationInput = {
+  admin: SupabaseClient;
+  automaticTimelineEnabled: boolean;
+  completionGenerationKey: string;
+  durationSeconds: number | null;
+  generationKind: AutomaticTimelineGenerationKind;
+  model: string;
+  provider: AiProviderId;
+  providerConfig: Record<string, unknown>;
+  transcriptId: string;
+  transcriptionJobId: string | null;
+  userId: string;
+};
+
+type CompletionDependencies = {
+  completeGeneration?: (
+    input: CompleteGenerationInput
+  ) => Promise<CompletionTransitionRow>;
 };
 
 type ReconcileDependencies = {
@@ -160,22 +173,6 @@ export function createAutomaticTimelineIdempotencyKey(generationIdentity: string
   return `atl_v1_${digest}`;
 }
 
-// resolveAutomaticTimelinePrompt resolves the owner's current effective timeline prompt server-side.
-async function resolveAutomaticTimelinePrompt(client: SupabaseClient) {
-  const { data, error } = await client
-    .rpc("resolve_effective_prompt_template_v1", {
-      p_processing_type: AUTOMATIC_TIMELINE_PROCESSING_TYPE
-    })
-    .returns<EffectivePromptRpcRow[]>()
-    .single();
-
-  if (error || !data) {
-    throw new Error("Automatická časová osa nemá dostupnou prompt šablonu.");
-  }
-
-  return data;
-}
-
 // enqueueAutomaticTimelineJob persists one exact snapshot through the service-role-only RPC.
 async function enqueueAutomaticTimelineJob(
   input: EnqueueAutomaticTimelineJobInput,
@@ -207,84 +204,65 @@ async function enqueueAutomaticTimelineJob(
   return data;
 }
 
-// persistAutomaticTimelineIntent durably records completion-time consent and configuration.
-async function persistAutomaticTimelineIntent(
-  input: EnqueueAutomaticTimelineJobInput,
-  admin: SupabaseClient
-) {
-  const { data, error } = await admin
-    .rpc("persist_automatic_timeline_intent_v1", {
-      p_automatic_idempotency_key: input.idempotencyKey,
+// completeTranscriptGeneration persists completion, generation arbitration and exact prompt intent atomically.
+async function completeTranscriptGeneration(input: CompleteGenerationInput) {
+  const { data, error } = await input.admin
+    .rpc("complete_transcript_generation_v1", {
+      p_automatic_timeline_enabled: input.automaticTimelineEnabled,
+      p_completion_generation_key: input.completionGenerationKey,
+      p_duration_seconds: input.durationSeconds,
+      p_generation_kind: input.generationKind,
       p_model: input.model,
-      p_prompt_id: input.promptId,
-      p_prompt_name_snapshot: input.promptNameSnapshot,
-      p_prompt_output_schema_snapshot: input.outputSchemaSnapshot,
-      p_prompt_override_id: input.overrideId,
-      p_prompt_revision_snapshot: input.promptRevisionSnapshot,
-      p_prompt_source: input.promptSource,
-      p_prompt_text_snapshot: input.promptTextSnapshot,
       p_provider: input.provider,
       p_provider_config: input.providerConfig,
       p_transcript_id: input.transcriptId,
+      p_transcription_job_id: input.transcriptionJobId,
       p_user_id: input.userId
     })
-    .returns<AutomaticTimelineIntentRow[]>()
+    .returns<CompletionTransitionRow[]>()
     .single();
 
   if (error || !data) {
-    throw new Error("Automatickou časovou osu se nepodařilo trvale naplánovat.");
+    throw new Error("Dokončení přepisu se nepodařilo atomicky uložit.");
   }
 
   return data;
 }
 
-// enqueueAutomaticTimelineAfterCompletion snapshots consent/config only after transcript completion persists.
-export async function enqueueAutomaticTimelineAfterCompletion(
+// persistTranscriptCompletionTransition snapshots consent/config in the sole completion transition.
+export async function persistTranscriptCompletionTransition(
   input: {
     admin: SupabaseClient;
-    authenticatedClient: SupabaseClient;
+    durationSeconds: number | null;
     generationIdentity: string;
+    generationKind: AutomaticTimelineGenerationKind;
     transcriptId: string;
+    transcriptionJobId: string | null;
     user: User;
   },
-  dependencies: EnqueueDependencies = {}
-): Promise<AutomaticTimelineResult> {
-  if (!hasAutomaticTimelineConsent(input.user.user_metadata)) {
-    return { status: "disabled" };
-  }
-
+  dependencies: CompletionDependencies = {}
+) {
   const settings = getUserSettingsFromMetadata(input.user.user_metadata);
   const model = settings.defaultOpenaiModel;
   const modelOption = getAiModelOption(model);
   const provider = modelOption?.provider ?? "openai";
-  const prompt = await (dependencies.resolvePrompt ?? resolveAutomaticTimelinePrompt)(
-    input.authenticatedClient
-  );
   const providerConfig = {
     provider,
     reasoning_effort: modelOption?.reasoningEffort ?? null,
-    response_format: prompt.output_schema ? "json_schema" : "text",
     thinking_level: modelOption?.geminiThinkingLevel ?? null
   };
-  await (dependencies.persistIntent ?? persistAutomaticTimelineIntent)({
-    idempotencyKey: createAutomaticTimelineIdempotencyKey(input.generationIdentity),
+
+  return (dependencies.completeGeneration ?? completeTranscriptGeneration)({
+    admin: input.admin,
+    automaticTimelineEnabled: hasAutomaticTimelineConsent(input.user.user_metadata),
+    completionGenerationKey: createAutomaticTimelineIdempotencyKey(input.generationIdentity),
+    durationSeconds: input.durationSeconds,
+    generationKind: input.generationKind,
     model,
-    outputSchemaSnapshot: prompt.output_schema,
-    overrideId: prompt.override_id,
-    promptId: prompt.system_prompt_id,
-    promptNameSnapshot: prompt.name,
-    promptRevisionSnapshot: prompt.revision,
-    promptSource: prompt.source,
-    promptTextSnapshot: prompt.prompt_text,
     provider,
     providerConfig,
     transcriptId: input.transcriptId,
-    userId: input.user.id
-  }, input.admin);
-
-  return (dependencies.reconcileJob ?? reconcileAutomaticTimeline)({
-    admin: input.admin,
-    transcriptId: input.transcriptId,
+    transcriptionJobId: input.transcriptionJobId,
     userId: input.user.id
   });
 }

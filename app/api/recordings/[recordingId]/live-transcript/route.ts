@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import {
   createAutomaticTimelineGenerationIdentity,
-  enqueueAutomaticTimelineAfterCompletion,
+  persistTranscriptCompletionTransition,
   reconcileAutomaticTimeline
 } from "@/lib/ai/automatic-timeline.server";
 import { buildLiveTranscriptSuccessPayload } from "@/lib/live-recording/live-transcript-response";
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const speakers = extractTranscriptSpeakerSummaries(body.data.segments);
   const { data: existingTranscript, error: existingTranscriptError } = await admin
     .from("transcripts")
-    .select("id,transcription_job_id")
+    .select("id")
     .eq("recording_id", recording.id)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -76,8 +76,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (existingTranscriptError) {
     return NextResponse.json({ error: "Nepodařilo se načíst uložený live přepis." }, { status: 500 });
   }
-
-  const isNewCompletedGeneration = !existingTranscript?.transcription_job_id;
 
   const transcriptWrite = existingTranscript
     ? await admin
@@ -136,45 +134,32 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Nepodařilo se uložit realtime přepisovací job." }, { status: 500 });
   }
 
-  const { error: transcriptJobUpdateError } = await admin
-    .from("transcripts")
-    .update({ transcription_job_id: job.id })
-    .eq("id", transcriptWrite.data.id)
-    .eq("user_id", user.id);
+  const completion = await persistTranscriptCompletionTransition({
+    admin,
+    durationSeconds: null,
+    generationIdentity: createAutomaticTimelineGenerationIdentity({
+      kind: "live",
+      transcriptId: transcriptWrite.data.id
+    }),
+    generationKind: "live",
+    transcriptId: transcriptWrite.data.id,
+    transcriptionJobId: job.id,
+    user
+  }).catch(() => null);
 
-  if (transcriptJobUpdateError) {
-    return NextResponse.json({ error: "Nepodařilo se dokončit live přepis." }, { status: 500 });
+  if (!completion) {
+    return NextResponse.json({ error: "Nepodařilo se dokončit live přepis." }, { status: 503 });
   }
 
-  const { error: recordingUpdateError } = await admin
-    .from("recordings")
-    .update({ error_message: null, status: "completed" })
-    .eq("id", recording.id)
-    .eq("user_id", user.id);
-
-  if (recordingUpdateError) {
-    return NextResponse.json({ error: "Nepodařilo se aktualizovat stav live nahrávky." }, { status: 500 });
-  }
-
-  const automaticTimelineAttempt = isNewCompletedGeneration
-    ? enqueueAutomaticTimelineAfterCompletion({
-      admin,
-      authenticatedClient: supabase,
-      generationIdentity: createAutomaticTimelineGenerationIdentity({
-        kind: "live",
-        transcriptId: transcriptWrite.data.id
-      }),
-      transcriptId: transcriptWrite.data.id,
-      user
-    })
-    : reconcileAutomaticTimeline({
+  if (completion.automatic_timeline_scheduled) {
+    await reconcileAutomaticTimeline({
       admin,
       transcriptId: transcriptWrite.data.id,
       userId: user.id
+    }).catch(() => {
+      console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
     });
-  await automaticTimelineAttempt.catch(() => {
-    console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
-  });
+  }
 
   return NextResponse.json(buildLiveTranscriptSuccessPayload(transcriptWrite.data, indexResult));
 }

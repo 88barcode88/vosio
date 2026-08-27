@@ -33,6 +33,34 @@ describe("automatic timeline source migration", () => {
     expect(sql).toMatch(/foreign\s+key\s*\(transcript_id,\s*user_id\)[\s\S]*references\s+public\.transcripts/iu);
     expect(sql).toMatch(/alter\s+table\s+public\.automatic_timeline_intents\s+force\s+row\s+level\s+security/iu);
     expect(sql).toMatch(/revoke\s+all\s+on\s+table\s+public\.automatic_timeline_intents\s+from\s+public,\s*anon,\s*authenticated/iu);
+    expect(sql).toMatch(/alter\s+table\s+public\.transcripts[\s\S]*completion_generation_key\s+text/iu);
+  });
+
+  it("arbitrates generation completion, prompt snapshot and cleanup in one locked transition", () => {
+    const sql = readFileSync(join(migrationsDirectory, migrationName ?? "missing.sql"), "utf8");
+    const transitionStart = sql.indexOf("create function public.complete_transcript_generation_v1");
+    const transitionEnd = sql.indexOf(
+      "revoke all on function public.complete_transcript_generation_v1",
+      transitionStart
+    );
+    const transition = sql.slice(transitionStart, transitionEnd);
+
+    expect(transitionStart).toBeGreaterThan(-1);
+    expect(transition).toMatch(/from\s+public\.transcripts[\s\S]*for\s+update/iu);
+    expect(transition).toMatch(/completion_generation_key\s+is\s+distinct\s+from\s+p_completion_generation_key/iu);
+    expect(transition).toMatch(/from\s+public\.prompt_templates[\s\S]*for\s+share/iu);
+    expect(transition).toMatch(/from\s+public\.prompt_template_overrides[\s\S]*for\s+share/iu);
+    expect(transition).toMatch(/insert\s+into\s+public\.automatic_timeline_intents/iu);
+    expect(transition).toMatch(/delete\s+from\s+public\.ai_processing_jobs/iu);
+    expect(transition).toMatch(/update\s+public\.transcripts[\s\S]*completion_generation_key\s*=\s*p_completion_generation_key/iu);
+    expect(transition).toMatch(/update\s+public\.recordings[\s\S]*status\s*=\s*'completed'/iu);
+    expect(transition.indexOf("insert into public.automatic_timeline_intents")).toBeLessThan(
+      transition.indexOf("update public.transcripts")
+    );
+    expect(transition.indexOf("update public.transcripts")).toBeLessThan(
+      transition.indexOf("update public.recordings")
+    );
+    expect(transition).not.toMatch(/exception\s+when/iu);
   });
 
   it("fails closed before the output uniqueness guard when historical duplicates need lineage review", () => {
@@ -62,15 +90,14 @@ describe("automatic timeline source migration", () => {
     }
   });
 
-  it("keeps intent, enqueue, replacement cleanup, claim and settlement service-role-only", () => {
+  it("keeps completion, enqueue, claim and settlement service-role-only", () => {
     const sql = readFileSync(join(migrationsDirectory, migrationName ?? "missing.sql"), "utf8");
 
     for (const name of [
-      "persist_automatic_timeline_intent_v1",
+      "complete_transcript_generation_v1",
       "enqueue_automatic_timeline_job_v1",
       "claim_automatic_timeline_job_v1",
-      "settle_automatic_timeline_job_v1",
-      "delete_ai_data_for_transcript_replacement_v1"
+      "settle_automatic_timeline_job_v1"
     ]) {
       expect(sql).toMatch(new RegExp(`create\\s+function\\s+public\\.${name}[\\s\\S]*security\\s+invoker`, "iu"));
       expect(sql).toMatch(new RegExp(`revoke\\s+all\\s+on\\s+function\\s+public\\.${name}[\\s\\S]*from\\s+public,\\s*anon,\\s*authenticated`, "iu"));
@@ -79,8 +106,8 @@ describe("automatic timeline source migration", () => {
 
     expect(sql).toMatch(/status\s*=\s*'running'[\s\S]*lease_expires_at\s*<=\s*p_now/iu);
     expect(sql).toMatch(/attempt_count\s*<\s*max_attempts/iu);
-    expect(sql).toMatch(/delete\s+from\s+public\.automatic_timeline_intents[\s\S]*automatic_idempotency_key\s*<>\s*p_replacement_automatic_idempotency_key/iu);
-    expect(sql).toMatch(/automatic_idempotency_key\s+is\s+distinct\s+from\s+p_replacement_automatic_idempotency_key/iu);
+    expect(sql).not.toContain("persist_automatic_timeline_intent_v1");
+    expect(sql).not.toContain("delete_ai_data_for_transcript_replacement_v1");
     expect(sql).not.toMatch(/pg_cron|cron\.schedule|vercel/iu);
   });
 });

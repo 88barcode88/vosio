@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   activeScenario: null as HookScenario | null,
   createAdminClient: vi.fn(),
   createClient: vi.fn(),
-  enqueueAutomaticTimelineAfterCompletion: vi.fn(),
+  persistTranscriptCompletionTransition: vi.fn(),
   reconcileAutomaticTimeline: vi.fn(),
   replaceTranscriptSearchChunks: vi.fn()
 }));
@@ -23,7 +23,7 @@ vi.mock("@/lib/ai/automatic-timeline.server", () => ({
     kind: "import" | "live";
     transcriptId: string;
   }) => `${input.kind}:${input.transcriptId}`,
-  enqueueAutomaticTimelineAfterCompletion: mocks.enqueueAutomaticTimelineAfterCompletion,
+  persistTranscriptCompletionTransition: mocks.persistTranscriptCompletionTransition,
   reconcileAutomaticTimeline: mocks.reconcileAutomaticTimeline
 }));
 vi.mock("@/lib/transcripts/search-index", () => ({
@@ -149,9 +149,13 @@ function installScenario(scenario: HookScenario) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.enqueueAutomaticTimelineAfterCompletion.mockImplementation(async () => {
-    mocks.activeScenario?.events.push("intent-attempted");
-    return { status: "done" };
+  mocks.persistTranscriptCompletionTransition.mockImplementation(async () => {
+    mocks.activeScenario?.events.push("completion-and-intent-committed");
+    return {
+      automatic_timeline_scheduled: true,
+      is_new_generation: true,
+      transcript_id: transcriptId
+    };
   });
   mocks.reconcileAutomaticTimeline.mockImplementation(async () => {
     mocks.activeScenario?.events.push("reconciled");
@@ -186,9 +190,8 @@ describe("automatic timeline persistence hooks", () => {
       "transcript-persisted",
       "search-index-persisted",
       "transcription-job-persisted",
-      "generation-marker-persisted",
-      "completion-persisted",
-      "intent-attempted"
+      "completion-and-intent-committed",
+      "reconciled"
     ]);
   });
 
@@ -213,7 +216,7 @@ describe("automatic timeline persistence hooks", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mocks.enqueueAutomaticTimelineAfterCompletion).not.toHaveBeenCalled();
+    expect(mocks.persistTranscriptCompletionTransition).toHaveBeenCalledOnce();
     expect(mocks.reconcileAutomaticTimeline).toHaveBeenCalledOnce();
     expect(scenario.events.at(-1)).toBe("reconciled");
   });
@@ -237,7 +240,8 @@ describe("automatic timeline persistence hooks", () => {
       "recording-persisted",
       "transcript-persisted",
       "search-index-persisted",
-      "intent-attempted"
+      "completion-and-intent-committed",
+      "reconciled"
     ]);
   });
 });
