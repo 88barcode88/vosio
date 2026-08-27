@@ -85,6 +85,7 @@ type VosioWorkspaceProps = {
   recordingSearchNextHref?: string | null;
   recordingSearchPage?: RecordingSearchPage | null;
   recordingSearchPreviousHref?: string | null;
+  disableAccountSecurity?: boolean;
   settingsStatus?: "error" | "saved" | null;
   settingsFormDisabled?: boolean;
   structuredItems?: StructuredAiItems;
@@ -166,6 +167,7 @@ export function VosioWorkspace({
   recordingSearchNextHref = null,
   recordingSearchPage = null,
   recordingSearchPreviousHref = null,
+  disableAccountSecurity = false,
   settingsStatus = null,
   settingsFormDisabled = false,
   structuredItems = getEmptyStructuredAiItems(),
@@ -254,6 +256,7 @@ export function VosioWorkspace({
               aiArchiveItems={aiArchiveItems}
               aiOutputs={aiOutputs}
               deletedRecordings={deletedRecordingViews}
+              disableAccountSecurity={disableAccountSecurity}
               installationStatus={installationStatus}
               promptTemplates={promptTemplates}
               promptTemplateActions={promptTemplateActions}
@@ -272,6 +275,7 @@ export function VosioWorkspace({
               trashRestoreBulkAction={trashRestoreBulkAction}
               trashRestoreAction={trashRestoreAction}
               usageState={usageState}
+              userEmail={userEmail}
               view={view}
             />
           ) : (

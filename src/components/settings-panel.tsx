@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Settings2, TriangleAlert } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AccountSecurityPanel } from "@/components/account-security-panel";
 import { Disclosure } from "@/components/ui/disclosure";
 import { APP_VERSION } from "@/lib/app-version";
 import type { InstallationEnvironment, InstallationStatus } from "@/lib/installation-status.server";
@@ -22,6 +23,8 @@ import { sonioxRegionOptions, type SonioxRegion } from "@/lib/soniox/region";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
 
 type SettingsPanelProps = {
+  accountEmail: string;
+  disableAccountSecurity?: boolean;
   disableSave?: boolean;
   installationStatus: InstallationStatus;
   recordingStorageConfig: RecordingStorageConfig;
@@ -218,7 +221,7 @@ export function InstallationStatusDetails({ status }: { status: InstallationStat
 }
 
 // SettingsPanel presents only preferences that the current runtime can apply.
-export function SettingsPanel({ disableSave = false, installationStatus, recordingStorageConfig, saveAction = updateUserSettingsAction, settings, status, usageState }: SettingsPanelProps) {
+export function SettingsPanel({ accountEmail, disableAccountSecurity = false, disableSave = false, installationStatus, recordingStorageConfig, saveAction = updateUserSettingsAction, settings, status, usageState }: SettingsPanelProps) {
   const [visibleDraft, setVisibleDraft] = useState(() => createVisibleSettingsDraft(settings));
   const [, setReconcileRevision] = useState(0);
   const visibleSettingsKey = getVisibleSettingsKey(settings);
@@ -284,7 +287,7 @@ export function SettingsPanel({ disableSave = false, installationStatus, recordi
 
         <section className="settings-section" aria-labelledby="settings-ai">
           <div className="settings-section-heading"><h2 id="settings-ai">AI a výstupy</h2><p>Model se předvyplní při ručním AI zpracování v detailu nahrávky.</p></div>
-          <div className="settings-grid settings-grid-single">
+          <div className="settings-grid settings-model-row">
             <label>
               <span>Výchozí AI model</span>
               <select
@@ -300,10 +303,11 @@ export function SettingsPanel({ disableSave = false, installationStatus, recordi
               </select>
               <small>{getAiModelDescription(visibleDraft.defaultOpenaiModel)}</small>
             </label>
+            <aside aria-labelledby="settings-model-guidance-title" className="settings-model-guidance">
+              <strong id="settings-model-guidance-title">Model a kvalita</strong>
+              <p>{AI_MODEL_QUALITY_GUIDANCE}</p>
+            </aside>
           </div>
-          <Disclosure label="Model a kvalita" triggerLabel="Model a kvalita" className="settings-disclosure">
-            <p>{AI_MODEL_QUALITY_GUIDANCE}</p>
-          </Disclosure>
         </section>
 
         <section className="settings-section settings-section-transcription" aria-labelledby="settings-transcription">
@@ -415,6 +419,7 @@ export function SettingsPanel({ disableSave = false, installationStatus, recordi
         <SettingsSaveButton disabled={disableSave} pending={pending} />
         </fieldset>
       </form>
+      <AccountSecurityPanel disabled={disableAccountSecurity} email={accountEmail} />
     </section>
   );
 }
