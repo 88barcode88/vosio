@@ -313,7 +313,7 @@ Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čt
 
 Stavové počty na `/recordings` vznikají přes `count_own_recording_statuses_v1`: přesné facety pokrývají celý aktuální `q`, organizační filtry klienta/projektu/složky a ALL sadu štítků. Facety ignorují aktivní `status`, aby šlo jedním kliknutím přepnout na jiný stav; `Smazáno` je samostatný úplný počet Koše. Filtrování jedné 25řádkové search stránky v Reactu by rozbilo `total_count` a stránkování.
 
-Po kanonizaci URL filtrů jsou hlavní list/search dotaz, stavové facety a počet Koše navzájem nezávislé read-only požadavky. Musí začít v jednom souběžném kroku; čekání na facety před spuštěním listu přidává do kritické cesty `/recordings` celý zbytečný Supabase round trip. Organizační options zůstávají před nimi, protože určují kanonické filtry, a všechny dotazy dál používají stejnou authenticated session a RLS.
+Po kanonizaci URL filtrů jsou hlavní list/search dotaz, stavové facety a počet Koše navzájem nezávislé read-only požadavky. Musí začít v jednom souběžném kroku; čekání na facety před spuštěním listu přidává do kritické cesty `/recordings` celý zbytečný Supabase round trip. Bez hodnot `client`, `project`, `folder` a `tag` URL okamžitě používá prázdné kanonické organizační filtry a do stejné post-auth fáze spouští i organizační options. Pokud URL organizační hodnotu má, options nejdřív ověří owner allowlist a kompatibilitu projektu s klientem; teprve potom začnou filtrované dotazy. Selhaná idempotentní read fáze má nejvýše jeden server retry, ale search RPC zůstává samostatná inline chyba a neeskaluje do route erroru. Všechny dotazy dál používají stejnou authenticated session a RLS.
 
 ## Hromadný purge není jeden serverový request
 

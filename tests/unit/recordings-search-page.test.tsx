@@ -70,6 +70,22 @@ beforeEach(() => {
 });
 
 describe("recordings search page routing", () => {
+  it("treats a valid unauthenticated result as final without retrying reads", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) }
+    });
+    mocks.redirect.mockImplementationOnce((href: string) => {
+      throw new Error(`redirect:${href}`);
+    });
+
+    await expect(RecordingPage({ searchParams: Promise.resolve({}) })).rejects.toThrow(
+      "redirect:/login?next=/recordings"
+    );
+
+    expect(mocks.listOptions).not.toHaveBeenCalled();
+    expect(mocks.listRecordings).not.toHaveBeenCalled();
+  });
+
   it("forwards canonical page and organization filters only to indexed search", async () => {
     const element = await RecordingPage({
       searchParams: Promise.resolve({
@@ -122,10 +138,10 @@ describe("recordings search page routing", () => {
     expect(element.props.recordingSearchPage).toBeNull();
   });
 
-  it("starts the recording list before status counts settle", async () => {
-    let releaseStatusCounts = () => {};
+  it("starts every no-filter read before organization options settle", async () => {
+    let releaseOptions = () => {};
     mocks.countStatuses.mockReturnValue(new Promise((resolve) => {
-      releaseStatusCounts = () => resolve({
+      resolve({
         completed: 5,
         created: 1,
         deleted: 0,
@@ -135,14 +151,58 @@ describe("recordings search page routing", () => {
         uploading: 7
       });
     }));
+    mocks.listOptions.mockReturnValue(new Promise((resolve) => {
+      releaseOptions = () => resolve(options);
+    }));
 
     const pagePromise = RecordingPage({ searchParams: Promise.resolve({}) });
     await vi.waitFor(() => expect(mocks.countStatuses).toHaveBeenCalledOnce());
-    const listStartedBeforeCountsSettled = mocks.listRecordings.mock.calls.length === 1;
-    releaseStatusCounts();
-    await pagePromise;
 
-    expect(listStartedBeforeCountsSettled).toBe(true);
+    expect(mocks.listRecordings).toHaveBeenCalledOnce();
+    expect(mocks.countDeleted).toHaveBeenCalledOnce();
+
+    releaseOptions();
+    await pagePromise;
+  });
+
+  it("canonicalizes incompatible filtered URLs before issuing filtered data reads", async () => {
+    const otherClientId = "00000000-0000-4000-8000-000000000399";
+    mocks.redirect.mockImplementationOnce((href: string) => {
+      throw new Error(`redirect:${href}`);
+    });
+
+    await expect(RecordingPage({
+      searchParams: Promise.resolve({ client: otherClientId, project: projectId })
+    })).rejects.toThrow("redirect:");
+
+    const target = new URL(mocks.redirect.mock.calls[0]?.[0] as string, "https://vosio.local");
+    expect(target.searchParams.get("client")).toBeNull();
+    expect(target.searchParams.get("project")).toBeNull();
+    expect(mocks.listRecordings).not.toHaveBeenCalled();
+    expect(mocks.countStatuses).not.toHaveBeenCalled();
+  });
+
+  it("retries a thrown idempotent recording read exactly once", async () => {
+    mocks.listRecordings
+      .mockRejectedValueOnce(new Error("transient database failure"))
+      .mockResolvedValueOnce([]);
+
+    await RecordingPage({ searchParams: Promise.resolve({}) });
+
+    expect(mocks.listRecordings).toHaveBeenCalledTimes(2);
+    expect(mocks.countStatuses).toHaveBeenCalledTimes(2);
+    expect(mocks.countDeleted).toHaveBeenCalledTimes(2);
+    expect(mocks.listOptions).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops after the single retry when recording reads keep failing", async () => {
+    mocks.listRecordings.mockRejectedValue(new Error("persistent database failure"));
+
+    await expect(RecordingPage({ searchParams: Promise.resolve({}) })).rejects.toThrow(
+      "persistent database failure"
+    );
+
+    expect(mocks.listRecordings).toHaveBeenCalledTimes(2);
   });
 
   it("settles an RPC failure as an accessible manager error without falling back to fetch-all", async () => {
@@ -157,6 +217,23 @@ describe("recordings search page routing", () => {
       "Hledání se nepodařilo načíst. Zkuste to znovu."
     );
     expect(JSON.stringify(element.props)).not.toContain("private provider detail");
+  });
+
+  it("retries one transient indexed search RPC failure before rendering an inline error", async () => {
+    mocks.searchOwnRecordings
+      .mockRejectedValueOnce(new Error("transient private provider detail"))
+      .mockResolvedValueOnce({
+        page: 1,
+        pageSize: 25,
+        results: [{ id: "recording-1" }],
+        totalCount: 1
+      });
+
+    const element = await RecordingPage({ searchParams: Promise.resolve({ q: "Lucern" }) });
+
+    expect(mocks.searchOwnRecordings).toHaveBeenCalledTimes(2);
+    expect(element.props.recordingSearchError).toBeNull();
+    expect(element.props.recordingSearchPage).toMatchObject({ totalCount: 1 });
   });
 
   it("redirects a stale empty page to page one while preserving all query filters", async () => {
