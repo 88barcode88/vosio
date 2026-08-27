@@ -26,6 +26,7 @@ function createCompleteSettingsForm(region: "eu" | "global") {
   formData.set("aiTemperature", "0.7");
   formData.set("audioRetentionPolicy", "delete_audio_after_transcription");
   formData.set("autoProcessAfterTranscription", "on");
+  formData.set("autoTimelineAfterTranscription", "on");
   formData.set("autoProcessingTypesPresent", "1");
   formData.append("autoProcessingTypes", "summary");
   formData.set("defaultOpenaiModel", "gpt-5.6-terra");
@@ -66,6 +67,7 @@ describe("settings form", () => {
     formData.set("aiTemperature", "0.7");
     formData.set("audioRetentionPolicy", "delete_audio_after_transcription");
     formData.set("autoProcessAfterTranscription", "on");
+    formData.set("autoTimelineAfterTranscription", "on");
     formData.set("autoProcessingTypesPresent", "1");
     formData.append("autoProcessingTypes", "summary");
     formData.append("autoProcessingTypes", "action_items");
@@ -86,6 +88,7 @@ describe("settings form", () => {
           aiTemperature: 0.7,
           audioRetentionPolicy: "delete_audio_after_transcription",
           autoProcessAfterTranscription: true,
+          autoTimelineAfterTranscription: true,
           autoProcessingTypes: ["summary", "action_items"],
           defaultOpenaiModel: "gpt-5.6-terra",
           outputLanguage: "cs",
@@ -145,6 +148,16 @@ describe("settings form", () => {
     formData.set("supabaseStoragePlan", "free");
 
     expect(parseSettingsForm(formData).supabaseStoragePlan).toBe("free");
+  });
+
+  it("parses dedicated automatic timeline consent independently from legacy automation fields", () => {
+    const enabled = new FormData();
+    enabled.set("autoTimelineAfterTranscription", "on");
+    enabled.set("autoProcessAfterTranscription", "off");
+
+    expect(parseSettingsForm(enabled).autoTimelineAfterTranscription).toBe(true);
+    expect(parseSettingsForm(enabled).autoProcessAfterTranscription).toBe(false);
+    expect(parseSettingsForm(new FormData()).autoTimelineAfterTranscription).toBe(false);
   });
 
   it("parses the selected Soniox region", () => {

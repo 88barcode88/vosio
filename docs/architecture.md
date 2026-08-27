@@ -131,7 +131,7 @@ Vedle audia a live nahrávání aplikace podporuje import hotového přepisu bez
 
 ## Cílové tabulky
 
-Zdroj pravdy pro bootstrap nového Supabase projektu je celý seřazený migrační řetězec, ne samotná baseline: `20260617000000_initial_schema.sql`, potom `20260804100000_add_evidence_locations.sql`, `20260804110000_add_recording_organization.sql`, `20260804120000_add_recording_markers.sql`, `20260804130000_add_transcript_fulltext_search.sql`, `20260810005550_restore_recordings_from_trash.sql`, `20260813000000_add_recording_status_filters.sql`, `20260813090000_add_prompt_overrides_and_job_snapshots.sql` a `20260815073029_harden_prompt_override_privileges.sql`. Baseline vytváří core public tabulky, enumy, indexy, forced RLS, private Storage bucket `recordings`, storage policies a systémové prompt templates; každá novější migrace mění výsledné schema až po svém apply.
+Zdroj pravdy pro bootstrap nového Supabase projektu je celý seřazený migrační řetězec, ne samotná baseline: `20260617000000_initial_schema.sql`, potom `20260804100000_add_evidence_locations.sql`, `20260804110000_add_recording_organization.sql`, `20260804120000_add_recording_markers.sql`, `20260804130000_add_transcript_fulltext_search.sql`, `20260810005550_restore_recordings_from_trash.sql`, `20260813000000_add_recording_status_filters.sql`, `20260813090000_add_prompt_overrides_and_job_snapshots.sql`, `20260815073029_harden_prompt_override_privileges.sql` a `20260827094435_add_automatic_timeline_idempotency.sql`. Baseline vytváří core public tabulky, enumy, indexy, forced RLS, private Storage bucket `recordings`, storage policies a systémové prompt templates; každá novější migrace mění výsledné schema až po svém apply.
 
 Veřejný repozitář je zdrojový kontrakt, ne deployment ledger. Každý nový nebo existující Supabase target musí před nasazením aplikace samostatně ověřit skutečné schema, granty, RLS a migration history; existující produkční databáze se kvůli baseline automaticky neresetuje.
 
@@ -288,6 +288,10 @@ transcript completed
 ```
 
 Workflow `custom_prompt` v této etapě není součástí runtime. Browser neposílá prompt ID ani vlastní prompt text; upravený text se automaticky použije pod původním quick-action tlačítkem.
+
+Settings obsahuje samostatný opt-in `autoTimelineAfterTranscription`, výchozí `false`. Po uložení souhlasu vytvoří každá nově persistovaná async, segmentovaná, live nebo importovaná generace nejvýše jeden automatický `timeline_chapters` job. Job před provider callem snapshotuje aktuální výchozí model, provider/reasoning konfiguraci a přesný effective prompt text, schema i revizi. Vytvoření probíhá až po uložení transcriptu a completion stavu; chyba AI nikdy nevrací ani nemaže transcript. Historické přepisy se po zapnutí nedoplňují.
+
+Automatické joby mají databázový idempotency digest, bounded attempt count a lease. Service-role-only `SECURITY INVOKER` RPC atomicky enqueueuje, claimuje/reclaimuje stale lease a settleuje pouze aktuálního vlastníka lease. Detail dokončeného přepisu při otevření provede jeden owner-authenticated reconciliation request; ten obnoví pouze existující queued, retryable failed nebo stale job. Úspěšný či terminal job se znovu nespouští ani po smazání jeho outputu. Neexistuje AI cron, Vercel Cron ani Supabase scheduled job; manuální šestice AI akcí používá stejnou provider/persistence službu a zůstává beze změny.
 
 `output_schema` je aktuálně kontrakt pro prompt a provider request. Striktní JSON Schema validace před uložením zatím není aktivní gate; pokud se doplní, musí být napojená do AI workeru a testovaná pro OpenAI i Gemini odpovědi.
 

@@ -3,6 +3,29 @@ import { getUserSettingsFromMetadata, USER_SETTINGS_METADATA_KEY } from "@/lib/s
 import { DEFAULT_AI_MODEL_ID } from "@/lib/model-options";
 
 describe("settings metadata", () => {
+  it("keeps automatic timeline generation opt-in off for legacy metadata", () => {
+    expect(getUserSettingsFromMetadata({} as never).autoTimelineAfterTranscription).toBe(false);
+  });
+
+  it("does not reinterpret dormant automatic-processing metadata as timeline consent", () => {
+    const settings = getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: {
+        autoProcessAfterTranscription: true,
+        autoProcessingTypes: ["summary", "action_items"]
+      }
+    });
+
+    expect(settings.autoTimelineAfterTranscription).toBe(false);
+    expect(settings.autoProcessAfterTranscription).toBe(true);
+    expect(settings.autoProcessingTypes).toEqual(["summary", "action_items"]);
+  });
+
+  it("keeps explicit automatic timeline consent", () => {
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { autoTimelineAfterTranscription: true }
+    }).autoTimelineAfterTranscription).toBe(true);
+  });
+
   it.each([
     ["empty metadata", {}],
     ["legacy metadata", { display_name: "Marie" }]

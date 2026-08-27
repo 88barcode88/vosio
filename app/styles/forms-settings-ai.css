@@ -466,6 +466,36 @@
   font-size: 13px;
   line-height: 1.55;
 }
+.settings-checkbox-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  max-width: 720px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 12px 14px;
+}
+.settings-checkbox-row input {
+  width: 17px;
+  height: 17px;
+  margin: 2px 0 0;
+  accent-color: var(--teal);
+}
+.settings-checkbox-row span {
+  display: grid;
+  gap: 4px;
+}
+.settings-checkbox-row strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.settings-checkbox-row small {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .settings-grid label {
   display: grid;
   gap: 7px;

@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import {
+  createAutomaticTimelineGenerationIdentity,
+  enqueueAutomaticTimelineAfterCompletion
+} from "@/lib/ai/automatic-timeline.server";
 import { buildLiveTranscriptSuccessPayload } from "@/lib/live-recording/live-transcript-response";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -145,6 +149,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (recordingUpdateError) {
     return NextResponse.json({ error: "Nepodařilo se aktualizovat stav live nahrávky." }, { status: 500 });
   }
+
+  await enqueueAutomaticTimelineAfterCompletion({
+    admin,
+    authenticatedClient: supabase,
+    generationIdentity: createAutomaticTimelineGenerationIdentity({
+      kind: "live",
+      transcriptId: transcriptWrite.data.id
+    }),
+    transcriptId: transcriptWrite.data.id,
+    user
+  }).catch(() => {
+    console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
+  });
 
   return NextResponse.json(buildLiveTranscriptSuccessPayload(transcriptWrite.data, indexResult));
 }

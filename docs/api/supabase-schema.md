@@ -13,8 +13,9 @@ Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seř
 - `supabase/migrations/20260813000000_add_recording_status_filters.sql`
 - `supabase/migrations/20260813090000_add_prompt_overrides_and_job_snapshots.sql`
 - `supabase/migrations/20260815073029_harden_prompt_override_privileges.sql`
+- `supabase/migrations/20260827094435_add_automatic_timeline_idempotency.sql`
 
-Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000`, přesný restore/purge metadata a Storage write fence až po `05550`, stavové facety až po `130000`, prompt overrides/job snapshots až po `130900` a privilege hardening až po `15073029`. Baseline proto není kompletní source of truth; úplný fresh-project kontrakt je pouze celý uvedený ordered chain.
+Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000`, přesný restore/purge metadata a Storage write fence až po `05550`, stavové facety až po `130000`, prompt overrides/job snapshots až po `130900`, privilege hardening až po `15073029` a automatic timeline idempotency/lease až po `20260827094435`. Baseline proto není kompletní source of truth; úplný fresh-project kontrakt je pouze celý uvedený ordered chain.
 
 Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby skutečné schema odpovídalo explicitně schválené a aplikované části aktuálního řetězce; produkční DB se kvůli baseline neresetuje.
 
@@ -126,7 +127,7 @@ Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivac
 
 ## Forward migrations release gate
 
-Fresh-project pořadí zůstává závazné: baseline, evidence `10000`, organization `11000`, markers `12000`, search `13000`, Trash restore/purge `05550`, status filters `130000`, prompt overrides/job snapshots `130900` a privilege hardening `15073029`. Každý target potřebuje vlastní schema/history preflight, apply pouze chybějících migrací a databázový postflight před app deployem. Legacy historii nemaž ani neresetuj jen proto, aby odpovídala fresh baseline.
+Fresh-project pořadí zůstává závazné: baseline, evidence `10000`, organization `11000`, markers `12000`, search `13000`, Trash restore/purge `05550`, status filters `130000`, prompt overrides/job snapshots `130900`, privilege hardening `15073029` a automatic timeline idempotency `20260827094435`. Každý target potřebuje vlastní schema/history preflight, apply pouze chybějících migrací a databázový postflight před app deployem. Legacy historii nemaž ani neresetuj jen proto, aby odpovídala fresh baseline.
 
 ## Public tabulky
 
@@ -198,6 +199,27 @@ Opravná migrace `20260815073029_harden_prompt_override_privileges.sql` nejdří
 Expand fáze migrace zachovává kompatibilitu s dosud nasazeným `0.1.5` insertem do `ai_processing_jobs`, který posílá `prompt_id`, ale nové snapshot sloupce ještě nezná. `SECURITY INVOKER` `BEFORE INSERT` trigger před kontrolou omezení dohledá autoritativní `prompt_templates` řádek a uloží jeho přesný snapshot; při null nebo chybějícím promptu zapíše `prompt_source='unknown'` a `prompt_snapshot_exact=false`. Pokud nový build dodá `prompt_source` a celý snapshot sám, trigger payload nemění a platnost dál vynucují checky a cizí klíče. Helper nemá přímý execute grant pro `PUBLIC`, `anon` ani `authenticated`.
 
 Legacy nesystémové řádky v `prompt_templates` zůstávají uložené, ale editor `AI prompty` je v této fázi nezobrazuje. Aktivní quick-action kontrakt obsahuje přesně `summary`, `action_items`, `timeline_chapters`, `meeting_minutes`, `crm_note` a `follow_up_email`; browser posílá jen processing type a model, nikdy prompt ID, schema ani user ID.
+
+## Automatic timeline idempotency a lease
+
+`20260827094435_add_automatic_timeline_idempotency.sql` přidává do `ai_processing_jobs` additive pole `execution_mode`, `automatic_idempotency_key`, `attempt_count`, `max_attempts`, `lease_token` a `lease_expires_at`. Existující a nové manuální řádky mají default `execution_mode='manual'`; automatický řádek musí být exact-snapshot `timeline_chapters` job s nenulovým idempotency digestem. Partial unique index povolí jen jeden automatický job na persistovanou generation identity a unique index `ai_outputs(processing_job_id)` jen jeden raw output na job.
+
+RPC `enqueue_automatic_timeline_job_v1`, `claim_automatic_timeline_job_v1` a `settle_automatic_timeline_job_v1` jsou `SECURITY INVOKER`, mají odebraný `EXECUTE` pro `PUBLIC`, `anon` i `authenticated` a explicitní grant pouze pro `service_role`. Claim přijme queued/failed job s remaining attempts nebo `running` job až po deterministické expiraci lease; každý claim zvýší attempt count. Settlement vyžaduje přesný aktuální lease token. Migrace neobsahuje cron ani plánovanou úlohu. Je ověřená pouze source/static testy; lokální Postgres catalog ani live apply nebyly v této změně provedeny.
+
+Před jakýmkoli apply `20260827094435` na existující target musí oprávněný operátor spustit přesně tento read-only preflight:
+
+```sql
+select
+  processing_job_id,
+  count(*) as output_count,
+  array_agg(id order by created_at, id) as ai_output_ids
+from public.ai_outputs
+group by processing_job_id
+having count(*) > 1
+order by processing_job_id;
+```
+
+Nulový výsledek je nutná, nikoli postačující podmínka apply. Jakýkoli řádek blokuje live apply a vyžaduje explicitní lineage review každého outputu. Migrace stejný invariant kontroluje fail-closed ještě před unique indexem a vyhodí výjimku; neobsahuje blind dedup ani delete. Source stav proto zůstává `live apply blocked pending preflight`, dokud není pro konkrétní target doložen nulový výsledek a schválen další rollout krok.
 
 ## Přístupový model
 

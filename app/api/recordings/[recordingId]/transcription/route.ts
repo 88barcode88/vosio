@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import {
+  createAutomaticTimelineGenerationIdentity,
+  enqueueAutomaticTimelineAfterCompletion
+} from "@/lib/ai/automatic-timeline.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
@@ -83,7 +87,7 @@ async function getAuthenticatedRecording(recordingId: string) {
     return { error: NextResponse.json({ error: "Nahrávka nebyla nalezena." }, { status: 404 }) };
   }
 
-  return { recording, user };
+  return { recording, supabase, user };
 }
 
 // getLatestJob loads the newest transcription job for a recording.
@@ -435,9 +439,10 @@ async function saveCombinedSegmentTranscript(input: {
 
   const rawText = rawTextParts.filter(Boolean).join("\n\n");
   const speakers = extractTranscriptSpeakerSummaries(combinedTokens);
+  const replacementTranscriptionJobId = input.jobs.at(-1)?.id ?? null;
   const { data: existingTranscript, error: existingTranscriptError } = await input.admin
     .from("transcripts")
-    .select("id")
+    .select("id,transcription_job_id")
     .eq("recording_id", input.recordingId)
     .eq("user_id", input.userId)
     .maybeSingle();
@@ -446,7 +451,10 @@ async function saveCombinedSegmentTranscript(input: {
     throw new Error(`Unable to look up saved transcript: ${existingTranscriptError.message}`);
   }
 
-  if (existingTranscript) {
+  if (
+    existingTranscript
+    && existingTranscript.transcription_job_id !== replacementTranscriptionJobId
+  ) {
     await deleteAiDataForTranscriptReplacement({
       admin: input.admin,
       transcriptId: existingTranscript.id,
@@ -461,7 +469,7 @@ async function saveCombinedSegmentTranscript(input: {
         raw_text: rawText,
         segments: combinedTokens,
         speakers,
-        transcription_job_id: input.jobs.at(-1)?.id ?? null
+        transcription_job_id: replacementTranscriptionJobId
       })
       .eq("id", existingTranscript.id)
       .eq("user_id", input.userId)
@@ -474,7 +482,7 @@ async function saveCombinedSegmentTranscript(input: {
         recording_id: input.recordingId,
         segments: combinedTokens,
         speakers,
-        transcription_job_id: input.jobs.at(-1)?.id ?? null,
+        transcription_job_id: replacementTranscriptionJobId,
         user_id: input.userId
       })
       .select("id,recording_id,user_id,raw_text,segments,speakers")
@@ -488,7 +496,8 @@ async function saveCombinedSegmentTranscript(input: {
 
   return {
     durationSeconds: getSonioxAudioDurationSeconds(cumulativeDurationMs),
-    indexResult
+    indexResult,
+    transcriptId: transcriptWrite.data.id
   };
 }
 
@@ -764,7 +773,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         return NextResponse.json({ job: { provider_job_id: null, status: jobStatus } });
       }
 
-      const { durationSeconds, indexResult } = await saveCombinedSegmentTranscript({
+      const { durationSeconds, indexResult, transcriptId } = await saveCombinedSegmentTranscript({
         admin,
         jobs: refreshedJobs,
         recordingId: recording.id,
@@ -783,6 +792,19 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       if (recordingCompleteError) {
         throw new Error(`Unable to complete recording: ${recordingCompleteError.message}`);
       }
+
+      await enqueueAutomaticTimelineAfterCompletion({
+        admin,
+        authenticatedClient: authenticated.supabase,
+        generationIdentity: createAutomaticTimelineGenerationIdentity({
+          jobIds: refreshedJobs.map((job) => job.id),
+          kind: "segmented"
+        }),
+        transcriptId,
+        user
+      }).catch(() => {
+        console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
+      });
 
       return NextResponse.json({
         job: { provider_job_id: null, status: jobStatus },
@@ -844,7 +866,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const speakers = extractTranscriptSpeakerSummaries(transcript.tokens);
     const { data: existingTranscript, error: existingTranscriptError } = await admin
       .from("transcripts")
-      .select("id")
+      .select("id,transcription_job_id")
       .eq("recording_id", recording.id)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -853,7 +875,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       throw new Error(`Unable to look up saved transcript: ${existingTranscriptError.message}`);
     }
 
-    if (existingTranscript) {
+    if (existingTranscript && existingTranscript.transcription_job_id !== latestJob.id) {
       await deleteAiDataForTranscriptReplacement({
         admin,
         transcriptId: existingTranscript.id,
@@ -905,6 +927,19 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     if (recordingCompleteError) {
       throw new Error(`Unable to complete recording: ${recordingCompleteError.message}`);
     }
+
+    await enqueueAutomaticTimelineAfterCompletion({
+      admin,
+      authenticatedClient: authenticated.supabase,
+      generationIdentity: createAutomaticTimelineGenerationIdentity({
+        kind: "async",
+        transcriptionJobId: latestJob.id
+      }),
+      transcriptId: transcriptWrite.data.id,
+      user
+    }).catch(() => {
+      console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
+    });
 
     return NextResponse.json({
       job: { ...getPublicTranscriptionJob(latestJob), status: jobStatus },

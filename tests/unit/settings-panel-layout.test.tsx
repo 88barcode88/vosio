@@ -152,7 +152,7 @@ describe("settings workspace layout", () => {
   it("shows only runtime-effective preferences as controls and preserves stored-only values as hidden inputs", () => {
     const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
 
-    for (const name of ["defaultOpenaiModel", "sonioxRegion", "sonioxRealtimeLanguage", "sonioxRealtimeModel", "supabaseStoragePlan"]) {
+    for (const name of ["autoTimelineAfterTranscription", "defaultOpenaiModel", "sonioxRegion", "sonioxRealtimeLanguage", "sonioxRealtimeModel", "supabaseStoragePlan"]) {
       expect(markup).toContain(`name="${name}"`);
     }
     for (const name of [
@@ -166,6 +166,7 @@ describe("settings workspace layout", () => {
       expect(markup).not.toContain(`<select name="${name}"`);
     }
     expect(markup).toContain("Některé dříve uložené preference zatím aplikace nepoužívá.");
+    expect(markup).toContain("Automaticky vytvořit časovou osu po přepisu");
     expect(markup).toContain("Usage se teď nepodařilo načíst.");
     expect(markup).toContain('autoComplete="off"');
   });

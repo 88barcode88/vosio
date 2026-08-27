@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import {
+  createAutomaticTimelineGenerationIdentity,
+  enqueueAutomaticTimelineAfterCompletion
+} from "@/lib/ai/automatic-timeline.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { extractImportedTranscriptFromFile } from "@/lib/transcripts/import-file";
@@ -124,6 +128,19 @@ export async function POST(request: NextRequest) {
   }
 
   const indexResult = await replaceTranscriptSearchChunks(admin, transcript);
+
+  await enqueueAutomaticTimelineAfterCompletion({
+    admin,
+    authenticatedClient: supabase,
+    generationIdentity: createAutomaticTimelineGenerationIdentity({
+      kind: "import",
+      transcriptId: transcript.id
+    }),
+    transcriptId: transcript.id,
+    user
+  }).catch(() => {
+    console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
+  });
 
   return NextResponse.json({
     recordingId: recording.id,

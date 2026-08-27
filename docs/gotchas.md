@@ -96,7 +96,7 @@ Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI 
 
 `transcripts.segments` může obsahovat token-level Soniox JSON s časem a speaker id pro každé slovo. U delších callů to může vytvořit stovky tisíc až milion tokenů, pokud se JSON pošle přímo do AI promptu. AI endpoint proto před renderem promptu používá kompaktní speaker utterances a do metadat přidává, jestli byly segmenty zkrácené. Plný token-level JSON zůstává v DB pro UI přepis, ale providerům se neposílá celý.
 
-Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a pokračuje přes evidence `20260804100000`, organization `20260804110000`, markers `20260804120000`, transcript search `20260804130000`, Trash restore/purge `20260810005550_restore_recordings_from_trash.sql`, status filters `20260813000000_add_recording_status_filters.sql`, prompt overrides/job snapshots `20260813090000_add_prompt_overrides_and_job_snapshots.sql` a privilege hardening `20260815073029_harden_prompt_override_privileges.sql`. Samotná baseline není celý aktuální bootstrap ani kompletní source of truth; tím je pouze celý timestampově seřazený řetězec. Veřejný repozitář neeviduje stav konkrétních runtime databází, takže každý target musí projít vlastním apply a postflightem. Baseline už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
+Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a pokračuje přes evidence `20260804100000`, organization `20260804110000`, markers `20260804120000`, transcript search `20260804130000`, Trash restore/purge `20260810005550_restore_recordings_from_trash.sql`, status filters `20260813000000_add_recording_status_filters.sql`, prompt overrides/job snapshots `20260813090000_add_prompt_overrides_and_job_snapshots.sql`, privilege hardening `20260815073029_harden_prompt_override_privileges.sql` a automatic timeline idempotency `20260827094435_add_automatic_timeline_idempotency.sql`. Samotná baseline není celý aktuální bootstrap ani kompletní source of truth; tím je pouze celý timestampově seřazený řetězec. Veřejný repozitář neeviduje stav konkrétních runtime databází, takže každý target musí projít vlastním apply a postflightem. Baseline už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
 
 ## Strukturované AI tabulky jsou odvozené projekce
 
@@ -303,9 +303,32 @@ Query parametr `error` z delete redirectu je nedůvěryhodný vstup. UI smí vyk
 Verze v `package.json`, private commit na `dev` a private tag `vX.Y.Z` potvrzují pouze source-only stav private repozitáře. Neprokazují Vercel deploy, aplikaci Supabase migrací ani shodu remote migration ledgeru. Public repozitář má samostatnou historii a sanitizovaný povrch; private commity ani tagy se do něj nikdy nepushují. Public release potřebuje oddělený public checkout a vlastní ověření. Tyto stavy vždy ověř a reportuj samostatně pro konkrétní target.
 ## Settings runtime kontrakt
 
-Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čte: výchozí AI model pro ruční AI zpracování, Soniox realtime model a jazyk pro nový live záznam a konzervativní per-user strop velikosti uploadu. Volba storage tarifu nikdy nemění Supabase projekt ani bucket.
+Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čte: výchozí AI model pro ruční AI zpracování i novou automatickou časovou osu, explicitní opt-in `autoTimelineAfterTranscription`, Soniox realtime model a jazyk pro nový live záznam a konzervativní per-user strop velikosti uploadu. Volba storage tarifu nikdy nemění Supabase projekt ani bucket.
 
 `outputLanguage`, `audioRetentionPolicy`, `autoProcessAfterTranscription`, `autoProcessingTypes` a `aiTemperature` zůstávají kvůli zpětné kompatibilitě uložené v Auth metadata, ale současný runtime je nepoužívá. UI je proto nesmí prezentovat jako funkční ovládání, dokud neexistuje skutečná server/worker cesta.
+
+## Automatická timeline není backfill ani cron
+
+Zapnutí `autoTimelineAfterTranscription` platí jen pro completion persistovaná po uložení preference. Staré dormant `autoProcessAfterTranscription` ani `autoProcessingTypes` nesmějí souhlas nahradit. Completion route vytvoří exact-snapshot job až po durable transcriptu a stavu `completed`; provider selhání nesmí completion vrátit zpět. Detail nahrávky pouze obnovuje existující queued/retryable failed/stale job a nikdy automatický job dodatečně nevytváří, takže otevření historického transcriptu není retroaktivní backfill.
+
+Idempotency zůstává v `ai_processing_jobs`, nikoli v `ai_outputs`. Smazání outputu proto nesmí úspěšný job znovu spustit. Claim je service-role-only, atomický, s finite attempts a expirovatelným lease; endpoint nejdřív ověří session a owner transcript přes request klienta a teprve potom vytvoří admin klienta. Browser neposílá model, prompt, provider ani processing type. Reconciler dělá jeden request při mountu detailu a refresh vyvolá jen tehdy, když v tomto requestu job skutečně doběhl; settled job vrací `already_done`, aby nevznikl render loop. Žádný cron ani provider klíč se tímto tokem nepřidává.
+
+Repeated terminal poll stejné Soniox generace musí porovnat persistovaný `transcripts.transcription_job_id` s aktuálním regular jobem nebo posledním jobem stabilně seřazeného segment batch. Shodná generace zachovává manuální i automatické joby/outputy a pouze znovu projde idempotentním enqueue/reconcile. Cleanup transcript-dependent AI je dovolen jen při skutečně odlišném generation markeru, tedy po dokončení nové retranskripce.
+
+`20260827094435_add_automatic_timeline_idempotency.sql` se na existující target nesmí aplikovat naslepo. Povinný read-only preflight je:
+
+```sql
+select
+  processing_job_id,
+  count(*) as output_count,
+  array_agg(id order by created_at, id) as ai_output_ids
+from public.ai_outputs
+group by processing_job_id
+having count(*) > 1
+order by processing_job_id;
+```
+
+Jakýkoli vrácený řádek znamená `live apply blocked pending preflight review` a vyžaduje explicitní lineage review autoritativního outputu; blind dedup, automatická deduplikace ani mazání nejsou povolené. Samotná migrace před unique indexem selže s explicitní výjimkou. Tento source commit nepotvrzuje nulový výsledek, catalog validaci ani apply na žádném targetu.
 
 `/settings` je jeden dokument: na desktopu scrolluje pouze `.content-area` s `content-area-document`; na mobilu do 900 px je `.content-area` `overflow: visible` a scrolluje dokument nad fixed spodní navigací. Do Settings nepřidávat druhý scroll container ani sticky section navigation.
 

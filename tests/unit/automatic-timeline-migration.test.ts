@@ -1,0 +1,71 @@
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const migrationsDirectory = join(process.cwd(), "supabase", "migrations");
+const migrationName = readdirSync(migrationsDirectory)
+  .find((name) => name.endsWith("_add_automatic_timeline_idempotency.sql"));
+
+describe("automatic timeline source migration", () => {
+  it("adds automatic job identity, bounded leases and a unique output guard", () => {
+    expect(migrationName).toBeTruthy();
+    const path = join(migrationsDirectory, migrationName ?? "missing.sql");
+    expect(existsSync(path)).toBe(true);
+    const sql = readFileSync(path, "utf8");
+
+    expect(sql).toMatch(/execution_mode\s+text\s+not null\s+default\s+'manual'/iu);
+    expect(sql).toMatch(/automatic_idempotency_key\s+text/iu);
+    expect(sql).toMatch(/attempt_count\s+integer\s+not null\s+default\s+0/iu);
+    expect(sql).toMatch(/max_attempts\s+integer\s+not null\s+default\s+3/iu);
+    expect(sql).toMatch(/lease_token\s+uuid/iu);
+    expect(sql).toMatch(/lease_expires_at\s+timestamptz/iu);
+    expect(sql).toMatch(/create\s+unique\s+index[\s\S]*automatic_idempotency_key[\s\S]*where\s+automatic_idempotency_key\s+is\s+not\s+null/iu);
+    expect(sql).toMatch(/on\s+conflict\s*\(automatic_idempotency_key\)[\s\S]*do\s+nothing/iu);
+    expect(sql).toMatch(/create\s+unique\s+index[\s\S]*ai_outputs\s*\(processing_job_id\)/iu);
+  });
+
+  it("fails closed before the output uniqueness guard when historical duplicates need lineage review", () => {
+    const sql = readFileSync(join(migrationsDirectory, migrationName ?? "missing.sql"), "utf8");
+    const preflightIndex = sql.indexOf("automatic timeline output uniqueness preflight failed");
+    const uniqueIndex = sql.indexOf("create unique index ai_outputs_processing_job_unique_idx");
+
+    expect(preflightIndex).toBeGreaterThan(-1);
+    expect(preflightIndex).toBeLessThan(uniqueIndex);
+    expect(sql).toMatch(/from\s+public\.ai_outputs[\s\S]*group\s+by\s+processing_job_id[\s\S]*having\s+count\(\*\)\s*>\s*1/iu);
+    expect(sql).toMatch(/raise\s+exception[\s\S]*lineage review/iu);
+    expect(sql).not.toMatch(/delete\s+from\s+public\.ai_outputs/iu);
+  });
+
+  it("documents the exact read-only duplicate preflight and blocks blind rollout in every operator surface", () => {
+    for (const path of [
+      "docs/api/supabase-schema.md",
+      "docs/gotchas.md",
+      "docs/requirements/release-checklist.md"
+    ]) {
+      const document = readFileSync(join(process.cwd(), path), "utf8");
+
+      expect(document).toMatch(/select[\s\S]*processing_job_id,[\s\S]*count\(\*\) as output_count,[\s\S]*array_agg\(id order by created_at, id\) as ai_output_ids[\s\S]*from public\.ai_outputs[\s\S]*group by processing_job_id[\s\S]*having count\(\*\) > 1[\s\S]*order by processing_job_id;/iu);
+      expect(document).toMatch(/live apply blocked pending preflight/iu);
+      expect(document).toMatch(/lineage review/iu);
+      expect(document).toMatch(/blind dedup/iu);
+    }
+  });
+
+  it("keeps enqueue, claim and settlement service-role-only and deterministically reclaims stale leases", () => {
+    const sql = readFileSync(join(migrationsDirectory, migrationName ?? "missing.sql"), "utf8");
+
+    for (const name of [
+      "enqueue_automatic_timeline_job_v1",
+      "claim_automatic_timeline_job_v1",
+      "settle_automatic_timeline_job_v1"
+    ]) {
+      expect(sql).toMatch(new RegExp(`create\\s+function\\s+public\\.${name}[\\s\\S]*security\\s+invoker`, "iu"));
+      expect(sql).toMatch(new RegExp(`revoke\\s+all\\s+on\\s+function\\s+public\\.${name}[\\s\\S]*from\\s+public,\\s*anon,\\s*authenticated`, "iu"));
+      expect(sql).toMatch(new RegExp(`grant\\s+execute\\s+on\\s+function\\s+public\\.${name}[\\s\\S]*to\\s+service_role`, "iu"));
+    }
+
+    expect(sql).toMatch(/status\s*=\s*'running'[\s\S]*lease_expires_at\s*<=\s*p_now/iu);
+    expect(sql).toMatch(/attempt_count\s*<\s*max_attempts/iu);
+    expect(sql).not.toMatch(/pg_cron|cron\.schedule|vercel/iu);
+  });
+});

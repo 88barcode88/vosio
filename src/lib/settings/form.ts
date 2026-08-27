@@ -44,6 +44,7 @@ export function parseSettingsForm(formData: FormData): UserSettings {
     audioRetentionPolicy: getStringField(formData, "audioRetentionPolicy", "keep_audio"),
     autoProcessAfterTranscription: formData.get("autoProcessAfterTranscription") === "on",
     autoProcessingTypes: getProcessingTypes(formData),
+    autoTimelineAfterTranscription: formData.get("autoTimelineAfterTranscription") === "on",
     defaultOpenaiModel: getStringField(
       formData,
       "defaultOpenaiModel",

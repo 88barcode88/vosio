@@ -36,6 +36,7 @@ type SettingsPanelProps = {
 
 type VisibleSettingsDraft = Pick<
   UserSettings,
+  | "autoTimelineAfterTranscription"
   | "defaultOpenaiModel"
   | "sonioxRealtimeLanguage"
   | "sonioxRealtimeModel"
@@ -46,6 +47,7 @@ type VisibleSettingsDraft = Pick<
 // createVisibleSettingsDraft copies only the settings represented by editable form controls.
 function createVisibleSettingsDraft(settings: UserSettings): VisibleSettingsDraft {
   return {
+    autoTimelineAfterTranscription: settings.autoTimelineAfterTranscription,
     defaultOpenaiModel: settings.defaultOpenaiModel,
     sonioxRealtimeLanguage: settings.sonioxRealtimeLanguage,
     sonioxRealtimeModel: settings.sonioxRealtimeModel,
@@ -286,7 +288,7 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         {settings.autoProcessingTypes.map((type) => <input key={type} name="autoProcessingTypes" type="hidden" value={type} />)}
 
         <section className="settings-section" aria-labelledby="settings-ai">
-          <div className="settings-section-heading"><h2 id="settings-ai">AI a výstupy</h2><p>Model se předvyplní při ručním AI zpracování v detailu nahrávky.</p></div>
+          <div className="settings-section-heading"><h2 id="settings-ai">AI a výstupy</h2><p>Model se používá pro ruční AI zpracování i pro novou automatickou časovou osu.</p></div>
           <div className="settings-grid settings-model-row">
             <label>
               <span>Výchozí AI model</span>
@@ -308,6 +310,22 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
               <p>{AI_MODEL_QUALITY_GUIDANCE}</p>
             </aside>
           </div>
+          <label className="settings-checkbox-row">
+            <input
+              checked={visibleDraft.autoTimelineAfterTranscription}
+              disabled={disableSave}
+              name="autoTimelineAfterTranscription"
+              onChange={(event) => {
+                const value = event.currentTarget.checked;
+                setVisibleDraft((draft) => ({ ...draft, autoTimelineAfterTranscription: value }));
+              }}
+              type="checkbox"
+            />
+            <span>
+              <strong>Automaticky vytvořit časovou osu po přepisu</strong>
+              <small>Platí pouze pro nové přepisy dokončené po uložení této volby. Každá generace dostane nejvýše jeden automatický výstup.</small>
+            </span>
+          </label>
         </section>
 
         <section className="settings-section settings-section-transcription" aria-labelledby="settings-transcription">
@@ -369,7 +387,7 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         </section>
 
         <section className="settings-section" aria-labelledby="settings-recording">
-          <div className="settings-section-heading"><h2 id="settings-recording">Nahrávání</h2><p>Nastavení retence a automatických AI výstupů je připravené pro budoucí běh aplikace.</p></div>
+          <div className="settings-section-heading"><h2 id="settings-recording">Nahrávání</h2><p>Některé starší preference retence a automatického zpracování zůstávají pouze kompatibilní metadata.</p></div>
           <p className="settings-stored-note">Některé dříve uložené preference zatím aplikace nepoužívá. Zachováváme je beze změny, ale nevydáváme je za aktivní ovládání.</p>
         </section>
 

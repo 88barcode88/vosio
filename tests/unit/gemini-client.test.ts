@@ -20,4 +20,21 @@ describe("Gemini client generation config", () => {
     expect(getGeminiOutputTokenCount({ candidatesTokenCount: 120, thoughtsTokenCount: 80 })).toBe(200);
     expect(getGeminiOutputTokenCount(undefined)).toBeNull();
   });
+
+  it("honors the persisted thinking snapshot instead of current model metadata", () => {
+    expect(createGeminiGenerationConfig({
+      model: "gemini-3.6-flash",
+      outputSchema: null,
+      prompt: "Shrň hovor.",
+      temperature: 0.2,
+      thinkingLevel: "high"
+    })).toHaveProperty("thinkingConfig.thinkingLevel", "high");
+    expect(createGeminiGenerationConfig({
+      model: "gemini-3.6-flash",
+      outputSchema: null,
+      prompt: "Shrň hovor.",
+      temperature: 0.2,
+      thinkingLevel: null
+    })).not.toHaveProperty("thinkingConfig");
+  });
 });
