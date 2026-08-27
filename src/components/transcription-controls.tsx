@@ -217,9 +217,21 @@ export function TranscriptionControls({
     pollTranscription();
     const intervalId = window.setInterval(pollTranscription, AUTO_TRANSCRIPTION_POLL_MS);
 
+    // pollWhenVisible catches up immediately after background tab throttling or window focus.
+    function pollWhenVisible() {
+      if (document.visibilityState === "visible") {
+        pollTranscription();
+      }
+    }
+
+    document.addEventListener("visibilitychange", pollWhenVisible);
+    window.addEventListener("focus", pollWhenVisible);
+
     return () => {
       isActive = false;
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", pollWhenVisible);
+      window.removeEventListener("focus", pollWhenVisible);
     };
   }, [callTranscriptionEndpoint, recordingId, shouldPollTranscription]);
 

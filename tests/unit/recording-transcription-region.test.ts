@@ -72,7 +72,7 @@ function mockAuthenticatedRecording(region: unknown, storagePath = `${userId}/${
     error: null
   }));
   const recordingQuery = createQuery({
-    single: {
+    result: {
       data: {
         id: recordingId,
         mime_type: "audio/mp4",
@@ -101,6 +101,54 @@ beforeEach(() => {
 });
 
 describe("recording transcription Soniox region", () => {
+  it("distinguishes a transient recording lookup failure from a missing recording", async () => {
+    const recordingQuery = createQuery({
+      result: { data: null, error: { message: "temporary database failure" } }
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: {
+        getUser: vi.fn(async () => ({
+          data: { user: { id: userId, user_metadata: {} } },
+          error: null
+        }))
+      },
+      from: vi.fn(() => recordingQuery)
+    });
+
+    const response = await GET(
+      new NextRequest(`http://localhost/api/recordings/${recordingId}/transcription`),
+      { params: Promise.resolve({ recordingId }) }
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "Nahrávku se teď nepodařilo načíst. Zkuste kontrolu znovu."
+    });
+    expect(recordingQuery.maybeSingle).toHaveBeenCalledOnce();
+    expect(recordingQuery.single).not.toHaveBeenCalled();
+  });
+
+  it("returns not found only when the owned recording row is genuinely absent", async () => {
+    const recordingQuery = createQuery({ result: { data: null, error: null } });
+    mocks.createClient.mockResolvedValue({
+      auth: {
+        getUser: vi.fn(async () => ({
+          data: { user: { id: userId, user_metadata: {} } },
+          error: null
+        }))
+      },
+      from: vi.fn(() => recordingQuery)
+    });
+
+    const response = await GET(
+      new NextRequest(`http://localhost/api/recordings/${recordingId}/transcription`),
+      { params: Promise.resolve({ recordingId }) }
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: "Nahrávka nebyla nalezena." });
+  });
+
   it.each([
     ["eu", "eu"],
     ["jp", "global"]

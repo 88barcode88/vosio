@@ -67,9 +67,19 @@ async function getAuthenticatedRecording(recordingId: string) {
     .select("id,user_id,title,storage_path,mime_type,status")
     .eq("id", recordingId)
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
-  if (recordingError || !recording) {
+  if (recordingError) {
+    return {
+      error: routeErrorResponse(
+        new Error(recordingError.message),
+        "Nahrávku se teď nepodařilo načíst. Zkuste kontrolu znovu.",
+        503
+      )
+    };
+  }
+
+  if (!recording) {
     return { error: NextResponse.json({ error: "Nahrávka nebyla nalezena." }, { status: 404 }) };
   }
 

@@ -327,7 +327,13 @@ export function RecordingOrganizationEditor({
               ) : null}
             </div>
             <div className="recording-organization-actions">
-              <button disabled={isPending} type="submit">{isPending ? "Ukládám…" : "Uložit"}</button>
+              <button
+                className="recording-organization-primary-action"
+                disabled={isPending}
+                type="submit"
+              >
+                {isPending ? "Ukládám…" : "Uložit"}
+              </button>
               <button
                 disabled={isPending}
                 onClick={() => {

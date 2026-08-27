@@ -263,6 +263,9 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+.recording-organization-summary > button {
+  margin-left: auto;
+}
 .organization-chip {
   display: inline-flex;
   align-items: center;
@@ -359,6 +362,16 @@
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 72%, var(--panel-soft));
+  padding: 5px;
+}
+.recording-organization-actions .recording-organization-primary-action {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 13%, var(--panel));
 }
 .recording-meta {
   gap: 8px;

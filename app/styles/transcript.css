@@ -10,7 +10,7 @@
 }
 .recording-detail-sticky {
   position: sticky;
-  top: -1px;
+  top: -12px;
   z-index: 12;
   display: grid;
   border: 1px solid var(--border);

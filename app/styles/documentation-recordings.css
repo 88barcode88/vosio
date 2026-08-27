@@ -1721,8 +1721,12 @@
   border-radius: 6px;
 }
 .ai-tab-actions .quick-grid svg {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
+}
+.recording-workbench svg.lucide {
+  width: 12px;
+  height: 12px;
 }
 @media (max-width: 900px) {
   .recording-filter-basic-row {
