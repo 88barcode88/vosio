@@ -333,7 +333,7 @@ Quick-action request z browseru obsahuje pouze model a jeden ze šesti processin
 
 `/ai` je sekundární archiv celých uložených generací, nikoli globální primární navigace ani místo pro spouštění nového zpracování. Archivní query používá explicitní inner joins a načítá pouze payload `ai_outputs`, processing type, `transcripts.recording_id` a identitu/název/stav nahrávky; nenačítá `raw_text`, segmenty, speakers, storage cestu ani provider konfiguraci. Forced RLS zůstává hranicí čtení. Canonical URL filtry `type` a `recording` podporují Back/Forward. Aktivní nahrávka vede na `?tab=ai`, smazaná na `/trash` se stavem `V koši`. Mazání se týká celé generace; optimistic stav patří přesně archivní kartě a při neočekávaném selhání se stejná karta obnoví se sanitizovaným alertem. Existující query filtry se zachovají i v chybovém redirectu.
 
-Detail nahrávky přijímá přesně jednu hodnotu `tab=transcript|ai|timeline|files`. Platná URL záložka má přednost před cookie; `tab=transcript` dál zachovává one-shot `at`/`highlight` deep-link kontrakt. Neplatná nebo duplicitní záložka se canonicalizuje na výchozí stav bez `tab`, `at` a `highlight`, aby SSR a hydratace vycházely ze stejného rozhodnutí.
+Detail nahrávky přijímá přesně jednu hodnotu `tab=transcript|ai|timeline|files|chat`. Platná URL záložka má přednost před cookie; `tab=transcript` dál zachovává one-shot `at`/`highlight` deep-link kontrakt. Neplatná nebo duplicitní záložka se canonicalizuje na výchozí stav bez `tab`, `at` a `highlight`, aby SSR a hydratace vycházely ze stejného rozhodnutí.
 
 ## Bezpečnost
 

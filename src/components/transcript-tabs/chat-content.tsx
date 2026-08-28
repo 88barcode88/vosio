@@ -18,6 +18,13 @@ type ChatContentProps = {
   onOpenEvidence: (target: TranscriptTarget) => void;
 };
 
+type PendingChatSubmission = {
+  clientTurnId: string;
+  model: string;
+  question: string;
+  transcriptId: string;
+};
+
 const emptyHistory: ChatHistory = { thread: null, turns: [] };
 const CHAT_RUNNING_POLL_INTERVAL_MS = 5_000;
 
@@ -67,7 +74,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
   const [message, setMessage] = useState<string | null>(null);
   const [transportUncertain, setTransportUncertain] = useState(false);
   const activeTranscriptRef = useRef<string | null>(activeTranscriptId);
-  const pendingTurnRef = useRef<{ clientTurnId: string; question: string; transcriptId: string } | null>(null);
+  const pendingTurnRef = useRef<PendingChatSubmission | null>(null);
   const submitInFlightRef = useRef(false);
   const pollControllerRef = useRef<AbortController | null>(null);
   const pollInFlightRef = useRef(false);
@@ -142,7 +149,8 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
   }, [activeTranscriptId, applyHistory, defaultModel, loadHistory]);
 
   const hasServerRunningTurn = history.turns.some((turn) => turn.status === "queued" || turn.status === "running");
-  const isComposerDisabled = !activeTranscriptId || isLoading || isSubmitting || hasServerRunningTurn || transportUncertain;
+  const hasPendingSubmission = pendingTurnRef.current?.transcriptId === activeTranscriptId;
+  const isComposerDisabled = !activeTranscriptId || isLoading || isSubmitting || hasServerRunningTurn || transportUncertain || hasPendingSubmission;
 
   useEffect(() => {
     if (!activeTranscriptId || !hasServerRunningTurn) {
@@ -240,7 +248,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       setHistory(nextHistory);
       const recognized = nextHistory.turns.some((turn) => turn.clientTurnId === pending.clientTurnId);
       setTransportUncertain(false);
-      setMessage(recognized ? "Odeslání bylo uloženo v historii." : "Odeslání nebylo potvrzeno. Můžete jej odeslat znovu.");
+      setMessage(recognized ? "Odeslání bylo uloženo v historii." : "Odeslání nebylo potvrzeno. Můžete zopakovat původní odeslání.");
       if (recognized) {
         pendingTurnRef.current = null;
         setDraft("");
@@ -254,29 +262,26 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     }
   }
 
-  // submitQuestion posts the narrow browser contract once and retains its UUID through reconciliation.
-  async function submitQuestion(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const question = draft.trim();
-    if (!activeTranscriptId || !question || isComposerDisabled || submitInFlightRef.current) return;
+  // submitPendingTurn posts one immutable idempotency snapshot, including its original question and model.
+  async function submitPendingTurn(pending: PendingChatSubmission) {
+    if (activeTranscriptRef.current !== pending.transcriptId || submitInFlightRef.current) return;
 
-    const pending = pendingTurnRef.current;
-    const clientTurnId = pending?.transcriptId === activeTranscriptId
-      ? pending.clientTurnId
-      : crypto.randomUUID();
-    pendingTurnRef.current = { clientTurnId, question, transcriptId: activeTranscriptId };
     submitInFlightRef.current = true;
     setIsSubmitting(true);
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/transcripts/${activeTranscriptId}/chat`, {
-        body: JSON.stringify({ clientTurnId, model, question }),
+      const response = await fetch(`/api/transcripts/${pending.transcriptId}/chat`, {
+        body: JSON.stringify({
+          clientTurnId: pending.clientTurnId,
+          model: pending.model,
+          question: pending.question
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST"
       });
       const payload = await response.json().catch(() => null) as unknown;
-      if (activeTranscriptRef.current !== activeTranscriptId) return;
+      if (activeTranscriptRef.current !== pending.transcriptId) return;
 
       if (!response.ok) {
         setMessage(getChatError(payload));
@@ -285,7 +290,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       }
 
       const result = payload as { thread: SafeRecordingChatThread; turn: SafeRecordingChatTurn };
-      if (!result.turn || result.turn.clientTurnId !== clientTurnId) {
+      if (!result.turn || result.turn.clientTurnId !== pending.clientTurnId) {
         throw new Error("Odpověď chatu neobsahuje potvrzení odeslání.");
       }
       setHistory((current) => ({
@@ -299,15 +304,38 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
         ? result.turn.safeError ?? "Chat selhal."
         : "Odpověď je uložená.");
     } catch {
-      if (activeTranscriptRef.current !== activeTranscriptId) return;
+      if (activeTranscriptRef.current !== pending.transcriptId) return;
       setTransportUncertain(true);
       setMessage("Spojení bylo přerušeno. Nejdřív ověřte stav posledního odeslání.");
     } finally {
-      if (activeTranscriptRef.current === activeTranscriptId) {
+      if (activeTranscriptRef.current === pending.transcriptId) {
         setIsSubmitting(false);
       }
       submitInFlightRef.current = false;
     }
+  }
+
+  // submitQuestion snapshots a new draft only when no earlier idempotent submission remains unresolved.
+  async function submitQuestion(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const question = draft.trim();
+    if (!activeTranscriptId || !question || isComposerDisabled) return;
+
+    const pending = {
+      clientTurnId: crypto.randomUUID(),
+      model,
+      question,
+      transcriptId: activeTranscriptId
+    };
+    pendingTurnRef.current = pending;
+    await submitPendingTurn(pending);
+  }
+
+  // retryPendingSubmission repeats only the immutable unresolved request after reconciliation has checked it.
+  async function retryPendingSubmission() {
+    const pending = pendingTurnRef.current;
+    if (!pending || pending.transcriptId !== activeTranscriptId || transportUncertain || isSubmitting) return;
+    await submitPendingTurn(pending);
   }
 
   if (!activeTranscriptId) {
@@ -331,6 +359,11 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       {transportUncertain ? (
         <button className="recording-chat-reconcile" onClick={() => void reconcilePendingTurn()} type="button">
           <RotateCw aria-hidden="true" size={15} /> Ověřit poslední odeslání
+        </button>
+      ) : null}
+      {hasPendingSubmission && !transportUncertain ? (
+        <button className="recording-chat-reconcile recording-chat-retry" onClick={() => void retryPendingSubmission()} type="button">
+          <RotateCw aria-hidden="true" size={15} /> Zopakovat původní odeslání
         </button>
       ) : null}
       <form className="recording-chat-composer" onSubmit={(event) => void submitQuestion(event)}>

@@ -251,7 +251,18 @@ describe("recording chat content", () => {
     expect(container?.textContent).toContain("Spojení bylo přerušeno");
 
     await act(async () => container?.querySelector<HTMLButtonElement>(".recording-chat-reconcile")?.click());
-    await act(async () => form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    const modelPicker = container?.querySelector<HTMLSelectElement>("select");
+    expect(textarea?.disabled).toBe(true);
+    expect(modelPicker?.disabled).toBe(true);
+    if (textarea) textarea.disabled = false;
+    if (modelPicker) modelPicker.disabled = false;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "Jiný dotaz");
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(modelPicker, "gpt-5.6-sol");
+    await act(async () => {
+      textarea?.dispatchEvent(new Event("input", { bubbles: true }));
+      modelPicker?.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => container?.querySelector<HTMLButtonElement>(".recording-chat-retry")?.click());
 
     const postBodies = vi.mocked(fetch).mock.calls
       .filter(([, request]) => (request as RequestInit | undefined)?.method === "POST")
