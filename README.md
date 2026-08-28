@@ -57,7 +57,7 @@ The copied repository is independent. Upstream Vosio updates do not automaticall
 
 ## One Installation Flow
 
-Each person or company runs one deployment of the app and connects one Supabase project, Soniox account, and AI credentials. The owner controls the data, provider accounts, access, and resulting provider costs. A recording chat is part of that same installation: it does not require a second Supabase project, a new provider, or a chat-specific secret. Secrets belong only in `.env.local` or the deployment platform, never in git.
+Each person or company runs its own Vercel deployment and connects its own Supabase, Soniox, and AI credentials. The owner controls the data, provider accounts, access, and resulting provider costs. A recording chat is part of that same installation: it does not add a new Vercel integration or access, a second Supabase project, a new provider, or a chat-specific secret. Secrets belong only in `.env.local` or the deployment platform, never in git.
 
 Choose the Soniox region per user in **Settings**, not through a deployment variable. Global is the default. EU requires an EU-enabled Soniox project and matching regional key; if EU access or authentication fails, contact `support@soniox.com`.
 
