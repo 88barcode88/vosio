@@ -90,7 +90,7 @@ Nový systémový prompt nestačí vložit jen do databáze, pokud používá no
 
 ## Gemini modely potřebují samostatný server key
 
-Gemini modely jsou v UI běžné AI modely vedle OpenAI, ale backend je směruje na Google Gemini API podle `ai_processing_jobs.provider`. Pokud uživatel vybere Gemini model a ve Vercelu není `GEMINI_API_KEY`, AI processing selže na server-side konfiguraci. Gemini Free tier podle Google pricing tabulky používá obsah ke zlepšování produktů; pro produkční call obsah používej placený Gemini API režim nebo OpenAI.
+Gemini modely jsou v UI běžné AI modely vedle OpenAI, ale backend je směruje na Google Gemini API podle `ai_processing_jobs.provider`. Pokud uživatel vybere Gemini model a běžící server nemá `GEMINI_API_KEY`, AI processing selže na server-side konfiguraci. Gemini Free tier podle Google pricing tabulky používá obsah ke zlepšování produktů; pro produkční call obsah používej placený Gemini API režim nebo OpenAI.
 
 ## Reasoning modely, ceny a úplnost výstupu
 
@@ -284,7 +284,7 @@ Vosio nastavuje v `next.config.ts` základní bezpečnostní hlavičky (`X-Conte
 
 `/api/soniox/realtime-key` a `/api/transcripts/[id]/process` mají per-user fixed-window rate limit přes `src/lib/rate-limit.ts`. Limiter drží okna v paměti procesu — na serverless platformě má každá instance vlastní počítadlo, takže limit je best-effort brzda nákladů, ne přesná garance. Pro přesný limit napříč instancemi by bylo potřeba sdílené úložiště (např. Upstash Redis). Nezvyšuj limity bez rozmyslu: realtime-key limit musí snést reconnecty SonioxClientu během jedné live session.
 
-Recording chat používá stejný per-instance princip s limitem 10 nových claimů za minutu na uživatele; opakování stejného `client_turn_id` se vrací před limiterem a znovu nevolá providera. `running` tah je čerstvý přesně 10 minut. Teprve autorizovaný GET/POST po této hranici ho compare-and-set podmínkou `status = running` a starším `started_at` označí jako `failed`. Aktivní provider kontext je deterministicky omezený počtem znaků, ne přesným provider tokenizerem: kompaktní segmenty 100 000, raw fallback 60 000 a nejnovější dokončená historie 24 000 znaků. Oříznutí je součástí untrusted user-role metadata pro model; starší tahy přitom zůstávají uložené a viditelné v historii.
+Recording chat používá stejný per-instance princip s limitem 10 nových claimů za minutu na uživatele; opakování stejného `client_turn_id` se vrací před limiterem a znovu nevolá providera. `running` tah je čerstvý přesně 10 minut. Teprve autorizovaný GET/POST po této hranici ho compare-and-set podmínkou `status = running` a starším `started_at` označí jako `failed`. Aktivní provider kontext je deterministicky omezený počtem znaků, ne přesným provider tokenizerem: kompaktní segmenty 100 000, raw fallback 60 000 a nejnovější dokončená historie 24 000 znaků. Oříznutí je součástí untrusted user-role metadata pro model; starší tahy přitom zůstávají uložené a viditelné v historii. Chat je dostupný jen nad uloženým vlastněným přepisem; samotný tab ani GET nevolají providera. Browser nesmí vytvořit chat řádek přímo přes Supabase, vložit prompt/provider/context ani prohlásit provider timestamp za důkaz. Pouze server přes `service_role` zapisuje tah a čas důkazu odvodí až z jednoznačného exact contiguous matchu proti uloženým tokenům.
 
 ## Balíček server-only vyhazuje ve Vitest
 
