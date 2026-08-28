@@ -20,6 +20,11 @@ import { formatFileSize, formatRecordingDate } from "@/lib/recordings/types";
 const BULK_SELECTION_LIMIT = 100;
 const PURGE_CONCURRENCY = 2;
 const PURGE_DELAY_MS = 86_400_000;
+const TRASH_RETENTION_LABELS: Record<24 | 168 | 720, string> = {
+  24: "24 hodin",
+  168: "7 dní",
+  720: "30 dní"
+};
 
 export type TrashRestoreBulkAction = (formData: FormData) => Promise<TrashBulkResult>;
 export type TrashPurgeItemAction = (formData: FormData) => Promise<TrashItemResult>;
@@ -41,6 +46,17 @@ function appendActionContext(formData: FormData, actionContext?: Record<string, 
   for (const [key, value] of Object.entries(actionContext ?? {})) {
     if (key !== "recordingId") formData.append(key, value);
   }
+}
+
+// formatAutomaticPurgeDeadline renders only safe snapshot metadata and a pre-migration fallback.
+function formatAutomaticPurgeDeadline(recording: RecordingClientView) {
+  const purgeAfterMs = recording.purge_after ? Date.parse(recording.purge_after) : Number.NaN;
+  if (!Number.isFinite(purgeAfterMs)) return "Automatické smazání zatím nemá termín";
+
+  const retention = recording.trash_retention_hours
+    ? TRASH_RETENTION_LABELS[recording.trash_retention_hours]
+    : null;
+  return `Automatické smazání ${formatRecordingDate(recording.purge_after!)}${retention ? ` · ${retention}` : ""}`;
 }
 
 // TrashRecordingsManager owns bounded selection, partial settlements and the two-request purge queue.
@@ -188,28 +204,33 @@ export function TrashRecordingsManager({
   return (
     <>
       {recordings.length > 0 ? (
-        <div className="trash-bulk-toolbar">
-          <label className="trash-selection-control">
-            <input
-              ref={selectAllRef}
-              aria-label="Vybrat všechny nahrávky v Koši"
-              checked={allSelected}
-              onChange={toggleAll}
-              type="checkbox"
-            />
-          </label>
-          <button disabled={selectedIds.size === 0 || restorePending || Boolean(purgeProgress)} onClick={runBulkRestore} type="button">
-            {restorePending ? "Obnovuji…" : `Obnovit vybrané (${selectedIds.size})`}
-          </button>
-          <button
-            disabled={selectedIds.size === 0 || hasRecentSelection || restorePending || Boolean(purgeProgress)}
-            onClick={() => setPurgeModalOpen(true)}
-            type="button"
-          >
-            Smazat vybrané trvale ({selectedIds.size})
-          </button>
-          {hasRecentSelection ? <span>Trvalé smazání je dostupné 24 hodin po přesunutí do Koše</span> : null}
-        </div>
+        <>
+          <p className="trash-retention-note">
+            Trvalé smazání je dostupné 24 hodin po přesunutí do Koše. Automatický termín je uveden u každé položky.
+          </p>
+          <div className="trash-bulk-toolbar">
+            <label className="trash-selection-control">
+              <input
+                ref={selectAllRef}
+                aria-label="Vybrat všechny nahrávky v Koši"
+                checked={allSelected}
+                onChange={toggleAll}
+                type="checkbox"
+              />
+            </label>
+            <button disabled={selectedIds.size === 0 || restorePending || Boolean(purgeProgress)} onClick={runBulkRestore} type="button">
+              {restorePending ? "Obnovuji…" : `Obnovit vybrané (${selectedIds.size})`}
+            </button>
+            <button
+              disabled={selectedIds.size === 0 || hasRecentSelection || restorePending || Boolean(purgeProgress)}
+              onClick={() => setPurgeModalOpen(true)}
+              type="button"
+            >
+              Smazat vybrané trvale ({selectedIds.size})
+            </button>
+            {hasRecentSelection ? <span>Vybraná položka ještě nesplnila 24hodinové pravidlo.</span> : null}
+          </div>
+        </>
       ) : null}
       {actionError ? <p className="trash-route-alert" role="alert">{actionError}</p> : null}
       {actionNotice ? <p className="trash-route-notice" role="status">{actionNotice}</p> : null}
@@ -234,6 +255,7 @@ export function TrashRecordingsManager({
             <div className="trash-recording-copy">
               <strong>{recording.title}</strong>
               <p>{formatFileSize(recording.file_size_bytes)} · {getRecordingAudioAvailabilityLabel(recording.audioAvailability)} · {recording.mime_type ?? "neznámý typ"}</p>
+              <p>{formatAutomaticPurgeDeadline(recording)}</p>
             </div>
             <time dateTime={recording.deleted_at ?? recording.updated_at}>
               {formatRecordingDate(recording.deleted_at ?? recording.updated_at)}

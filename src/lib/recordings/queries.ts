@@ -23,6 +23,8 @@ const recordingColumns = `
   error_message,
   created_at,
   deleted_at,
+  trash_retention_hours,
+  purge_after,
   updated_at
 `;
 

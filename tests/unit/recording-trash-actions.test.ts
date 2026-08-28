@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { purgeRecordingAction, restoreRecordingAction } from "@/lib/recordings/actions";
+import {
+  deleteRecordingAction,
+  purgeRecordingAction,
+  restoreRecordingAction
+} from "@/lib/recordings/actions";
 
 const mocks = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
@@ -33,6 +37,7 @@ function createQuery(result: unknown) {
     is: vi.fn(),
     lte: vi.fn(),
     maybeSingle: vi.fn(),
+    neq: vi.fn(),
     or: vi.fn(),
     select: vi.fn(),
     update: vi.fn()
@@ -46,11 +51,15 @@ function createQuery(result: unknown) {
   query.select.mockReturnValue(query);
   query.update.mockReturnValue(query);
   query.maybeSingle.mockResolvedValue(result);
+  query.neq.mockReturnValue(query);
   return query;
 }
 
 // arrangeUserClient installs an authenticated RLS client for one action invocation.
-function arrangeUserClient(user: { id: string } | null = { id: userId }, userError: unknown = null) {
+function arrangeUserClient(
+  user: { id: string; user_metadata?: Record<string, unknown> } | null = { id: userId },
+  userError: unknown = null
+) {
   const getUser = vi.fn().mockResolvedValue({ data: { user }, error: userError });
   const from = vi.fn();
   mocks.createClient.mockResolvedValue({ auth: { getUser }, from });
@@ -61,6 +70,29 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.redirect.mockImplementation((href: string) => {
     throw new Error(`REDIRECT:${href}`);
+  });
+});
+
+describe("deleteRecordingAction", () => {
+  it.each([
+    ["saved", { vosio_settings: { trashRetentionHours: 168 } }, 168],
+    ["legacy", {}, 720],
+    ["invalid", { vosio_settings: { trashRetentionHours: 48 } }, 720]
+  ])("passes the %s sanitized retention snapshot into the database transition", async (_label, metadata, expectedHours) => {
+    const { from } = arrangeUserClient({ id: userId, user_metadata: metadata });
+    const update = createQuery({ data: { id: recordingId }, error: null });
+    from.mockReturnValue(update);
+    const formData = new FormData();
+    formData.set("recordingId", recordingId);
+
+    await deleteRecordingAction(formData);
+
+    expect(update.update).toHaveBeenCalledWith({
+      status: "deleted",
+      trash_retention_hours: expectedHours
+    });
+    expect(update.eq).toHaveBeenCalledWith("user_id", userId);
+    expect(update.neq).toHaveBeenCalledWith("status", "deleted");
   });
 });
 
@@ -449,10 +481,13 @@ describe("purgeRecordingAction", () => {
     const arranged = arrangePurge(`${userId}/${recordingId}/audio.webm`);
 
     await expect(purgeRecordingAction(createTrashForm())).rejects.toThrow("REDIRECT:/trash");
-    expect(arranged.claim.or).toHaveBeenCalledWith(expect.stringContaining("purge_started_at.lt."));
+    const staleFilter = arranged.claim.or.mock.calls[0]![0] as string;
+    const staleBefore = staleFilter.match(/purge_started_at\.lt\.([^,]+)/u)?.[1];
+    expect(staleBefore).toBeTruthy();
     const claim = arranged.claim.update.mock.calls[0]![0];
     expect(claim.purge_claim_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(claim.purge_started_at).toMatch(/^\d{4}-\d{2}-\d{2}t/i);
+    expect(Date.parse(claim.purge_started_at) - Date.parse(staleBefore!)).toBe(15 * 60 * 1000);
     expect(arranged.terminal.eq).toHaveBeenCalledWith("purge_claim_id", claim.purge_claim_id);
   });
 

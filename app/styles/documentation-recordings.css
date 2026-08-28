@@ -28,42 +28,6 @@
   color: var(--muted);
   font-size: 13px;
 }
-.documentation-start {
-  display: grid;
-  gap: 8px;
-  max-width: 760px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
-  padding: 12px;
-}
-.documentation-start strong {
-  font-size: 14px;
-}
-.documentation-start p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-.documentation-start div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.documentation-start a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 32px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  background: var(--panel-soft);
-  font-size: 12px;
-  font-weight: 800;
-  padding: 0 11px;
-}
 .documentation-layout {
   display: grid;
   grid-template-columns: 210px minmax(0, 760px);

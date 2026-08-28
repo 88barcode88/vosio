@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import {
+  createAutomaticTimelineGenerationIdentity,
+  persistTranscriptCompletionTransition,
+  reconcileAutomaticTimeline
+} from "@/lib/ai/automatic-timeline.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { extractImportedTranscriptFromFile } from "@/lib/transcripts/import-file";
@@ -94,7 +99,7 @@ export async function POST(request: NextRequest) {
     .insert({
       file_size_bytes: 0,
       source_type: "realtime",
-      status: "completed",
+      status: "transcribing",
       title: normalizeImportedTranscriptTitle(parsed.title),
       user_id: user.id
     })
@@ -124,6 +129,36 @@ export async function POST(request: NextRequest) {
   }
 
   const indexResult = await replaceTranscriptSearchChunks(admin, transcript);
+
+  const completion = await persistTranscriptCompletionTransition({
+    admin,
+    durationSeconds: null,
+    generationIdentity: createAutomaticTimelineGenerationIdentity({
+      kind: "import",
+      transcriptId: transcript.id
+    }),
+    generationKind: "import",
+    transcriptId: transcript.id,
+    transcriptionJobId: null,
+    user
+  }).catch(() => null);
+
+  if (!completion) {
+    return NextResponse.json({
+      error: "Nepodařilo se atomicky dokončit import přepisu.",
+      recordingId: recording.id
+    }, { status: 503 });
+  }
+
+  if (completion.automatic_timeline_scheduled) {
+    await reconcileAutomaticTimeline({
+      admin,
+      transcriptId: transcript.id,
+      userId: user.id
+    }).catch(() => {
+      console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
+    });
+  }
 
   return NextResponse.json({
     recordingId: recording.id,

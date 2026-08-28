@@ -26,6 +26,7 @@ type RunGeminiProcessingInput = {
   outputSchema: unknown;
   prompt: string;
   temperature: number;
+  thinkingLevel?: "medium" | "high" | null;
 };
 
 // extractGeminiText joins text parts returned by the Gemini generateContent API.
@@ -43,11 +44,14 @@ function extractGeminiText(response: GeminiResponse) {
 // createGeminiGenerationConfig keeps Gemini output aligned with the model and prompt contracts.
 export function createGeminiGenerationConfig(input: RunGeminiProcessingInput) {
   const option = getAiModelOption(input.model);
+  const thinkingLevel = input.thinkingLevel === undefined
+    ? option?.geminiThinkingLevel
+    : input.thinkingLevel;
 
   return {
     responseMimeType: input.outputSchema ? "application/json" : "text/plain",
-    ...(option?.geminiThinkingLevel
-      ? { thinkingConfig: { thinkingLevel: option.geminiThinkingLevel } }
+    ...(thinkingLevel
+      ? { thinkingConfig: { thinkingLevel } }
       : {}),
     ...(supportsModelTemperature(input.model) ? { temperature: input.temperature } : {})
   };

@@ -22,6 +22,7 @@ type RunOpenAIProcessingInput = {
   model: string;
   outputSchema: unknown;
   prompt: string;
+  reasoningEffort?: "high" | "xhigh" | null;
   temperature: number;
 };
 
@@ -59,12 +60,15 @@ function createTextFormat(outputSchema: unknown) {
 // createOpenAIRequestBody builds a Responses API payload and omits unsupported sampling controls.
 export function createOpenAIRequestBody(input: RunOpenAIProcessingInput) {
   const option = getAiModelOption(input.model);
+  const reasoningEffort = input.reasoningEffort === undefined
+    ? option?.reasoningEffort
+    : input.reasoningEffort;
 
   return {
     input: input.prompt,
     model: input.model,
-    ...(option?.reasoningEffort
-      ? { reasoning: { effort: option.reasoningEffort } }
+    ...(reasoningEffort
+      ? { reasoning: { effort: reasoningEffort } }
       : {}),
     ...(supportsModelTemperature(input.model) ? { temperature: input.temperature } : {}),
     text: {

@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 type DocumentationSection = {
   body: string[];
   id: string;
@@ -57,7 +55,7 @@ const documentationSections: DocumentationSection[] = [
   {
     body: [
       "Časová osa není technický seznam po sekundách. Vytváří se jako AI výstup, který rozdělí dlouhý hovor na smysluplné kapitoly podle témat, rozhodnutí, úkolů, rizik a změn kontextu.",
-      "Když časová osa ještě neexistuje, karta nabízí přechod do AI zpracování. Technické segmenty ze Sonioxu zůstávají zdrojová data pro diarizaci a časování."
+      "Když časová osa ještě neexistuje, karta nabízí přechod do AI zpracování. Automatická časová osa je ve výchozím stavu vypnutá: po jejím zapnutí vznikne nejvýše jedna časová osa pro nově uložený dokončený přepis s aktuálním výchozím modelem a účinným promptem. Pokud se přepis dokončí při zavřeném prohlížeči, kontrola pokračuje při dalším otevření detailu nahrávky. Technické segmenty ze Sonioxu zůstávají zdrojová data pro diarizaci a časování."
     ],
     id: "casova-osa",
     kicker: "Obsahové kapitoly hovoru",
@@ -84,8 +82,9 @@ const documentationSections: DocumentationSection[] = [
   },
   {
     body: [
-      "Nastavení obsahuje netajné uživatelské preference: výchozí AI model, jazyk výstupu, Soniox realtime model, retenci audia a automatické AI výstupy.",
-      "Tajné klíče, Supabase service role, Soniox API key, OpenAI API key a volitelný Gemini API key zůstávají pouze ve Vercelu/server-side. Usage část ukazuje orientační AI a Soniox náklady z uložených metadat; fakturační pravda zůstává u provider dashboardů."
+      "Nastavení obsahuje netajné uživatelské preference. U výchozího AI modelu je vždy viditelné vysvětlení Model a kvalita; pomáhá zvolit rychlost, cenu a míru kontroly výsledku.",
+      "V části Účet je Změna hesla. Vyžaduje současné heslo, nové heslo a potvrzení; hesla se do nastavení neukládají.",
+      "Můžete zapnout automatickou časovou osu pro budoucí dokončené přepisy a zvolit automatický termín pro budoucí položky v Koši: 24 hodin, 7 dní nebo 30 dní. Výchozí volba je 30 dní a změna nemění termín položek, které už v Koši jsou. Usage část ukazuje orientační AI a Soniox náklady z uložených metadat; fakturační pravda zůstává u provider dashboardů."
     ],
     id: "nastaveni",
     kicker: "Preference a usage",
@@ -103,7 +102,9 @@ const documentationSections: DocumentationSection[] = [
   {
     body: [
       "Smazání nahrávky z hlavního seznamu je soft-delete. Položka zmizí z Nahrávek a objeví se v Koši, kde ji lze ještě zkontrolovat.",
-      "Trvalé smazání z Koše maže databázový řádek i související storage objekt, přepisy, joby a AI výstupy. Proto je tato akce oddělená od běžného smazání."
+      "Ruční trvalé smazání je dostupné po 24 hodinách od přesunu do Koše, bez ohledu na zvolený automatický termín. Automatický termín se při přesunu uloží ke konkrétní nahrávce a ukáže se u ní v Koši.",
+      "Automatické čištění je v repozitáři zatím pouze připravený zdrojový postup: není nasazen ani aktivní.",
+      "Trvalé smazání maže databázový řádek i související storage objekt, přepisy, joby a AI výstupy. Proto je tato akce oddělená od běžného smazání."
     ],
     id: "kos",
     kicker: "Bezpečné mazání",
@@ -129,16 +130,6 @@ export function DocumentationPanel() {
         <h1>Jak Vosio funguje</h1>
         <p>Praktický přehled obrazovek, workflow a pravidel v aplikaci.</p>
       </header>
-      <div className="documentation-start">
-        <strong>Začít s prvním callem</strong>
-        <p>Nahrajte live záznam nebo soubor, spusťte přepis, potom vytvořte AI výstupy a exportujte pracovní balíček.</p>
-        <div>
-          <Link href="/recordings/new">Nová nahrávka</Link>
-          <Link href="/recordings">Nahrávky</Link>
-          <Link href="/settings">Nastavení</Link>
-        </div>
-      </div>
-
       <div className="documentation-layout">
         <nav className="documentation-topics" aria-label="Témata dokumentace">
           <span>Témata</span>

@@ -679,7 +679,7 @@ describe("organization UI integration", () => {
     expect(recordingStyles).not.toMatch(/\[data-theme="light"\] \.delete-recording-icon,/);
   });
 
-  it("keeps the existing title editor and loads organization data outside recording row loops", () => {
+  it("keeps the existing title editor and loads organization data once per exclusive list route branch", () => {
     const workbenchSource = readFileSync(
       join(process.cwd(), "src", "components", "workspace", "recording-workbench.tsx"),
       "utf8"
@@ -693,7 +693,17 @@ describe("organization UI integration", () => {
     expect(workbenchSource).toContain("<RecordingDetailTitleEditor");
     expect(workbenchSource).toContain("<RecordingOrganizationEditor");
     expect(workbenchSource).toContain('key={`organization-${activeRecordingRow.id}`}');
-    expect(listPageSource.match(/listRecordingOrganizationOptions\(supabase\)/g)).toHaveLength(1);
+    const listOrganizationLoads = listPageSource.match(/listRecordingOrganizationOptions\(supabase\)/g);
+
+    // Filtered URLs must load choices before canonicalization, while unfiltered URLs load them in the concurrent read phase.
+    expect(listOrganizationLoads).toHaveLength(2);
+    expect(listPageSource).toMatch(
+      /if \(hasOrganizationFilterValues\(searchParams\)\) \{\s+const organizationOptions = await listRecordingOrganizationOptions\(supabase\);/
+    );
+    expect(listPageSource).toMatch(
+      /const \[organizationOptions, statusCounts, deletedCount, recordingData\] = await Promise\.all\(\[\s+listRecordingOrganizationOptions\(supabase\),/
+    );
+    expect(listPageSource).not.toMatch(/recordings\.map[\s\S]*listRecordingOrganizationOptions/);
     expect(detailPageSource.match(/listRecordingOrganizationOptions\(supabase\)/g)).toHaveLength(1);
     expect(detailPageSource.match(/getRecordingOrganization\(supabase, recording\)/g)).toHaveLength(1);
     expect(detailPageSource).not.toMatch(/recordings\.map[\s\S]*getRecordingOrganization/);

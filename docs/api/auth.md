@@ -4,7 +4,7 @@
 
 Vosio uses Supabase Auth with email/password login for internal users.
 
-The application does not expose registration. Users are created manually in the Supabase dashboard under Auth users. The app login form only calls `signInWithPassword` for existing users.
+The application does not expose registration. Users are created manually in the Supabase dashboard under Auth users. The app login form only calls `signInWithPassword` for existing users. An authenticated user can change their own password from Settings.
 
 ## Runtime Flow
 
@@ -17,6 +17,10 @@ Visitor opens protected route
 -> user lands on the Vosio workspace
 ```
 
+Password changes use a separate Settings form. The server action resolves the current user and email from the request-scoped session, validates the submitted passwords, reauthenticates with `signInWithPassword`, and only then calls `updateUser` with the new password on the same Supabase client. Password fields are cleared after every settled attempt and submitted values are never returned in action state.
+
+Settings redirects to login only when the session is missing. An authenticated account without a usable email gets a stable fail-closed Settings error with no password form, avoiding a redirect loop through the login page. Development Settings fixtures render the account form disabled and without an action.
+
 ## Files
 
 - `src/lib/supabase/server.ts`: request-scoped server Supabase client.
@@ -24,6 +28,8 @@ Visitor opens protected route
 - `src/lib/supabase/proxy.ts`: session refresh and route protection.
 - `proxy.ts`: Next.js proxy entrypoint.
 - `src/lib/auth/actions.ts`: sign in and sign out server actions.
+- `src/lib/auth/password-actions.ts`: reauthenticated password-change server action.
+- `src/components/account-security-panel.tsx`: separate account and password form in Settings.
 - `app/login/page.tsx`: internal login page.
 - `app/auth/callback/route.ts`: callback route for code exchange.
 
@@ -35,6 +41,8 @@ Visitor opens protected route
 - Login errors stay generic and do not reveal whether an email exists.
 - Post-login redirects are limited to same-app paths.
 - Registration stays disabled in the app UI.
+- Password-change errors use fixed Czech copy and never expose provider details or submitted passwords.
+- The current password is reauthenticated before a new password can be written.
 
 ## 2FA
 

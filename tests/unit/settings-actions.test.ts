@@ -26,6 +26,7 @@ function createCompleteSettingsForm(region: "eu" | "global") {
   formData.set("aiTemperature", "0.7");
   formData.set("audioRetentionPolicy", "delete_audio_after_transcription");
   formData.set("autoProcessAfterTranscription", "on");
+  formData.set("autoTimelineAfterTranscription", "on");
   formData.set("autoProcessingTypesPresent", "1");
   formData.append("autoProcessingTypes", "summary");
   formData.set("defaultOpenaiModel", "gpt-5.6-terra");
@@ -34,6 +35,7 @@ function createCompleteSettingsForm(region: "eu" | "global") {
   formData.set("sonioxRealtimeLanguage", "de");
   formData.set("sonioxRealtimeModel", "stt-rt-v5");
   formData.set("supabaseStoragePlan", "paid");
+  formData.set("trashRetentionHours", "168");
   return formData;
 }
 
@@ -66,6 +68,7 @@ describe("settings form", () => {
     formData.set("aiTemperature", "0.7");
     formData.set("audioRetentionPolicy", "delete_audio_after_transcription");
     formData.set("autoProcessAfterTranscription", "on");
+    formData.set("autoTimelineAfterTranscription", "on");
     formData.set("autoProcessingTypesPresent", "1");
     formData.append("autoProcessingTypes", "summary");
     formData.append("autoProcessingTypes", "action_items");
@@ -75,6 +78,7 @@ describe("settings form", () => {
     formData.set("sonioxRealtimeLanguage", "de");
     formData.set("sonioxRealtimeModel", "stt-rt-v5");
     formData.set("supabaseStoragePlan", "paid");
+    formData.set("trashRetentionHours", "168");
 
     await updateUserSettingsAction(idleSettingsActionState, formData);
 
@@ -86,13 +90,15 @@ describe("settings form", () => {
           aiTemperature: 0.7,
           audioRetentionPolicy: "delete_audio_after_transcription",
           autoProcessAfterTranscription: true,
+          autoTimelineAfterTranscription: true,
           autoProcessingTypes: ["summary", "action_items"],
           defaultOpenaiModel: "gpt-5.6-terra",
           outputLanguage: "cs",
           sonioxRegion: "eu",
           sonioxRealtimeLanguage: "de",
           sonioxRealtimeModel: "stt-rt-v5",
-          supabaseStoragePlan: "paid"
+          supabaseStoragePlan: "paid",
+          trashRetentionHours: 168
         }
       }
     });
@@ -145,6 +151,34 @@ describe("settings form", () => {
     formData.set("supabaseStoragePlan", "free");
 
     expect(parseSettingsForm(formData).supabaseStoragePlan).toBe("free");
+  });
+
+  it.each([24, 168, 720] as const)("parses the supported %s-hour Trash retention", (hours) => {
+    const formData = new FormData();
+    formData.set("trashRetentionHours", String(hours));
+
+    expect(parseSettingsForm(formData).trashRetentionHours).toBe(hours);
+  });
+
+  it("defaults legacy form submissions to thirty-day Trash retention", () => {
+    expect(parseSettingsForm(new FormData()).trashRetentionHours).toBe(720);
+  });
+
+  it("rejects an unsupported Trash retention value", () => {
+    const formData = new FormData();
+    formData.set("trashRetentionHours", "48");
+
+    expect(() => parseSettingsForm(formData)).toThrow("Invalid settings form payload.");
+  });
+
+  it("parses dedicated automatic timeline consent independently from legacy automation fields", () => {
+    const enabled = new FormData();
+    enabled.set("autoTimelineAfterTranscription", "on");
+    enabled.set("autoProcessAfterTranscription", "off");
+
+    expect(parseSettingsForm(enabled).autoTimelineAfterTranscription).toBe(true);
+    expect(parseSettingsForm(enabled).autoProcessAfterTranscription).toBe(false);
+    expect(parseSettingsForm(new FormData()).autoTimelineAfterTranscription).toBe(false);
   });
 
   it("parses the selected Soniox region", () => {

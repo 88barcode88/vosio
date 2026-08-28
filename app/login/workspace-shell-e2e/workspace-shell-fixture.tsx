@@ -195,6 +195,7 @@ export function WorkspaceShellFixture({
       activeRecordingId={isDetail ? recording.id : undefined}
       aiOutputs={[]}
       deletedRecordings={view === "trash" && trashMode !== "empty" ? createDeletedFixtureRecordings() : []}
+      disableAccountSecurity
       initialTranscriptTabFromCookie={isDetail}
       isCreatingRecording={view === "new"}
       navigationHrefOverrides={createFixtureNavigationOverrides(scope)}

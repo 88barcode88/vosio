@@ -11,6 +11,7 @@ import {
   type SaveActionState
 } from "@/lib/forms/save-action-state";
 import { RECORDINGS_BUCKET } from "@/lib/recordings/types";
+import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -528,7 +529,10 @@ export async function deleteRecordingAction(formData: FormData) {
 
   const { data, error } = await supabase
     .from("recordings")
-    .update({ status: "deleted" })
+    .update({
+      status: "deleted",
+      trash_retention_hours: getUserSettingsFromMetadata(user.user_metadata).trashRetentionHours
+    })
     .eq("id", parsed.recordingId)
     .eq("user_id", user.id)
     .neq("status", "deleted")

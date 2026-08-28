@@ -73,6 +73,8 @@ export default async function SonioxInstallationE2EPage({
   return (
     <main className="content-area content-area-document">
       <SettingsPanel
+        accountEmail="fixture@vosio.local"
+        disableAccountSecurity
         installationStatus={installationStatus}
         recordingStorageConfig={fixtureStorage}
         saveAction={saveFixtureSettingsAction.bind(null, access.scope, saveMode, installation, gemini)}

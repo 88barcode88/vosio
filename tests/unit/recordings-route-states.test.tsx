@@ -14,6 +14,7 @@ beforeEach(() => {
     .IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement("div");
   document.body.append(container);
+  window.sessionStorage.clear();
   root = createRoot(container);
 });
 
@@ -31,7 +32,23 @@ describe("recordings route states", () => {
     expect(container.querySelector("button, a")).toBeNull();
   });
 
-  it("invokes the App Router reset callback and never exposes the private error", async () => {
+  it("automatically resets only once for the same recordings navigation error window", async () => {
+    const reset = vi.fn();
+    await act(async () => root.render(
+      <RecordingsError error={new Error("private provider detail")} reset={reset} />
+    ));
+
+    expect(reset).toHaveBeenCalledOnce();
+
+    await act(async () => root.render(null));
+    await act(async () => root.render(
+      <RecordingsError error={new Error("private provider detail")} reset={reset} />
+    ));
+
+    expect(reset).toHaveBeenCalledOnce();
+  });
+
+  it("keeps manual App Router retry available without exposing the private error", async () => {
     const reset = vi.fn();
     await act(async () => root.render(
       <RecordingsError error={new Error("private provider detail")} reset={reset} />
@@ -42,7 +59,7 @@ describe("recordings route states", () => {
     );
     await act(async () => retry?.click());
 
-    expect(reset).toHaveBeenCalledOnce();
+    expect(reset).toHaveBeenCalledTimes(2);
     expect(container.textContent).not.toContain("private provider detail");
     expect(container.querySelector('a[href="/recordings/new"]')).not.toBeNull();
   });

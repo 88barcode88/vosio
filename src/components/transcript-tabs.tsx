@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { AudioLines } from "lucide-react";
 import { AiProcessingContent } from "@/components/transcript-tabs/ai-processing-content";
+import { AutomaticTimelineReconciler } from "@/components/automatic-timeline-reconciler";
 import { FilesContent } from "@/components/transcript-tabs/files-content";
 import {
   RecordingAudioPlayer,
@@ -464,6 +465,7 @@ export function TranscriptTabs({
 
   return (
     <>
+      <AutomaticTimelineReconciler transcriptId={activeTranscript?.id ?? null} />
       <div className="recording-detail-sticky">
         <RecordingAudioPlayer activeRecording={activeRecording} ref={playerRef} />
         <div className="tabs-row">

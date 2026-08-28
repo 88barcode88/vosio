@@ -36,6 +36,7 @@ type UtilityWorkspaceViewProps = {
   aiArchiveItems?: AiArchiveItem[];
   aiOutputs: AiOutputView[];
   deletedRecordings: RecordingClientView[];
+  disableAccountSecurity?: boolean;
   installationStatus?: InstallationStatus;
   promptTemplateActions?: PromptTemplateActions;
   promptTemplateBaseHref?: string;
@@ -54,6 +55,7 @@ type UtilityWorkspaceViewProps = {
   trashRestoreBulkAction?: TrashRestoreBulkAction;
   trashRestoreAction?: TrashRecordingAction;
   usageState?: CurrentMonthUsageState;
+  userEmail?: string;
   view: "ai" | "templates" | "documentation" | "trash" | "settings";
 };
 
@@ -65,6 +67,7 @@ export function UtilityWorkspaceView({
   aiArchiveFilters = { processingType: null, recordingId: null },
   aiArchiveItems = [],
   deletedRecordings,
+  disableAccountSecurity = false,
   installationStatus,
   promptTemplateActions,
   promptTemplateBaseHref,
@@ -82,11 +85,14 @@ export function UtilityWorkspaceView({
   trashRestoreBulkAction,
   trashRestoreAction,
   usageState,
+  userEmail = "",
   view
 }: UtilityWorkspaceViewProps) {
   if (view === "settings") {
     return (
       <SettingsPanel
+        accountEmail={userEmail}
+        disableAccountSecurity={disableAccountSecurity}
         disableSave={settingsFormDisabled}
         installationStatus={installationStatus ?? {
           environment: "unknown",

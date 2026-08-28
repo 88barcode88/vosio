@@ -63,16 +63,18 @@ Choose the Soniox region per user in **Settings**, not through a deployment vari
 
 ## Supabase
 
-Supabase setup lives in `supabase/`.
+Supabase setup, migration safety gates and the self-hosted Edge Function runbook live in [`supabase/README.md`](supabase/README.md).
 
-For a new project:
+For a disposable or newly reviewed project:
 
 ```bash
 supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-The timestamp-ordered migration chain creates the application schema, RLS policies, private `recordings` Storage bucket settings, indexes, and system prompt templates.
+The ordered migration chain creates the application schema, RLS policies, private `recordings` Storage bucket settings, indexes, system prompt templates, automatic-timeline idempotency, and Trash-retention deadlines. For a fresh project, `supabase db push` applies the complete chain. Existing projects require target-specific preflight, reviewed manual apply when their ledger is not canonical, and postflight; do not copy the private Vosio ledger workaround as a generic installation method.
+
+The optional `trash-retention` Edge Function is a Supabase worker in that same project, not a Vercel worker. Its disabled-first secret, deploy, verification, Vault/Cron scheduling, emergency-stop and exhausted-claim recovery procedure is in [`supabase/README.md`](supabase/README.md#trash-retention-edge-function-deployment). It must not be enabled or scheduled until a separate backlog-deletion approval.
 
 The app expects:
 

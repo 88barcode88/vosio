@@ -13,6 +13,7 @@ describe("settings storage limit", () => {
   it("renders the selected Supabase preference with effective limits", () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
+        accountEmail="user@example.test"
         installationStatus={{
           environment: "development",
           geminiConfigured: false,

@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { createRateLimiter } from "@/lib/rate-limit";
-import { parsePossibleJson, type AiProviderProcessingResult } from "@/lib/ai/common";
-import { runGeminiProcessing } from "@/lib/ai/gemini";
-import { runOpenAIProcessing } from "@/lib/ai/openai";
-import { persistCompletedAiProcessing } from "@/lib/ai/process-route-orchestration";
+import {
+  executePersistedAiProcessing,
+  getAiProviderFailureMessage,
+  getSafeProviderErrorDetail
+} from "@/lib/ai/processing-service.server";
 import { getAiProviderConfigurationError } from "@/lib/env.server";
 import {
   aiModelIds,
@@ -19,8 +20,6 @@ import {
   type EffectivePromptRpcRow,
   type QuickPromptProcessingType,
 } from "@/lib/prompt-templates/effective";
-import { buildAiTranscriptPromptContext } from "@/lib/transcripts/ai-context";
-import { getTranscriptSpeakerContext } from "@/lib/transcripts/speakers";
 
 const routeParamsSchema = z.object({
   transcriptId: z.uuid()
@@ -53,65 +52,9 @@ function routeErrorResponse(error: unknown, fallbackMessage: string, status = 50
   return NextResponse.json({ detail, error: fallbackMessage }, { status });
 }
 
-// getSafeProviderErrorDetail exposes provider setup/model errors without transcript or prompt content.
-function getSafeProviderErrorDetail(error: unknown) {
-  if (!(error instanceof Error)) {
-    return null;
-  }
-
-  return error.message
-    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-***")
-    .replace(/AIza[0-9A-Za-z_-]+/g, "AIza***");
-}
-
-// renderPrompt fills the resolved prompt snapshot with transcript-owned context.
-function renderPrompt(input: {
-  metadata: Record<string, unknown>;
-  promptText: string;
-  speakerContext: unknown;
-  transcriptSegments: unknown;
-  transcriptText: string;
-}) {
-  const metadataJson = JSON.stringify(input.metadata);
-  const speakersJson = JSON.stringify(input.speakerContext ?? []);
-  const segmentsJson = JSON.stringify(input.transcriptSegments ?? []);
-
-  return input.promptText
-    .replaceAll("{{raw_text}}", input.transcriptText)
-    .replaceAll("{{transcript_text}}", input.transcriptText)
-    .replaceAll("{{transcript}}", input.transcriptText)
-    .replaceAll("{{segments}}", segmentsJson)
-    .replaceAll("{{transcript_segments}}", segmentsJson)
-    .replaceAll("{{speakers}}", speakersJson)
-    .replaceAll("{{metadata}}", metadataJson)
-    .replaceAll("{{custom_prompt}}", "");
-}
-
 // getAiProviderForModel resolves an allowed app model to its provider adapter.
 function getAiProviderForModel(modelId: string): AiProviderId {
   return getAiModelOption(modelId)?.provider ?? "openai";
-}
-
-// getAiProviderFailureMessage maps provider failures to Czech UI copy without leaking prompt content.
-function getAiProviderFailureMessage(provider: AiProviderId) {
-  return provider === "gemini"
-    ? "Gemini zpracování selhalo. Zkontrolujte GEMINI_API_KEY, dostupnost modelu v Google AI účtu nebo zvolte OpenAI model."
-    : "OpenAI zpracování selhalo. Zkontrolujte OPENAI_API_KEY, dostupnost modelu nebo zkuste jiný model.";
-}
-
-// runAiProviderProcessing dispatches transcript prompts to the selected server-side AI provider.
-async function runAiProviderProcessing(input: {
-  model: string;
-  outputSchema: unknown;
-  prompt: string;
-  provider: AiProviderId;
-  temperature: number;
-}): Promise<AiProviderProcessingResult> {
-  if (input.provider === "gemini") {
-    return runGeminiProcessing(input);
-  }
-
-  return runOpenAIProcessing(input);
 }
 
 // getAuthenticatedTranscript verifies ownership and loads transcript text, segments and speakers through RLS.
@@ -244,43 +187,34 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     try {
-      const speakerContext = getTranscriptSpeakerContext(transcript.speakers, transcript.segments);
-      const transcriptPromptContext = buildAiTranscriptPromptContext(transcript.segments, transcript.speakers);
-      const prompt = renderPrompt({
-        metadata: {
-          ...(body.data.metadata ?? {}),
-          transcript_segments_compacted: true,
-          transcript_segments_truncated: transcriptPromptContext.truncated,
-          transcript_tokens_seen: transcriptPromptContext.total_tokens_seen,
-          speaker_context: speakerContext,
-          speaker_context_used: speakerContext.length > 0
-        },
-        promptText: promptTemplate.prompt_text,
-        speakerContext,
-        transcriptSegments: transcriptPromptContext.segments,
-        transcriptText: transcript.raw_text
-      });
-      const result = await runAiProviderProcessing({
-        model: requestedModel,
-        outputSchema: promptTemplate.output_schema,
-        prompt,
-        provider: requestedProvider,
-        temperature: requestedTemperature
-      });
-      const outputJson = promptTemplate.output_schema
-        ? parsePossibleJson(result.outputText)
-        : null;
-
-      const output = await persistCompletedAiProcessing({
+      const output = await executePersistedAiProcessing({
         admin,
-        inputTokenCount: result.inputTokenCount,
-        jobId: job.id,
-        outputJson,
-        outputText: result.outputText,
-        outputTokenCount: result.outputTokenCount,
-        transcriptId: transcript.id,
-        transcriptSegments: transcript.segments,
-        userId: user.id
+        job: {
+          id: job.id,
+          model: requestedModel,
+          outputSchemaSnapshot: promptTemplate.output_schema,
+          promptTextSnapshot: promptTemplate.prompt_text,
+          provider: requestedProvider,
+          providerConfig: {
+            provider: requestedProvider,
+            response_format: promptTemplate.output_schema ? "json_schema" : "text",
+            ...(requestedModelOption?.reasoningEffort
+              ? { reasoning_effort: requestedModelOption.reasoningEffort }
+              : {}),
+            ...(requestedModelOption?.geminiThinkingLevel
+              ? { thinking_level: requestedModelOption.geminiThinkingLevel }
+              : {})
+          }
+        },
+        metadata: body.data.metadata,
+        temperature: requestedTemperature,
+        transcript: {
+          id: transcript.id,
+          rawText: transcript.raw_text,
+          segments: transcript.segments,
+          speakers: transcript.speakers,
+          userId: user.id
+        }
       });
 
       return NextResponse.json({ job: { id: job.id, status: "done" }, output });

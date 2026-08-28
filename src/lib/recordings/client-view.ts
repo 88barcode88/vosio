@@ -11,9 +11,11 @@ export type RecordingClientView = Pick<
   | "file_size_bytes"
   | "id"
   | "mime_type"
+  | "purge_after"
   | "source_type"
   | "status"
   | "title"
+  | "trash_retention_hours"
   | "updated_at"
 > & {
   audioAvailability: RecordingAudioAvailability;
@@ -36,9 +38,11 @@ export function toRecordingClientView(recording: RecordingRow): RecordingClientV
     file_size_bytes: recording.file_size_bytes,
     id: recording.id,
     mime_type: recording.mime_type,
+    purge_after: recording.purge_after ?? null,
     source_type: recording.source_type,
     status: recording.status,
     title: recording.title,
+    trash_retention_hours: recording.trash_retention_hours ?? null,
     updated_at: recording.updated_at
   };
 }

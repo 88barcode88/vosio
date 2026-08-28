@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createSettingsActionError, type SettingsActionState } from "@/lib/settings/action-state";
 import { parseSettingsForm } from "@/lib/settings/form";
 import type { UserSettings } from "@/lib/settings/types";
-import { USER_SETTINGS_METADATA_KEY } from "@/lib/settings/metadata";
+import { createUserSettingsMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
 
 // updateUserSettingsAction stores non-secret Vosio preferences in Supabase Auth metadata.
@@ -32,10 +32,7 @@ export async function updateUserSettingsAction(
   }
 
   const { error } = await supabase.auth.updateUser({
-    data: {
-      ...(user.user_metadata ?? {}),
-      [USER_SETTINGS_METADATA_KEY]: settings
-    }
+    data: createUserSettingsMetadata(user.user_metadata, settings)
   });
 
   if (error) {

@@ -60,11 +60,13 @@ export type RecordingRow = {
   file_size_bytes: number | null;
   folder_id: string | null;
   mime_type: string | null;
+  purge_after?: string | null;
   project_id: string | null;
   source_type: "upload" | "in_app_recording" | "realtime";
   status: RecordingStatus;
   storage_path: string | null;
   title: string;
+  trash_retention_hours?: 24 | 168 | 720 | null;
   updated_at: string;
   user_id: string;
 };

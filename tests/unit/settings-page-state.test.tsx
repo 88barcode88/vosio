@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -16,7 +17,9 @@ const mocks = vi.hoisted(() => ({
     planMaxFileSizeBytes: null
   })),
   loadCurrentMonthUsageState: vi.fn(async () => ({ error: "Fixture usage unavailable.", summary: null })),
-  redirect: vi.fn()
+  redirect: vi.fn((path: string) => {
+    throw new Error(`REDIRECT:${path}`);
+  })
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -44,6 +47,10 @@ function configurePersistedGlobalUser() {
 }
 
 describe("settings page action state boundary", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("ignores legacy failure query drafts and renders persisted metadata", async () => {
     configurePersistedGlobalUser();
 
@@ -60,5 +67,33 @@ describe("settings page action state boundary", () => {
     configurePersistedGlobalUser();
     const element = await SettingsPage({ searchParams: Promise.resolve({ saved: "1" }) });
     expect(element.props.settingsStatus).toBe("saved");
+  });
+
+  it("redirects only a missing session to login", async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) }
+    });
+
+    await expect(SettingsPage({ searchParams: Promise.resolve({}) }))
+      .rejects.toThrow("REDIRECT:/login?next=/settings");
+    expect(mocks.redirect).toHaveBeenCalledWith("/login?next=/settings");
+  });
+
+  it.each([
+    ["missing email", { user_metadata: {} }],
+    ["invalid email", { email: "not-an-email", user_metadata: {} }]
+  ])("renders a stable fail-closed state for an authenticated account with %s", async (_name, user) => {
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user } }) }
+    });
+
+    const element = await SettingsPage({ searchParams: Promise.resolve({}) });
+    const markup = renderToStaticMarkup(element);
+
+    expect(mocks.redirect).not.toHaveBeenCalled();
+    expect(markup).toContain("Nastavení účtu není dostupné");
+    expect(markup).toContain('role="alert"');
+    expect(markup).not.toContain('name="currentPassword"');
+    expect(mocks.loadCurrentMonthUsageState).not.toHaveBeenCalled();
   });
 });

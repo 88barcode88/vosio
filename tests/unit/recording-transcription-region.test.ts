@@ -7,11 +7,18 @@ const mocks = vi.hoisted(() => ({
   createSonioxTranscription: vi.fn(),
   getSonioxTranscript: vi.fn(),
   getSonioxTranscription: vi.fn(),
-  mapSonioxStatus: vi.fn()
+  mapSonioxStatus: vi.fn(),
+  persistTranscriptCompletionTransition: vi.fn(),
+  reconcileAutomaticTimeline: vi.fn()
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
+vi.mock("@/lib/ai/automatic-timeline.server", () => ({
+  createAutomaticTimelineGenerationIdentity: vi.fn(() => "generation-identity"),
+  persistTranscriptCompletionTransition: mocks.persistTranscriptCompletionTransition,
+  reconcileAutomaticTimeline: mocks.reconcileAutomaticTimeline
+}));
 vi.mock("@/lib/soniox/client", () => ({
   createSonioxTranscription: mocks.createSonioxTranscription,
   getSonioxTranscript: mocks.getSonioxTranscript,
@@ -98,6 +105,11 @@ beforeEach(() => {
   mocks.createSonioxTranscription.mockResolvedValue({ id: "provider-new", status: "running" });
   mocks.getSonioxTranscription.mockResolvedValue({ id: "provider-existing", status: "running" });
   mocks.mapSonioxStatus.mockReturnValue("running");
+  mocks.persistTranscriptCompletionTransition.mockResolvedValue({
+    automatic_timeline_scheduled: false,
+    is_new_generation: true,
+    transcript_id: "transcript-id"
+  });
 });
 
 describe("recording transcription Soniox region", () => {

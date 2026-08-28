@@ -10,6 +10,7 @@ import type { InstallationStatus } from "@/lib/installation-status.server";
 import { parseSettingsForm } from "@/lib/settings/form";
 import { createSettingsActionError, type SettingsActionState } from "@/lib/settings/action-state";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
+import { readFileSync } from "node:fs";
 
 vi.mock("@/lib/settings/actions", () => ({
   updateUserSettingsAction: vi.fn()
@@ -37,6 +38,7 @@ function renderSettings(
 ) {
   return renderToStaticMarkup(
     <SettingsPanel
+      accountEmail="user@example.test"
       installationStatus={installationStatus}
       recordingStorageConfig={storageConfig}
       settings={{ ...settings, supabaseStoragePlan: "free" }}
@@ -46,7 +48,76 @@ function renderSettings(
   );
 }
 
+// getAtRuleBlocks isolates matching media blocks without letting assertions spill into later breakpoints.
+function getAtRuleBlocks(css: string, header: string) {
+  const blocks: string[] = [];
+  let searchFrom = 0;
+
+  while (searchFrom < css.length) {
+    const start = css.indexOf(header, searchFrom);
+    if (start < 0) break;
+    const open = css.indexOf("{", start + header.length);
+    if (open < 0) break;
+    let depth = 1;
+    let cursor = open + 1;
+    while (cursor < css.length && depth > 0) {
+      if (css[cursor] === "{") depth += 1;
+      if (css[cursor] === "}") depth -= 1;
+      cursor += 1;
+    }
+    blocks.push(css.slice(start, cursor));
+    searchFrom = cursor;
+  }
+
+  return blocks;
+}
+
 describe("settings workspace layout", () => {
+  it("keeps model guidance beside the selector on desktop and stacks it throughout the mobile shell range", () => {
+    const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
+    const formsCss = readFileSync("app/styles/forms-settings-ai.css", "utf8");
+    const responsiveCss = readFileSync("app/styles/responsive.css", "utf8");
+    const mobileShellCss = getAtRuleBlocks(responsiveCss, "@media (max-width: 900px)").join("\n");
+
+    expect(markup).toContain('class="settings-grid settings-model-row"');
+    expect(markup).toContain('<strong id="settings-model-guidance-title">Model a kvalita</strong>');
+    expect(markup).not.toMatch(/<button[^>]*>Model a kvalita<\/button>/u);
+    expect(markup.indexOf('name="defaultOpenaiModel"')).toBeLessThan(
+      markup.indexOf('id="settings-model-guidance-title"')
+    );
+    expect(formsCss).toMatch(/\.settings-model-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*520px\)\s+minmax\(0,\s*1fr\)/u);
+    expect(mobileShellCss).toMatch(/\.settings-model-row\s*\{[^}]*grid-template-columns:\s*1fr/u);
+  });
+
+  it("renders account security as a separate non-nested form", () => {
+    const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
+    const container = document.createElement("div");
+    container.innerHTML = markup;
+    const accountForm = container.querySelector<HTMLFormElement>(".account-security-form");
+    const settingsForm = container.querySelector<HTMLFormElement>(".settings-form");
+
+    expect(container.querySelectorAll("form")).toHaveLength(2);
+    expect(accountForm).not.toBeNull();
+    expect(settingsForm?.contains(accountForm)).toBe(false);
+    expect(accountForm?.contains(settingsForm ?? null)).toBe(false);
+    expect(markup).toContain("user@example.test");
+  });
+
+  it("offers only the three supported Trash retention periods and defaults to thirty days", () => {
+    const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
+    const container = document.createElement("div");
+    container.innerHTML = markup;
+    const select = container.querySelector<HTMLSelectElement>('select[name="trashRetentionHours"]');
+
+    expect(Array.from(select?.options ?? []).map((option) => [option.value, option.textContent])).toEqual([
+      ["24", "24 hodin"],
+      ["168", "7 dní"],
+      ["720", "30 dní"]
+    ]);
+    expect(select?.value).toBe("720");
+    expect(markup).toContain("Budoucí položky v Koši");
+  });
+
   it("orders the working settings as one document and keeps technical details closed by default", () => {
     const markup = renderSettings({
       error: null,
@@ -83,7 +154,7 @@ describe("settings workspace layout", () => {
       }
     });
 
-    const headings = ["AI a výstupy", "Jazyk a přepis", "Nahrávání", "Úložiště", "Vzhled", "Diagnostika a využití"];
+    const headings = ["AI a výstupy", "Jazyk a přepis", "Nahrávání", "Úložiště", "Vzhled", "Diagnostika a využití", "Účet"];
     const headingPositions = headings.map((heading) => markup.search(new RegExp(`<h2[^>]*>${heading}</h2>`, "u")));
 
     expect(headingPositions.every((position) => position >= 0)).toBe(true);
@@ -96,7 +167,7 @@ describe("settings workspace layout", () => {
   it("shows only runtime-effective preferences as controls and preserves stored-only values as hidden inputs", () => {
     const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
 
-    for (const name of ["defaultOpenaiModel", "sonioxRegion", "sonioxRealtimeLanguage", "sonioxRealtimeModel", "supabaseStoragePlan"]) {
+    for (const name of ["autoTimelineAfterTranscription", "defaultOpenaiModel", "sonioxRegion", "sonioxRealtimeLanguage", "sonioxRealtimeModel", "supabaseStoragePlan"]) {
       expect(markup).toContain(`name="${name}"`);
     }
     for (const name of [
@@ -110,6 +181,7 @@ describe("settings workspace layout", () => {
       expect(markup).not.toContain(`<select name="${name}"`);
     }
     expect(markup).toContain("Některé dříve uložené preference zatím aplikace nepoužívá.");
+    expect(markup).toContain("Automaticky vytvořit časovou osu po přepisu");
     expect(markup).toContain("Usage se teď nepodařilo načíst.");
     expect(markup).toContain('autoComplete="off"');
   });
@@ -131,6 +203,7 @@ describe("settings workspace layout", () => {
     try {
       await act(async () => root.render(
         <SettingsPanel
+          accountEmail="user@example.test"
           disableSave
           installationStatus={installationStatus}
           recordingStorageConfig={storageConfig}
@@ -180,6 +253,7 @@ describe("settings workspace layout", () => {
       await act(async () => {
         root.render(
           <SettingsPanel
+            accountEmail="user@example.test"
             installationStatus={installationStatus}
             recordingStorageConfig={storageConfig}
             settings={{ ...defaultUserSettings, sonioxRegion: "eu", supabaseStoragePlan: "free" }}
@@ -225,6 +299,7 @@ describe("settings workspace layout", () => {
     const persistedSettings = { ...defaultUserSettings, sonioxRegion: "global" as const, supabaseStoragePlan: "free" as const };
     const renderPanel = (nextSettings: UserSettings = persistedSettings, nextStatus: "saved" | null = null) => (
       <SettingsPanel
+        accountEmail="user@example.test"
         installationStatus={installationStatus}
         recordingStorageConfig={storageConfig}
         saveAction={saveAction}
@@ -310,6 +385,7 @@ describe("settings workspace layout", () => {
     try {
       await act(async () => root.render(
         <SettingsPanel
+          accountEmail="user@example.test"
           installationStatus={installationStatus}
           recordingStorageConfig={storageConfig}
           saveAction={saveAction}
@@ -328,7 +404,7 @@ describe("settings workspace layout", () => {
       const fieldset = container.querySelector<HTMLFieldSetElement>("fieldset[data-settings-fields]");
       expect(fieldset?.disabled).toBe(true);
       expect(fieldset?.getAttribute("aria-busy")).toBe("true");
-      expect(Array.from(container.querySelectorAll<HTMLSelectElement | HTMLButtonElement>("select, button"))
+      expect(Array.from(container.querySelectorAll<HTMLSelectElement | HTMLButtonElement>(".settings-form select, .settings-form button"))
         .every((control) => control.disabled || control.closest("fieldset")?.disabled)).toBe(true);
 
       await act(async () => settle(createSettingsActionError("save_failed", "eu")));

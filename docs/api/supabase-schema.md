@@ -13,8 +13,10 @@ Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seř
 - `supabase/migrations/20260813000000_add_recording_status_filters.sql`
 - `supabase/migrations/20260813090000_add_prompt_overrides_and_job_snapshots.sql`
 - `supabase/migrations/20260815073029_harden_prompt_override_privileges.sql`
+- `supabase/migrations/20260827094435_add_automatic_timeline_idempotency.sql`
+- `supabase/migrations/20260827100000_add_trash_retention_deadlines.sql`
 
-Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000`, přesný restore/purge metadata a Storage write fence až po `05550`, stavové facety až po `130000`, prompt overrides/job snapshots až po `130900` a privilege hardening až po `15073029`. Baseline proto není kompletní source of truth; úplný fresh-project kontrakt je pouze celý uvedený ordered chain.
+Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000`, přesná restore/purge metadata a Storage write fence až po `05550`, stavové facety až po `130000`, prompt overrides/job snapshots až po `130900`, privilege hardening až po `15073029`, automatic timeline idempotency/lease až po `20260827094435` a Trash retention deadlines/leases až po `20260827100000`. Baseline proto není kompletní source of truth; úplný fresh-project kontrakt je pouze celý uvedený ordered chain.
 
 Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby skutečné schema odpovídalo explicitně schválené a aplikované části aktuálního řetězce; produkční DB se kvůli baseline neresetuje.
 
@@ -126,7 +128,15 @@ Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivac
 
 ## Forward migrations release gate
 
-Fresh-project pořadí zůstává závazné: baseline, evidence `10000`, organization `11000`, markers `12000`, search `13000`, Trash restore/purge `05550`, status filters `130000`, prompt overrides/job snapshots `130900` a privilege hardening `15073029`. Každý target potřebuje vlastní schema/history preflight, apply pouze chybějících migrací a databázový postflight před app deployem. Legacy historii nemaž ani neresetuj jen proto, aby odpovídala fresh baseline.
+Fresh-project pořadí zůstává závazné: baseline, evidence `10000`, organization `11000`, markers `12000`, search `13000`, Trash restore/purge `05550`, status filters `130000`, prompt overrides/job snapshots `130900`, privilege hardening `15073029`, automatic timeline idempotency `20260827094435` a Trash retention `20260827100000`. Každý target potřebuje vlastní schema/history preflight, apply pouze chybějících migrací a databázový postflight před app deployem. Legacy historii nemaž ani neresetuj jen proto, aby odpovídala fresh baseline.
+
+## Trash retention deadlines and cleanup leases
+
+Source migrace `20260827100000_add_trash_retention_deadlines.sql` přidává na `recordings` validovaný `trash_retention_hours`, `purge_after` a bounded `purge_attempt_count`. Přechod z aktivního stavu do `deleted` atomicky snapshotne neměnný `deleted_at`, retenci a deadline. Update již smazaného řádku snapshot zachová, restore retention/claim metadata vyčistí a pozdější nový delete je vypočte znovu. Existující deleted řádky zachovají své historické `deleted_at`; backfill doplní `720` hodin a `purge_after = deleted_at + interval '30 days'`. Partial due index je `(purge_after, id) where status = 'deleted'`.
+
+Service-only RPC `claim_due_recording_purges_v1` vybírá due řádky ve stabilním pořadí, používá row locking se `skip locked`, přiděluje UUID lease token, bere nejvýše 20 řádků, nepřekračuje pět pokusů a reclaimuje až po 15 minutách stejně jako ruční purge. Refresh, finalize a release RPC mění jen řádek s přesným claim tokenem; claim loss proto nedovolí dokončit cizí lease. Release se používá jen před prvním Storage delete pokusem. Po zahájení mutace zůstává claim držený pro bezpečný stale retry a trigger mezitím blokuje restore. Všechny čtyři funkce jsou `SECURITY INVOKER`, mají prázdný `search_path`, plně kvalifikované objekty, explicitní revoke pro `PUBLIC`, `anon`, `authenticated` a execute pouze pro `service_role`. Trigger helper `recordings_manage_trash_metadata()` má stejný direct-call ACL; revokace nemění spuštění již instalovaného PostgreSQL triggeru při update řádku.
+
+Source Edge Function `supabase/functions/trash-retention` volá tato RPC a maže private objekty pouze přes Supabase Storage API, nikdy SQL proti `storage.objects`. Je bounded na batch 20 a přesně dva paralelní itemy, ověřuje kanonický owner/recording prefix a fail-closed vyžaduje vlastní scheduler token i přesný enable secret `true`. Repo neobsahuje cron ani schedule. Zdrojový repozitář sám nepotvrzuje aplikaci migrace, nasazení funkce, nastavení secrets ani povolení cleanupu na žádném cíli.
 
 ## Public tabulky
 
@@ -136,6 +146,7 @@ Fresh-project pořadí zůstává závazné: baseline, evidence `10000`, organiz
 - `prompt_templates`
 - `prompt_template_overrides` po aplikaci forward migrace `20260813090000`
 - `ai_processing_jobs`
+- `automatic_timeline_intents` po aplikaci forward migrace `20260827094435`
 - `ai_outputs`
 - `transcript_tasks`
 - `transcript_chapters`
@@ -199,6 +210,27 @@ Expand fáze migrace zachovává kompatibilitu s dosud nasazeným `0.1.5` insert
 
 Legacy nesystémové řádky v `prompt_templates` zůstávají uložené, ale editor `AI prompty` je v této fázi nezobrazuje. Aktivní quick-action kontrakt obsahuje přesně `summary`, `action_items`, `timeline_chapters`, `meeting_minutes`, `crm_note` a `follow_up_email`; browser posílá jen processing type a model, nikdy prompt ID, schema ani user ID.
 
+## Automatic timeline idempotency a lease
+
+`20260827094435_add_automatic_timeline_idempotency.sql` přidává do `ai_processing_jobs` additive pole `execution_mode`, `automatic_idempotency_key`, `attempt_count`, `max_attempts`, `lease_token` a `lease_expires_at` a do `transcripts` nenulovaný `completion_generation_key`. Existující a nové manuální řádky mají default `execution_mode='manual'`; automatický řádek musí být exact-snapshot `timeline_chapters` job s nenulovým idempotency digestem. Partial unique index povolí jen jeden automatický job na persistovanou generation identity a unique index `ai_outputs(processing_job_id)` jen jeden raw output na job. Nová forced-RLS tabulka `automatic_timeline_intents` drží service-only completion-time consent a celý immutable model/prompt/provider snapshot před prvním enqueue pokusem. Řádek bez consentu se nevytváří a historický transcript bez intentu se nerecoveruje.
+
+RPC `complete_transcript_generation_v1`, `enqueue_automatic_timeline_job_v1`, `claim_automatic_timeline_job_v1` a `settle_automatic_timeline_job_v1` jsou `SECURITY INVOKER`, mají prázdný `search_path`, odebraný `EXECUTE` pro `PUBLIC`, `anon` i `authenticated` a explicitní grant pouze pro `service_role`. Completion RPC zamkne owner transcript `FOR UPDATE`, rozhodne same/new generation, vybere a `FOR SHARE` zamkne systémový prompt a aktivní override, uloží přesný intent, provede replacement cleanup právě jednou a teprve ve stejné transakci nastaví generation marker i recording `completed`. Jakákoli prompt/intent chyba rollbackne completion; ztracená odpověď po commitu je obnovitelná z intentu. Enqueue používá stejný unique digest; souběžné recovery proto vrátí jediný durable job. Claim přijme queued/failed job s remaining attempts nebo `running` job až po deterministické expiraci lease; každý claim zvýší attempt count. Settlement vyžaduje přesný aktuální lease token. Migrace neobsahuje cron ani plánovanou úlohu. Každý target stále potřebuje vlastní preflight, apply, postflight a rollback evidence.
+
+Před jakýmkoli apply `20260827094435` na existující target musí oprávněný operátor spustit přesně tento read-only preflight:
+
+```sql
+select
+  processing_job_id,
+  count(*) as output_count,
+  array_agg(id order by created_at, id) as ai_output_ids
+from public.ai_outputs
+group by processing_job_id
+having count(*) > 1
+order by processing_job_id;
+```
+
+Nulový výsledek je nutná, nikoli postačující podmínka apply. Jakýkoli řádek blokuje live apply a vyžaduje explicitní lineage review každého outputu. Migrace stejný invariant kontroluje fail-closed ještě před unique indexem a vyhodí výjimku; neobsahuje blind dedup ani delete. Každý target zůstává `live apply blocked pending preflight`, dokud není doložen jeho vlastní nulový výsledek a schválen další rollout krok.
+
 ## Přístupový model
 
 Authenticated uživatel:
@@ -218,6 +250,7 @@ Server/worker přes `service_role`:
 - vytváří a upravuje `transcription_jobs`,
 - ukládá `transcripts`,
 - vytváří a upravuje `ai_processing_jobs`,
+- po aplikaci automatic timeline migrace persistuje a čte `automatic_timeline_intents` pouze přes service-role boundary,
 - ukládá `ai_outputs`,
 - ukládá odvozené `transcript_tasks`, `transcript_chapters`, `transcript_decisions` a `transcript_risks`,
 - zapisuje `audit_logs`,

@@ -44,6 +44,10 @@ Trvalé mazání z Koše musí nejdřív ověřit vlastníka přes běžnou Supa
 
 Supabase TUS upload URL může zůstat platná až 24 hodin. `deleted_at` je proto po dobu pobytu v Koši neměnné a permanentní purge smí začít až při `deleted_at <= now() - 24 hodin`. Storage INSERT/UPDATE policy současně vyžaduje aktivní vlastněný řádek bez purge claimu. Purge po prvním mazání používá přesný claim token, znovu projde celý `{user_id}/{recording_id}/` prefix a pozdě dokončené objekty odstraní v omezeném počtu kol; při chybě nebo trvale neprázdném prefixu DB řádek nesmaže a claim po zahájení Storage mutace ponechá pro bezpečný retry.
 
+Automatická Trash retence nemění ruční 24hodinový safety fence. Preference `trashRetentionHours` ovlivní pouze příští přechod aktivního řádku do `deleted`; trigger pak `deleted_at`, retenci a `purge_after` drží jako neměnný snapshot až do restore. Restore snapshot i claim metadata vyčistí, takže další delete přepočítá deadline podle aktuální preference. Legacy deleted řádky musí zachovat historické `deleted_at` a dostanou jen backfill 720 hodin a deadline o 30 dní později.
+
+Cleanup worker je Supabase Edge Function bez schedule. Smí claimnout nejvýše 20 due řádků, držet přesně dva Storage requesty in flight a dokončit pouze vlastní neztracený lease token. Cesta musí kanonicky začínat `{user_id}/{recording_id}/`; mazání `storage.objects` přes SQL je zakázané, používá se pouze Storage API. Chyba před prvním delete pokusem claim releaseuje, ale od okamžiku prvního Storage delete pokusu je výsledek nejistý: remove chyba, následná list chyba i neprázdný prefix musí claim ponechat, aby restore nemohl obnovit částečně smazanou položku. Automatický i ruční purge používají stejnou 15minutovou stale hranici; teprve potom nový token bezpečně převezme retry. Při claim loss se cizí lease nefinalizuje ani nereleaseuje. Scheduler token, service role key, storage cesty ani PII nesmí být v summary nebo logu. Chybějící/špatný custom token a jiná enable hodnota než přesné `true` fail-closed neprovedou žádnou práci. Každý target musí samostatně doložit disabled-first testy, stav Vault/Cron a explicitní schválení backlogu před zapnutím.
+
 ## Browser MIME typy obsahují codec parametry
 
 MediaRecorder může vracet MIME typ ve tvaru `audio/webm;codecs=opus`. Supabase Storage bucket ale porovnává povolené MIME typy proti čistému typu jako `audio/webm`. Před validací, uložením metadat a uploadem do Storage je proto nutné MIME typ normalizovat odstraněním parametrů za středníkem.
@@ -62,7 +66,7 @@ EU volba funguje pouze s EU-enabled Soniox projektem a odpovídajícím regioná
 
 ## Auth metadata jen pro preference
 
-Vosio používá `user_metadata.vosio_settings` pro netajné uživatelské preference, například výchozí AI model, Soniox realtime model a výchozí jazyk live přepisu. Tato metadata jsou uživatelsky editovatelná a nesmí se používat pro autorizaci, RLS rozhodnutí, role ani bezpečnostní limity.
+Vosio používá `user_metadata.vosio_settings` pro netajné uživatelské preference, například výchozí AI model, Soniox realtime model, výchozí jazyk live přepisu a `trashRetentionHours`. Tato metadata jsou uživatelsky editovatelná a nesmí se používat pro autorizaci, RLS rozhodnutí, role ani bezpečnostní limity. Trash retence musí být na serveru sanitizovaná přes allowlist `24`, `168`, `720`; chybějící nebo neplatná hodnota znamená `720`.
 
 ## Soniox live jazyk a diarizace
 
@@ -96,7 +100,7 @@ Aktuální katalog modelů nemá uživatelské nastavení `temperature`. OpenAI 
 
 `transcripts.segments` může obsahovat token-level Soniox JSON s časem a speaker id pro každé slovo. U delších callů to může vytvořit stovky tisíc až milion tokenů, pokud se JSON pošle přímo do AI promptu. AI endpoint proto před renderem promptu používá kompaktní speaker utterances a do metadat přidává, jestli byly segmenty zkrácené. Plný token-level JSON zůstává v DB pro UI přepis, ale providerům se neposílá celý.
 
-Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a pokračuje přes evidence `20260804100000`, organization `20260804110000`, markers `20260804120000`, transcript search `20260804130000`, Trash restore/purge `20260810005550_restore_recordings_from_trash.sql`, status filters `20260813000000_add_recording_status_filters.sql`, prompt overrides/job snapshots `20260813090000_add_prompt_overrides_and_job_snapshots.sql` a privilege hardening `20260815073029_harden_prompt_override_privileges.sql`. Samotná baseline není celý aktuální bootstrap ani kompletní source of truth; tím je pouze celý timestampově seřazený řetězec. Veřejný repozitář neeviduje stav konkrétních runtime databází, takže každý target musí projít vlastním apply a postflightem. Baseline už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
+Nový Supabase projekt začíná baseline `20260617000000_initial_schema.sql` a pokračuje přes evidence `20260804100000`, organization `20260804110000`, markers `20260804120000`, transcript search `20260804130000`, Trash restore/purge `20260810005550_restore_recordings_from_trash.sql`, status filters `20260813000000_add_recording_status_filters.sql`, prompt overrides/job snapshots `20260813090000_add_prompt_overrides_and_job_snapshots.sql`, privilege hardening `20260815073029_harden_prompt_override_privileges.sql`, automatic timeline idempotency `20260827094435_add_automatic_timeline_idempotency.sql` a Trash retention `20260827100000_add_trash_retention_deadlines.sql`. Samotná baseline není celý aktuální bootstrap ani kompletní source of truth; tím je pouze celý timestampově seřazený řetězec. Veřejný repozitář neeviduje stav konkrétních runtime databází, takže každý target musí projít vlastním apply a postflightem. Baseline už obsahuje enum `public.ai_provider` s hodnotami `openai` i `gemini`. U existující produkční databáze kontroluj skutečný enum obsah, ne jen historický seznam migrací; bez hodnoty `gemini` spadne založení `ai_processing_jobs` ještě před voláním Gemini API.
 
 ## Strukturované AI tabulky jsou odvozené projekce
 
@@ -303,9 +307,32 @@ Query parametr `error` z delete redirectu je nedůvěryhodný vstup. UI smí vyk
 Verze v `package.json`, private commit na `dev` a private tag `vX.Y.Z` potvrzují pouze source-only stav private repozitáře. Neprokazují Vercel deploy, aplikaci Supabase migrací ani shodu remote migration ledgeru. Public repozitář má samostatnou historii a sanitizovaný povrch; private commity ani tagy se do něj nikdy nepushují. Public release potřebuje oddělený public checkout a vlastní ověření. Tyto stavy vždy ověř a reportuj samostatně pro konkrétní target.
 ## Settings runtime kontrakt
 
-Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čte: výchozí AI model pro ruční AI zpracování, Soniox realtime model a jazyk pro nový live záznam a konzervativní per-user strop velikosti uploadu. Volba storage tarifu nikdy nemění Supabase projekt ani bucket.
+Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čte: výchozí AI model pro ruční AI zpracování i novou automatickou časovou osu, explicitní opt-in `autoTimelineAfterTranscription`, Soniox realtime model a jazyk pro nový live záznam a konzervativní per-user strop velikosti uploadu. Volba storage tarifu nikdy nemění Supabase projekt ani bucket.
 
 `outputLanguage`, `audioRetentionPolicy`, `autoProcessAfterTranscription`, `autoProcessingTypes` a `aiTemperature` zůstávají kvůli zpětné kompatibilitě uložené v Auth metadata, ale současný runtime je nepoužívá. UI je proto nesmí prezentovat jako funkční ovládání, dokud neexistuje skutečná server/worker cesta.
+
+## Automatická timeline není backfill ani cron
+
+Zapnutí `autoTimelineAfterTranscription` platí jen pro completion persistovaná po uložení preference. Staré dormant `autoProcessAfterTranscription` ani `autoProcessingTypes` nesmějí souhlas nahradit. Po durable obsahu transcriptu provede service-only `complete_transcript_generation_v1` jediný completion transition: pod row lockem společně uloží generation digest, stav `completed` a při completion-time souhlasu `automatic_timeline_intents` řádek s exact modelem, provider configem a effective prompt snapshotem. Prompt lookup nebo intent insert chyba rollbackne transition včetně stavu `completed`; nemůže po ní zůstat completed generace bez recovery markeru. Po commitu provider ani první enqueue selhání transcript nevrací ani nemaže. Detail smí chybějící job vytvořit pouze z durable intentu, takže otevření historického nebo disabled transcriptu bez intentu zůstane `not_scheduled` a není retroaktivní backfill.
+
+Paid-call idempotency zůstává v `ai_processing_jobs` a stejný digest drží recovery intent; nikdy se neodvozuje z `ai_outputs`. Smazání outputu proto nesmí úspěšný job znovu spustit. Claim je service-role-only, atomický, s finite attempts a expirovatelným lease; endpoint nejdřív ověří session a owner transcript přes request klienta a teprve potom vytvoří admin klienta. Browser neposílá model, prompt, provider ani processing type. Reconciler dělá jeden request při mountu detailu a refresh vyvolá jen tehdy, když v tomto requestu job skutečně doběhl; settled job vrací `already_done`, aby nevznikl render loop. Žádný cron ani provider klíč se tímto tokem nepřidává.
+
+Repeated terminal poll stejné Soniox generace musí projít přes `complete_transcript_generation_v1`, který pod `FOR UPDATE` lockem porovná `transcripts.completion_generation_key`; regular a segmented generation identity vychází z persistovaných Soniox jobů. Shodná generace zachovává manuální i automatické joby/outputy a pouze rekonciluje už uložený intent/job; nesmí znovu číst aktuální consent a založit intent, protože by tím backfillovala starší completion. Legacy řádek bez generation digestu se smí pouze svázat s již persistovaným stejným `transcription_job_id`, bez intentu z aktuální preference. Cleanup transcript-dependent AI i starého intentu proběhne pouze u vítěze skutečně nové generace ve stejné zamčené transakci. Druhý souběžný poll už vidí nový digest a nesmaže manuální job/output vytvořený po prvním transition commitu.
+
+`20260827094435_add_automatic_timeline_idempotency.sql` se na existující target nesmí aplikovat naslepo. Povinný read-only preflight je:
+
+```sql
+select
+  processing_job_id,
+  count(*) as output_count,
+  array_agg(id order by created_at, id) as ai_output_ids
+from public.ai_outputs
+group by processing_job_id
+having count(*) > 1
+order by processing_job_id;
+```
+
+Jakýkoli vrácený řádek znamená `live apply blocked pending preflight review` a vyžaduje explicitní lineage review autoritativního outputu; blind dedup, automatická deduplikace ani mazání nejsou povolené. Samotná migrace před unique indexem selže s explicitní výjimkou. Tento source commit nepotvrzuje nulový výsledek, catalog validaci ani apply na žádném targetu.
 
 `/settings` je jeden dokument: na desktopu scrolluje pouze `.content-area` s `content-area-document`; na mobilu do 900 px je `.content-area` `overflow: visible` a scrolluje dokument nad fixed spodní navigací. Do Settings nepřidávat druhý scroll container ani sticky section navigation.
 
@@ -313,7 +340,7 @@ Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čt
 
 Stavové počty na `/recordings` vznikají přes `count_own_recording_statuses_v1`: přesné facety pokrývají celý aktuální `q`, organizační filtry klienta/projektu/složky a ALL sadu štítků. Facety ignorují aktivní `status`, aby šlo jedním kliknutím přepnout na jiný stav; `Smazáno` je samostatný úplný počet Koše. Filtrování jedné 25řádkové search stránky v Reactu by rozbilo `total_count` a stránkování.
 
-Po kanonizaci URL filtrů jsou hlavní list/search dotaz, stavové facety a počet Koše navzájem nezávislé read-only požadavky. Musí začít v jednom souběžném kroku; čekání na facety před spuštěním listu přidává do kritické cesty `/recordings` celý zbytečný Supabase round trip. Organizační options zůstávají před nimi, protože určují kanonické filtry, a všechny dotazy dál používají stejnou authenticated session a RLS.
+Po kanonizaci URL filtrů jsou hlavní list/search dotaz, stavové facety a počet Koše navzájem nezávislé read-only požadavky. Musí začít v jednom souběžném kroku; čekání na facety před spuštěním listu přidává do kritické cesty `/recordings` celý zbytečný Supabase round trip. Bez hodnot `client`, `project`, `folder` a `tag` URL okamžitě používá prázdné kanonické organizační filtry a do stejné post-auth fáze spouští i organizační options. Pokud URL organizační hodnotu má, options nejdřív ověří owner allowlist a kompatibilitu projektu s klientem; teprve potom začnou filtrované dotazy. Selhaná idempotentní read fáze má nejvýše jeden server retry, ale search RPC zůstává samostatná inline chyba a neeskaluje do route erroru. Všechny dotazy dál používají stejnou authenticated session a RLS.
 
 ## Hromadný purge není jeden serverový request
 

@@ -5,11 +5,23 @@ import type { StructuredAiItems } from "@/lib/ai/structured-types";
 
 type PersistStructuredRows = (admin: SupabaseClient, items: StructuredAiItems) => Promise<void>;
 
-type ProcessingPersistenceDependencies = {
+export type CompletedAiJobUsage = {
+  inputTokenCount: number | null;
+  outputTokenCount: number | null;
+};
+
+type CompleteJob = (
+  admin: SupabaseClient,
+  jobId: string,
+  usage: CompletedAiJobUsage
+) => Promise<void>;
+
+export type ProcessingPersistenceDependencies = {
+  completeJob?: CompleteJob;
   persistStructuredRows?: PersistStructuredRows;
 };
 
-type CompletedAiProcessingInput = {
+export type CompletedAiProcessingInput = {
   admin: SupabaseClient;
   inputTokenCount: number | null;
   jobId: string;
@@ -60,15 +72,22 @@ export async function persistCompletedAiProcessing(
     }
   }
 
-  await input.admin
-    .from("ai_processing_jobs")
-    .update({
-      completed_at: new Date().toISOString(),
-      input_token_count: input.inputTokenCount,
-      output_token_count: input.outputTokenCount,
-      status: "done"
-    })
-    .eq("id", input.jobId);
+  if (dependencies.completeJob) {
+    await dependencies.completeJob(input.admin, input.jobId, {
+      inputTokenCount: input.inputTokenCount,
+      outputTokenCount: input.outputTokenCount
+    });
+  } else {
+    await input.admin
+      .from("ai_processing_jobs")
+      .update({
+        completed_at: new Date().toISOString(),
+        input_token_count: input.inputTokenCount,
+        output_token_count: input.outputTokenCount,
+        status: "done"
+      })
+      .eq("id", input.jobId);
+  }
 
   return output;
 }
