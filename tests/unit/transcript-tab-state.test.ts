@@ -25,7 +25,7 @@ describe("transcript tab state", () => {
   });
 
   it("accepts every detail tab from one canonical URL value", () => {
-    for (const tab of ["transcript", "ai", "timeline", "files"] as const) {
+    for (const tab of ["transcript", "ai", "timeline", "files", "chat"] as const) {
       expect(parseTranscriptTabSearchParams({ tab })).toEqual({
         explicit: true,
         tab,

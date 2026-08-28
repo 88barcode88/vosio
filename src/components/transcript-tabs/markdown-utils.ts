@@ -146,9 +146,8 @@ function parseAiMarkdownLine(line: string): AiMarkdownLine[] {
   return splitLongParagraph(stripInlineMarkdown(line)).map((paragraph) => ({ kind: "paragraph" as const, text: paragraph }));
 }
 
-// getAiOutputMarkdownLines turns saved markdown-like AI text into readable document blocks.
-export function getAiOutputMarkdownLines(output: AiOutputView): AiMarkdownLine[] {
-  const text = getAiOutputPreview(output);
+// getAiMarkdownLines turns untrusted markdown-like AI text into safe readable document blocks.
+export function getAiMarkdownLines(text: string): AiMarkdownLine[] {
   const lines = normalizeAiMarkdownSourceLines(text);
 
   if (lines.length === 0) {
@@ -175,4 +174,9 @@ export function getAiOutputMarkdownLines(output: AiOutputView): AiMarkdownLine[]
   }
 
   return parsedLines;
+}
+
+// getAiOutputMarkdownLines turns saved markdown-like AI text into readable document blocks.
+export function getAiOutputMarkdownLines(output: AiOutputView): AiMarkdownLine[] {
+  return getAiMarkdownLines(getAiOutputPreview(output));
 }

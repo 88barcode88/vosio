@@ -51,7 +51,8 @@ export const transcriptTabs: Array<{ id: TranscriptTab; label: string }> = [
   { id: "transcript", label: "Přepis" },
   { id: "ai", label: "AI zpracování" },
   { id: "timeline", label: "Časová osa" },
-  { id: "files", label: "Soubory" }
+  { id: "files", label: "Soubory" },
+  { id: "chat", label: "Chat" }
 ];
 
 export const speakerClassNames = [

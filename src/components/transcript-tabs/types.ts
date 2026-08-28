@@ -1,6 +1,6 @@
 import type { AiOutputView } from "@/lib/ai/types";
 
-export type TranscriptTab = "transcript" | "ai" | "timeline" | "files";
+export type TranscriptTab = "transcript" | "ai" | "timeline" | "files" | "chat";
 
 export type TranscriptSpeakerBlock = {
   anchorId: string;

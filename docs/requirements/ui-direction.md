@@ -141,6 +141,7 @@ Detail má používat taby:
 - `AI zpracování`
 - `Časová osa`
 - `Soubory`
+- `Chat`
 
 ## Přepis
 
@@ -182,6 +183,10 @@ Má obsahovat:
 - detail vybraného výstupu otevřený až po kliknutí.
 
 AI výstupy mají být uložené a znovu otevřitelné. Nemají být jen dočasná odpověď v panelu.
+
+## Chat nad přepisem
+
+`Chat` je pátý pracovní tab detailu nahrávky. Ukládá jedno vlákno pro aktuální přepis a po otevření načítá jen jeho historii. Výběr modelu ovlivní následující otázku; každý uložený tah ukazuje model, který odpověď skutečně vytvořil. Ověřená evidence z odpovědi vede přes současnou navigaci na přepis a dostupné audio. Browser do chat API neposílá audio, storage data ani vlastní transcript context.
 
 Pro složité nebo důležité cally má UI doporučit Sol nebo Terra a připomenout kontrolu úkolů a evidence proti přepisu. Toto doporučení je praktická pomůcka, ne příslib deterministicky lepšího výsledku; ceny v pickeru jsou orientační odhady podle lokálního katalogu a skutečná fakturace patří providerovi.
 

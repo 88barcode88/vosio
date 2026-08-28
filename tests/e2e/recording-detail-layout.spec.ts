@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 
-type FixtureMode = "blocks" | "raw" | "ai" | "timeline" | "files";
+type FixtureMode = "blocks" | "raw" | "ai" | "timeline" | "files" | "chat";
 
 // createFixtureScope supplies the exact twelve-hex token required by the guarded fixture route.
 function createFixtureScope() {
@@ -167,12 +167,13 @@ test("the guarded fixture renders the real full-page recording detail", async ({
   await expect(page.locator(".recording-rail")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Přehrát nahrávku" })).toBeVisible();
   await expect(page.getByRole("slider", { name: "Pozice přehrávání" })).toBeEnabled();
-  await expect(page.getByRole("tab")).toHaveCount(4);
+  await expect(page.getByRole("tab")).toHaveCount(5);
   await expect(page.getByRole("tab").allTextContents()).resolves.toEqual([
     "Přepis",
     "AI zpracování",
     "Časová osa",
-    "Soubory"
+    "Soubory",
+    "Chat"
   ]);
   await page.screenshot({
     caret: "initial",
@@ -326,7 +327,8 @@ const fixtureTabs: ReadonlyArray<readonly [FixtureMode, string]> = [
   ["raw", "Přepis"],
   ["ai", "AI zpracování"],
   ["timeline", "Časová osa"],
-  ["files", "Soubory"]
+  ["files", "Soubory"],
+  ["chat", "Chat"]
 ];
 
 for (const [mode, tabName] of fixtureTabs) {
