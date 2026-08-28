@@ -74,9 +74,6 @@ Answer in the language of the user question; default to Czech when the question 
   true
 );
 
-create unique index if not exists transcripts_id_recording_user_uidx
-  on public.transcripts(id, recording_id, user_id);
-
 create table public.transcript_chat_threads (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,

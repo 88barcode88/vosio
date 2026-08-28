@@ -36,6 +36,13 @@ function normalizeSql(sql: string) {
 
 const { enumMigration, migration, schemaMigration } = readChatMigrations();
 const sql = normalizeSql(migration);
+const transcriptSearchSql = normalizeSql(readFileSync(
+  join(
+    migrationsDirectory,
+    "20260804130000_add_transcript_fulltext_search.sql",
+  ),
+  "utf8",
+));
 const quickPromptTypes = readFileSync(
   join(process.cwd(), "src", "lib", "prompt-templates", "effective.ts"),
   "utf8",
@@ -57,6 +64,12 @@ describe("recording chat schema migration", () => {
   });
 
   it("owns exactly one thread per transcript and binds it to the matching recording", () => {
+    expect(transcriptSearchSql).toContain(
+      "constraint transcripts_id_recording_id_user_id_unique unique (id, recording_id, user_id)",
+    );
+    expect(normalizeSql(schemaMigration)).not.toContain(
+      "create unique index if not exists transcripts_id_recording_user_uidx",
+    );
     expect(sql).toContain("create table public.transcript_chat_threads");
     expect(sql).toContain("unique (user_id, transcript_id)");
     expect(sql).toContain(
