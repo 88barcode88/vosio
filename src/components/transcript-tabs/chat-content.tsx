@@ -73,11 +73,18 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
   const [model, setModel] = useState(defaultModel);
   const [message, setMessage] = useState<string | null>(null);
   const [transportUncertain, setTransportUncertain] = useState(false);
+  const [pendingSubmission, setPendingSubmission] = useState<PendingChatSubmission | null>(null);
   const activeTranscriptRef = useRef<string | null>(activeTranscriptId);
   const pendingTurnRef = useRef<PendingChatSubmission | null>(null);
   const submitInFlightRef = useRef(false);
   const pollControllerRef = useRef<AbortController | null>(null);
   const pollInFlightRef = useRef(false);
+
+  // updatePendingSubmission keeps the synchronous idempotency guard and rendered composer state in lockstep.
+  const updatePendingSubmission = useCallback((pending: PendingChatSubmission | null) => {
+    pendingTurnRef.current = pending;
+    setPendingSubmission(pending);
+  }, []);
 
   const loadHistory = useCallback(async (transcriptId: string, signal?: AbortSignal) => {
     const response = await fetch(`/api/transcripts/${transcriptId}/chat`, {
@@ -104,11 +111,11 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     if (pending?.transcriptId === transcriptId && nextHistory.turns.some(
       (turn) => turn.clientTurnId === pending.clientTurnId
     )) {
-      pendingTurnRef.current = null;
+      updatePendingSubmission(null);
       setTransportUncertain(false);
       setDraft("");
     }
-  }, []);
+  }, [updatePendingSubmission]);
 
   useEffect(() => {
     activeTranscriptRef.current = activeTranscriptId;
@@ -116,7 +123,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     setDraft("");
     setMessage(null);
     setTransportUncertain(false);
-    pendingTurnRef.current = null;
+    updatePendingSubmission(null);
     submitInFlightRef.current = false;
     setModel(defaultModel);
 
@@ -146,10 +153,10 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       });
 
     return () => controller.abort();
-  }, [activeTranscriptId, applyHistory, defaultModel, loadHistory]);
+  }, [activeTranscriptId, applyHistory, defaultModel, loadHistory, updatePendingSubmission]);
 
   const hasServerRunningTurn = history.turns.some((turn) => turn.status === "queued" || turn.status === "running");
-  const hasPendingSubmission = pendingTurnRef.current?.transcriptId === activeTranscriptId;
+  const hasPendingSubmission = pendingSubmission?.transcriptId === activeTranscriptId;
   const isComposerDisabled = !activeTranscriptId || isLoading || isSubmitting || hasServerRunningTurn || transportUncertain || hasPendingSubmission;
 
   useEffect(() => {
@@ -250,7 +257,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       setTransportUncertain(false);
       setMessage(recognized ? "Odeslání bylo uloženo v historii." : "Odeslání nebylo potvrzeno. Můžete zopakovat původní odeslání.");
       if (recognized) {
-        pendingTurnRef.current = null;
+        updatePendingSubmission(null);
         setDraft("");
       }
     } catch (error) {
@@ -297,7 +304,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
         thread: result.thread,
         turns: mergeChatTurn(current.turns, result.turn)
       }));
-      pendingTurnRef.current = null;
+      updatePendingSubmission(null);
       setDraft("");
       setTransportUncertain(false);
       setMessage(result.turn.status === "failed"
@@ -327,7 +334,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       question,
       transcriptId: activeTranscriptId
     };
-    pendingTurnRef.current = pending;
+    updatePendingSubmission(pending);
     await submitPendingTurn(pending);
   }
 

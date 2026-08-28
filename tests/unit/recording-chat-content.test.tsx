@@ -249,9 +249,13 @@ describe("recording chat content", () => {
     await act(async () => textarea?.dispatchEvent(new Event("input", { bubbles: true })));
     await act(async () => form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     expect(container?.textContent).toContain("Spojení bylo přerušeno");
+    expect(container?.querySelector(".recording-chat-reconcile")).not.toBeNull();
+    expect(container?.querySelector(".recording-chat-retry")).toBeNull();
 
     await act(async () => container?.querySelector<HTMLButtonElement>(".recording-chat-reconcile")?.click());
     const modelPicker = container?.querySelector<HTMLSelectElement>("select");
+    expect(container?.querySelector(".recording-chat-reconcile:not(.recording-chat-retry)")).toBeNull();
+    expect(container?.querySelector(".recording-chat-retry")).not.toBeNull();
     expect(textarea?.disabled).toBe(true);
     expect(modelPicker?.disabled).toBe(true);
     if (textarea) textarea.disabled = false;
