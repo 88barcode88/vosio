@@ -284,6 +284,8 @@ Vosio nastavuje v `next.config.ts` základní bezpečnostní hlavičky (`X-Conte
 
 `/api/soniox/realtime-key` a `/api/transcripts/[id]/process` mají per-user fixed-window rate limit přes `src/lib/rate-limit.ts`. Limiter drží okna v paměti procesu — na serverless platformě má každá instance vlastní počítadlo, takže limit je best-effort brzda nákladů, ne přesná garance. Pro přesný limit napříč instancemi by bylo potřeba sdílené úložiště (např. Upstash Redis). Nezvyšuj limity bez rozmyslu: realtime-key limit musí snést reconnecty SonioxClientu během jedné live session.
 
+Recording chat používá stejný per-instance princip s limitem 10 nových claimů za minutu na uživatele; opakování stejného `client_turn_id` se vrací před limiterem a znovu nevolá providera. `running` tah je čerstvý přesně 10 minut. Teprve autorizovaný GET/POST po této hranici ho compare-and-set podmínkou `status = running` a starším `started_at` označí jako `failed`. Aktivní provider kontext je deterministicky omezený počtem znaků, ne přesným provider tokenizerem: kompaktní segmenty 100 000, raw fallback 60 000 a nejnovější dokončená historie 24 000 znaků. Oříznutí je součástí untrusted user-role metadata pro model; starší tahy přitom zůstávají uložené a viditelné v historii.
+
 ## Balíček server-only vyhazuje ve Vitest
 
 `src/lib/env.server.ts` a `src/lib/supabase/admin.ts` importují `server-only`, aby omylný import do client komponenty selhal už při buildu. Balíček `server-only` ale vyhazuje i v plain Node prostředí bez `react-server` condition — tedy i ve Vitest. Proto `vitest.config.ts` aliasuje `server-only` na prázdný stub `tests/stubs/server-only.ts`. Když přidáš `import "server-only"` do dalšího modulu testovaného unit testy, nic dalšího nastavovat nemusíš; alias platí globálně.

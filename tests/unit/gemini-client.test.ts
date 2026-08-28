@@ -1,7 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { createGeminiGenerationConfig, getGeminiOutputTokenCount } from "@/lib/ai/gemini";
+import {
+  createGeminiChatRequestBody,
+  createGeminiGenerationConfig,
+  getGeminiOutputTokenCount
+} from "@/lib/ai/gemini";
 
 describe("Gemini client generation config", () => {
+  it("keeps chat systemInstruction separate and maps assistant history to model role", () => {
+    const body = createGeminiChatRequestBody({
+      messages: [
+        { content: "Transcript data", role: "user" },
+        { content: "Prior answer", role: "assistant" }
+      ],
+      model: "gemini-3.6-flash",
+      outputSchema: { type: "object" },
+      systemInstruction: "Authoritative rules"
+    });
+
+    expect(body.systemInstruction).toEqual({ parts: [{ text: "Authoritative rules" }] });
+    expect(body.contents).toEqual([
+      { parts: [{ text: "Transcript data" }], role: "user" },
+      { parts: [{ text: "Prior answer" }], role: "model" }
+    ]);
+    expect(body.generationConfig).toHaveProperty("responseJsonSchema", { type: "object" });
+  });
+
   it("uses Gemini 3.6 thinking without deprecated temperature", () => {
     expect(createGeminiGenerationConfig({
       model: "gemini-3.6-flash",
