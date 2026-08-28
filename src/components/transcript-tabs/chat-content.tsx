@@ -19,6 +19,7 @@ type ChatContentProps = {
 };
 
 const emptyHistory: ChatHistory = { thread: null, turns: [] };
+const CHAT_RUNNING_POLL_INTERVAL_MS = 5_000;
 
 // getChatError returns only the API's short public error message or a safe local fallback.
 function getChatError(payload: unknown) {
@@ -68,6 +69,8 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
   const activeTranscriptRef = useRef<string | null>(activeTranscriptId);
   const pendingTurnRef = useRef<{ clientTurnId: string; question: string; transcriptId: string } | null>(null);
   const submitInFlightRef = useRef(false);
+  const pollControllerRef = useRef<AbortController | null>(null);
+  const pollInFlightRef = useRef(false);
 
   const loadHistory = useCallback(async (transcriptId: string, signal?: AbortSignal) => {
     const response = await fetch(`/api/transcripts/${transcriptId}/chat`, {
@@ -82,6 +85,22 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     }
 
     return payload as ChatHistory;
+  }, []);
+
+  // applyHistory keeps received data scoped to the transcript still mounted in the chat tab.
+  const applyHistory = useCallback((transcriptId: string, nextHistory: ChatHistory) => {
+    if (activeTranscriptRef.current !== transcriptId) {
+      return;
+    }
+    setHistory(nextHistory);
+    const pending = pendingTurnRef.current;
+    if (pending?.transcriptId === transcriptId && nextHistory.turns.some(
+      (turn) => turn.clientTurnId === pending.clientTurnId
+    )) {
+      pendingTurnRef.current = null;
+      setTransportUncertain(false);
+      setDraft("");
+    }
   }, []);
 
   useEffect(() => {
@@ -102,24 +121,12 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     const controller = new AbortController();
     setIsLoading(true);
 
-    // applyHistory ignores a fetch that belongs to a transcript which is no longer rendered.
-    const applyHistory = (nextHistory: ChatHistory) => {
-      if (controller.signal.aborted || activeTranscriptRef.current !== activeTranscriptId) {
-        return;
-      }
-      setHistory(nextHistory);
-      const pending = pendingTurnRef.current;
-      if (pending?.transcriptId === activeTranscriptId && nextHistory.turns.some(
-        (turn) => turn.clientTurnId === pending.clientTurnId
-      )) {
-        pendingTurnRef.current = null;
-        setTransportUncertain(false);
-        setDraft("");
-      }
-    };
-
     void loadHistory(activeTranscriptId, controller.signal)
-      .then(applyHistory)
+      .then((nextHistory) => {
+        if (!controller.signal.aborted) {
+          applyHistory(activeTranscriptId, nextHistory);
+        }
+      })
       .catch((error: unknown) => {
         if (!controller.signal.aborted && activeTranscriptRef.current === activeTranscriptId) {
           setMessage(error instanceof Error ? error.message : "Historii chatu se nepodařilo načíst.");
@@ -132,10 +139,91 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       });
 
     return () => controller.abort();
-  }, [activeTranscriptId, defaultModel, loadHistory]);
+  }, [activeTranscriptId, applyHistory, defaultModel, loadHistory]);
 
   const hasServerRunningTurn = history.turns.some((turn) => turn.status === "queued" || turn.status === "running");
   const isComposerDisabled = !activeTranscriptId || isLoading || isSubmitting || hasServerRunningTurn || transportUncertain;
+
+  useEffect(() => {
+    if (!activeTranscriptId || !hasServerRunningTurn) {
+      return;
+    }
+
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let disposed = false;
+
+    // stopPolling aborts the active background request before releasing its timer and ownership lock.
+    const stopPolling = () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+      pollControllerRef.current?.abort();
+      pollControllerRef.current = null;
+      pollInFlightRef.current = false;
+    };
+
+    // pollRunningTurn refreshes only one visible running chat and never drops the previous safe history on error.
+    const pollRunningTurn = async () => {
+      if (
+        disposed
+        || document.visibilityState === "hidden"
+        || pollInFlightRef.current
+        || activeTranscriptRef.current !== activeTranscriptId
+      ) {
+        return;
+      }
+
+      const controller = new AbortController();
+      pollControllerRef.current = controller;
+      pollInFlightRef.current = true;
+
+      try {
+        const nextHistory = await loadHistory(activeTranscriptId, controller.signal);
+        if (!disposed && !controller.signal.aborted) {
+          applyHistory(activeTranscriptId, nextHistory);
+        }
+      } catch {
+        if (!disposed && !controller.signal.aborted && activeTranscriptRef.current === activeTranscriptId) {
+          setMessage("Stav chatu se nepodařilo obnovit. Zkusíme to znovu.");
+        }
+      } finally {
+        if (pollControllerRef.current === controller) {
+          pollControllerRef.current = null;
+          pollInFlightRef.current = false;
+        }
+      }
+    };
+
+    // startPolling resumes the bounded timer only while the tab is visible and this server turn remains active.
+    const startPolling = () => {
+      if (document.visibilityState === "hidden" || intervalId !== null) {
+        return;
+      }
+      intervalId = setInterval(() => { void pollRunningTurn(); }, CHAT_RUNNING_POLL_INTERVAL_MS);
+    };
+
+    // refreshVisibleChat resumes delayed reconciliation as soon as the browser returns to this tab.
+    const refreshVisibleChat = () => {
+      if (document.visibilityState === "hidden") {
+        stopPolling();
+        return;
+      }
+      void pollRunningTurn();
+      startPolling();
+    };
+
+    document.addEventListener("visibilitychange", refreshVisibleChat);
+    window.addEventListener("focus", refreshVisibleChat);
+    startPolling();
+
+    return () => {
+      disposed = true;
+      document.removeEventListener("visibilitychange", refreshVisibleChat);
+      window.removeEventListener("focus", refreshVisibleChat);
+      stopPolling();
+    };
+  }, [activeTranscriptId, applyHistory, hasServerRunningTurn, loadHistory]);
 
   // reconcilePendingTurn checks a transport-uncertain UUID before the user can submit another request.
   async function reconcilePendingTurn() {

@@ -44,6 +44,7 @@ afterEach(async () => {
   container = null;
   document.body.replaceChildren();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -156,6 +157,74 @@ describe("recording chat content", () => {
 
     expect(container?.textContent).toContain("AI připravuje odpověď…");
     expect(container?.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(true);
+  });
+
+  it("polls a stored running turn to completion and unlocks the composer", async () => {
+    vi.useFakeTimers();
+    const runningTurn = {
+      answerMarkdown: null, clientTurnId: "00000000-0000-4000-8000-000000000004", evidence: [],
+      id: "turn-1", model: "gpt-5.6-terra", provider: "openai", question: "Čeká odpověď?",
+      safeError: null, status: "running", usage: { inputTokens: null, outputTokens: null }
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ thread: { id: "thread-1", transcriptId }, turns: [runningTurn] }) as never)
+      .mockResolvedValueOnce(response({
+        thread: { id: "thread-1", transcriptId },
+        turns: [{ ...runningTurn, answerMarkdown: "Hotovo", status: "completed" }]
+      }) as never);
+    await renderChat();
+    expect(container?.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(true);
+
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(container?.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(false);
+    expect(container?.textContent).toContain("Hotovo");
+  });
+
+  it("pauses a running-turn poll while hidden and refreshes immediately when visible", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const runningTurn = {
+      answerMarkdown: null, clientTurnId: "00000000-0000-4000-8000-000000000004", evidence: [],
+      id: "turn-1", model: "gpt-5.6-terra", provider: "openai", question: "Čeká odpověď?",
+      safeError: null, status: "running", usage: { inputTokens: null, outputTokens: null }
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ thread: { id: "thread-1", transcriptId }, turns: [runningTurn] }) as never)
+      .mockResolvedValueOnce(response({ thread: { id: "thread-1", transcriptId }, turns: [runningTurn] }) as never);
+    await renderChat();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts an in-flight poll when the transcript identity switches", async () => {
+    vi.useFakeTimers();
+    const runningTurn = {
+      answerMarkdown: null, clientTurnId: "00000000-0000-4000-8000-000000000004", evidence: [],
+      id: "turn-1", model: "gpt-5.6-terra", provider: "openai", question: "Čeká odpověď?",
+      safeError: null, status: "running", usage: { inputTokens: null, outputTokens: null }
+    };
+    let pollSignal: AbortSignal | undefined;
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ thread: { id: "thread-1", transcriptId }, turns: [runningTurn] }) as never)
+      .mockImplementationOnce((_url, request) => {
+        pollSignal = (request as RequestInit).signal as AbortSignal;
+        return new Promise(() => undefined) as never;
+      })
+      .mockResolvedValueOnce(response({ thread: null, turns: [] }) as never);
+    await renderChat();
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await renderChat(otherTranscriptId);
+
+    expect(pollSignal?.aborted).toBe(true);
+    expect(fetch).toHaveBeenCalledWith(`/api/transcripts/${otherTranscriptId}/chat`, expect.anything());
   });
 
   it("reconciles an uncertain transport with the original UUID before another send", async () => {

@@ -15,6 +15,8 @@ test("chat persists the selected model and opens its verified evidence through t
     const fixtureWindow = window as typeof window & { __chatSeekSeconds?: number; __chatPlayCalls?: number };
     fixtureWindow.__chatSeekSeconds = 0;
     fixtureWindow.__chatPlayCalls = 0;
+    Object.defineProperty(HTMLMediaElement.prototype, "duration", { configurable: true, get: () => 60 });
+    Object.defineProperty(HTMLMediaElement.prototype, "readyState", { configurable: true, get: () => 1 });
     Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
       configurable: true,
       get: () => fixtureWindow.__chatSeekSeconds ?? 0,
@@ -68,7 +70,8 @@ test("chat persists the selected model and opens its verified evidence through t
   await page.reload();
   await expect(page.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("E2E CHAT SENTINEL")).toBeVisible();
-  await expect(page.getByText("GPT-5.6 Sol · XHigh")).toBeVisible();
+  await expect(page.locator(".recording-chat-answer header small")).toHaveText("GPT-5.6 Sol · XHigh");
+  await expect(page.locator(".recording-audio-element")).toHaveAttribute("src", /chat\.wav/u);
   await page.getByRole("button", { name: /Otevřít ověřený důkaz v 00:08/u }).click();
   await expect(page.getByRole("tab", { name: "Přepis" })).toHaveAttribute("aria-selected", "true");
   await expect.poll(() => page.evaluate(() => (
