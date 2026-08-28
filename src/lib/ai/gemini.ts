@@ -37,6 +37,11 @@ type RunGeminiChatInput = {
   systemInstruction: string;
 };
 
+type GeminiChatContent = {
+  parts: Array<{ text: string }>;
+  role: "model" | "user";
+};
+
 // extractGeminiText joins text parts returned by the Gemini generateContent API.
 function extractGeminiText(response: GeminiResponse) {
   return (
@@ -65,13 +70,27 @@ export function createGeminiGenerationConfig(input: RunGeminiProcessingInput) {
   };
 }
 
+// createGeminiChatContents coalesces adjacent roles while preserving each original message as an ordered text part.
+function createGeminiChatContents(messages: RecordingChatMessage[]) {
+  return messages.reduce<GeminiChatContent[]>((contents, message) => {
+    const role = message.role === "assistant" ? "model" : "user";
+    const previous = contents.at(-1);
+
+    if (previous?.role === role) {
+      return [
+        ...contents.slice(0, -1),
+        { ...previous, parts: [...previous.parts, { text: message.content }] }
+      ];
+    }
+
+    return [...contents, { parts: [{ text: message.content }], role }];
+  }, []);
+}
+
 // createGeminiChatRequestBody keeps systemInstruction authoritative and maps prior assistant turns to model role.
 export function createGeminiChatRequestBody(input: RunGeminiChatInput) {
   return {
-    contents: input.messages.map((message) => ({
-      parts: [{ text: message.content }],
-      role: message.role === "assistant" ? "model" : "user"
-    })),
+    contents: createGeminiChatContents(input.messages),
     generationConfig: {
       ...createGeminiGenerationConfig({
         model: input.model,
