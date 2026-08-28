@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getEstimatedLiveRecordingBytes,
   getLiveAudioFallbackMessage,
+  getTokenKey,
   getRecorderFeedbackAnnouncement,
   getRecordingActiveMessage,
   getStableLiveCaptionTokens,
@@ -10,6 +11,9 @@ import {
   getRealtimeStateWarning,
   getSaveModeLabel,
   getWakeLockWarning,
+  mergeRealtimeResultTokens,
+  normalizeRealtimeToken,
+  promoteRealtimePartialTokens,
   shouldDiscardLiveRecordingAudio,
   tokensToCaptionBlocks,
   type LiveCaptionToken
@@ -23,7 +27,74 @@ const token = (text: string, overrides: Partial<LiveCaptionToken> = {}): LiveCap
 describe("browser recorder helpers", () => {
   it("estimates the buffered audio size from the recorder bitrate", () => {
     expect(getEstimatedLiveRecordingBytes(128_000, 10)).toBe(160_000);
-    expect(getEstimatedLiveRecordingBytes(0, 10)).toBe(160_000);
+    expect(getEstimatedLiveRecordingBytes(0, 10)).toBe(80_000);
+  });
+
+  it("keeps only the latest provisional token revision before it becomes final", () => {
+    const firstResult = mergeRealtimeResultTokens([], [
+      token("Dobrý den", {
+        end_ms: 900,
+        is_final: false,
+        speaker: "2",
+        start_ms: 100
+      })
+    ], 0, 0);
+    const finalResult = mergeRealtimeResultTokens(firstResult.finalTokens, [
+      token("Dobrý den", {
+        end_ms: 900,
+        is_final: true,
+        speaker: "3",
+        start_ms: 100
+      })
+    ], 0, 0);
+
+    expect(firstResult.tokens).toHaveLength(1);
+    expect(finalResult.tokens).toHaveLength(1);
+    expect(finalResult.tokens[0]).toMatchObject({ is_final: true, speaker: "3" });
+  });
+
+  it("keeps completed tokens and replaces the current provisional window", () => {
+    const firstResult = mergeRealtimeResultTokens([], [
+      token("První. ", { end_ms: 500, is_final: true, speaker: "1", start_ms: 100 }),
+      token("Rozep", { end_ms: 900, is_final: false, speaker: "2", start_ms: 600 })
+    ], 0, 0);
+    const secondResult = mergeRealtimeResultTokens(firstResult.finalTokens, [
+      token("Druhá.", { end_ms: 1_100, is_final: false, speaker: "2", start_ms: 600 })
+    ], 0, 0);
+
+    expect(secondResult.tokens.map((item) => item.text)).toEqual(["První. ", "Druhá."]);
+  });
+
+  it("normalizes timestamps and token identity across Soniox reconnect sessions", () => {
+    const firstSessionToken = normalizeRealtimeToken(
+      token("Stejný", { end_ms: 1_500, is_final: true, speaker: "1", start_ms: 1_000 }),
+      0,
+      0
+    );
+    const secondSessionToken = normalizeRealtimeToken(
+      token("Stejný", { end_ms: 1_500, is_final: true, speaker: "1", start_ms: 1_000 }),
+      1,
+      60_000
+    );
+
+    expect(secondSessionToken).toMatchObject({
+      end_ms: 61_500,
+      start_ms: 61_000,
+      vosio_session_index: 1
+    });
+    expect(getTokenKey(firstSessionToken)).not.toBe(getTokenKey(secondSessionToken));
+  });
+
+  it("preserves the last provisional words when Soniox starts a replacement session", () => {
+    const partial = normalizeRealtimeToken(
+      token("poslední slova", { end_ms: 2_000, is_final: false, speaker: "2", start_ms: 1_000 }),
+      0,
+      0
+    );
+
+    expect(promoteRealtimePartialTokens([], [partial])).toEqual([
+      expect.objectContaining({ is_final: true, text: "poslední slova" })
+    ]);
   });
 
   it("switches a long live recording to transcript-only at the audio limit", () => {
@@ -34,6 +105,14 @@ describe("browser recorder helpers", () => {
       shouldDiscardLiveRecordingAudio(128_000, cutoffSeconds - 1, maxAudioFileSizeBytes)
     ).toBe(false);
     expect(shouldDiscardLiveRecordingAudio(128_000, cutoffSeconds, maxAudioFileSizeBytes)).toBe(true);
+  });
+
+  it("keeps a one-hour default recording below the 50 MiB Storage reserve", () => {
+    const oneHourBytes = getEstimatedLiveRecordingBytes(0, 60 * 60);
+    const storageReserveBoundary = 50 * 1024 * 1024 - 2 * 1024 * 1024;
+
+    expect(oneHourBytes).toBe(28_800_000);
+    expect(oneHourBytes).toBeLessThan(storageReserveBoundary);
   });
 
   it("explains that live audio is saved only up to the Storage limit", () => {
@@ -152,5 +231,11 @@ describe("browser recorder helpers", () => {
       token("nové", { end_ms: 4500 }),
       token("fallback", { received_at_ms: 2000 })
     ], 5000, 2000).map((item) => item.text)).toEqual(["staré", "fallback"]);
+  });
+
+  it("prefers arrival time over session-relative provider time for live caption stability", () => {
+    expect(getStableLiveCaptionTokens([
+      token("ještě průběžné", { end_ms: 1000, received_at_ms: 4500 })
+    ], 5000, 2000)).toEqual([]);
   });
 });

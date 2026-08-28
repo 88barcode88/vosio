@@ -4,6 +4,18 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-08-28
+
+### Changed
+
+- Live audio nově žádá úspornější bitrate 64 kbit/s, takže hodinový záznam zůstává s rezervou pod výchozím 50MiB Storage limitem.
+- Realtime přepis drží jednu globální časovou osu i po skutečném Soniox reconnectu a zdravé spojení už nerestartuje pouhý návrat do záložky.
+
+### Fixed
+
+- Průběžné Soniox tokeny se nahrazují jejich poslední verzí, takže do uloženého přepisu nezůstávají duplicitní texty ani opuštěná dočasná speaker ID.
+- Seznam mluvčích není omezený na čtyři položky a zachovává všechny speaker ID vrácené Sonioxem.
+
 ## [0.1.7] - 2026-08-15
 
 ### Added

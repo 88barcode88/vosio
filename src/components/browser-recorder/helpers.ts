@@ -27,7 +27,10 @@ const preferredMimeTypes = [
 
 const SONIOX_STOP_TIMEOUT_MS = 5000;
 export const LIVE_CAPTION_DISPLAY_DELAY_MS = 2000;
-export type LiveCaptionToken = RealtimeToken & {
+export type StoredRealtimeToken = RealtimeToken & {
+  vosio_session_index?: number;
+};
+export type LiveCaptionToken = StoredRealtimeToken & {
   received_at_ms?: number;
 };
 const liveSpeakerClassNames = [
@@ -70,9 +73,65 @@ export function formatElapsedTime(seconds: number) {
   return `${minutes}:${restSeconds}`;
 }
 
-// getTokenKey creates a stable best-effort key for deduplicating realtime tokens.
-export function getTokenKey(token: RealtimeToken) {
-  return `${token.start_ms ?? "x"}:${token.end_ms ?? "x"}:${token.speaker ?? "s"}:${token.text}`;
+// getTokenKey creates a session-aware key for deduplicating finalized realtime tokens.
+export function getTokenKey(token: StoredRealtimeToken) {
+  return `${token.vosio_session_index ?? 0}:${token.start_ms ?? "x"}:${token.end_ms ?? "x"}:${token.speaker ?? "s"}:${token.text}`;
+}
+
+// normalizeRealtimeToken converts session-relative Soniox times to one recording-wide timeline.
+export function normalizeRealtimeToken(
+  token: RealtimeToken,
+  sessionIndex: number,
+  sessionOffsetMs: number
+): StoredRealtimeToken {
+  return {
+    ...token,
+    ...(typeof token.end_ms === "number" ? { end_ms: token.end_ms + sessionOffsetMs } : {}),
+    ...(typeof token.start_ms === "number" ? { start_ms: token.start_ms + sessionOffsetMs } : {}),
+    vosio_session_index: sessionIndex
+  };
+}
+
+// mergeRealtimeResultTokens appends finalized tokens and replaces the provider's provisional window.
+export function mergeRealtimeResultTokens(
+  currentFinalTokens: StoredRealtimeToken[],
+  resultTokens: RealtimeToken[],
+  sessionIndex: number,
+  sessionOffsetMs: number
+) {
+  const normalizedTokens = resultTokens.map((token) => (
+    normalizeRealtimeToken(token, sessionIndex, sessionOffsetMs)
+  ));
+  const finalByKey = new Map(currentFinalTokens.map((token) => [getTokenKey(token), token]));
+
+  normalizedTokens.filter((token) => token.is_final).forEach((token) => {
+    finalByKey.set(getTokenKey(token), token);
+  });
+
+  const finalTokens = [...finalByKey.values()];
+  const partialTokens = normalizedTokens.filter((token) => !token.is_final);
+
+  return {
+    finalTokens,
+    partialTokens,
+    tokens: [...finalTokens, ...partialTokens]
+  };
+}
+
+// promoteRealtimePartialTokens preserves the last audible words before a replacement Soniox session.
+export function promoteRealtimePartialTokens(
+  currentFinalTokens: StoredRealtimeToken[],
+  partialTokens: StoredRealtimeToken[]
+) {
+  const finalByKey = new Map(currentFinalTokens.map((token) => [getTokenKey(token), token]));
+
+  partialTokens.forEach((token) => {
+    const promotedToken = { ...token, is_final: true };
+
+    finalByKey.set(getTokenKey(promotedToken), promotedToken);
+  });
+
+  return [...finalByKey.values()];
 }
 
 // getLiveSpeakerLabel renders Soniox realtime speaker ids as compact labels.
@@ -151,6 +210,10 @@ export function getStableLiveCaptionTokens(
   delayMs = LIVE_CAPTION_DISPLAY_DELAY_MS
 ) {
   return tokens.filter((token) => {
+    if (typeof token.received_at_ms === "number") {
+      return nowMs - token.received_at_ms >= delayMs;
+    }
+
     const providerAgeMs =
       typeof token.end_ms === "number"
         ? nowMs - token.end_ms
@@ -162,7 +225,7 @@ export function getStableLiveCaptionTokens(
       return providerAgeMs >= delayMs;
     }
 
-    return typeof token.received_at_ms === "number" ? nowMs - token.received_at_ms >= delayMs : true;
+    return true;
   });
 }
 
