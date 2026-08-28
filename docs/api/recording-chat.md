@@ -47,7 +47,7 @@ Pro chat jsou nutné tyto source migrace ve zcela přesném pořadí:
 1. `20260828130631_add_transcript_chat.sql`
 2. `20260828131010_add_transcript_chat_schema.sql`
 
-První přidává `recording_chat` do enumu a systémový prompt. Druhá vytváří tabulky, constraints, indexy, forced RLS, úzké select-only granty a owner policies. Přítomnost těchto SQL souborů v Git repu znamená pouze **source migration**. **Applied** znamená, že byly ve stejném pořadí vykonány na konkrétním pojmenovaném Supabase targetu. **Deployed** znamená, že je nasazen build aplikace s route a UI. **Live** vyžaduje vlastní postflight na daném targetu a ověřený běh s reálnou session. Tyto stavy se z toho navzájem neodvozují.
+První přidává pouze `recording_chat` do enumu. Druhá seeduje systémový prompt a vytváří tabulky, constraints, indexy, forced RLS, úzké select-only granty a owner policies. Přítomnost těchto SQL souborů v Git repu znamená pouze **source migration**. **Applied** znamená, že byly ve stejném pořadí vykonány na konkrétním pojmenovaném Supabase targetu. **Deployed** znamená, že je nasazen build aplikace s route a UI. **Live** vyžaduje vlastní postflight na daném targetu a ověřený běh s reálnou session. Tyto stavy se z toho navzájem neodvozují.
 
 Self-host instalace používá stejný Supabase projekt jako nahrávky a přepisy, ne druhý projekt. Chat nepřidává žádnou environment proměnnou: server pro zvolený OpenAI model používá existující `OPENAI_API_KEY`, pro zvolený Gemini model `GEMINI_API_KEY`; serverová persistence vyžaduje existující `SUPABASE_SERVICE_ROLE_KEY` a připojení používá `NEXT_PUBLIC_SUPABASE_URL` a `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Všechny tajné hodnoty zůstávají pouze v deployment runtime nebo `.env.local`, nikdy v Git výstupu ani diagnostice.
 
