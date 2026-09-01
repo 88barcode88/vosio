@@ -1,5 +1,6 @@
 import { getGeminiEnv } from "@/lib/env.server";
 import type { AiProviderProcessingResult } from "@/lib/ai/common";
+import type { RecordingChatMessage, RecordingChatProviderResult } from "@/lib/ai/chat-types";
 import { getAiModelOption, supportsModelTemperature } from "@/lib/model-options";
 
 type GeminiResponse = {
@@ -29,6 +30,18 @@ type RunGeminiProcessingInput = {
   thinkingLevel?: "medium" | "high" | null;
 };
 
+type RunGeminiChatInput = {
+  messages: RecordingChatMessage[];
+  model: string;
+  outputSchema: unknown;
+  systemInstruction: string;
+};
+
+type GeminiChatContent = {
+  parts: Array<{ text: string }>;
+  role: "model" | "user";
+};
+
 // extractGeminiText joins text parts returned by the Gemini generateContent API.
 function extractGeminiText(response: GeminiResponse) {
   return (
@@ -54,6 +67,42 @@ export function createGeminiGenerationConfig(input: RunGeminiProcessingInput) {
       ? { thinkingConfig: { thinkingLevel } }
       : {}),
     ...(supportsModelTemperature(input.model) ? { temperature: input.temperature } : {})
+  };
+}
+
+// createGeminiChatContents coalesces adjacent roles while preserving each original message as an ordered text part.
+function createGeminiChatContents(messages: RecordingChatMessage[]) {
+  return messages.reduce<GeminiChatContent[]>((contents, message) => {
+    const role = message.role === "assistant" ? "model" : "user";
+    const previous = contents.at(-1);
+
+    if (previous?.role === role) {
+      return [
+        ...contents.slice(0, -1),
+        { ...previous, parts: [...previous.parts, { text: message.content }] }
+      ];
+    }
+
+    return [...contents, { parts: [{ text: message.content }], role }];
+  }, []);
+}
+
+// createGeminiChatRequestBody keeps systemInstruction authoritative and maps prior assistant turns to model role.
+export function createGeminiChatRequestBody(input: RunGeminiChatInput) {
+  return {
+    contents: createGeminiChatContents(input.messages),
+    generationConfig: {
+      ...createGeminiGenerationConfig({
+        model: input.model,
+        outputSchema: input.outputSchema,
+        prompt: "",
+        temperature: 0.2
+      }),
+      ...(input.outputSchema ? { responseJsonSchema: input.outputSchema } : {})
+    },
+    systemInstruction: {
+      parts: [{ text: input.systemInstruction }]
+    }
   };
 }
 
@@ -89,6 +138,42 @@ export async function runGeminiProcessing(input: RunGeminiProcessingInput): Prom
     }
   );
 
+  const payload = (await response.json().catch(() => null)) as GeminiResponse | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error?.message ?? "Gemini request failed.");
+  }
+
+  if (!payload) {
+    throw new Error("Gemini returned an empty response.");
+  }
+
+  const text = extractGeminiText(payload);
+
+  if (!text) {
+    throw new Error("Gemini returned an empty text response.");
+  }
+
+  return {
+    inputTokenCount: payload.usageMetadata?.promptTokenCount ?? null,
+    outputText: text,
+    outputTokenCount: getGeminiOutputTokenCount(payload.usageMetadata),
+    providerResponseId: payload.responseId ?? null
+  };
+}
+
+// runGeminiChat sends one bounded recording conversation through Gemini with a separate system instruction.
+export async function runGeminiChat(input: RunGeminiChatInput): Promise<RecordingChatProviderResult> {
+  const env = getGeminiEnv();
+  const modelPath = encodeURIComponent(input.model);
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${modelPath}:generateContent?key=${encodeURIComponent(env.geminiApiKey)}`,
+    {
+      body: JSON.stringify(createGeminiChatRequestBody(input)),
+      headers: { "Content-Type": "application/json" },
+      method: "POST"
+    }
+  );
   const payload = (await response.json().catch(() => null)) as GeminiResponse | null;
 
   if (!response.ok) {

@@ -270,6 +270,17 @@ afterEach(async () => {
 });
 
 describe("BrowserRecorder live markers", () => {
+  it("does not restart a healthy Soniox session when the tab becomes visible", async () => {
+    const { realtime } = await startReadyRecorder();
+
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+    });
+
+    expect(realtime.recording.reconnect).not.toHaveBeenCalled();
+  });
+
   it("keeps an early visual recording state disabled until the live draft exists", async () => {
     const draft = createDeferred<{
       data: { id: string } | null;

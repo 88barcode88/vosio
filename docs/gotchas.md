@@ -90,7 +90,7 @@ Nový systémový prompt nestačí vložit jen do databáze, pokud používá no
 
 ## Gemini modely potřebují samostatný server key
 
-Gemini modely jsou v UI běžné AI modely vedle OpenAI, ale backend je směruje na Google Gemini API podle `ai_processing_jobs.provider`. Pokud uživatel vybere Gemini model a ve Vercelu není `GEMINI_API_KEY`, AI processing selže na server-side konfiguraci. Gemini Free tier podle Google pricing tabulky používá obsah ke zlepšování produktů; pro produkční call obsah používej placený Gemini API režim nebo OpenAI.
+Gemini modely jsou v UI běžné AI modely vedle OpenAI, ale backend je směruje na Google Gemini API podle `ai_processing_jobs.provider`. Pokud uživatel vybere Gemini model a běžící server nemá `GEMINI_API_KEY`, AI processing selže na server-side konfiguraci. Gemini Free tier podle Google pricing tabulky používá obsah ke zlepšování produktů; pro produkční call obsah používej placený Gemini API režim nebo OpenAI.
 
 ## Reasoning modely, ceny a úplnost výstupu
 
@@ -214,7 +214,7 @@ Mobilní file picker používá jeden explicitní seznam MIME typů a přípon o
 
 Každý uživatel může mít v `user_metadata.vosio_settings.supabaseStoragePlan` jinou volbu `auto`, `free` nebo `paid`. Nemění billing, globální limit projektu ani `recordings.file_size_limit` bucketu. Server čte explicitní bucket limit a aplikace použije pouze efektivní minimum `min(bucket, optional plan cap)`; volba jej může jen snížit, nikdy zvýšit nebo autorizovat Storage. Globální limit projektu se bezpečně nedetekuje, proto zůstává `unknown`, ne unlimited. Pokud bucket nebo kladný explicitní limit nelze načíst, aplikace fail-closed vypne audio upload a audio-backed live režim, zatímco text-only přepis zůstane dostupný. Vlastník týmu musí preference jednotlivých uživatelů s reálnou konfigurací projektu sladit ručně.
 
-Live audio má navíc samostatný produktový limit `min(effective upload limit, 128 MiB)`. Není to limit paměti prohlížeče: aktuální MediaRecorder drží jeden Blob až do `stop()`. Aplikace proto odhaduje velikost z bitrate a lokální audio zastaví s rezervou 5 %, nejvýše 2 MiB, aby se vyhnula překročení storage limitu. Před uploadem ještě kontroluje skutečnou velikost finalizovaného Blobu proti plnému live limitu. Přepis po odhození audia pokračuje.
+Live audio má navíc samostatný produktový limit `min(effective upload limit, 128 MiB)`. Není to limit paměti prohlížeče: aktuální MediaRecorder drží jeden Blob až do `stop()`. Recorder žádá 64 kbit/s, takže hodinový záznam má cílově přibližně 29 MB; prohlížeč může skutečný bitrate upravit a odhad proto používá hodnotu z MediaRecorderu. Aplikace lokální audio zastaví s rezervou 5 %, nejvýše 2 MiB, aby se vyhnula překročení storage limitu. Před uploadem ještě kontroluje skutečnou velikost finalizovaného Blobu proti plnému live limitu. Přepis po odhození audia pokračuje.
 
 ## Text-only live přepis nemá audio zálohu
 
@@ -224,7 +224,7 @@ Tlačítko `Přepsat znovu` funguje jen tam, kde má nahrávka uložené audio. 
 
 ## Browser lifecycle může přerušit realtime přepis
 
-Browser PWA neumí garantovat nepřerušený realtime WebSocket, pokud systém uspí počítač, tab, prohlížeč nebo PWA. Vosio se při live nahrávání pokusí získat Screen Wake Lock, po návratu do popředí vyvolá Soniox reconnect a každých zhruba 15 sekund ukládá partial transcript draft, ale timer události ani mikrofon po uspání OS nejsou garantované. Wake Lock warning a warning pro realtime spojení musí zůstat oddělené: selhání Wake Lock samo o sobě neznamená, že se nahrávání nebo přepis zastavil. Live nahrávání nemá tichý ani časový auto-stop; končí ručně nebo přerušením browser lifecycle.
+Browser PWA neumí garantovat nepřerušený realtime WebSocket, pokud systém uspí počítač, tab, prohlížeč nebo PWA. Vosio se při live nahrávání pokusí získat Screen Wake Lock a každých zhruba 15 sekund ukládá partial transcript draft, ale timer události ani mikrofon po uspání OS nejsou garantované. Návrat do popředí pouze znovu požádá o Wake Lock; nesmí sám restartovat zdravou Soniox session. Skutečný výpadek řeší SDK přes `auto_reconnect`. Wake Lock warning a warning pro realtime spojení musí zůstat oddělené: selhání Wake Lock samo o sobě neznamená, že se nahrávání nebo přepis zastavil. Live nahrávání nemá tichý ani časový auto-stop; končí ručně nebo přerušením browser lifecycle.
 
 Recovery panel na `/recordings` není náhrada za background recording. Umí dokončit jen to, co už je v Supabase: partial transcript v `transcripts`, jeden již uploadovaný audio objekt nebo části starší segmentované nahrávky. Aktivní MediaRecorder soubor a tokeny, které ještě neproběhly autosavem, může prohlížeč při zavření nebo uspání ztratit.
 
@@ -234,7 +234,7 @@ Nové live nahrávky se už nedělí; pod limitem ukládají jeden objekt `{user
 
 ## Speaker diarization závisí na tokenech
 
-Vosio žádá Soniox o speaker diarization přes `enable_speaker_diarization: true`. Samotný `raw_text` ale mluvčí neobsahuje; mluvčí jsou v token-level datech v `transcripts.segments` jako pole `speaker`. UI proto musí pro diarizovaný pohled číst `segments`, ne `raw_text`. Pokud Soniox speaker id nevrátí, nejde v UI spolehlivě poznat, kdo mluvil. Horší audio, silná komprese, překrývající se řeč nebo jeden mikrofon daleko od účastníků může diarizaci zhoršit, ale absence speaker bloků může být i čistě zobrazovací problém.
+Vosio žádá Soniox o speaker diarization přes `enable_speaker_diarization: true`. Samotný `raw_text` ale mluvčí neobsahuje; mluvčí jsou v token-level datech v `transcripts.segments` jako pole `speaker`. UI proto musí pro diarizovaný pohled číst `segments`, ne `raw_text`. UI nemá limit čtyř mluvčích a zobrazí všechny vrácené speaker ID; Soniox session podporuje nejvýše 15 mluvčích. Pokud Soniox speaker id nevrátí, nejde v UI spolehlivě poznat, kdo mluvil. Horší audio, silná komprese, překrývající se řeč nebo jeden mikrofon daleko od účastníků může diarizaci zhoršit. Realtime speaker ID je průběžný odhad a může se do finalizace změnit; klient proto partial okno vždy nahrazuje a nikdy ho nepřidává natrvalo. Skutečný reconnect dostane vlastní session index a globální časový offset, aby se tokeny z relací nesrazily. Identitu stejného člověka napříč dvěma provider sessions nelze bezpečně hádat; pro její zpřesnění slouží `Přepsat znovu` nad uloženým audiem přes přesnější async diarizaci.
 
 `transcripts.speakers` ukládá souhrn speaker ID, počet tokenů, volitelné ručně zadané jméno a obchodní roli. Soniox neumí říct, jestli je mluvčí klient nebo dodavatel; obchodní role musí vzniknout ručním přiřazením nebo AI inference nad kontextem a musí být označená jako taková. AI processing dostává `speaker_context` z tohoto JSONu, takže ručně potvrzená jména a role se mají promítnout do úkolů, meeting notes a dalších výstupů.
 
@@ -268,7 +268,7 @@ Browser `MediaRecorder.start(timeslice)` umí vrátit průběžné WebM bloky, k
 
 Interval pro timer, autosave a kontrolu velikosti musí být zastaven při úspěšném stopu, chybě startu, text-only finalizaci i unmountu komponenty. Pokud starý interval přežije do další session, sdílí nové refs a může spustit duplicitní autosave nebo jinou akci nad novou nahrávkou. Live nahrávání se samo nezastavuje podle ticha ani podle absence Soniox tokenů.
 
-Live titulky nejsou finální transcript. Soniox realtime může posílat partial tokeny po písmenech nebo s mezivýsledky, takže caption plocha zobrazuje tokeny s krátkým zpožděním a text skládá bez vkládání umělých mezer mezi tokeny. Finální uložený transcript zůstává založený na kompletní sadě přijatých tokenů.
+Live titulky nejsou finální transcript. Soniox realtime může posílat partial tokeny po písmenech nebo s mezivýsledky, takže caption plocha zobrazuje tokeny s krátkým zpožděním a text skládá bez vkládání umělých mezer mezi tokeny. Finalizované tokeny se akumulují, ale celé nefinální okno se při každém výsledku nahradí. Při reconnectu se poslední nefinální okno jednou zachová jako fallback a nová relace pokračuje s globálním časovým offsetem.
 
 ## Import hotoveho prepisu nema audio fallback
 
@@ -283,6 +283,8 @@ Vosio nastavuje v `next.config.ts` základní bezpečnostní hlavičky (`X-Conte
 ## Rate limiting je in-memory, per instance
 
 `/api/soniox/realtime-key` a `/api/transcripts/[id]/process` mají per-user fixed-window rate limit přes `src/lib/rate-limit.ts`. Limiter drží okna v paměti procesu — na serverless platformě má každá instance vlastní počítadlo, takže limit je best-effort brzda nákladů, ne přesná garance. Pro přesný limit napříč instancemi by bylo potřeba sdílené úložiště (např. Upstash Redis). Nezvyšuj limity bez rozmyslu: realtime-key limit musí snést reconnecty SonioxClientu během jedné live session.
+
+Recording chat používá stejný per-instance princip s limitem 10 nových claimů za minutu na uživatele; opakování stejného `client_turn_id` se vrací před limiterem a znovu nevolá providera. `running` tah je čerstvý přesně 10 minut. Teprve autorizovaný GET/POST po této hranici ho compare-and-set podmínkou `status = running` a starším `started_at` označí jako `failed`. Aktivní provider kontext je deterministicky omezený počtem znaků, ne přesným provider tokenizerem: kompaktní segmenty 100 000, raw fallback 60 000 a nejnovější dokončená historie 24 000 znaků. Oříznutí je součástí untrusted user-role metadata pro model; starší tahy přitom zůstávají uložené a viditelné v historii. Chat je dostupný jen nad uloženým vlastněným přepisem; samotný tab ani GET nevolají providera. Browser nesmí vytvořit chat řádek přímo přes Supabase, vložit prompt/provider/context ani prohlásit provider timestamp za důkaz. Pouze server přes `service_role` zapisuje tah a čas důkazu odvodí až z jednoznačného exact contiguous matchu proti uloženým tokenům.
 
 ## Balíček server-only vyhazuje ve Vitest
 

@@ -15,14 +15,16 @@ Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seř
 - `supabase/migrations/20260815073029_harden_prompt_override_privileges.sql`
 - `supabase/migrations/20260827094435_add_automatic_timeline_idempotency.sql`
 - `supabase/migrations/20260827100000_add_trash_retention_deadlines.sql`
+- `supabase/migrations/20260828130631_add_transcript_chat.sql`
+- `supabase/migrations/20260828131010_add_transcript_chat_schema.sql`
 
-Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000`, přesná restore/purge metadata a Storage write fence až po `05550`, stavové facety až po `130000`, prompt overrides/job snapshots až po `130900`, privilege hardening až po `15073029`, automatic timeline idempotency/lease až po `20260827094435` a Trash retention deadlines/leases až po `20260827100000`. Baseline proto není kompletní source of truth; úplný fresh-project kontrakt je pouze celý uvedený ordered chain.
+Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000`, přesná restore/purge metadata a Storage write fence až po `05550`, stavové facety až po `130000`, prompt overrides/job snapshots až po `130900`, privilege hardening až po `15073029`, automatic timeline idempotency/lease až po `20260827094435`, Trash retention deadlines/leases až po `20260827100000`, chat enum až po `20260828130631` a systémový prompt, chat tabulky, RLS a granty až po `20260828131010`. Baseline proto není kompletní source of truth; úplný fresh-project kontrakt je pouze celý uvedený ordered chain.
 
 Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby skutečné schema odpovídalo explicitně schválené a aplikované části aktuálního řetězce; produkční DB se kvůli baseline neresetuje.
 
-Budoucí schema změny se přidávají jako nové timestampové migrace na konec řetězce. Tento veřejný repozitář je zdrojový kontrakt, nikoli deployment ledger: u žádného hostovaného targetu automaticky netvrdí aplikaci migrací. Nový prázdný projekt aplikuje celý řetězec v pořadí; existující projekt musí nejdřív samostatně porovnat skutečné schema a migration history a aplikovat pouze chybějící forwards.
+Budoucí schema změny se přidávají jako nové timestampové migrace na konec řetězce. Tento veřejný repozitář je zdrojový kontrakt, nikoli deployment ledger: u žádného hostovaného targetu automaticky netvrdí aplikaci migrací. Recording chat zůstává ve stejném Supabase projektu jako nahrávky a přepisy; nevytváří druhý projekt. Zdrojový soubor v repu, aplikovaná migrace na konkrétním targetu, deploy aplikace a živá funkce jsou rozdílné stavy. Nový prázdný projekt aplikuje celý řetězec v pořadí; existující projekt musí nejdřív samostatně porovnat skutečné schema a migration history a aplikovat pouze chybějící forwards.
 
-Systémové prompt templates jsou seedované stabilními UUID a aktuálním kontraktem JSON + `markdown`. Prompty používají vstupní model `raw_text` + `segments` + `speakers`, obsahují pravidla pro speaker role a zahrnují typy `summary`, `action_items`, `meeting_minutes`, `crm_note`, `follow_up_email`, `custom_prompt` a `timeline_chapters`.
+Systémové prompt templates jsou seedované stabilními UUID a aktuálním kontraktem JSON + `markdown`. Prompty používají vstupní model `raw_text` + `segments` + `speakers`, obsahují pravidla pro speaker role a zahrnují typy `summary`, `action_items`, `meeting_minutes`, `crm_note`, `follow_up_email`, `custom_prompt` a `timeline_chapters`. `20260828130631` nejdřív přidá enumový typ `recording_chat`; jeho systémový prompt přibude až po aplikaci `20260828131010`. Není součástí šesti quick actions ani uživatelského editoru promptů.
 
 Normalizované odvozené tabulky pro práci s AI výstupy jsou `transcript_tasks`, `transcript_chapters`, `transcript_decisions` a `transcript_risks`. `ai_outputs` zůstává raw zdroj AI výstupu; nové tabulky jsou pracovní projekce pro checklist, obsahovou časovou osu, rozhodnutí a rizika. Každá tabulka má `user_id`, forced RLS, owner policies, anon revoke a cascade vazbu na `ai_outputs`. Authenticated klient má nad projekcemi jen čtení a u `transcript_tasks` úzké oprávnění změnit sloupec `status`; vytváření, přepis obsahu a mazání projekcí zůstává server-side přes service role.
 
@@ -159,6 +161,8 @@ Source Edge Function `supabase/functions/trash-retention` volá tato RPC a maže
 - `recording_tag_links` po aplikaci forward migrace `20260804110000`
 - `recording_markers` po aplikaci forward migrace `20260804120000`
 - `transcript_search_chunks` po aplikaci forward migrace `20260804130000`
+- `transcript_chat_threads` po aplikaci forward migrace `20260828131010`
+- `transcript_chat_turns` po aplikaci forward migrace `20260828131010`
 - `audit_logs`
 
 ## Enumy
@@ -173,6 +177,7 @@ Source Edge Function `supabase/functions/trash-retention` volá tato RPC a maže
 - `crm_note`
 - `follow_up_email`
 - `custom_prompt`
+- `recording_chat` po aplikaci forward migrace `20260828130631`
 
 ## Systémové prompt templates
 
@@ -185,6 +190,7 @@ Seed migrace vytváří idempotentní systémové prompty v `prompt_templates` p
 - `crm_note`
 - `follow_up_email`
 - `custom_prompt`
+- `recording_chat` po aplikaci forward migrace `20260828131010`
 
 Systémové prompty mají stabilní UUID, `is_system = true` a `user_id = null`. Authenticated uživatelé je mohou číst přes policy `prompt templates select own and system`. Vlastní uživatelské prompty musí mít `is_system = false` a `user_id = auth.uid()`.
 
@@ -195,6 +201,14 @@ Seed migrace pro systémové prompty jsou idempotentní. První seed migrace pou
 Systémové prompty rozlišují business roli mluvčích, pokud je dostupná z transcriptu nebo metadata: `client_customer`, `delivery_team` a `unknown`. Číselné Soniox štítky typu `Mluvčí 1` samy o sobě nestačí k určení role.
 
 `transcripts.speakers` se plní při uložení async i realtime přepisu jako JSON pole speaker souhrnů z `segments`: speaker id, UI label, volitelné ruční jméno, počet tokenů, první/poslední čas, role a zdroj přiřazení. Výchozí role je `unknown`, dokud ji neurčí uživatel nebo samostatná AI inference.
+
+## Recording chat forward migrace
+
+Chat vyžaduje přesně dva source soubory a jejich pořadí je součást kontraktu: nejdřív `20260828130631_add_transcript_chat.sql`, který přidá pouze enum `recording_chat`, potom `20260828131010_add_transcript_chat_schema.sql`, který seeduje neměnný systémový prompt a vytvoří tabulky. Druhý soubor se nesmí aplikovat před prvním. Oba soubory jsou v tomto repu source migrace, nikoli doklad aplikace na cílové databázi.
+
+`transcript_chat_threads` drží právě jedno vlákno pro `(user_id, transcript_id)` a kompozitní foreign keys vážou stejného vlastníka, nahrávku a přepis. `transcript_chat_turns` drží klientské idempotency UUID, otázku, lifecycle `queued`/`running`/`completed`/`failed`/`interrupted`, model a provider, system-prompt snapshot, usage, odpověď, sanitizovanou chybu a nejvýše osm položek `verified_evidence`. Kompozitní FK tahu do vlákna zachová stejný transcript, recording i owner. Cascade při smazání nebo nahrazení transcriptu odstraní navázaný chat, aby stará evidence neukazovala do nové generace přepisu.
+
+Unikátní `(user_id, client_turn_id)` zajišťuje idempotenci přes retry requestu a partial unique index dovolí nejvýše jeden `running` tah na vlákno. Čas evidence neukládá browser ani nepřebírá provider: server uloží quote pouze s časem odvozeným z jednoznačného exact contiguous matchu proti `transcripts.segments`.
 
 ## Prompt overrides a job snapshots
 
@@ -243,6 +257,7 @@ Authenticated uživatel:
 - po aplikaci search migrace může přes forced RLS číst pouze vlastní `transcript_search_chunks` a spouštět owner-safe `search_own_recordings_v1`,
 - může vytvářet/upravovat/mazat vlastní nesystémové `prompt_templates`,
 - po aplikaci prompt override migrace může přes forced RLS a revision-safe RPC uložit nebo resetovat jen vlastní `prompt_text` override,
+- po aplikaci chat migrace může přes forced owner RLS pouze číst vlastní `transcript_chat_threads` a `transcript_chat_turns`; nemá browser grant ani policy pro jejich create/update/delete,
 - může pracovat jen se Storage objekty v cestě `user_id/...`.
 
 Server/worker přes `service_role`:
@@ -256,6 +271,7 @@ Server/worker přes `service_role`:
 - zapisuje `audit_logs`,
 - po aplikaci marker migrace má plný grant nad `recording_markers`; běžný marker endpoint přesto používá authenticated session a owner RLS,
 - po aplikaci search migrace atomicky nahrazuje `transcript_search_chunks` přes service-only RPC; běžnému authenticated klientovi tento zápis přístupný není.
+- po aplikaci chat migrace vytváří a mění chat vlákna a tahy pouze přes serverovou `service_role` boundary po ověření authenticated ownera.
 
 Manuální restart přepisu používá stejnou server-side kontrolu vlastnictví. Při `POST /api/recordings/{recordingId}/transcription?restart=1` se nejdřív založí nový Soniox job a až potom se smažou existující transcripty pro danou nahrávku; navázané `ai_processing_jobs` a `ai_outputs` se odstraní přes kaskádové FK. Staré dokončené `transcription_jobs` zůstávají kvůli usage historii, běžící lokální joby se označí jako `cancelled`.
 

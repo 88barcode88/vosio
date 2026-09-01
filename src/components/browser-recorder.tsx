@@ -36,10 +36,13 @@ import {
   getSupportedMimeType,
   getTokenKey,
   getWakeLockWarning,
+  mergeRealtimeResultTokens,
+  promoteRealtimePartialTokens,
   shouldDiscardLiveRecordingAudio,
   stopRealtimeRecording,
   tokensToCaptionBlocks,
   tokensToText,
+  type StoredRealtimeToken,
   type RecorderFeedbackTone
 } from "@/components/browser-recorder/helpers";
 import { assertDevelopmentRecordingFactoryAllowed } from "@/components/browser-recorder/development-runtime";
@@ -158,7 +161,12 @@ export function BrowserRecorder({
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
   const tokenArrivalTimesRef = useRef<Map<string, number>>(new Map());
-  const tokensRef = useRef<Map<string, RealtimeToken>>(new Map());
+  const finalTokensRef = useRef<StoredRealtimeToken[]>([]);
+  const partialTokensRef = useRef<StoredRealtimeToken[]>([]);
+  const tokensRef = useRef<StoredRealtimeToken[]>([]);
+  const realtimeSessionIndexRef = useRef(0);
+  const realtimeSessionOffsetMsRef = useRef(0);
+  const pendingRealtimeSessionOffsetMsRef = useRef<number | null>(null);
   const isMountedRef = useRef(true);
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
   const wakeLockRequestRef = useRef<Promise<boolean> | null>(null);
@@ -664,14 +672,11 @@ export function BrowserRecorder({
   }, [invalidateWakeLockRequest]);
 
   useEffect(() => {
-    // handleVisibilityChange keeps the recording session alive after browser lifecycle changes.
+    // handleVisibilityChange reacquires Wake Lock without restarting a healthy Soniox session.
     function handleVisibilityChange() {
       if (document.visibilityState === "visible" && status === "recording") {
         void requestWakeLock();
-        sonioxRecordingRef.current?.reconnect();
-        return;
       }
-
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -705,9 +710,9 @@ export function BrowserRecorder({
 
   // updateDisplayedLiveCaptions renders delayed caption blocks while keeping the saved transcript complete.
   function updateDisplayedLiveCaptions(nowMs: number) {
-    const tokens = [...tokensRef.current.entries()].map(([key, token]) => ({
+    const tokens = tokensRef.current.map((token) => ({
       ...token,
-      received_at_ms: tokenArrivalTimesRef.current.get(key)
+      received_at_ms: tokenArrivalTimesRef.current.get(getTokenKey(token))
     }));
 
     setLiveCaptionBlocks(tokensToCaptionBlocks(getStableLiveCaptionTokens(tokens, nowMs)));
@@ -878,7 +883,7 @@ export function BrowserRecorder({
       return;
     }
 
-    const tokens = [...tokensRef.current.values()];
+    const tokens = [...tokensRef.current];
     const rawText = tokensToText(tokens);
 
     if (!rawText) {
@@ -973,7 +978,12 @@ export function BrowserRecorder({
       setRealtimeWarning(null);
       setWakeLockWarning(null);
       tokenArrivalTimesRef.current = new Map();
-      tokensRef.current = new Map();
+      finalTokensRef.current = [];
+      partialTokensRef.current = [];
+      tokensRef.current = [];
+      realtimeSessionIndexRef.current = 0;
+      realtimeSessionOffsetMsRef.current = 0;
+      pendingRealtimeSessionOffsetMsRef.current = null;
       resetLiveDraftRefs();
       sonioxRecordingRef.current = sessionRecording;
       sonioxResultSessionRef.current = {
@@ -985,20 +995,25 @@ export function BrowserRecorder({
           return;
         }
 
-        const nextTokens = new Map(tokensRef.current);
         const now = Date.now();
+        const nextState = mergeRealtimeResultTokens(
+          finalTokensRef.current,
+          result.tokens,
+          realtimeSessionIndexRef.current,
+          realtimeSessionOffsetMsRef.current
+        );
+        const nextArrivalTimes = new Map<string, number>();
 
-        result.tokens.forEach((token) => {
+        nextState.tokens.forEach((token) => {
           const key = getTokenKey(token);
 
-          if (!tokenArrivalTimesRef.current.has(key)) {
-            tokenArrivalTimesRef.current.set(key, now);
-          }
-
-          nextTokens.set(key, token);
+          nextArrivalTimes.set(key, tokenArrivalTimesRef.current.get(key) ?? now);
         });
-        tokensRef.current = nextTokens;
-        const tokens = [...nextTokens.values()];
+        finalTokensRef.current = nextState.finalTokens;
+        partialTokensRef.current = nextState.partialTokens;
+        tokensRef.current = nextState.tokens;
+        tokenArrivalTimesRef.current = nextArrivalTimes;
+        const tokens = nextState.tokens;
 
         setLiveTranscript(tokensToText(tokens));
         updateDisplayedLiveCaptions(now);
@@ -1022,7 +1037,26 @@ export function BrowserRecorder({
           return;
         }
 
+        pendingRealtimeSessionOffsetMsRef.current ??= elapsedSecondsRef.current * 1000;
         setRealtimeWarning(getRealtimeStateWarning("reconnecting", selectedSaveMode));
+      });
+      sessionRecording.on("session_restart", () => {
+        if (!isCurrentSonioxSession(sessionRecording, sessionGeneration)) {
+          return;
+        }
+
+        finalTokensRef.current = promoteRealtimePartialTokens(
+          finalTokensRef.current,
+          partialTokensRef.current
+        );
+        partialTokensRef.current = [];
+        tokensRef.current = [...finalTokensRef.current];
+        realtimeSessionIndexRef.current += 1;
+        realtimeSessionOffsetMsRef.current = pendingRealtimeSessionOffsetMsRef.current
+          ?? elapsedSecondsRef.current * 1000;
+        pendingRealtimeSessionOffsetMsRef.current = null;
+        setLiveTranscript(tokensToText(tokensRef.current));
+        updateDisplayedLiveCaptions(Date.now());
       });
       sessionRecording.on("reconnected", () => {
         if (!isCurrentSonioxSession(sessionRecording, sessionGeneration)) {
@@ -1378,7 +1412,7 @@ export function BrowserRecorder({
         }
       }
 
-      const tokens = [...tokensRef.current.values()].map((token) => ({ ...token }));
+      const tokens = tokensRef.current.map((token) => ({ ...token }));
       const rawText = tokensToText(tokens);
 
       if (draftSettlement.kind === "timed_out") {
@@ -1546,7 +1580,7 @@ export function BrowserRecorder({
         throw new Error("Záznam live nahrávky nebyl připravený.");
       }
 
-      const tokens = [...tokensRef.current.values()];
+      const tokens = [...tokensRef.current];
       const rawText = tokensToText(tokens);
       const shouldKeepAudio = isLiveAudioBlobWithinLimit(audioBlob, maxAudioFileSizeBytes);
       let audioSaveError: Error | null = null;

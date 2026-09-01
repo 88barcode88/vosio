@@ -1,6 +1,6 @@
 # Vosio
 
-Vosio is a Next.js PWA for recording or uploading audio, storing recordings in Supabase, transcribing with Soniox, and generating AI outputs from saved transcripts.
+Vosio is a Next.js PWA for recording or uploading audio, storing recordings in Supabase, transcribing with Soniox, generating AI outputs from saved transcripts, and keeping a persistent chat over a saved transcript.
 
 This is the canonical public source repository. It contains source code, documentation, tests, CI, and the complete fresh-project Supabase migration chain, but no real API keys or production data.
 
@@ -57,7 +57,7 @@ The copied repository is independent. Upstream Vosio updates do not automaticall
 
 ## One Installation Flow
 
-Vosio supports one self-hosted installation flow: each person or company runs its own Vercel deployment and connects its own Supabase, Soniox, and AI credentials. The owner controls the data, provider accounts, access, and resulting provider costs. Secrets belong only in `.env.local` or the deployment platform, never in git.
+Each person or company runs its own Vercel deployment and connects its own Supabase, Soniox, and AI credentials. The owner controls the data, provider accounts, access, and resulting provider costs. A recording chat is part of that same installation: it does not add a new Vercel integration or access, a second Supabase project, a new provider, or a chat-specific secret. Secrets belong only in `.env.local` or the deployment platform, never in git.
 
 Choose the Soniox region per user in **Settings**, not through a deployment variable. Global is the default. EU requires an EU-enabled Soniox project and matching regional key; if EU access or authentication fails, contact `support@soniox.com`.
 
@@ -72,7 +72,7 @@ supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-The ordered migration chain creates the application schema, RLS policies, private `recordings` Storage bucket settings, indexes, system prompt templates, automatic-timeline idempotency, and Trash-retention deadlines. For a fresh project, `supabase db push` applies the complete chain. Existing projects require target-specific preflight, reviewed manual apply when their ledger is not canonical, and postflight; do not copy the private Vosio ledger workaround as a generic installation method.
+The ordered migration chain creates the application schema, RLS policies, private `recordings` Storage bucket settings, indexes, system prompt templates, automatic-timeline idempotency, Trash-retention deadlines, and persistent recording chat. The chat source migrations must stay in this exact order: `20260828130631_add_transcript_chat.sql`, then `20260828131010_add_transcript_chat_schema.sql`. A tracked source migration is not proof that it was applied to any target, that an application was deployed, or that the feature is live. For a fresh project, `supabase db push` applies the complete chain. Existing projects require target-specific preflight, reviewed manual apply when their ledger is not canonical, and postflight; do not copy the private Vosio ledger workaround as a generic installation method.
 
 The optional `trash-retention` Edge Function is a Supabase worker in that same project, not a Vercel worker. Its disabled-first secret, deploy, verification, Vault/Cron scheduling, emergency-stop and exhausted-claim recovery procedure is in [`supabase/README.md`](supabase/README.md#trash-retention-edge-function-deployment). It must not be enabled or scheduled until a separate backlog-deletion approval.
 
@@ -109,9 +109,9 @@ git switch dev
 
 Never commit `.env.local`, Supabase service role keys, Soniox keys, OpenAI keys, Gemini keys, or Vercel project metadata.
 
-## Vercel Environment Variables
+## Environment Variables
 
-Add these in Vercel Project Settings before deployment. Put real values only in Vercel or `.env.local`, never in git. If both Vercel Production and Preview must be fully functional, configure the same required variable names in both environments. When their values point to the same provider projects, Preview works with the same data and incurs the same provider costs as Production.
+Configure these names in the runtime environment of the chosen deployment platform, or in `.env.local` for local development. Put real values only there, never in git. A production and preview deployment that point to the same provider projects use the same data and incur the same provider costs.
 
 | Variable | Required | Used for |
 | --- | --- | --- |
@@ -119,12 +119,12 @@ Add these in Vercel Project Settings before deployment. Put real values only in 
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes | Browser-safe Supabase key; RLS still protects rows. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Server-only privileged Supabase writes, signed Storage access, recovery, jobs. |
 | `SONIOX_API_KEY` | Yes | Server-only async transcription and temporary realtime key creation. |
-| `OPENAI_API_KEY` | Yes | Server-only default AI processing provider. |
-| `GEMINI_API_KEY` | Optional | Required when users select Gemini AI processing. |
+| `OPENAI_API_KEY` | Yes for OpenAI | Server-only OpenAI processing and recording-chat turns that select an OpenAI model. |
+| `GEMINI_API_KEY` | Optional | Required when users select Gemini processing or a Gemini recording-chat model. |
 
 The Soniox region is selected in the app. Temporary realtime keys have a fixed internal 60-second connection window; this is not configurable and does not limit recording duration.
 
-Environment changes require a redeploy on Vercel or a local process restart. Supabase Auth redirect configuration for Production and Preview, plus safe diagnostics, are documented in `docs/api/environment.md`.
+Environment changes require a process restart or deployment refresh. Configure Supabase Auth redirects for every deployed application URL. Safe diagnostics are documented in `docs/api/environment.md`.
 
 Do not add `SUPABASE_SERVICE_ROLE_KEY`, `SONIOX_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY` with a `NEXT_PUBLIC_` prefix. Anything prefixed `NEXT_PUBLIC_` is shipped to the browser.
 
@@ -143,6 +143,12 @@ must contain a syntactically valid `NEXT_PUBLIC_SUPABASE_URL` and a non-empty
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, otherwise the auth middleware fails before the
 login redirect that the test asserts.
 
+## Recording Chat
+
+The `Chat` tab is available only when the recording already has a saved transcript. It keeps one persisted conversation per owner and transcript, so its history survives refreshes and return visits. The browser sends only an allowed model, a question, and a client-generated turn UUID; the server builds the transcript context and calls the existing OpenAI or Gemini adapter. Audio, Storage URLs, provider keys, prompts, and raw transcript context are not browser inputs.
+
+Each completed answer can include up to eight verified quote links. The server derives their time ranges only from a unique exact contiguous match against the saved transcript tokens; a provider-supplied timestamp or ambiguous quote is never presented as a navigable source. See [`docs/api/recording-chat.md`](docs/api/recording-chat.md) for the GET/POST contract, persistence and safe self-host verification.
+
 ## Support Development
 
 Vosio is provided for free use under the repository license. The `Kup mi kafe` link is voluntary support for the author; it is not required for using, deploying, or self-hosting the app, and it does not unlock any features.
@@ -156,6 +162,7 @@ Vosio is provided for free use under the repository license. The `Kup mi kafe` l
 - `docs/conventions.md` covers project conventions.
 - `docs/gotchas.md` lists important operational edge cases.
 - `docs/api/supabase-schema.md` documents the intended Supabase schema.
+- `docs/api/recording-chat.md` documents the persisted recording-chat API and operational boundary.
 
 ## License
 

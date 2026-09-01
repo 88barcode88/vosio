@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { AudioLines } from "lucide-react";
 import { AiProcessingContent } from "@/components/transcript-tabs/ai-processing-content";
+import { ChatContent } from "@/components/transcript-tabs/chat-content";
 import { AutomaticTimelineReconciler } from "@/components/automatic-timeline-reconciler";
 import { FilesContent } from "@/components/transcript-tabs/files-content";
 import {
@@ -53,7 +54,7 @@ type EvidenceRow = {
   evidence_start_ms: number | null;
 };
 
-// TranscriptTabs renders working transcript, timeline, AI and file tabs.
+// TranscriptTabs renders working transcript, AI, timeline, file and persisted chat tabs.
 export function TranscriptTabs({
   activeAiOutputs,
   activeRecording,
@@ -533,6 +534,13 @@ export function TranscriptTabs({
           />
         ) : null}
         {activeTab === "files" ? <FilesContent activeRecording={activeRecording} /> : null}
+        {activeTab === "chat" ? (
+          <ChatContent
+            activeTranscriptId={activeTranscript?.id ?? null}
+            defaultModel={userSettings.defaultOpenaiModel}
+            onOpenEvidence={openStructuredEvidence}
+          />
+        ) : null}
       </div>
       <div className="live-transcript">
         <AudioLines size={18} />

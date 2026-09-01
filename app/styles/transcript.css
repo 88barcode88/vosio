@@ -142,6 +142,121 @@
 .tab-panel-transcript {
   overflow: visible;
 }
+.recording-chat-content {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+.recording-chat-status {
+  min-height: 18px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.recording-chat-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 76px;
+  color: var(--text-secondary);
+  padding: 12px 0;
+}
+.recording-chat-empty p { margin: 0; }
+.recording-chat-turns {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+  list-style: none;
+}
+.recording-chat-turn {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.recording-chat-question,
+.recording-chat-answer {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.recording-chat-question {
+  justify-self: end;
+  max-width: min(82%, 72ch);
+  border-radius: 10px;
+  color: var(--accent-text);
+  background: var(--accent);
+  padding: 8px 10px;
+}
+.recording-chat-question strong,
+.recording-chat-answer header strong { font-size: 12px; }
+.recording-chat-question p,
+.recording-chat-answer p { margin: 4px 0 0; line-height: 1.5; white-space: pre-wrap; }
+.recording-chat-answer {
+  max-width: 76ch;
+  border-left: 2px solid var(--border-strong);
+  padding-left: 10px;
+}
+.recording-chat-answer header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+.recording-chat-answer header small { color: var(--text-muted); }
+.recording-chat-markdown { margin-top: 8px; }
+.recording-chat-table { overflow-wrap: anywhere; }
+.recording-chat-composer {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 12px;
+}
+.recording-chat-composer > label,
+.recording-chat-composer-controls label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+.recording-chat-composer textarea,
+.recording-chat-composer select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font: inherit;
+}
+.recording-chat-composer textarea { min-height: 84px; padding: 9px; resize: vertical; }
+.recording-chat-composer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+  justify-content: space-between;
+}
+.recording-chat-composer-controls label { min-width: min(100%, 260px); }
+.recording-chat-composer-controls select { min-height: 38px; padding: 0 8px; }
+.recording-chat-composer button,
+.recording-chat-reconcile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--accent-text);
+  background: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  padding: 0 12px;
+}
+.recording-chat-reconcile { justify-self: start; color: var(--text); background: var(--surface-muted); }
+.recording-chat-composer button:disabled { cursor: not-allowed; opacity: .55; }
 .transcript-list {
   display: grid;
   gap: 12px;

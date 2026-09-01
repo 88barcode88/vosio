@@ -61,7 +61,7 @@ const fixtureMarkers: RecordingMarkerRow[] = [{
   user_id: userId
 }];
 const fixtureScopePattern = /^[0-9a-f]{12}$/;
-const fixtureModes = ["blocks", "raw", "ai", "timeline", "files"] as const;
+const fixtureModes = ["blocks", "raw", "ai", "timeline", "files", "chat"] as const;
 type FixtureMode = (typeof fixtureModes)[number];
 
 // createFixtureSegments produces alternating speaker blocks that overflow the detail viewport.
