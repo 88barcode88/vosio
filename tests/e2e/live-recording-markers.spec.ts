@@ -76,7 +76,39 @@ function createBoundaryPayload(markerRequests: RecordingMarkerRequest[]) {
 // installBrowserMediaBoundaries replaces microphone and MediaRecorder APIs before React initializes.
 async function installBrowserMediaBoundaries(page: Page) {
   await page.addInitScript(() => {
+    class FixtureMediaStreamTrack extends EventTarget {
+      kind = "audio";
+      muted = false;
+      readyState: "live" | "ended" = "live";
+
+      // clone creates an independently owned synthetic audio track.
+      clone() {
+        return new FixtureMediaStreamTrack();
+      }
+
+      // stop ends only this synthetic track instance.
+      stop() {
+        this.readyState = "ended";
+      }
+    }
+
+    class FixtureMediaStream {
+      // constructor stores the tracks owned by this synthetic stream.
+      constructor(private readonly tracks: FixtureMediaStreamTrack[] = []) {}
+
+      // getAudioTracks returns all synthetic audio tracks.
+      getAudioTracks() {
+        return this.tracks.filter((track) => track.kind === "audio");
+      }
+
+      // getTracks returns a defensive copy for independent cleanup.
+      getTracks() {
+        return [...this.tracks];
+      }
+    }
+
     class FixtureMediaRecorder extends EventTarget {
+      // isTypeSupported accepts the fixture's deterministic WebM container.
       static isTypeSupported() {
         return true;
       }
@@ -85,10 +117,12 @@ async function installBrowserMediaBoundaries(page: Page) {
       ondataavailable: ((event: { data: Blob }) => void) | null = null;
       state: "inactive" | "recording" = "inactive";
 
+      // start marks this synthetic encoder as active.
       start() {
         this.state = "recording";
       }
 
+      // stop emits the same terminal events consumed by BrowserRecorder.
       stop() {
         this.state = "inactive";
         this.ondataavailable?.({ data: new Blob([], { type: "audio/webm" }) });
@@ -100,12 +134,14 @@ async function installBrowserMediaBoundaries(page: Page) {
       configurable: true,
       value: FixtureMediaRecorder
     });
+    Object.defineProperty(window, "MediaStream", {
+      configurable: true,
+      value: FixtureMediaStream
+    });
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
-        getUserMedia: async () => ({
-          getTracks: () => [{ stop: () => undefined }]
-        })
+        getUserMedia: async () => new FixtureMediaStream([new FixtureMediaStreamTrack()])
       }
     });
     Object.defineProperty(navigator, "wakeLock", {

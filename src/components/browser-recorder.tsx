@@ -79,6 +79,19 @@ import {
   sonioxRealtimeLanguageOptions,
   type SonioxRealtimeLanguageId
 } from "@/lib/soniox/languages";
+import {
+  createLiveAudioHealthMonitor,
+  getLiveAudioHealthNotice,
+  type LiveAudioHealthMonitor,
+  type LiveAudioHealthSnapshot
+} from "@/lib/live-recording/audio-health";
+import {
+  acquireSharedAudioSession,
+  createSonioxAudioSource,
+  type SharedAudioSession,
+  type SharedAudioTrackLease,
+  type SonioxAudioSource
+} from "@/lib/live-recording/shared-audio-source";
 
 type WakeLockSentinelLike = {
   addEventListener: (type: "release", listener: () => void, options?: AddEventListenerOptions) => void;
@@ -129,6 +142,7 @@ export function BrowserRecorder({
   compact = false,
   developmentRecordingFactory,
   maxAudioFileSizeBytes,
+  onAudioHealthChange,
   onStatusChange,
   realtimeLanguage = "auto",
   redirectAfterSave,
@@ -156,9 +170,13 @@ export function BrowserRecorder({
   const recorderStopOwnerRef = useRef<RecorderStopOwner | null>(null);
   const draftAutosaveInFlightRef = useRef(false);
   const lastDraftAutosaveAtRef = useRef(0);
+  const archiveAudioLeaseRef = useRef<SharedAudioTrackLease | null>(null);
+  const audioHealthChangeCallbackRef = useRef(onAudioHealthChange);
+  const audioHealthMonitorRef = useRef<LiveAudioHealthMonitor | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const sharedAudioSessionRef = useRef<SharedAudioSession | null>(null);
+  const sonioxAudioSourceRef = useRef<SonioxAudioSource | null>(null);
   const sonioxRecordingRef = useRef<Recording | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
   const tokenArrivalTimesRef = useRef<Map<string, number>>(new Map());
   const finalTokensRef = useRef<StoredRealtimeToken[]>([]);
@@ -172,6 +190,7 @@ export function BrowserRecorder({
   const wakeLockRequestRef = useRef<Promise<boolean> | null>(null);
   const wakeLockRequestGenerationRef = useRef(0);
   const [audioLimitReached, setAudioLimitReached] = useState(false);
+  const [audioHealth, setAudioHealth] = useState<LiveAudioHealthSnapshot | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [liveCaptionBlocks, setLiveCaptionBlocks] = useState<LiveCaptionBlock[]>([]);
   const [liveTranscript, setLiveTranscript] = useState("");
@@ -190,6 +209,8 @@ export function BrowserRecorder({
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [wakeLockWarning, setWakeLockWarning] = useState<string | null>(null);
 
+  audioHealthChangeCallbackRef.current = onAudioHealthChange;
+
   // syncSelectedRealtimeLanguage refreshes the per-call choice when the persisted default changes between sessions.
   useEffect(() => {
     if (status === "idle") {
@@ -206,6 +227,13 @@ export function BrowserRecorder({
   function setRecorderPhase(nextPhase: RecorderStatus) {
     recorderLifecyclePhaseRef.current = nextPhase;
     setStatus(nextPhase);
+  }
+
+  // isCurrentStartSession rejects stale microphone acquisition before a Soniox recording exists.
+  function isCurrentStartSession(sessionGeneration: number) {
+    return isMountedRef.current
+      && recordingSessionGenerationRef.current === sessionGeneration
+      && recorderLifecyclePhaseRef.current === "starting";
   }
 
   // isCurrentSonioxSession rejects callbacks from stale, stopped, or unmounted capture sessions.
@@ -519,10 +547,38 @@ export function BrowserRecorder({
     }
   }
 
-  // cleanupStream releases microphone tracks after recording stops.
-  function cleanupStream() {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
+  // cleanupAudioSession releases only the addressed session and cannot tear down a newer capture.
+  const cleanupAudioSession = useCallback((session: SharedAudioSession | null) => {
+    if (!session) {
+      return;
+    }
+
+    if (sharedAudioSessionRef.current === session) {
+      audioHealthMonitorRef.current?.stop();
+      audioHealthMonitorRef.current = null;
+      archiveAudioLeaseRef.current = null;
+      sonioxAudioSourceRef.current?.stop();
+      sonioxAudioSourceRef.current = null;
+      sharedAudioSessionRef.current = null;
+      if (isMountedRef.current) {
+        setAudioHealth(null);
+      }
+      audioHealthChangeCallbackRef.current?.(null);
+    }
+
+    session.close();
+  }, []);
+
+  // cleanupArchiveAudio stops archive-only monitoring and its clone without touching Soniox or master audio.
+  function cleanupArchiveAudio() {
+    audioHealthMonitorRef.current?.stop();
+    audioHealthMonitorRef.current = null;
+    archiveAudioLeaseRef.current?.release();
+    archiveAudioLeaseRef.current = null;
+    if (isMountedRef.current) {
+      setAudioHealth(null);
+    }
+    audioHealthChangeCallbackRef.current?.(null);
   }
 
   // invalidateWakeLockRequest makes any in-flight browser Wake Lock request stale for this recorder session.
@@ -657,8 +713,9 @@ export function BrowserRecorder({
         mediaRecorderRef.current.stop();
       }
 
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
+      const audioSession = sharedAudioSessionRef.current;
+
+      cleanupAudioSession(audioSession);
 
       const wakeLock = wakeLockRef.current;
 
@@ -669,7 +726,7 @@ export function BrowserRecorder({
 
     isMountedRef.current = true;
     return cleanupRecorder;
-  }, [invalidateWakeLockRequest]);
+  }, [cleanupAudioSession, invalidateWakeLockRequest]);
 
   useEffect(() => {
     // handleVisibilityChange reacquires Wake Lock without restarting a healthy Soniox session.
@@ -735,20 +792,41 @@ export function BrowserRecorder({
     return recorder;
   }
 
-  // startLocalAudioRecording starts one local audio file for the live session.
-  function startLocalAudioRecording() {
-    const stream = streamRef.current;
+  // startLocalAudioRecording starts archive encoding and independent health checks on its clone.
+  function startLocalAudioRecording(
+    lease: SharedAudioTrackLease,
+    sonioxRecording: Recording,
+    sessionGeneration: number
+  ) {
+    const recorder = createLocalAudioRecorder(lease.stream);
+    const monitor = createLiveAudioHealthMonitor({
+      onChange: (snapshot) => {
+        if (!isCurrentSonioxSession(sonioxRecording, sessionGeneration)) {
+          return;
+        }
 
-    if (!stream) {
-      throw new Error("Mikrofon není připravený pro lokální nahrávání.");
-    }
-
-    const recorder = createLocalAudioRecorder(stream);
+        setAudioHealth(snapshot);
+        audioHealthChangeCallbackRef.current?.(snapshot);
+      },
+      recorder,
+      stream: lease.stream,
+      track: lease.track
+    });
 
     audioChunksRef.current = [];
     audioStartedAtRef.current = Date.now();
+    archiveAudioLeaseRef.current = lease;
+    audioHealthMonitorRef.current = monitor;
     mediaRecorderRef.current = recorder;
-    recorder.start();
+
+    try {
+      recorder.start();
+    } catch (error) {
+      monitor.stop();
+      audioHealthMonitorRef.current = null;
+      mediaRecorderRef.current = null;
+      throw error;
+    }
   }
 
   // getCurrentAudioAgeSeconds returns how long the local audio file has been recording.
@@ -780,7 +858,7 @@ export function BrowserRecorder({
         audioChunksRef.current = [];
         audioStartedAtRef.current = null;
         mediaRecorderRef.current = null;
-        cleanupStream();
+        cleanupArchiveAudio();
         setAudioLimitReached(true);
       } finally {
         audioDiscardPromiseRef.current = null;
@@ -794,18 +872,21 @@ export function BrowserRecorder({
   // createLocalMediaRecorder starts one bounded local audio file alongside live transcription.
   async function createLocalMediaRecorder(
     sonioxRecording: Recording,
-    sessionGeneration: number
+    sessionGeneration: number,
+    archiveLease: SharedAudioTrackLease
   ) {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
     if (!isCurrentSonioxSession(sonioxRecording, sessionGeneration)) {
-      stream.getTracks().forEach((track) => track.stop());
       return false;
     }
 
-    streamRef.current = stream;
     const mimeType = getSupportedMimeType();
     const contentType = mimeType ? mimeType.split(";")[0] ?? "audio/webm" : "audio/webm";
+    liveRecordingContentTypeRef.current = contentType;
+    audioChunksRef.current = [];
+    audioDiscardedForSizeRef.current = false;
+    audioDiscardPromiseRef.current = null;
+    audioStartedAtRef.current = null;
+    startLocalAudioRecording(archiveLease, sonioxRecording, sessionGeneration);
     const draftPromise = createLiveRecordingDraft({
       contentType,
       title: getLiveRecordingTitle("Live nahrávka")
@@ -821,7 +902,6 @@ export function BrowserRecorder({
     const recording = await draftPromise;
 
     if (!isCurrentSonioxSession(sonioxRecording, sessionGeneration)) {
-      stream.getTracks().forEach((track) => track.stop());
       return false;
     }
 
@@ -829,14 +909,8 @@ export function BrowserRecorder({
       pendingLiveDraftSessionRef.current = null;
     }
 
-    liveRecordingContentTypeRef.current = contentType;
     liveRecordingDraftRef.current = recording;
     establishLiveMarkerClock(sonioxRecording, sessionGeneration);
-    audioChunksRef.current = [];
-    audioDiscardedForSizeRef.current = false;
-    audioDiscardPromiseRef.current = null;
-    audioStartedAtRef.current = null;
-    startLocalAudioRecording();
     return true;
   }
 
@@ -946,6 +1020,7 @@ export function BrowserRecorder({
 
     const sessionGeneration = recordingSessionGenerationRef.current + 1;
     let recording: Recording | null = null;
+    let audioSession: SharedAudioSession | null = null;
 
     recordingSessionGenerationRef.current = sessionGeneration;
     recorderStopOwnerRef.current = null;
@@ -961,7 +1036,25 @@ export function BrowserRecorder({
     setRecorderFeedback("Připravuji mikrofon a live přepis...", "working");
 
     try {
-      const recordingOptions = getRealtimeRecordingOptions(realtimeModel, selectedRealtimeLanguage);
+      audioSession = await acquireSharedAudioSession();
+
+      if (!isCurrentStartSession(sessionGeneration)) {
+        audioSession.close();
+        return;
+      }
+
+      sharedAudioSessionRef.current = audioSession;
+      const sonioxLease = audioSession.lease("soniox");
+      const sonioxAudioSource = createSonioxAudioSource(sonioxLease);
+      const archiveLease = selectedSaveMode === "audio_and_transcript"
+        ? audioSession.lease("archive")
+        : null;
+      const recordingOptions = {
+        ...getRealtimeRecordingOptions(realtimeModel, selectedRealtimeLanguage),
+        source: sonioxAudioSource
+      };
+
+      sonioxAudioSourceRef.current = sonioxAudioSource;
       recording = developmentRecordingFactory
         ? developmentRecordingFactory(recordingOptions)
         : new SonioxClient({
@@ -1088,9 +1181,14 @@ export function BrowserRecorder({
       });
 
       if (selectedSaveMode === "audio_and_transcript") {
+        if (!archiveLease) {
+          throw new Error("Archivní audio stopa nebyla připravená.");
+        }
+
         const localRecorderReady = await createLocalMediaRecorder(
           sessionRecording,
-          sessionGeneration
+          sessionGeneration,
+          archiveLease
         );
 
         if (!localRecorderReady) {
@@ -1206,6 +1304,7 @@ export function BrowserRecorder({
       }
 
       if (!ownsSession) {
+        cleanupAudioSession(audioSession);
         return;
       }
 
@@ -1221,7 +1320,7 @@ export function BrowserRecorder({
       }
 
       setRecorderFeedback(message, "error");
-      cleanupStream();
+      cleanupAudioSession(audioSession);
       stopTimer();
       audioChunksRef.current = [];
       audioDiscardedForSizeRef.current = false;
@@ -1383,6 +1482,7 @@ export function BrowserRecorder({
   async function finishTranscriptOnlyRecording() {
     const recording = sonioxRecordingRef.current;
     const resultSession = sonioxResultSessionRef.current;
+    const audioSession = sharedAudioSessionRef.current;
     const stopGeneration = beginRecorderStop(recording);
 
     setRecorderFeedback("Dokončuji live přepis a ukládám text...", "working");
@@ -1484,6 +1584,7 @@ export function BrowserRecorder({
 
         liveRecordingDraftRef.current = null;
         resetLiveDraftRefs();
+        cleanupAudioSession(audioSession);
         void releaseWakeLock();
         recorderStopOwnerRef.current = null;
         setRecorderPhase("idle");
@@ -1529,6 +1630,7 @@ export function BrowserRecorder({
 
     const recordingSession = sonioxRecordingRef.current;
     const resultSession = sonioxResultSessionRef.current;
+    const audioSession = sharedAudioSessionRef.current;
     const stopGeneration = beginRecorderStop(recordingSession);
     let audioUploadCompleted = false;
 
@@ -1707,13 +1809,15 @@ export function BrowserRecorder({
           sonioxRecordingRef.current = null;
         }
 
-        cleanupStream();
+        cleanupAudioSession(audioSession);
         void releaseWakeLock();
         recorderStopOwnerRef.current = null;
         setRecorderPhase("idle");
       }
     }
   }
+
+  const audioHealthNotice = getLiveAudioHealthNotice(audioHealth);
 
   return (
     <div
@@ -1859,6 +1963,15 @@ export function BrowserRecorder({
           role={getRecorderFeedbackAnnouncement(feedback.tone).role}
         >
           {feedback.message}
+        </p>
+      ) : null}
+      {status !== "idle" && audioHealthNotice ? (
+        <p
+          aria-live={audioHealthNotice.tone === "info" ? "polite" : "assertive"}
+          className="recording-state"
+          role={audioHealthNotice.tone === "info" ? "status" : "alert"}
+        >
+          {audioHealthNotice.message}
         </p>
       ) : null}
     </div>
