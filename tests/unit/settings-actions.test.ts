@@ -34,6 +34,7 @@ function createCompleteSettingsForm(region: "eu" | "global") {
   formData.set("sonioxRegion", region);
   formData.set("sonioxRealtimeLanguage", "de");
   formData.set("sonioxRealtimeModel", "stt-rt-v5");
+  formData.set("liveAudioQuality", "high");
   formData.set("supabaseStoragePlan", "paid");
   formData.set("trashRetentionHours", "168");
   return formData;
@@ -77,6 +78,7 @@ describe("settings form", () => {
     formData.set("sonioxRegion", "eu");
     formData.set("sonioxRealtimeLanguage", "de");
     formData.set("sonioxRealtimeModel", "stt-rt-v5");
+    formData.set("liveAudioQuality", "high");
     formData.set("supabaseStoragePlan", "paid");
     formData.set("trashRetentionHours", "168");
 
@@ -97,6 +99,7 @@ describe("settings form", () => {
           sonioxRegion: "eu",
           sonioxRealtimeLanguage: "de",
           sonioxRealtimeModel: "stt-rt-v5",
+          liveAudioQuality: "high",
           supabaseStoragePlan: "paid",
           trashRetentionHours: 168
         }
@@ -151,6 +154,17 @@ describe("settings form", () => {
     formData.set("supabaseStoragePlan", "free");
 
     expect(parseSettingsForm(formData).supabaseStoragePlan).toBe("free");
+  });
+
+  it.each(["economy", "standard", "high"] as const)("parses the selected %s live audio quality", (quality) => {
+    const formData = new FormData();
+    formData.set("liveAudioQuality", quality);
+
+    expect(parseSettingsForm(formData).liveAudioQuality).toBe(quality);
+  });
+
+  it("defaults legacy form submissions to standard live audio quality", () => {
+    expect(parseSettingsForm(new FormData()).liveAudioQuality).toBe("standard");
   });
 
   it.each([24, 168, 720] as const)("parses the supported %s-hour Trash retention", (hours) => {

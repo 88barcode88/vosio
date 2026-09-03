@@ -3,6 +3,22 @@ import { getUserSettingsFromMetadata, USER_SETTINGS_METADATA_KEY } from "@/lib/s
 import { DEFAULT_AI_MODEL_ID } from "@/lib/model-options";
 
 describe("settings metadata", () => {
+  it("normalizes missing and invalid live audio quality without discarding other settings", () => {
+    expect(getUserSettingsFromMetadata({} as never).liveAudioQuality).toBe("standard");
+
+    const settings = getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { aiTemperature: 0.7, liveAudioQuality: "lossless" }
+    });
+
+    expect(settings).toEqual(expect.objectContaining({ aiTemperature: 0.7, liveAudioQuality: "standard" }));
+  });
+
+  it.each(["economy", "standard", "high"] as const)("keeps the supported %s live audio quality", (quality) => {
+    expect(getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { liveAudioQuality: quality }
+    }).liveAudioQuality).toBe(quality);
+  });
+
   it("defaults missing and invalid Trash retention metadata to thirty days", () => {
     expect(getUserSettingsFromMetadata({} as never).trashRetentionHours).toBe(720);
     expect(getUserSettingsFromMetadata({

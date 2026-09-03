@@ -9,6 +9,7 @@ import { APP_VERSION } from "@/lib/app-version";
 import type { InstallationEnvironment, InstallationStatus } from "@/lib/installation-status.server";
 import { getRecordingStorageLimitSummary } from "@/lib/recordings/storage-copy";
 import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
+import { liveAudioQualityIds, liveAudioQualityOptions } from "@/lib/recordings/types";
 import { updateUserSettingsAction } from "@/lib/settings/actions";
 import { createInitialSettingsActionState, type SettingsActionState } from "@/lib/settings/action-state";
 import {
@@ -43,6 +44,7 @@ type VisibleSettingsDraft = Pick<
   UserSettings,
   | "autoTimelineAfterTranscription"
   | "defaultOpenaiModel"
+  | "liveAudioQuality"
   | "sonioxRealtimeLanguage"
   | "sonioxRealtimeModel"
   | "sonioxRegion"
@@ -55,6 +57,7 @@ function createVisibleSettingsDraft(settings: UserSettings): VisibleSettingsDraf
   return {
     autoTimelineAfterTranscription: settings.autoTimelineAfterTranscription,
     defaultOpenaiModel: settings.defaultOpenaiModel,
+    liveAudioQuality: settings.liveAudioQuality,
     sonioxRealtimeLanguage: settings.sonioxRealtimeLanguage,
     sonioxRealtimeModel: settings.sonioxRealtimeModel,
     sonioxRegion: settings.sonioxRegion,
@@ -402,6 +405,28 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         <section className="settings-section" aria-labelledby="settings-recording">
           <div className="settings-section-heading"><h2 id="settings-recording">Nahrávání</h2><p>Retence se uloží jako neměnný termín až při budoucím přesunutí nahrávky do Koše.</p></div>
           <div className="settings-grid settings-grid-single">
+            <div aria-label="Kvalita live audia" className="settings-audio-quality-options" role="radiogroup">
+              {liveAudioQualityIds.map((quality) => {
+                const option = liveAudioQualityOptions[quality];
+
+                return (
+                  <label className="settings-audio-quality-option" key={quality}>
+                    <input
+                      checked={visibleDraft.liveAudioQuality === quality}
+                      disabled={disableSave}
+                      name="liveAudioQuality"
+                      onChange={() => setVisibleDraft((draft) => ({ ...draft, liveAudioQuality: quality }))}
+                      type="radio"
+                      value={quality}
+                    />
+                    <span>
+                      <strong>{option.label}</strong>
+                      <small>{option.audioBitsPerSecond / 1_000} kbit/s · {option.estimatedMegabytesPerHour.toFixed(1)} MB/h</small>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
             <label>
               <span>Budoucí položky v Koši</span>
               <select
