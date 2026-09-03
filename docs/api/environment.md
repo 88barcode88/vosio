@@ -132,6 +132,12 @@ Supabase provides `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Edge Fun
 
 ### App behavior constants
 
+`manual AI maxDuration`
+
+- Not a runtime environment variable.
+- The manual processing route declares 300 seconds for Next.js `after()` work; UI stalled state adds a fixed three-minute grace.
+- A hosting plan may enforce a lower ceiling. Source tests do not prove deployed post-response lifetime, so every target needs an isolated real-runtime acceptance proof before this path is called live-verified.
+
 `RECORDINGS_BUCKET`
 
 - Not a runtime environment variable.

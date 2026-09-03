@@ -10,6 +10,7 @@ import type { RecordingClientView } from "@/lib/recordings/client-view";
 import { formatFileSize, formatRecordingDate } from "@/lib/recordings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
 import type { ExportTarget } from "@/components/transcript-tabs/types";
+import type { ManualAiOutputMetadata } from "@/lib/ai/manual-job-state";
 import {
   getAiOutputMarkdownText,
   getAiOutputTitle
@@ -204,17 +205,26 @@ export function buildWorkspaceExportMarkdown(
 export function getExportTargets(
   activeTranscript: TranscriptRow | null,
   aiOutputs: AiOutputView[],
-  structuredItems: StructuredAiItems
+  structuredItems: StructuredAiItems,
+  outputMetadata: ManualAiOutputMetadata[] = []
 ): ExportTarget[] {
-  const canExportWorkspace = Boolean(activeTranscript || aiOutputs.length > 0 || hasStructuredWorkspaceItems(structuredItems));
+  const canExportWorkspace = Boolean(
+    activeTranscript || aiOutputs.length > 0 || outputMetadata.length > 0 || hasStructuredWorkspaceItems(structuredItems)
+  );
+  const artifacts = outputMetadata.length > 0
+    ? outputMetadata.map((metadata) => ({ metadata, output: aiOutputs.find((output) => output.id === metadata.id) }))
+    : aiOutputs.map((output) => ({
+        metadata: { created_at: output.created_at, id: output.id, processing_type: output.processing_type },
+        output
+      }));
 
   return [
     { id: "recording", label: "Celá nahrávka", type: "recording" },
     ...(canExportWorkspace ? [{ id: "workspace", label: "Pracovní balíček", type: "workspace" } as const] : []),
     ...(activeTranscript ? [{ id: "transcript", label: "Jen přepis", type: "transcript" } as const] : []),
-    ...aiOutputs.map((output) => ({
-      id: output.id,
-      label: `AI: ${getAiOutputTitle(output.processing_type)} · ${formatRecordingDate(output.created_at)}`,
+    ...artifacts.map(({ metadata, output }) => ({
+      id: metadata.id,
+      label: `AI: ${getAiOutputTitle(metadata.processing_type)} · ${formatRecordingDate(metadata.created_at)}`,
       output,
       type: "ai_output" as const
     }))
@@ -242,7 +252,7 @@ export function getExportMarkdown(
   }
 
   if (target.type === "ai_output") {
-    return getAiOutputMarkdownText(target.output);
+    return target.output ? getAiOutputMarkdownText(target.output) : "";
   }
 
   const exhaustiveTarget: never = target;

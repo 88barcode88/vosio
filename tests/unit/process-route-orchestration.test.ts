@@ -4,14 +4,21 @@ import { persistCompletedAiProcessing } from "@/lib/ai/process-route-orchestrati
 import { POST } from "../../app/api/transcripts/[transcriptId]/process/route";
 
 const routeMocks = vi.hoisted(() => ({
+  afterCallbacks: [] as Array<() => unknown>,
   createAdminClient: vi.fn(),
   createClient: vi.fn(),
+  rateLimit: vi.fn(),
   runGeminiProcessing: vi.fn(),
   runOpenAIProcessing: vi.fn(),
 }));
 
+vi.mock("next/server", async (importOriginal) => ({
+  ...await importOriginal<typeof import("next/server")>(),
+  after: (callback: () => unknown) => routeMocks.afterCallbacks.push(callback)
+}));
+
 vi.mock("@/lib/rate-limit", () => ({
-  createRateLimiter: () => () => ({ allowed: true, retryAfterSeconds: 0 }),
+  createRateLimiter: () => routeMocks.rateLimit,
 }));
 vi.mock("@/lib/env.server", () => ({ getAiProviderConfigurationError: () => null }));
 vi.mock("@/lib/ai/gemini", () => ({ runGeminiProcessing: routeMocks.runGeminiProcessing }));
@@ -24,7 +31,11 @@ const userId = "00000000-0000-4000-8000-000000000812";
 const systemPromptId = "00000000-0000-4000-8000-000000000813";
 const overrideId = "00000000-0000-4000-8000-000000000814";
 
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  routeMocks.afterCallbacks.length = 0;
+  routeMocks.rateLimit.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
+});
 
 // createRouteFixture exposes the authenticated resolver, durable job insert and provider order.
 function createRouteFixture(effectivePrompt: {
@@ -69,14 +80,16 @@ function createRouteFixture(effectivePrompt: {
   const jobQuery = {
     eq: vi.fn(),
     insert: jobInsert,
+    maybeSingle: vi.fn(),
     select: vi.fn(),
     single: vi.fn(),
     update: vi.fn(),
   };
   jobQuery.select.mockReturnValue(jobQuery);
+  jobQuery.eq.mockReturnValue(jobQuery);
+  jobQuery.maybeSingle.mockResolvedValue({ data: null, error: null });
   jobQuery.single.mockResolvedValue({ data: { id: "job-1" }, error: null });
   jobQuery.update.mockReturnValue(jobQuery);
-  jobQuery.eq.mockResolvedValue({ error: null });
   const outputQuery = {
     insert: vi.fn(),
     select: vi.fn(),
@@ -100,14 +113,18 @@ function createRouteFixture(effectivePrompt: {
     return { inputTokenCount: 10, outputText: '{"markdown":"Hotovo"}', outputTokenCount: 5, input };
   });
 
-  return { events, jobInsert, rpc };
+  return { events, jobInsert, jobQuery, rpc };
 }
 
 // postActionItems invokes the route with the intentionally prompt-agnostic browser contract.
 function postActionItems() {
   return POST(
     new NextRequest(`https://vosio.test/api/transcripts/${transcriptId}/process`, {
-      body: JSON.stringify({ model: "gpt-5.6-terra", processingType: "action_items" }),
+      body: JSON.stringify({
+        model: "gpt-5.6-terra",
+        processingType: "action_items",
+        requestId: "00000000-0000-4000-8000-000000000815"
+      }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
     }),
@@ -116,7 +133,7 @@ function postActionItems() {
 }
 
 describe("process route prompt resolution", () => {
-  it("snapshots an owner override before the provider receives the same prompt and system schema", async () => {
+  it("snapshots an owner override before registering provider work after the response", async () => {
     const effectivePrompt = {
       system_prompt_id: systemPromptId,
       override_id: overrideId,
@@ -131,11 +148,12 @@ describe("process route prompt resolution", () => {
 
     const response = await postActionItems();
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(202);
     expect(fixture.rpc).toHaveBeenCalledWith("resolve_effective_prompt_template_v1", {
       p_processing_type: "action_items",
     });
-    expect(fixture.events.slice(0, 2)).toEqual(["job-inserted", "provider-called"]);
+    expect(fixture.events).toEqual(["job-inserted"]);
+    expect(routeMocks.afterCallbacks).toHaveLength(1);
     expect(fixture.jobInsert).toHaveBeenCalledWith(expect.objectContaining({
       processing_type: "action_items",
       prompt_id: systemPromptId,
@@ -149,10 +167,7 @@ describe("process route prompt resolution", () => {
     }));
     const jobPayload = fixture.jobInsert.mock.calls[0]?.[0];
     expect(JSON.stringify((jobPayload as { provider_config: unknown }).provider_config)).not.toContain(effectivePrompt.prompt_text);
-    expect(routeMocks.runOpenAIProcessing).toHaveBeenCalledWith(expect.objectContaining({
-      outputSchema: effectivePrompt.output_schema,
-      prompt: expect.stringContaining(effectivePrompt.prompt_text),
-    }));
+    expect(routeMocks.runOpenAIProcessing).not.toHaveBeenCalled();
   });
 
   it("snapshots the authoritative system fallback without inventing an override revision", async () => {
@@ -170,7 +185,7 @@ describe("process route prompt resolution", () => {
 
     const response = await postActionItems();
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(202);
     expect(fixture.jobInsert).toHaveBeenCalledWith(expect.objectContaining({
       prompt_id: systemPromptId,
       prompt_override_id: null,
@@ -178,10 +193,44 @@ describe("process route prompt resolution", () => {
       prompt_revision_snapshot: null,
       prompt_snapshot_exact: true,
     }));
-    expect(routeMocks.runOpenAIProcessing).toHaveBeenCalledWith(expect.objectContaining({
-      outputSchema: effectivePrompt.output_schema,
-      prompt: expect.stringContaining(effectivePrompt.prompt_text),
-    }));
+    expect(routeMocks.afterCallbacks).toHaveLength(1);
+    expect(routeMocks.runOpenAIProcessing).not.toHaveBeenCalled();
+  });
+
+  it("returns an existing same-owner request before charging the rate limiter again", async () => {
+    const effectivePrompt = {
+      system_prompt_id: systemPromptId,
+      override_id: null,
+      name: "System action items",
+      processing_type: "action_items" as const,
+      prompt_text: "Systémový prompt.",
+      output_schema: { type: "object" },
+      source: "system" as const,
+      revision: null,
+    };
+    const fixture = createRouteFixture(effectivePrompt);
+    fixture.jobQuery.maybeSingle.mockResolvedValue({
+      data: {
+        execution_mode: "manual",
+        id: "00000000-0000-4000-8000-000000000815",
+        model: "gpt-5.6-terra",
+        processing_type: "action_items",
+        status: "running",
+        transcript_id: transcriptId,
+        user_id: userId
+      },
+      error: null
+    });
+
+    const response = await postActionItems();
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      job: { id: "00000000-0000-4000-8000-000000000815", status: "running" }
+    });
+    expect(routeMocks.rateLimit).not.toHaveBeenCalled();
+    expect(fixture.jobInsert).not.toHaveBeenCalled();
+    expect(routeMocks.afterCallbacks).toHaveLength(0);
   });
 });
 

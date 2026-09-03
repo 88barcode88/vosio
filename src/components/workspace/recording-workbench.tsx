@@ -3,6 +3,7 @@ import { ChevronLeft } from "lucide-react";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import { ExportControls } from "@/components/transcript-tabs/export-controls";
+import { TranscriptAiStateProvider } from "@/components/transcript-tabs/use-transcript-ai-state";
 import { TranscriptionControls } from "@/components/transcription-controls";
 import { RecordingDetailTitleEditor } from "@/components/workspace/recording-detail-title-editor";
 import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
@@ -66,51 +67,51 @@ export function RecordingWorkbench({
     : null;
 
   return (
-    <section className="recording-workbench" aria-label="Aktuální nahrávka">
-      <Link className="recording-detail-back" href="/recordings">
-        <ChevronLeft aria-hidden="true" size={16} />
-        Zpět na nahrávky
-      </Link>
-      <RecordingCard
-        activeAiOutputs={activeAiOutputs}
-        activeRecording={activeRecording}
-        activeRecordingView={activeRecordingView}
-        activeRecordingOrganization={activeRecordingOrganization}
-        activeStructuredItems={activeStructuredItems}
-        activeTranscript={activeTranscript}
-        recordingOrganizationOptions={recordingOrganizationOptions}
-      />
-      <TranscriptPanel
-        activeAiOutputs={activeAiOutputs}
-        activeRecording={activeRecordingView}
-        activeRecordingMarkers={activeRecordingMarkers}
-        activeStructuredItems={activeStructuredItems}
-        activeTranscript={activeTranscript}
-        initialDeepLink={initialDeepLink}
-        initialTab={initialTab}
-        initialTabFromCookie={initialTabFromCookie}
-        initialTabFromUrl={initialTabFromUrl}
-        userSettings={userSettings}
-      />
-    </section>
+    <TranscriptAiStateProvider
+      initialAiOutputs={activeAiOutputs}
+      initialStructuredItems={activeStructuredItems}
+      transcriptId={activeTranscript?.id ?? null}
+    >
+      <section className="recording-workbench" aria-label="Aktuální nahrávka">
+        <Link className="recording-detail-back" href="/recordings">
+          <ChevronLeft aria-hidden="true" size={16} />
+          Zpět na nahrávky
+        </Link>
+        <RecordingCard
+          activeRecording={activeRecording}
+          activeRecordingView={activeRecordingView}
+          activeRecordingOrganization={activeRecordingOrganization}
+          activeTranscript={activeTranscript}
+          recordingOrganizationOptions={recordingOrganizationOptions}
+        />
+        <TranscriptPanel
+          activeAiOutputs={activeAiOutputs}
+          activeRecording={activeRecordingView}
+          activeRecordingMarkers={activeRecordingMarkers}
+          activeStructuredItems={activeStructuredItems}
+          activeTranscript={activeTranscript}
+          initialDeepLink={initialDeepLink}
+          initialTab={initialTab}
+          initialTabFromCookie={initialTabFromCookie}
+          initialTabFromUrl={initialTabFromUrl}
+          userSettings={userSettings}
+        />
+      </section>
+    </TranscriptAiStateProvider>
   );
 }
 
 // RecordingCard shows the compact selected-recording header, metadata and title actions.
 function RecordingCard({
-  activeAiOutputs,
   activeRecording: activeRecordingRow,
   activeRecordingView,
   activeRecordingOrganization,
-  activeStructuredItems,
   activeTranscript,
   recordingOrganizationOptions
 }: {
-  activeAiOutputs: AiOutputView[];
   activeRecording: RecordingRow | null;
   activeRecordingView: RecordingClientView | null;
   activeRecordingOrganization: RecordingOrganization;
-  activeStructuredItems: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
   recordingOrganizationOptions: RecordingOrganizationOptions;
 }) {
@@ -149,9 +150,7 @@ function RecordingCard({
         {activeRecordingRow ? (
           <div className="recording-detail-actions">
             <ExportControls
-              activeAiOutputs={activeAiOutputs}
               activeRecording={activeRecordingView}
-              activeStructuredItems={activeStructuredItems}
               activeTranscript={activeTranscript}
             />
             <RecordingDetailTitleEditor

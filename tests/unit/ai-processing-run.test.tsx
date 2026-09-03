@@ -81,8 +81,8 @@ describe("useAiProcessingRun", () => {
     vi.unstubAllGlobals();
   });
 
-  it("posts the selected model and processing type, then refreshes saved output", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output: { id: "out-1" } }), {
+  it("posts a stable request id with keepalive and accepts queued work without refresh", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ job: { id: "job-1", status: "queued" } }), {
       headers: { "Content-Type": "application/json" },
       status: 200
     }));
@@ -94,12 +94,16 @@ describe("useAiProcessingRun", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/transcripts/11111111-1111-4111-8111-111111111111/process",
       expect.objectContaining({
-        body: JSON.stringify({ model: "gpt-5.6-terra", processingType: "timeline_chapters" }),
+        keepalive: true,
         method: "POST"
       })
     );
-    expect(refresh).toHaveBeenCalledTimes(1);
-    expect(container.querySelector("output")?.textContent).toBe("AI výstup je uložený v Supabase.");
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(requestBody).toMatchObject({ model: "gpt-5.6-terra", processingType: "timeline_chapters" });
+    expect(requestBody.requestId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("signal");
+    expect(refresh).not.toHaveBeenCalled();
+    expect(container.querySelector("output")?.textContent).toBe("AI požadavek je přijatý a pokračuje na serveru.");
   });
 
   it("keeps a safe retryable error and clears the running state", async () => {
@@ -116,7 +120,7 @@ describe("useAiProcessingRun", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
-  it("aborts and ignores the old transcript when identity changes during a request", async () => {
+  it("does not abort a potentially accepted request and ignores its old-scope callback", async () => {
     const oldRequest = deferred<Response>();
     const newRequest = deferred<Response>();
     let oldSignal: AbortSignal | undefined;
@@ -130,14 +134,13 @@ describe("useAiProcessingRun", () => {
 
     await act(async () => root.render(<Harness transcriptId="11111111-1111-4111-8111-111111111111" />));
     await act(async () => container.querySelector<HTMLButtonElement>('[data-run="timeline"]')?.click());
-    expect(oldSignal?.aborted).toBe(false);
+    expect(oldSignal).toBeUndefined();
 
     await act(async () => root.render(<Harness transcriptId="22222222-2222-4222-8222-222222222222" />));
-    expect(oldSignal?.aborted).toBe(true);
     expect(container.querySelector("output")?.textContent).toBe("");
     expect(container.querySelector('[data-run="timeline"]')?.hasAttribute("disabled")).toBe(false);
 
-    await act(async () => oldRequest.resolve(new Response(JSON.stringify({ output: { id: "old" } }), {
+    await act(async () => oldRequest.resolve(new Response(JSON.stringify({ job: { id: "old", status: "queued" } }), {
       headers: { "Content-Type": "application/json" },
       status: 200
     })));
@@ -145,16 +148,16 @@ describe("useAiProcessingRun", () => {
     expect(container.querySelector("output")?.textContent).toBe("");
 
     await act(async () => container.querySelector<HTMLButtonElement>('[data-run="timeline"]')?.click());
-    await act(async () => newRequest.resolve(new Response(JSON.stringify({ output: { id: "new" } }), {
+    await act(async () => newRequest.resolve(new Response(JSON.stringify({ job: { id: "new", status: "queued" } }), {
       headers: { "Content-Type": "application/json" },
       status: 200
     })));
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/transcripts/22222222-2222-4222-8222-222222222222/process",
-      expect.objectContaining({ signal: expect.any(AbortSignal) })
+      expect.objectContaining({ keepalive: true })
     );
-    expect(refresh).toHaveBeenCalledTimes(1);
-    expect(container.querySelector("output")?.textContent).toBe("AI výstup je uložený v Supabase.");
+    expect(refresh).not.toHaveBeenCalled();
+    expect(container.querySelector("output")?.textContent).toBe("AI požadavek je přijatý a pokračuje na serveru.");
   });
 
   it("keeps the newest parallel run as message owner when it settles first", async () => {
@@ -168,18 +171,18 @@ describe("useAiProcessingRun", () => {
     await act(async () => container.querySelector<HTMLButtonElement>('[data-run="summary"]')?.click());
     await act(async () => container.querySelector<HTMLButtonElement>('[data-run="timeline"]')?.click());
 
-    await act(async () => newerTimeline.resolve(new Response(JSON.stringify({ output: { id: "timeline" } }), {
+    await act(async () => newerTimeline.resolve(new Response(JSON.stringify({ job: { id: "timeline", status: "queued" } }), {
       headers: { "Content-Type": "application/json" },
       status: 200
     })));
-    expect(container.querySelector("output")?.textContent).toBe("AI výstup je uložený v Supabase.");
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("output")?.textContent).toBe("AI požadavek je přijatý a pokračuje na serveru.");
+    expect(refresh).not.toHaveBeenCalled();
 
     await act(async () => olderSummary.resolve(new Response(JSON.stringify({
       error: "Starší shrnutí selhalo."
     }), { status: 502 })));
-    expect(container.querySelector("output")?.textContent).toBe("AI výstup je uložený v Supabase.");
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("output")?.textContent).toBe("AI požadavek je přijatý a pokračuje na serveru.");
+    expect(refresh).not.toHaveBeenCalled();
     expect(container.querySelector('[data-run="summary"]')?.hasAttribute("disabled")).toBe(false);
     expect(container.querySelector('[data-run="timeline"]')?.hasAttribute("disabled")).toBe(false);
   });
@@ -198,11 +201,11 @@ describe("useAiProcessingRun", () => {
     expect(container.querySelector('[data-active-timeline-count]')?.textContent).toBe("2");
     expect(container.querySelector('[data-run="timeline"]')?.hasAttribute("disabled")).toBe(true);
 
-    await act(async () => olderTimeline.resolve(new Response(JSON.stringify({ output: { id: "older" } }), {
+    await act(async () => olderTimeline.resolve(new Response(JSON.stringify({ job: { id: "older", status: "queued" } }), {
       headers: { "Content-Type": "application/json" },
       status: 200
     })));
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
     expect(container.querySelector('[data-active-timeline-count]')?.textContent).toBe("1");
     expect(container.querySelector('[data-run="timeline"]')?.hasAttribute("disabled")).toBe(true);
     expect(container.querySelector("output")?.textContent).toBe("AI generuje výstup…");
@@ -210,9 +213,24 @@ describe("useAiProcessingRun", () => {
     await act(async () => newerTimeline.resolve(new Response(JSON.stringify({
       error: "Novější časová osa selhala."
     }), { status: 502 })));
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
     expect(container.querySelector('[data-active-timeline-count]')?.textContent).toBe("0");
     expect(container.querySelector('[data-run="timeline"]')?.hasAttribute("disabled")).toBe(false);
     expect(container.querySelector("output")?.textContent).toBe("Novější časová osa selhala.");
+  });
+
+  it("reuses the same UUID for one transport retry", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError("network"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ job: { id: "job-retry", status: "queued" } }), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<Harness />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-run="summary"]')?.click());
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const secondBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(secondBody.requestId).toBe(firstBody.requestId);
   });
 });

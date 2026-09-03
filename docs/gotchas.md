@@ -313,6 +313,12 @@ Aktivní Settings ovládá jen preference, které aktuální runtime opravdu čt
 
 `outputLanguage`, `audioRetentionPolicy`, `autoProcessAfterTranscription`, `autoProcessingTypes` a `aiTemperature` zůstávají kvůli zpětné kompatibilitě uložené v Auth metadata, ale současný runtime je nepoužívá. UI je proto nesmí prezentovat jako funkční ovládání, dokud neexistuje skutečná server/worker cesta.
 
+## Manuální AI `after()` je source kontrakt, ne live runtime důkaz
+
+Route deklaruje `maxDuration = 300` a odvozený klientský `stalled` práh používá stejných 300 sekund plus tříminutovou grace. Skutečný limit hostingu a to, zda konkrétní nasazení nechá `after()` provider volání doběhnout, musí před release projít izolovaným runtime proofem. Source test potvrzuje 202 před settlementem, idempotentní UUID, claim a persistence pořadí, ale nepotvrzuje live Vercel lifetime. Bez tohoto proofu se stav smí označit jen jako source-only.
+
+Manual job callback nesmí být zaměněný s automatic timeline lease RPC. Vždy filtruje `execution_mode = manual`, `status = queued` a přesnou trojici job/user/transcript. Browser po přijetí nebo nejistém transportním výsledku request neabortuje a nepoužívá `router.refresh`; nový explicitní retry po terminal failed/stalled vytváří nové UUID.
+
 ## Automatická timeline není backfill ani cron
 
 Zapnutí `autoTimelineAfterTranscription` platí jen pro completion persistovaná po uložení preference. Staré dormant `autoProcessAfterTranscription` ani `autoProcessingTypes` nesmějí souhlas nahradit. Po durable obsahu transcriptu provede service-only `complete_transcript_generation_v1` jediný completion transition: pod row lockem společně uloží generation digest, stav `completed` a při completion-time souhlasu `automatic_timeline_intents` řádek s exact modelem, provider configem a effective prompt snapshotem. Prompt lookup nebo intent insert chyba rollbackne transition včetně stavu `completed`; nemůže po ní zůstat completed generace bez recovery markeru. Po commitu provider ani první enqueue selhání transcript nevrací ani nemaže. Detail smí chybějící job vytvořit pouze z durable intentu, takže otevření historického nebo disabled transcriptu bez intentu zůstane `not_scheduled` a není retroaktivní backfill.

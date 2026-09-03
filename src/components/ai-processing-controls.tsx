@@ -8,8 +8,10 @@ import {
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 import { aiModelOptions, getAiModelDescription } from "@/lib/model-options";
 import { quickActions } from "@/lib/workspace-data";
+import type { ManualAiJobStatus } from "@/lib/ai/manual-job-state";
 
 type AiProcessingControlsProps = {
+  onJobAccepted?: (job: { id: string; status: ManualAiJobStatus }, processingType: AiProcessingType) => void;
   settings?: UserSettings;
   transcriptId: string | null;
 };
@@ -45,13 +47,14 @@ function getSelectedModelOption(modelId: string) {
 
 // AiProcessingControls runs stored prompt templates against a completed transcript.
 export function AiProcessingControls({
+  onJobAccepted,
   settings = defaultUserSettings,
   transcriptId
 }: AiProcessingControlsProps) {
   const modelPickerRef = useRef<HTMLDetailsElement>(null);
   const modelOptions = aiModelOptions;
   const [model, setModel] = useState<string>(settings.defaultOpenaiModel);
-  const processing = useAiProcessingRun(transcriptId);
+  const processing = useAiProcessingRun(transcriptId, onJobAccepted);
   const selectedModel = getSelectedModelOption(model);
   const canProcess = Boolean(transcriptId);
 
