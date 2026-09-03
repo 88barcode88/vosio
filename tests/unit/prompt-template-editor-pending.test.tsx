@@ -2,6 +2,7 @@
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PromptTemplateEditor,
@@ -84,6 +85,27 @@ afterEach(async () => {
 });
 
 describe("effective prompt editor", () => {
+  // The server-rendered controlled form must stay inert until React owns its input state.
+  it("keeps prompt fields disabled in server markup before hydration", () => {
+    const action = vi.fn(async () => ({
+      message: null,
+      revision: null,
+      status: "idle" as const,
+      systemPromptId: null,
+    }));
+    const markup = renderToString(
+      <PromptTemplateEditor
+        actions={{ resetOverride: action, saveOverride: action }}
+        navigationState={{ kind: "selected", templateId: defaultId }}
+        promptTemplates={[defaultTemplate]}
+      />,
+    );
+    const serverContainer = document.createElement("div");
+    serverContainer.innerHTML = markup;
+
+    expect(serverContainer.querySelector<HTMLFieldSetElement>("[data-prompt-editor-fields]")?.disabled).toBe(true);
+  });
+
   it("shows default and modified states while keeping system fields read-only", async () => {
     const action = vi.fn(async () => ({
       message: null,
