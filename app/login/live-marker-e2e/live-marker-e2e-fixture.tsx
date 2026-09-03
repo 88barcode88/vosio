@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import type { RecordOptions, Recording } from "@soniox/client";
+import type { AudioSource, RecordOptions, Recording } from "@soniox/client";
 import { PersistentRecorderSlot } from "@/components/persistent-recording-session";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import { MobileNav } from "@/components/workspace-navigation";
@@ -61,10 +61,11 @@ function clearFixtureAuthCookies() {
   });
 }
 
-// createDevelopmentRecording exposes deterministic Soniox events while retaining BrowserRecorder lifecycle code.
-function createDevelopmentRecording(): Recording {
+// createDevelopmentRecording drives the real custom source while exposing deterministic provider events.
+function createDevelopmentRecording(options: RecordOptions): Recording {
   type FixtureHandler = (payload?: unknown) => void;
   const handlers = new Map<string, Set<FixtureHandler>>();
+  const source = options.source as AudioSource & { restart?: () => void };
   let resultScheduled = false;
   let stateScheduled = false;
 
@@ -73,9 +74,12 @@ function createDevelopmentRecording(): Recording {
   }
 
   const recording = {
+    // cancel reproduces provider cancellation without taking ownership of the archive recorder.
     cancel() {
+      source.stop();
       emit("state_change", { new_state: "canceled", old_state: "recording" });
     },
+    // on registers deterministic fixture lifecycle callbacks.
     on(eventName: string, handler: FixtureHandler) {
       const eventHandlers = handlers.get(eventName) ?? new Set<FixtureHandler>();
       eventHandlers.add(handler);
@@ -115,14 +119,23 @@ function createDevelopmentRecording(): Recording {
 
       return recording;
     },
+    // reconnect forces a fresh source encoder before reporting provider recovery.
     reconnect() {
+      source.restart?.();
       emit("reconnected", { attempt: 1 });
     },
     state: "recording",
+    // stop releases only the provider source before the archive completes independently.
     async stop() {
+      source.stop();
       emit("state_change", { new_state: "stopped", old_state: "recording" });
     }
   };
+
+  void source.start({
+    onData: () => undefined,
+    onError: (error) => emit("error", error)
+  });
 
   return recording as unknown as Recording;
 }
@@ -160,7 +173,7 @@ function LiveMarkerCaptureFixture({ scope }: { scope: string }) {
   const [capturedOptions, setCapturedOptions] = useState<RecordOptions | null>(null);
   const developmentRecordingFactory = useCallback((options: RecordOptions) => {
     setCapturedOptions(options);
-    return createDevelopmentRecording();
+    return createDevelopmentRecording(options);
   }, []);
 
   useEffect(() => {

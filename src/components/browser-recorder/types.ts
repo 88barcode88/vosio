@@ -3,7 +3,16 @@ import type { LiveAudioHealthSnapshot } from "@/lib/live-recording/audio-health"
 import type { SonioxRealtimeLanguageId } from "@/lib/soniox/languages";
 
 export type RecorderStatus = "idle" | "starting" | "recording" | "saving";
-export type LiveSaveMode = "audio_and_transcript" | "transcript_only";
+export type LiveSaveMode =
+  | "audio_and_live_transcript"
+  | "audio_only"
+  | "live_transcript_only";
+export type LiveProviderFallbackReason =
+  | "canceled"
+  | "empty_final_text"
+  | "error"
+  | "start_failed"
+  | "unhealthy_stop";
 export type LiveCaptionBlock = {
   speaker: string;
   speakerClassName: string;

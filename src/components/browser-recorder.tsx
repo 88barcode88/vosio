@@ -23,6 +23,7 @@ import {
   formatElapsedTime,
   getLiveRecordingTitle,
   getLiveAudioFallbackMessage,
+  getPersistedLiveTranscriptAudioStorage,
   getRecordedFileExtension,
   getRecordingActiveMessage,
   getRealtimeRecordingOptions,
@@ -36,6 +37,8 @@ import {
   getSupportedMimeType,
   getTokenKey,
   getWakeLockWarning,
+  liveModeStoresAudio,
+  liveModeUsesRealtime,
   mergeRealtimeResultTokens,
   promoteRealtimePartialTokens,
   shouldDiscardLiveRecordingAudio,
@@ -51,6 +54,7 @@ import type {
   LiveCaptionBlock,
   LiveMarkerAttempt,
   LiveMarkerFeedback,
+  LiveProviderFallbackReason,
   LiveSaveMode,
   RealtimeConfig,
   RealtimeConfigError,
@@ -114,7 +118,6 @@ type RecorderLifecyclePhase = RecorderStatus | "unmounted";
 type PendingLiveDraftSession = {
   cleanupScheduled: boolean;
   promise: Promise<LiveRecordingDraft>;
-  recording: Recording;
   sessionGeneration: number;
 };
 
@@ -185,6 +188,7 @@ export function BrowserRecorder({
   const realtimeSessionIndexRef = useRef(0);
   const realtimeSessionOffsetMsRef = useRef(0);
   const pendingRealtimeSessionOffsetMsRef = useRef<number | null>(null);
+  const providerFallbackReasonRef = useRef<LiveProviderFallbackReason | null>(null);
   const isMountedRef = useRef(true);
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
   const wakeLockRequestRef = useRef<Promise<boolean> | null>(null);
@@ -203,8 +207,8 @@ export function BrowserRecorder({
   const [selectedRealtimeLanguage, setSelectedRealtimeLanguage] = useState<SonioxRealtimeLanguageId>(realtimeLanguage);
   const [saveMode, setSaveMode] = useState<LiveSaveMode>(
     maxAudioFileSizeBytes === null && allowTranscriptOnly
-      ? "transcript_only"
-      : "audio_and_transcript"
+      ? "live_transcript_only"
+      : "audio_and_live_transcript"
   );
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [wakeLockWarning, setWakeLockWarning] = useState<string | null>(null);
@@ -234,6 +238,15 @@ export function BrowserRecorder({
     return isMountedRef.current
       && recordingSessionGenerationRef.current === sessionGeneration
       && recorderLifecyclePhaseRef.current === "starting";
+  }
+
+  // isCurrentCaptureSession keeps audio-owned lifecycle work independent from Soniox presence.
+  function isCurrentCaptureSession(sessionGeneration: number) {
+    const phase = recorderLifecyclePhaseRef.current;
+
+    return isMountedRef.current
+      && sessionGeneration === recordingSessionGenerationRef.current
+      && (phase === "starting" || phase === "recording");
   }
 
   // isCurrentSonioxSession rejects callbacks from stale, stopped, or unmounted capture sessions.
@@ -322,7 +335,7 @@ export function BrowserRecorder({
     sessionGeneration,
     stopGeneration
   }: {
-    recording: Recording;
+    recording: Recording | null;
     sessionGeneration: number;
     stopGeneration: number;
   }): Promise<PendingLiveDraftSettlement> {
@@ -338,7 +351,6 @@ export function BrowserRecorder({
 
     if (
       !pending
-      || pending.recording !== recording
       || pending.sessionGeneration !== sessionGeneration
     ) {
       return { kind: "missing" };
@@ -381,9 +393,9 @@ export function BrowserRecorder({
   }
 
   // establishLiveMarkerClock starts one monotonic marker clock only after capture and draft are both ready.
-  function establishLiveMarkerClock(recording: Recording, sessionGeneration: number) {
+  function establishLiveMarkerClock(sessionGeneration: number) {
     if (
-      !isCurrentSonioxSession(recording, sessionGeneration)
+      !isCurrentCaptureSession(sessionGeneration)
       || liveRecordingStartedAtMsRef.current !== null
       || !liveCaptureActiveRef.current
       || !liveRecordingDraftRef.current
@@ -795,13 +807,12 @@ export function BrowserRecorder({
   // startLocalAudioRecording starts archive encoding and independent health checks on its clone.
   function startLocalAudioRecording(
     lease: SharedAudioTrackLease,
-    sonioxRecording: Recording,
     sessionGeneration: number
   ) {
     const recorder = createLocalAudioRecorder(lease.stream);
     const monitor = createLiveAudioHealthMonitor({
       onChange: (snapshot) => {
-        if (!isCurrentSonioxSession(sonioxRecording, sessionGeneration)) {
+        if (!isCurrentCaptureSession(sessionGeneration)) {
           return;
         }
 
@@ -871,11 +882,10 @@ export function BrowserRecorder({
 
   // createLocalMediaRecorder starts one bounded local audio file alongside live transcription.
   async function createLocalMediaRecorder(
-    sonioxRecording: Recording,
     sessionGeneration: number,
     archiveLease: SharedAudioTrackLease
   ) {
-    if (!isCurrentSonioxSession(sonioxRecording, sessionGeneration)) {
+    if (!isCurrentCaptureSession(sessionGeneration)) {
       return false;
     }
 
@@ -886,7 +896,9 @@ export function BrowserRecorder({
     audioDiscardedForSizeRef.current = false;
     audioDiscardPromiseRef.current = null;
     audioStartedAtRef.current = null;
-    startLocalAudioRecording(archiveLease, sonioxRecording, sessionGeneration);
+    startLocalAudioRecording(archiveLease, sessionGeneration);
+    liveCaptureActiveRef.current = true;
+    setRecorderPhase("recording");
     const draftPromise = createLiveRecordingDraft({
       contentType,
       title: getLiveRecordingTitle("Live nahrávka")
@@ -894,14 +906,13 @@ export function BrowserRecorder({
     const pendingDraft = {
       cleanupScheduled: false,
       promise: draftPromise,
-      recording: sonioxRecording,
       sessionGeneration
     };
 
     pendingLiveDraftSessionRef.current = pendingDraft;
     const recording = await draftPromise;
 
-    if (!isCurrentSonioxSession(sonioxRecording, sessionGeneration)) {
+    if (!isCurrentCaptureSession(sessionGeneration)) {
       return false;
     }
 
@@ -910,7 +921,7 @@ export function BrowserRecorder({
     }
 
     liveRecordingDraftRef.current = recording;
-    establishLiveMarkerClock(sonioxRecording, sessionGeneration);
+    establishLiveMarkerClock(sessionGeneration);
     return true;
   }
 
@@ -1001,7 +1012,7 @@ export function BrowserRecorder({
     }
   }
 
-  // startRecording asks for microphone access and starts live STT with the selected save mode.
+  // startRecording begins the selected audio and provider owners without coupling their lifecycles.
   async function startRecording() {
     if (!navigator.mediaDevices?.getUserMedia) {
       setRecorderFeedback("Tento prohlížeč neumí nahrávání přes mikrofon.", "error");
@@ -1009,11 +1020,13 @@ export function BrowserRecorder({
     }
 
     const selectedSaveMode = saveMode;
-    const selectedMaxAudioFileSizeBytes = selectedSaveMode === "audio_and_transcript"
+    const storesAudio = liveModeStoresAudio(selectedSaveMode);
+    const usesRealtime = liveModeUsesRealtime(selectedSaveMode);
+    const selectedMaxAudioFileSizeBytes = storesAudio
       ? maxAudioFileSizeBytes
       : null;
 
-    if (selectedSaveMode === "audio_and_transcript" && selectedMaxAudioFileSizeBytes === null) {
+    if (storesAudio && selectedMaxAudioFileSizeBytes === null) {
       setRecorderFeedback("Audio se teď neukládá. Můžete pokračovat jen s přepisem.", "error");
       return;
     }
@@ -1021,6 +1034,7 @@ export function BrowserRecorder({
     const sessionGeneration = recordingSessionGenerationRef.current + 1;
     let recording: Recording | null = null;
     let audioSession: SharedAudioSession | null = null;
+    let localRecorderReadyPromise: Promise<boolean> | null = null;
 
     recordingSessionGenerationRef.current = sessionGeneration;
     recorderStopOwnerRef.current = null;
@@ -1033,7 +1047,10 @@ export function BrowserRecorder({
       failLateLiveDraft(abandonedPendingDraft);
     }
 
-    setRecorderFeedback("Připravuji mikrofon a live přepis...", "working");
+    setRecorderFeedback(
+      usesRealtime ? "Připravuji mikrofon a live přepis..." : "Připravuji mikrofon a audio záznam...",
+      "working"
+    );
 
     try {
       audioSession = await acquireSharedAudioSession();
@@ -1044,25 +1061,6 @@ export function BrowserRecorder({
       }
 
       sharedAudioSessionRef.current = audioSession;
-      const sonioxLease = audioSession.lease("soniox");
-      const sonioxAudioSource = createSonioxAudioSource(sonioxLease);
-      const archiveLease = selectedSaveMode === "audio_and_transcript"
-        ? audioSession.lease("archive")
-        : null;
-      const recordingOptions = {
-        ...getRealtimeRecordingOptions(realtimeModel, selectedRealtimeLanguage),
-        source: sonioxAudioSource
-      };
-
-      sonioxAudioSourceRef.current = sonioxAudioSource;
-      recording = developmentRecordingFactory
-        ? developmentRecordingFactory(recordingOptions)
-        : new SonioxClient({
-          config: fetchRealtimeConfig,
-          permissions: new BrowserPermissionResolver()
-        }).realtime.record(recordingOptions);
-      const sessionRecording = recording;
-
       setElapsedSeconds(0);
       setAudioLimitReached(false);
       elapsedSecondsRef.current = 0;
@@ -1077,12 +1075,53 @@ export function BrowserRecorder({
       realtimeSessionIndexRef.current = 0;
       realtimeSessionOffsetMsRef.current = 0;
       pendingRealtimeSessionOffsetMsRef.current = null;
+      providerFallbackReasonRef.current = null;
       resetLiveDraftRefs();
+
+      if (storesAudio) {
+        const archiveLease = audioSession.lease("archive");
+        localRecorderReadyPromise = createLocalMediaRecorder(
+          sessionGeneration,
+          archiveLease
+        );
+      }
+
+      if (usesRealtime) {
+        const sonioxLease = audioSession.lease("soniox");
+        const sonioxAudioSource = createSonioxAudioSource(sonioxLease);
+        const recordingOptions = {
+          ...getRealtimeRecordingOptions(realtimeModel, selectedRealtimeLanguage),
+          source: sonioxAudioSource
+        };
+
+        sonioxAudioSourceRef.current = sonioxAudioSource;
+        try {
+          recording = developmentRecordingFactory
+            ? developmentRecordingFactory(recordingOptions)
+            : new SonioxClient({
+              config: fetchRealtimeConfig,
+              permissions: new BrowserPermissionResolver()
+            }).realtime.record(recordingOptions);
+        } catch (error) {
+          if (!storesAudio) {
+            throw error;
+          }
+
+          providerFallbackReasonRef.current = "start_failed";
+          setRealtimeWarning(getRealtimeErrorMessage(
+            error instanceof Error ? error : new Error(String(error)),
+            selectedSaveMode
+          ));
+        }
+      }
+
+      const sessionRecording = recording;
+
       sonioxRecordingRef.current = sessionRecording;
-      sonioxResultSessionRef.current = {
-        recording: sessionRecording,
-        sessionGeneration
-      };
+      sonioxResultSessionRef.current = sessionRecording
+        ? { recording: sessionRecording, sessionGeneration }
+        : null;
+      if (sessionRecording) {
       sessionRecording.on("result", (result) => {
         if (!acceptsSonioxResult(sessionRecording, sessionGeneration)) {
           return;
@@ -1123,6 +1162,9 @@ export function BrowserRecorder({
           return;
         }
 
+        if (storesAudio) {
+          providerFallbackReasonRef.current ??= "error";
+        }
         setRealtimeWarning(getRealtimeErrorMessage(error, selectedSaveMode));
       });
       sessionRecording.on("reconnecting", () => {
@@ -1167,7 +1209,7 @@ export function BrowserRecorder({
           liveCaptureActiveRef.current = true;
           setRecorderPhase("recording");
           setRealtimeWarning(null);
-          establishLiveMarkerClock(sessionRecording, sessionGeneration);
+          establishLiveMarkerClock(sessionGeneration);
           return;
         }
 
@@ -1176,37 +1218,35 @@ export function BrowserRecorder({
           update.new_state === "error" ||
           update.new_state === "canceled"
         ) {
+          if (storesAudio && update.new_state !== "reconnecting") {
+            providerFallbackReasonRef.current ??= update.new_state === "canceled"
+              ? "canceled"
+              : "error";
+          }
           setRealtimeWarning(getRealtimeStateWarning(update.new_state, selectedSaveMode));
         }
       });
+      }
 
-      if (selectedSaveMode === "audio_and_transcript") {
-        if (!archiveLease) {
-          throw new Error("Archivní audio stopa nebyla připravená.");
+      if (localRecorderReadyPromise && !(await localRecorderReadyPromise)) {
+        return;
+      }
+
+      if (!storesAudio) {
+        if (!sessionRecording) {
+          throw new Error("Live přepis se nepodařilo spustit.");
         }
-
-        const localRecorderReady = await createLocalMediaRecorder(
-          sessionRecording,
-          sessionGeneration,
-          archiveLease
-        );
-
-        if (!localRecorderReady) {
-          return;
-        }
-      } else {
         const draftPromise = createTranscriptOnlyDraft();
         const pendingDraft = {
           cleanupScheduled: false,
           promise: draftPromise,
-          recording: sessionRecording,
           sessionGeneration
         };
 
         pendingLiveDraftSessionRef.current = pendingDraft;
         const draft = await draftPromise;
 
-        if (!isCurrentSonioxSession(sessionRecording, sessionGeneration)) {
+        if (!isCurrentCaptureSession(sessionGeneration)) {
           return;
         }
 
@@ -1217,17 +1257,17 @@ export function BrowserRecorder({
         liveRecordingDraftRef.current = draft;
       }
 
-      establishLiveMarkerClock(sessionRecording, sessionGeneration);
+      establishLiveMarkerClock(sessionGeneration);
       await requestWakeLock();
 
-      if (!isCurrentSonioxSession(sessionRecording, sessionGeneration)) {
+      if (!isCurrentCaptureSession(sessionGeneration)) {
         return;
       }
 
       setRecorderFeedback(getRecordingActiveMessage(selectedSaveMode, selectedMaxAudioFileSizeBytes));
       setRecorderPhase("recording");
       timerRef.current = window.setInterval(() => {
-        if (!isCurrentSonioxSession(sessionRecording, sessionGeneration)) {
+        if (!isCurrentCaptureSession(sessionGeneration)) {
           return;
         }
 
@@ -1287,10 +1327,7 @@ export function BrowserRecorder({
 
         const pendingDraft = pendingLiveDraftSessionRef.current;
 
-        if (
-          pendingDraft?.recording === recording
-          && pendingDraft.sessionGeneration === sessionGeneration
-        ) {
+        if (pendingDraft?.sessionGeneration === sessionGeneration) {
           pendingLiveDraftSessionRef.current = null;
         }
       }
@@ -1370,6 +1407,18 @@ export function BrowserRecorder({
     }
 
     return hasTranscriptSearchIndexWarning(payload);
+  }
+
+  // requestAsyncTranscription starts the existing durable Soniox job only after audio is uploaded.
+  async function requestAsyncTranscription(recordingId: string) {
+    const response = await fetch(`/api/recordings/${recordingId}/transcription`, {
+      cache: "no-store",
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      throw new Error("Audio je uložené, ale přepis na pozadí se nepodařilo spustit.");
+    }
   }
 
   // createTranscriptOnlyRecording stores or completes a recording row without an audio object.
@@ -1623,7 +1672,7 @@ export function BrowserRecorder({
 
   // stopRecording finalizes the selected live save mode.
   async function stopRecording() {
-    if (saveMode === "transcript_only") {
+    if (saveMode === "live_transcript_only") {
       await finishTranscriptOnlyRecording();
       return;
     }
@@ -1631,13 +1680,19 @@ export function BrowserRecorder({
     const recordingSession = sonioxRecordingRef.current;
     const resultSession = sonioxResultSessionRef.current;
     const audioSession = sharedAudioSessionRef.current;
+    const captureGeneration = recordingSessionGenerationRef.current;
     const stopGeneration = beginRecorderStop(recordingSession);
     let audioUploadCompleted = false;
 
     stopTimer();
 
     try {
-      setRecorderFeedback("Dokončuji live přepis a ukládám nahrávku...", "working");
+      setRecorderFeedback(
+        saveMode === "audio_only"
+          ? "Dokončuji audio a ukládám nahrávku..."
+          : "Dokončuji live přepis a ukládám nahrávku...",
+        "working"
+      );
 
       const audioBlob = await finalizeLocalAudioBlob();
 
@@ -1645,34 +1700,36 @@ export function BrowserRecorder({
         return;
       }
 
-      await stopRealtimeRecording(recordingSession);
+      const realtimeStopOutcome = await stopRealtimeRecording(recordingSession);
 
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
         return;
       }
 
-      if (recordingSession && resultSession?.recording === recordingSession) {
-        closeSonioxResultSession(recordingSession, resultSession.sessionGeneration);
-        const draftSettlement = await adoptPendingLiveDraftForStop({
-          recording: recordingSession,
-          sessionGeneration: resultSession.sessionGeneration,
-          stopGeneration
-        });
-
-        if (!stillOwnsStop(recordingSession, stopGeneration)) {
-          return;
-        }
-
-        if (draftSettlement.kind === "timed_out") {
-          failLateLiveDraft(draftSettlement.pending);
-        } else if (draftSettlement.kind === "stale") {
-          return;
-        }
+      if (
+        saveMode === "audio_and_live_transcript"
+        && (realtimeStopOutcome === "failed" || realtimeStopOutcome === "timed_out")
+      ) {
+        providerFallbackReasonRef.current ??= "unhealthy_stop";
       }
 
-      await saveLiveDraft();
+      if (recordingSession && resultSession?.recording === recordingSession) {
+        closeSonioxResultSession(recordingSession, resultSession.sessionGeneration);
+      }
+
+      const draftSettlement = await adoptPendingLiveDraftForStop({
+        recording: recordingSession,
+        sessionGeneration: resultSession?.sessionGeneration ?? captureGeneration,
+        stopGeneration
+      });
 
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
+        return;
+      }
+
+      if (draftSettlement.kind === "timed_out") {
+        failLateLiveDraft(draftSettlement.pending);
+      } else if (draftSettlement.kind === "stale") {
         return;
       }
 
@@ -1742,8 +1799,45 @@ export function BrowserRecorder({
         }
       }
 
+      await saveLiveDraft();
+
+      if (!stillOwnsStop(recordingSession, stopGeneration)) {
+        return;
+      }
+
+      if (saveMode === "audio_only") {
+        try {
+          await requestAsyncTranscription(recording.id);
+          setRecorderFeedback("Audio je uložené a přepis běží na pozadí.");
+        } catch (error) {
+          setRecorderFeedback(
+            error instanceof Error
+              ? `${error.message} Můžete ho zkusit znovu z detailu nahrávky.`
+              : "Audio je uložené, přepis můžete zkusit znovu z detailu nahrávky.",
+            "error"
+          );
+        }
+
+        navigateAfterSave(recording.id);
+        return;
+      }
+
       if (!rawText) {
-        setRecorderFeedback("Audio je uložené, ale live přepis zůstal prázdný.");
+        providerFallbackReasonRef.current ??= "empty_final_text";
+      }
+
+      if (!rawText) {
+        try {
+          await requestAsyncTranscription(recording.id);
+          setRecorderFeedback("Audio je uložené. Live přepis byl prázdný, nový přepis běží na pozadí.");
+        } catch (error) {
+          setRecorderFeedback(
+            error instanceof Error
+              ? `${error.message} Můžete ho zkusit znovu z detailu nahrávky.`
+              : "Audio je uložené, přepis můžete zkusit znovu z detailu nahrávky.",
+            "error"
+          );
+        }
         navigateAfterSave(recording.id);
         return;
       }
@@ -1752,16 +1846,33 @@ export function BrowserRecorder({
         recording.id,
         rawText,
         tokens,
-        audioUploadCompleted ? "supabase_recording_upload" : "transcript_only"
+        getPersistedLiveTranscriptAudioStorage(saveMode, audioUploadCompleted)
       );
 
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
         return;
       }
 
+      if (audioUploadCompleted && providerFallbackReasonRef.current) {
+        try {
+          await requestAsyncTranscription(recording.id);
+        } catch (error) {
+          setRecorderFeedback(
+            error instanceof Error
+              ? `${error.message} Částečný live přepis i audio zůstaly uložené.`
+              : "Audio a částečný live přepis jsou uložené, přepis můžete zkusit znovu z detailu.",
+            "error"
+          );
+          navigateAfterSave(recording.id, hasSearchWarning);
+          return;
+        }
+      }
+
       setRecorderFeedback(
         hasSearchWarning
           ? TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
+          : providerFallbackReasonRef.current
+            ? "Audio a částečný live přepis jsou uložené. Nový přepis běží na pozadí."
           : audioUploadCompleted
           ? "Live nahrávka a přepis jsou uložené."
           : audioSaveError
@@ -1837,7 +1948,7 @@ export function BrowserRecorder({
           <Link data-touch-target="action" href="/recordings/new">Otevřít nahrávání</Link>
         </div>
       ) : null}
-      {!compact && status === "idle" ? (
+      {!compact && status === "idle" && liveModeUsesRealtime(saveMode) ? (
         <label className="live-language-select">
           <span>Jazyk live přepisu</span>
           <select
@@ -1854,11 +1965,11 @@ export function BrowserRecorder({
       {allowTranscriptOnly && !compact ? (
         <fieldset className="live-save-mode" disabled={status !== "idle"}>
           <legend>Ukládání</legend>
-          {(["audio_and_transcript", "transcript_only"] as const).map((mode) => (
+          {(["audio_and_live_transcript", "audio_only", "live_transcript_only"] as const).map((mode) => (
             <label key={mode}>
               <input
                 checked={saveMode === mode}
-                disabled={mode === "audio_and_transcript" && maxAudioFileSizeBytes === null}
+                disabled={liveModeStoresAudio(mode) && maxAudioFileSizeBytes === null}
                 name="liveSaveMode"
                 onChange={() => setSaveMode(mode)}
                 type="radio"
@@ -1874,7 +1985,7 @@ export function BrowserRecorder({
         disabled={
           status === "starting" ||
           status === "saving" ||
-          (saveMode === "audio_and_transcript" && maxAudioFileSizeBytes === null)
+          (liveModeStoresAudio(saveMode) && maxAudioFileSizeBytes === null)
         }
         onClick={status === "recording" ? stopRecording : startRecording}
         type="button"

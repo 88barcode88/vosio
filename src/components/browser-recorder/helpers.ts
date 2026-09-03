@@ -33,6 +33,7 @@ export type StoredRealtimeToken = RealtimeToken & {
 export type LiveCaptionToken = StoredRealtimeToken & {
   received_at_ms?: number;
 };
+export type RealtimeStopOutcome = "failed" | "not_started" | "stopped" | "timed_out";
 const liveSpeakerClassNames = [
   "speaker-teal",
   "speaker-violet",
@@ -232,18 +233,18 @@ export function getStableLiveCaptionTokens(
 // stopRealtimeRecording waits briefly for final Soniox tokens without blocking audio saving.
 export async function stopRealtimeRecording(recording: Recording | null) {
   if (!recording) {
-    return;
+    return "not_started" as const;
   }
 
   let timeoutId: number | null = null;
-  let timedOut = false;
-
-  await Promise.race([
-    recording.stop().catch(() => undefined),
-    new Promise<void>((resolve) => {
+  const outcome = await Promise.race<Exclude<RealtimeStopOutcome, "not_started">>([
+    recording.stop().then(
+      () => "stopped" as const,
+      () => "failed" as const
+    ),
+    new Promise<"timed_out">((resolve) => {
       timeoutId = window.setTimeout(() => {
-        timedOut = true;
-        resolve();
+        resolve("timed_out");
       }, SONIOX_STOP_TIMEOUT_MS);
     })
   ]);
@@ -252,9 +253,11 @@ export async function stopRealtimeRecording(recording: Recording | null) {
     window.clearTimeout(timeoutId);
   }
 
-  if (timedOut) {
+  if (outcome === "timed_out") {
     recording.cancel();
   }
+
+  return outcome;
 }
 
 // getRecordedFileExtension maps MediaRecorder output MIME types to archive file extensions.
@@ -266,7 +269,7 @@ export function getRecordedFileExtension(mimeType: string) {
 export function getRealtimeErrorMessage(error: Error, saveMode: LiveSaveMode) {
   const baseMessage = error.message ? `Live přepis má chybu: ${error.message}.` : "Live přepis má chybu.";
 
-  return saveMode === "audio_and_transcript"
+  return saveMode !== "live_transcript_only"
     ? `${baseMessage} Lokální audio může dál pokračovat.`
     : `${baseMessage} Textový režim potřebuje funkční live přepis.`;
 }
@@ -344,19 +347,29 @@ export function getLiveRecordingTitle(prefix: string) {
 
 // getSaveModeLabel maps live save modes into short Czech UI labels.
 export function getSaveModeLabel(mode: LiveSaveMode, maxAudioFileSizeBytes: number | null) {
-  if (mode === "transcript_only") {
+  if (mode === "live_transcript_only") {
     return "Jen live přepis";
   }
 
-  return maxAudioFileSizeBytes === null
-    ? "Audio není dostupné"
-    : `Audio do ${formatFileSize(maxAudioFileSizeBytes)} + přepis`;
+  if (maxAudioFileSizeBytes === null) {
+    return mode === "audio_only"
+      ? "Jen audio není dostupné"
+      : "Audio + live přepis není dostupné";
+  }
+
+  return mode === "audio_only"
+    ? `Jen audio do ${formatFileSize(maxAudioFileSizeBytes)}`
+    : `Audio do ${formatFileSize(maxAudioFileSizeBytes)} + live přepis`;
 }
 
 // getRecordingActiveMessage keeps the active capture status separate from provider and Wake Lock warnings.
 export function getRecordingActiveMessage(mode: LiveSaveMode, maxAudioFileSizeBytes: number | null) {
-  if (mode === "audio_and_transcript" && maxAudioFileSizeBytes !== null) {
+  if (mode === "audio_and_live_transcript" && maxAudioFileSizeBytes !== null) {
     return `Nahrávání a přepis probíhají. Audio se uloží do ${formatFileSize(maxAudioFileSizeBytes)}.`;
+  }
+
+  if (mode === "audio_only" && maxAudioFileSizeBytes !== null) {
+    return `Nahrávání probíhá. Audio se uloží do ${formatFileSize(maxAudioFileSizeBytes)} a potom se odešle k přepisu.`;
   }
 
   return "Přepisuji živě bez ukládání audio souboru.";
@@ -379,14 +392,34 @@ export function getRealtimeStateWarning(
   }
 
   if (state === "canceled") {
-    return saveMode === "audio_and_transcript"
+    return saveMode !== "live_transcript_only"
       ? "Live přepis byl zrušen. Lokální audio se může dál nahrávat."
       : "Live přepis byl zrušen. Textový režim nebude dostávat další přepis.";
   }
 
-  return saveMode === "audio_and_transcript"
+  return saveMode !== "live_transcript_only"
     ? "Live přepis narazil na chybu. Lokální audio se může dál nahrávat."
     : "Live přepis narazil na chybu. Textový režim nebude dostávat další přepis.";
+}
+
+// liveModeStoresAudio reports whether the selected mode owns an archive recorder.
+export function liveModeStoresAudio(mode: LiveSaveMode) {
+  return mode !== "live_transcript_only";
+}
+
+// liveModeUsesRealtime reports whether the selected mode starts Soniox realtime transcription.
+export function liveModeUsesRealtime(mode: LiveSaveMode) {
+  return mode !== "audio_only";
+}
+
+// getPersistedLiveTranscriptAudioStorage maps product modes onto existing provider metadata values.
+export function getPersistedLiveTranscriptAudioStorage(
+  mode: LiveSaveMode,
+  audioUploadCompleted: boolean
+): "supabase_recording_upload" | "transcript_only" {
+  return liveModeStoresAudio(mode) && audioUploadCompleted
+    ? "supabase_recording_upload"
+    : "transcript_only";
 }
 
 // getLiveAudioFallbackMessage reports the precise reason a completed live transcript has no audio file.

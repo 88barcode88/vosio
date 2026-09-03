@@ -697,8 +697,8 @@ describe("BrowserRecorder live markers", () => {
     });
 
     expect(MediaRecorderMock.instances).toHaveLength(2);
-    const initialSonioxRecorder = MediaRecorderMock.instances[0]!;
-    const archiveRecorder = MediaRecorderMock.instances[1]!;
+    const archiveRecorder = MediaRecorderMock.instances[0]!;
+    const initialSonioxRecorder = MediaRecorderMock.instances[1]!;
 
     expect(initialSonioxRecorder.stream.getAudioTracks()[0])
       .not.toBe(archiveRecorder.stream.getAudioTracks()[0]);
