@@ -8,6 +8,21 @@ import { BrowserRecorder } from "@/components/browser-recorder";
 
 const recordingId = "12a31215-9b8f-4c68-9e2f-89f4d31f96b0";
 
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+};
+
+// createDeferred lets stop tests hold an autosave request at its transport boundary.
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>["resolve"];
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
+}
+
 const mocks = vi.hoisted(() => ({
   completeLiveRecordingUpload: vi.fn(),
   completeLiveRecordingWithoutAudio: vi.fn(),
@@ -454,10 +469,20 @@ describe("BrowserRecorder modes", () => {
   });
 
   it("preserves the transcript draft and marks failed when no audio path survives", async () => {
+    const events: string[] = [];
     const provider = createProviderRecording();
     mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
     mocks.persistDurableSafetyPart.mockRejectedValue(new DOMException("quota", "QuotaExceededError"));
     mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
+    mocks.fetch.mockImplementation(async (url) => {
+      if (String(url).endsWith(`/api/recordings/${recordingId}/live-draft`)) {
+        events.push("final-draft");
+      }
+      return { json: vi.fn().mockResolvedValue({}), ok: true };
+    });
+    mocks.failLiveRecordingUpload.mockImplementation(async () => {
+      events.push("recording-failed");
+    });
 
     await act(async () => {
       root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
@@ -483,6 +508,146 @@ describe("BrowserRecorder modes", () => {
     ))).toBe(true);
     expect(mocks.failLiveRecordingUpload).toHaveBeenCalledOnce();
     expect(mocks.completeLiveRecordingWithoutAudio).not.toHaveBeenCalled();
+    expect(events).toEqual(["final-draft", "recording-failed"]);
+  });
+
+  it.each(["http", "transport"] as const)(
+    "reports unresolved local transcript state when final draft persistence has a %s failure",
+    async (failureKind) => {
+      const provider = createProviderRecording();
+      mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+      mocks.persistDurableSafetyPart.mockRejectedValue(new DOMException("quota", "QuotaExceededError"));
+      mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
+      mocks.fetch.mockImplementation(async (url) => {
+        if (String(url).endsWith(`/api/recordings/${recordingId}/live-draft`)) {
+          if (failureKind === "transport") {
+            throw new TypeError("network down");
+          }
+          return { json: vi.fn().mockResolvedValue({}), ok: false };
+        }
+        return { json: vi.fn().mockResolvedValue({}), ok: true };
+      });
+
+      await act(async () => {
+        root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+      });
+      await act(async () => {
+        document.querySelector<HTMLButtonElement>(".record-button")?.click();
+        await flushPromises();
+        provider.emit("state_change", { new_state: "recording" });
+        provider.emit("result", {
+          tokens: [{ end_ms: 500, is_final: true, start_ms: 0, text: "Lokální koncept." }]
+        });
+      });
+
+      MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+      MediaRecorderFixture.instances[2]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
+      await act(async () => {
+        document.querySelector<HTMLButtonElement>(".record-button")?.click();
+        await flushPromises(24);
+      });
+
+      expect(mocks.failLiveRecordingUpload).toHaveBeenCalledOnce();
+      expect(container.textContent).toContain("Lokální koncept.");
+      expect(container.textContent).toContain("nepodařilo potvrdit");
+      expect(container.textContent).not.toContain("Koncept přepisu zůstal zachovaný");
+    }
+  );
+
+  it("waits for in-flight autosave before persisting the latest final transcript", async () => {
+    const provider = createProviderRecording();
+    const autosave = createDeferred<{ json: ReturnType<typeof vi.fn>; ok: boolean }>();
+    const draftBodies: string[] = [];
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+    mocks.persistDurableSafetyPart.mockRejectedValue(new DOMException("quota", "QuotaExceededError"));
+    mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
+    mocks.fetch.mockImplementation(async (url, init) => {
+      if (String(url).endsWith(`/api/recordings/${recordingId}/live-draft`)) {
+        draftBodies.push(String(init?.body));
+        if (draftBodies.length === 1) {
+          return autosave.promise;
+        }
+      }
+      return { json: vi.fn().mockResolvedValue({}), ok: true };
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+      provider.emit("state_change", { new_state: "recording" });
+      provider.emit("result", {
+        tokens: [{ end_ms: 500, is_final: true, start_ms: 0, text: "První verze." }]
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await flushPromises();
+      provider.emit("result", {
+        tokens: [{ end_ms: 800, is_final: true, start_ms: 0, text: "Finální verze." }]
+      });
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(12);
+    });
+
+    expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
+    expect(draftBodies).toHaveLength(1);
+    await act(async () => {
+      autosave.resolve({ json: vi.fn().mockResolvedValue({}), ok: true });
+      await flushPromises(60);
+    });
+
+    expect(draftBodies).toHaveLength(2);
+    expect(JSON.parse(draftBodies[0]!).rawText).toBe("První verze.");
+    expect(JSON.parse(draftBodies[1]!).rawText).toContain("Finální verze.");
+    expect(mocks.failLiveRecordingUpload).toHaveBeenCalledOnce();
+  });
+
+  it("rejects stale final draft work after an in-flight autosave loses stop ownership", async () => {
+    const provider = createProviderRecording();
+    const autosave = createDeferred<{ json: ReturnType<typeof vi.fn>; ok: boolean }>();
+    const draftBodies: string[] = [];
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+    mocks.persistDurableSafetyPart.mockRejectedValue(new DOMException("quota", "QuotaExceededError"));
+    mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
+    mocks.fetch.mockImplementation(async (url, init) => {
+      if (String(url).endsWith(`/api/recordings/${recordingId}/live-draft`)) {
+        draftBodies.push(String(init?.body));
+        return autosave.promise;
+      }
+      return { json: vi.fn().mockResolvedValue({}), ok: true };
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+      provider.emit("state_change", { new_state: "recording" });
+      provider.emit("result", {
+        tokens: [{ end_ms: 500, is_final: true, start_ms: 0, text: "Stará relace." }]
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await flushPromises();
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(12);
+    });
+
+    expect(draftBodies).toHaveLength(1);
+    await act(async () => root?.unmount());
+    root = null;
+    await act(async () => {
+      autosave.resolve({ json: vi.fn().mockResolvedValue({}), ok: true });
+      await flushPromises(16);
+    });
+
+    expect(draftBodies).toHaveLength(1);
+    expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
   });
 
   it("downgrades quota-backed crash protection while the continuous archive keeps recording", async () => {
@@ -502,6 +667,11 @@ describe("BrowserRecorder modes", () => {
     MediaRecorderFixture.instances[1]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000);
+      await flushPromises(8);
+    });
+    expect(mocks.persistDurableSafetyPart).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
       await flushPromises(12);
     });
 

@@ -133,6 +133,14 @@ type PendingLiveDraftSession = {
   sessionGeneration: number;
 };
 
+type PendingLiveDraftSave = {
+  promise: Promise<"failed" | "saved">;
+  recordingId: string;
+  sessionGeneration: number;
+};
+
+type FinalLiveDraftPersistOutcome = "empty" | "failed" | "saved" | "stale";
+
 type PendingLiveDraftSettlement =
   | { draft: LiveRecordingDraft; kind: "adopted" }
   | { kind: "missing" | "rejected" | "stale" }
@@ -160,7 +168,7 @@ type SafetyAudioSession = {
 };
 
 const LIVE_DRAFT_STOP_WAIT_MS = 5_000;
-const LIVE_SAFETY_PART_DURATION_MS = 5_000;
+const LIVE_SAFETY_PART_DURATION_MS = 15_000;
 
 // BrowserRecorder captures microphone audio and can save audio plus transcript or transcript text only.
 export function BrowserRecorder({
@@ -194,7 +202,7 @@ export function BrowserRecorder({
   const pendingLiveDraftSessionRef = useRef<PendingLiveDraftSession | null>(null);
   const sonioxResultSessionRef = useRef<SonioxResultSession | null>(null);
   const recorderStopOwnerRef = useRef<RecorderStopOwner | null>(null);
-  const draftAutosaveInFlightRef = useRef(false);
+  const pendingLiveDraftSaveRef = useRef<PendingLiveDraftSave | null>(null);
   const lastDraftAutosaveAtRef = useRef(0);
   const archiveAudioLeaseRef = useRef<SharedAudioTrackLease | null>(null);
   const audioHealthChangeCallbackRef = useRef(onAudioHealthChange);
@@ -791,7 +799,7 @@ export function BrowserRecorder({
 
   // resetLiveDraftRefs clears transient autosave state between recording sessions.
   function resetLiveDraftRefs() {
-    draftAutosaveInFlightRef.current = false;
+    pendingLiveDraftSaveRef.current = null;
     lastDraftAutosaveAtRef.current = 0;
   }
 
@@ -1022,55 +1030,143 @@ export function BrowserRecorder({
     };
   }
 
-  // saveLiveDraft stores partial transcript progress so unfinished live recordings can be recovered.
+  // persistLiveDraftSnapshot sends one immutable transcript snapshot and reports search-index warnings.
+  async function persistLiveDraftSnapshot(
+    recording: LiveRecordingDraft,
+    snapshot: { elapsedSeconds: number; rawText: string; tokens: RealtimeToken[] }
+  ) {
+    const response = await fetch(`/api/recordings/${recording.id}/live-draft`, {
+      body: JSON.stringify({
+        elapsedSeconds: snapshot.elapsedSeconds,
+        rawText: snapshot.rawText,
+        segments: snapshot.tokens
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "PUT"
+    });
+
+    if (!response.ok) {
+      throw new Error("Koncept live přepisu se nepodařilo uložit.");
+    }
+
+    let payload: unknown = null;
+
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    return hasTranscriptSearchIndexWarning(payload);
+  }
+
+  // saveLiveDraft coalesces periodic autosaves while retaining their explicit settlement promise.
   async function saveLiveDraft() {
     const recording = liveRecordingDraftRef.current;
 
-    if (!recording || draftAutosaveInFlightRef.current) {
-      return;
+    if (!recording) {
+      return "failed" as const;
+    }
+
+    const existing = pendingLiveDraftSaveRef.current;
+    if (existing?.recordingId === recording.id) {
+      return existing.promise;
     }
 
     const tokens = [...tokensRef.current];
     const rawText = tokensToText(tokens);
 
     if (!rawText) {
-      return;
+      return "saved" as const;
     }
 
-    draftAutosaveInFlightRef.current = true;
-
-    try {
-      const response = await fetch(`/api/recordings/${recording.id}/live-draft`, {
-        body: JSON.stringify({
+    const sessionGeneration = recordingSessionGenerationRef.current;
+    const promise = (async (): Promise<"failed" | "saved"> => {
+      try {
+        const hasSearchWarning = await persistLiveDraftSnapshot(recording, {
           elapsedSeconds: elapsedSecondsRef.current,
           rawText,
-          segments: tokens
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "PUT"
+          tokens
+        });
+
+        if (
+          hasSearchWarning
+          && isCurrentCaptureSession(sessionGeneration)
+          && liveRecordingDraftRef.current === recording
+        ) {
+          setRecorderFeedback(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
+        }
+        return "saved";
+      } catch {
+        return "failed";
+      } finally {
+        if (
+          isCurrentCaptureSession(sessionGeneration)
+          && liveRecordingDraftRef.current === recording
+        ) {
+          lastDraftAutosaveAtRef.current = Date.now();
+        }
+      }
+    })();
+    const pending = { promise, recordingId: recording.id, sessionGeneration };
+
+    pendingLiveDraftSaveRef.current = pending;
+    const outcome = await promise;
+    if (pendingLiveDraftSaveRef.current === pending) {
+      pendingLiveDraftSaveRef.current = null;
+    }
+    return outcome;
+  }
+
+  // persistFinalLiveDraft waits for this capture's autosave, then confirms the latest stop-owned text.
+  async function persistFinalLiveDraft({
+    captureGeneration,
+    recording,
+    recordingSession,
+    stopGeneration
+  }: {
+    captureGeneration: number;
+    recording: LiveRecordingDraft;
+    recordingSession: Recording | null;
+    stopGeneration: number;
+  }): Promise<FinalLiveDraftPersistOutcome> {
+    const pending = pendingLiveDraftSaveRef.current;
+
+    if (
+      pending?.recordingId === recording.id
+      && pending.sessionGeneration === captureGeneration
+    ) {
+      await pending.promise;
+    }
+
+    if (!stillOwnsStop(recordingSession, stopGeneration)) {
+      return "stale";
+    }
+
+    const tokens = [...tokensRef.current];
+    const rawText = tokensToText(tokens);
+
+    if (!rawText) {
+      return "empty";
+    }
+
+    try {
+      const hasSearchWarning = await persistLiveDraftSnapshot(recording, {
+        elapsedSeconds: elapsedSecondsRef.current,
+        rawText,
+        tokens
       });
 
-      if (!response.ok) {
-        throw new Error("Koncept live přepisu se nepodařilo uložit.");
+      if (!stillOwnsStop(recordingSession, stopGeneration)) {
+        return "stale";
       }
-
-      let payload: unknown = null;
-
-      try {
-        payload = await response.json();
-      } catch {
-        payload = null;
-      }
-
-      if (hasTranscriptSearchIndexWarning(payload)) {
+      if (hasSearchWarning) {
         setRecorderFeedback(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
       }
-
       lastDraftAutosaveAtRef.current = Date.now();
+      return "saved";
     } catch {
-      lastDraftAutosaveAtRef.current = Date.now();
-    } finally {
-      draftAutosaveInFlightRef.current = false;
+      return stillOwnsStop(recordingSession, stopGeneration) ? "failed" : "stale";
     }
   }
 
@@ -1866,6 +1962,9 @@ export function BrowserRecorder({
     const stopGeneration = beginRecorderStop(recordingSession);
     let audioUploadCompleted = false;
     let audioStoredAsSegments = false;
+    let finalDraftPersistOutcome: FinalLiveDraftPersistOutcome | null = null;
+    let stoppedRecordingDraft: LiveRecordingDraft | null = null;
+    let stoppedRawText = "";
 
     stopTimer();
 
@@ -1933,9 +2032,11 @@ export function BrowserRecorder({
       if (!recording) {
         throw new Error("Záznam live nahrávky nebyl připravený.");
       }
+      stoppedRecordingDraft = recording;
 
       const tokens = [...tokensRef.current];
       const rawText = tokensToText(tokens);
+      stoppedRawText = rawText;
       const shouldKeepAudio = isLiveAudioBlobWithinLimit(audioBlob, maxAudioFileSizeBytes);
       let audioSaveError: Error | null = null;
 
@@ -1995,16 +2096,25 @@ export function BrowserRecorder({
         }
       }
 
+      finalDraftPersistOutcome = await persistFinalLiveDraft({
+        captureGeneration,
+        recording,
+        recordingSession,
+        stopGeneration
+      });
+
+      if (finalDraftPersistOutcome === "stale") {
+        return;
+      }
+
       if (!audioUploadCompleted) {
-        await saveLiveDraft();
-
-        if (!stillOwnsStop(recordingSession, stopGeneration)) {
-          return;
-        }
-
         if (hasCompleteDurableSafetyAudio(safetySession)) {
           setRecorderFeedback(
-            "Serverové uložení audia selhalo. Místní bezpečnostní části zůstaly připravené k obnovení.",
+            finalDraftPersistOutcome === "saved"
+              ? "Serverové uložení audia selhalo. Místní bezpečnostní části zůstaly připravené k obnovení a koncept přepisu je uložený."
+              : stoppedRawText
+                ? "Serverové uložení audia selhalo. Místní audio lze obnovit, ale poslední text se nepodařilo potvrdit na serveru a zůstává v tomto okně."
+                : "Serverové uložení audia selhalo. Místní bezpečnostní části zůstaly připravené k obnovení.",
             "error"
           );
           navigateAfterSave(recording.id);
@@ -2013,15 +2123,9 @@ export function BrowserRecorder({
 
         throw audioSaveError ?? new Error(
           rawText
-            ? "Audio se nepodařilo uložit. Koncept přepisu zůstal zachovaný."
+            ? "Audio se nepodařilo uložit."
             : "Audio se nepodařilo uložit a není dostupná bezpečnostní kopie."
         );
-      }
-
-      await saveLiveDraft();
-
-      if (!stillOwnsStop(recordingSession, stopGeneration)) {
-        return;
       }
 
       if (saveMode === "audio_only") {
@@ -2120,9 +2224,19 @@ export function BrowserRecorder({
         return;
       }
 
-      await saveLiveDraft();
+      if (finalDraftPersistOutcome === null && stoppedRecordingDraft) {
+        finalDraftPersistOutcome = await persistFinalLiveDraft({
+          captureGeneration,
+          recording: stoppedRecordingDraft,
+          recordingSession,
+          stopGeneration
+        });
+      }
 
-      if (!stillOwnsStop(recordingSession, stopGeneration)) {
+      if (
+        finalDraftPersistOutcome === "stale"
+        || !stillOwnsStop(recordingSession, stopGeneration)
+      ) {
         return;
       }
 
@@ -2131,7 +2245,14 @@ export function BrowserRecorder({
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
         return;
       }
-      setRecorderFeedback(error instanceof Error ? error.message : "Nahrávku se nepodařilo uložit.", "error");
+      setRecorderFeedback(
+        stoppedRawText
+          ? finalDraftPersistOutcome === "saved"
+            ? `${message} Poslední koncept přepisu je uložený.`
+            : `${message} Poslední text se nepodařilo potvrdit na serveru a zůstává viditelný jen v tomto okně.`
+          : message,
+        "error"
+      );
     } finally {
       if (stillOwnsStop(recordingSession, stopGeneration)) {
         stopTimer();
