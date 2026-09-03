@@ -427,6 +427,16 @@ export async function uploadLiveRecordingPart(input: LiveRecordingPartUploadInpu
   return { bytes: input.blob.size, reused: false, storagePath };
 }
 
+// normalizeRemovedStorageObjectPath converts Supabase remove names to canonical bucket-relative paths.
+function normalizeRemovedStorageObjectPath(name: unknown) {
+  if (typeof name !== "string") {
+    return null;
+  }
+
+  const normalized = name.replace(/^\/+/, "");
+  return normalized.length > 0 ? normalized : null;
+}
+
 // removeRemoteDurableSafetyGeneration removes only confirmed uploaded parts from one exact manifest.
 export async function removeRemoteDurableSafetyGeneration(input: {
   manifest: DurableSafetyManifest;
@@ -464,8 +474,14 @@ export async function removeRemoteDurableSafetyGeneration(input: {
   const storagePrefix = getLiveRecordingStoragePrefix(manifest.ownerId, manifest.recordingId);
   const paths = validatedParts.map((part) => `${storagePrefix}${part.name}`);
   const { data, error } = await supabase.storage.from(RECORDINGS_BUCKET).remove(paths);
+  const removedPaths = (data ?? []).map((item) => normalizeRemovedStorageObjectPath(item.name));
+  const removedPathSet = new Set(removedPaths);
+  const confirmedExactPaths =
+    removedPaths.length === paths.length &&
+    removedPathSet.size === paths.length &&
+    paths.every((path) => removedPathSet.has(path));
 
-  if (error || (data ?? []).length !== paths.length) {
+  if (error || !confirmedExactPaths) {
     throw new Error("Úložiště nepotvrdilo odstranění všech bezpečnostních částí.");
   }
 

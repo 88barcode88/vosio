@@ -240,24 +240,88 @@ describe("idempotent safety part upload", () => {
   });
 
   it("fails remote cleanup when Storage does not confirm every exact path", async () => {
-    const part = { ...createPart(0), uploadedAt: "2026-09-03T12:05:00.000Z" };
+    const first = { ...createPart(0), uploadedAt: "2026-09-03T12:05:00.000Z" };
+    const second = { ...createPart(1), uploadedAt: "2026-09-03T12:06:00.000Z" };
     mocks.createClient.mockReturnValue({
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
       storage: { from: vi.fn(() => ({
-        remove: vi.fn(async () => ({ data: [], error: null }))
+        remove: vi.fn(async () => ({
+          data: [{ name: "owner-1/recording-1/live/part-000000.webm" }],
+          error: null
+        }))
       })) }
     });
 
     await expect(removeRemoteDurableSafetyGeneration({
       manifest: {
-        createdAt: part.createdAt,
-        generationId: part.generationId,
-        ownerId: part.ownerId,
-        partCount: 1,
-        parts: [part],
+        createdAt: first.createdAt,
+        generationId: first.generationId,
+        ownerId: first.ownerId,
+        partCount: 2,
+        parts: [first, second],
         pendingPartCount: 0,
-        recordingId: part.recordingId,
-        totalBytes: part.size
+        recordingId: first.recordingId,
+        totalBytes: first.size + second.size
+      }
+    })).rejects.toThrow("nepotvrdilo odstranění všech bezpečnostních částí");
+  });
+
+  it("rejects a same-count cleanup response containing a different stale path", async () => {
+    const first = { ...createPart(0), uploadedAt: "2026-09-03T12:05:00.000Z" };
+    const second = { ...createPart(1), uploadedAt: "2026-09-03T12:06:00.000Z" };
+    mocks.createClient.mockReturnValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
+      storage: { from: vi.fn(() => ({
+        remove: vi.fn(async () => ({
+          data: [
+            { name: "owner-1/recording-1/live/part-000000.webm" },
+            { name: "owner-1/stale-recording/live/part-000001.webm" }
+          ],
+          error: null
+        }))
+      })) }
+    });
+
+    await expect(removeRemoteDurableSafetyGeneration({
+      manifest: {
+        createdAt: first.createdAt,
+        generationId: first.generationId,
+        ownerId: first.ownerId,
+        partCount: 2,
+        parts: [first, second],
+        pendingPartCount: 0,
+        recordingId: first.recordingId,
+        totalBytes: first.size + second.size
+      }
+    })).rejects.toThrow("nepotvrdilo odstranění všech bezpečnostních částí");
+  });
+
+  it("rejects duplicate cleanup confirmations even when their count matches", async () => {
+    const first = { ...createPart(0), uploadedAt: "2026-09-03T12:05:00.000Z" };
+    const second = { ...createPart(1), uploadedAt: "2026-09-03T12:06:00.000Z" };
+    mocks.createClient.mockReturnValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
+      storage: { from: vi.fn(() => ({
+        remove: vi.fn(async () => ({
+          data: [
+            { name: "owner-1/recording-1/live/part-000000.webm" },
+            { name: "owner-1/recording-1/live/part-000000.webm" }
+          ],
+          error: null
+        }))
+      })) }
+    });
+
+    await expect(removeRemoteDurableSafetyGeneration({
+      manifest: {
+        createdAt: first.createdAt,
+        generationId: first.generationId,
+        ownerId: first.ownerId,
+        partCount: 2,
+        parts: [first, second],
+        pendingPartCount: 0,
+        recordingId: first.recordingId,
+        totalBytes: first.size + second.size
       }
     })).rejects.toThrow("nepotvrdilo odstranění všech bezpečnostních částí");
   });
