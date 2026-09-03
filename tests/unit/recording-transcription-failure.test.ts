@@ -265,7 +265,7 @@ describe("transcription provider failure settlement", () => {
     expect(JSON.stringify(await response.json())).not.toContain("provider create details");
   });
 
-  it("settles a regular terminal poll rejection instead of stranding transcribing", async () => {
+  it("keeps a regular running job retryable when the provider poll transport fails", async () => {
     mockAuthenticatedRecording(`${userId}/${recordingId}/recording.webm`);
     const latest = createQuery({
       data: {
@@ -276,9 +276,8 @@ describe("transcription provider failure settlement", () => {
       },
       error: null
     });
-    const jobFailure = createQuery({ data: null, error: null });
-    const recordingFailure = createQuery({ data: null, error: null });
-    mocks.createAdminClient.mockReturnValue(createFailureAdmin([latest, jobFailure, recordingFailure]));
+    const admin = createFailureAdmin([latest]);
+    mocks.createAdminClient.mockReturnValue(admin);
 
     const response = await GET(
       new NextRequest(`http://localhost/api/recordings/${recordingId}/transcription`),
@@ -286,15 +285,11 @@ describe("transcription provider failure settlement", () => {
     );
 
     expect(response.status).toBe(500);
-    expect(jobFailure.in).toHaveBeenCalledWith("id", ["regular-poll"]);
-    expect(jobFailure.update).toHaveBeenCalledWith(expect.objectContaining({
-      error_message: "provider poll details"
-    }));
-    expect(recordingFailure.update).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
+    expect(admin.from).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(await response.json())).not.toContain("provider poll details");
   });
 
-  it("settles a segmented terminal poll rejection as one affected batch", async () => {
+  it("keeps a segmented running batch retryable when a provider poll transport fails", async () => {
     mockAuthenticatedRecording(`${userId}/${recordingId}/live/`);
     const jobs = [0, 1].map((index) => ({
       created_at: `2026-09-03T12:00:0${index}.000Z`,
@@ -309,13 +304,8 @@ describe("transcription provider failure settlement", () => {
       status: "running"
     }));
     const latestBatch = createQuery({ data: jobs, error: null });
-    const batchFailure = createQuery({ data: null, error: null });
-    const recordingFailure = createQuery({ data: null, error: null });
-    mocks.createAdminClient.mockReturnValue(createFailureAdmin([
-      latestBatch,
-      batchFailure,
-      recordingFailure
-    ]));
+    const admin = createFailureAdmin([latestBatch]);
+    mocks.createAdminClient.mockReturnValue(admin);
 
     const response = await GET(
       new NextRequest(`http://localhost/api/recordings/${recordingId}/transcription`),
@@ -323,12 +313,67 @@ describe("transcription provider failure settlement", () => {
     );
 
     expect(response.status).toBe(500);
-    expect(batchFailure.in).toHaveBeenCalledWith("id", ["segment-poll-0", "segment-poll-1"]);
-    expect(batchFailure.update).toHaveBeenCalledWith(expect.objectContaining({
-      error_message: "provider poll details"
-    }));
-    expect(recordingFailure.update).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
+    expect(admin.from).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(await response.json())).not.toContain("provider poll details");
+  });
+
+  it("does not rewrite a regular job when its polled status cannot be persisted", async () => {
+    mockAuthenticatedRecording(`${userId}/${recordingId}/recording.webm`);
+    mocks.getSonioxTranscription.mockResolvedValue({ id: "provider-regular", status: "running" });
+    const latest = createQuery({
+      data: {
+        id: "regular-persist",
+        provider_config: { region: "global" },
+        provider_job_id: "provider-regular",
+        status: "running"
+      },
+      error: null
+    });
+    const statusUpdate = createQuery({ data: null, error: { message: "database unavailable" } });
+    const admin = createFailureAdmin([latest, statusUpdate]);
+    mocks.createAdminClient.mockReturnValue(admin);
+
+    const response = await GET(
+      new NextRequest(`http://localhost/api/recordings/${recordingId}/transcription`),
+      { params: Promise.resolve({ recordingId }) }
+    );
+
+    expect(response.status).toBe(500);
+    expect(statusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({ status: "running" }));
+    expect(admin.from).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not fail a segmented batch when a polled status cannot be persisted", async () => {
+    mockAuthenticatedRecording(`${userId}/${recordingId}/live/`);
+    const jobs = [0, 1].map((index) => ({
+      created_at: `2026-09-03T12:00:0${index}.000Z`,
+      id: `segment-persist-${index}`,
+      provider_config: {
+        audio_source: "supabase_recording_segment",
+        batch_id: "batch-persist",
+        region: "global",
+        segment_index: index
+      },
+      provider_job_id: `provider-segment-${index}`,
+      status: "running"
+    }));
+    mocks.getSonioxTranscription.mockImplementation(async (_region, providerJobId: string) => ({
+      id: providerJobId,
+      status: "running"
+    }));
+    const latestBatch = createQuery({ data: jobs, error: null });
+    const failedUpdate = createQuery({ data: null, error: { message: "database unavailable" } });
+    const successfulUpdate = createQuery({ data: jobs[1], error: null });
+    const admin = createFailureAdmin([latestBatch, failedUpdate, successfulUpdate]);
+    mocks.createAdminClient.mockReturnValue(admin);
+
+    const response = await GET(
+      new NextRequest(`http://localhost/api/recordings/${recordingId}/transcription`),
+      { params: Promise.resolve({ recordingId }) }
+    );
+
+    expect(response.status).toBe(500);
+    expect(admin.from).toHaveBeenCalledTimes(3);
   });
 
   it("preserves a regular terminal provider detail only on the failed job", async () => {

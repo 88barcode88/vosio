@@ -30,6 +30,7 @@ export type ManualAiOutputMetadata = {
 
 export type ManualAiStateSnapshot = {
   jobs: ManualAiJobSummary[];
+  nextOutputOffset?: number | null;
   outputs: ManualAiOutputMetadata[];
 };
 

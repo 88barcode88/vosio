@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 
 const routeParamsSchema = z.object({ transcriptId: z.uuid() });
 const MAX_MANUAL_AI_STATE_ROWS = 50;
+const outputOffsetSchema = z.coerce.number().int().safe().nonnegative().multipleOf(MAX_MANUAL_AI_STATE_ROWS);
 
 type RouteContext = { params: Promise<{ transcriptId: string }> };
 type OutputMetadataRow = Omit<ManualAiOutputMetadata, "body_loaded" | "processing_type"> & {
@@ -31,11 +32,14 @@ function getSafeStoredJobError(job: Pick<ManualAiJobSummary, "error_message" | "
 }
 
 // GET returns bounded owner-scoped manual job summaries and artifact metadata for one transcript.
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   const params = routeParamsSchema.safeParse(await context.params);
   if (!params.success) return NextResponse.json({ error: "Přepis nebyl nalezen." }, { status: 404 });
+  const parsedOffset = outputOffsetSchema.safeParse(request.nextUrl.searchParams.get("outputOffset") ?? 0);
+  if (!parsedOffset.success) return NextResponse.json({ error: "Neplatná stránka AI výstupů." }, { status: 400 });
 
   const transcriptId = params.data.transcriptId;
+  const outputOffset = parsedOffset.data;
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) return NextResponse.json({ error: "Nejste přihlášený." }, { status: 401 });
@@ -55,7 +59,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       .select("id,created_at,processing_job_id,transcript_id,ai_processing_jobs(processing_type)")
       .eq("transcript_id", transcriptId).eq("user_id", user.id)
       .order("created_at", { ascending: false }).order("id", { ascending: false })
-      .limit(MAX_MANUAL_AI_STATE_ROWS).returns<OutputMetadataRow[]>()
+      .range(outputOffset, outputOffset + MAX_MANUAL_AI_STATE_ROWS).returns<OutputMetadataRow[]>()
   ]);
 
   if (jobsResult.error || outputsResult.error) {
@@ -63,7 +67,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 
   const jobs = (jobsResult.data ?? []).map((job) => ({ ...job, error_message: getSafeStoredJobError(job) }));
-  const outputs = (outputsResult.data ?? []).map((output): ManualAiOutputMetadata => ({
+  const outputRows = outputsResult.data ?? [];
+  const outputs = outputRows.slice(0, MAX_MANUAL_AI_STATE_ROWS).map((output): ManualAiOutputMetadata => ({
     body_loaded: false,
     created_at: output.created_at,
     id: output.id,
@@ -72,5 +77,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     transcript_id: output.transcript_id
   }));
 
-  return NextResponse.json({ jobs, outputs }, { headers: { "Cache-Control": "private, no-store" } });
+  const nextOutputOffset = outputRows.length > MAX_MANUAL_AI_STATE_ROWS
+    ? outputOffset + MAX_MANUAL_AI_STATE_ROWS
+    : null;
+
+  return NextResponse.json(
+    { jobs, nextOutputOffset, outputs },
+    { headers: { "Cache-Control": "private, no-store" } }
+  );
 }

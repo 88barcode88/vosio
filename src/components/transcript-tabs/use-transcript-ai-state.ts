@@ -26,6 +26,7 @@ import type { AiOutputView } from "@/lib/ai/types";
 
 type AiStatePurpose = "ai" | "metadata" | "timeline";
 type ExactOutputPayload = { output: AiOutputView; structuredItems: StructuredAiItems };
+const OUTPUT_BODY_LOAD_CONCURRENCY = 8;
 
 export type TranscriptAiStateContextValue = LoadedManualAiState & {
   acceptJob: (job: { id: string; status: ManualAiJobStatus }, processingType: string) => void;
@@ -131,7 +132,10 @@ export function TranscriptAiStateProvider({
           throw new Error("invalid_state");
         }
         if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId) return null;
-        const metadata = mergeManualAiState(stateRef.current, payload);
+        const metadata = {
+          ...mergeManualAiState(stateRef.current, payload),
+          nextOutputOffset: payload.nextOutputOffset ?? null
+        };
         replaceState({ ...stateRef.current, ...metadata });
         setIsLoaded(true);
         setError(null);
@@ -170,10 +174,33 @@ export function TranscriptAiStateProvider({
     purposesRef.current.add("metadata");
     const metadata = await refreshMetadata();
     if (!metadata) return null;
-    const outputs = metadata?.outputs ?? stateRef.current.outputs;
-    await Promise.all(outputs.map((output) => loadOutput(output.id)));
+    const scope = scopeRef.current;
+    let nextOutputOffset = metadata.nextOutputOffset ?? null;
+
+    while (nextOutputOffset !== null) {
+      const response = await fetch(
+        `/api/transcripts/${transcriptId}/ai-state?outputOffset=${nextOutputOffset}`,
+        { cache: "no-store" }
+      );
+      const payload = await response.json().catch(() => null) as ManualAiStateSnapshot | null;
+      if (!response.ok || !payload || !Array.isArray(payload.jobs) || !Array.isArray(payload.outputs)) return null;
+      if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId) return null;
+      const merged = mergeManualAiState(stateRef.current, payload);
+      replaceState({ ...stateRef.current, ...merged });
+      const followingOffset = payload.nextOutputOffset ?? null;
+      if (followingOffset !== null && followingOffset <= nextOutputOffset) return null;
+      nextOutputOffset = followingOffset;
+    }
+
+    const outputs = stateRef.current.outputs;
+    for (let index = 0; index < outputs.length; index += OUTPUT_BODY_LOAD_CONCURRENCY) {
+      const loaded = await Promise.all(
+        outputs.slice(index, index + OUTPUT_BODY_LOAD_CONCURRENCY).map((output) => loadOutput(output.id))
+      );
+      if (loaded.some((payload) => !payload)) return null;
+    }
     return { loadedOutputs: stateRef.current.loadedOutputs, structuredItems: stateRef.current.structuredItems };
-  }, [loadOutput, refreshMetadata]);
+  }, [loadOutput, refreshMetadata, replaceState, transcriptId]);
 
   // acceptJob merges the server-accepted durable identity without inventing success output.
   const acceptJob = useCallback((job: { id: string; status: ManualAiJobStatus }, processingType: string) => {

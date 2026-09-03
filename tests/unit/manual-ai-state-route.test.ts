@@ -9,6 +9,7 @@ import {
   mergeManualAiState
 } from "@/lib/ai/manual-job-state";
 import { GET as getOutput } from "../../app/api/ai-outputs/[outputId]/route";
+import { GET as getAiState } from "../../app/api/transcripts/[transcriptId]/ai-state/route";
 import {
   TranscriptAiStateProvider,
   useTranscriptAiState
@@ -34,6 +35,7 @@ function AiStateHarness() {
     null,
     createElement("button", { "data-purpose": "metadata", onClick: () => void state.loadForPurpose("metadata") }, "Metadata"),
     createElement("button", { "data-purpose": "ai", onClick: () => void state.loadForPurpose("ai") }, "AI"),
+    createElement("button", { "data-purpose": "all", onClick: () => void state.loadAllOutputs() }, "All"),
     createElement("output", null, state.loadedOutputs.map((output) => output.id).join(","))
   );
 }
@@ -66,6 +68,23 @@ function createSelectQuery(result: { data: unknown; error: unknown }) {
   query.select.mockReturnValue(query);
   query.eq.mockReturnValue(query);
   query.order.mockReturnValue(query);
+  return query;
+}
+
+// createStateQuery models the bounded metadata queries including export-only output pagination.
+function createStateQuery(result: { data: unknown; error: unknown }) {
+  const query = {
+    eq: vi.fn(),
+    in: vi.fn(),
+    limit: vi.fn(),
+    order: vi.fn(),
+    range: vi.fn(),
+    returns: vi.fn().mockResolvedValue(result),
+    select: vi.fn()
+  };
+  for (const method of ["eq", "in", "limit", "order", "range", "select"] as const) {
+    query[method].mockReturnValue(query);
+  }
   return query;
 }
 
@@ -135,6 +154,38 @@ describe("manual AI state contract", () => {
     expect(outputQuery.eq).toHaveBeenCalledWith("user_id", "user-1");
   });
 
+  it("returns a bounded later metadata page with an advancing export offset", async () => {
+    const transcriptQuery = createSelectQuery({ data: { id: "00000000-0000-4000-8000-000000000921" }, error: null });
+    const jobsQuery = createStateQuery({ data: [], error: null });
+    const rows = Array.from({ length: 51 }, (_, index) => ({
+      ai_processing_jobs: { processing_type: "summary" },
+      created_at: new Date(Date.UTC(2026, 8, 3, 10, 0, index)).toISOString(),
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      processing_job_id: `job-${index}`,
+      transcript_id: "00000000-0000-4000-8000-000000000921"
+    }));
+    const outputsQuery = createStateQuery({ data: rows, error: null });
+    routeMocks.createClient.mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } }, error: null }) },
+      from: vi.fn((table: string) => {
+        if (table === "transcripts") return transcriptQuery;
+        if (table === "ai_processing_jobs") return jobsQuery;
+        return outputsQuery;
+      })
+    });
+
+    const response = await getAiState(
+      new NextRequest("https://vosio.test/api/transcripts/00000000-0000-4000-8000-000000000921/ai-state?outputOffset=50"),
+      { params: Promise.resolve({ transcriptId: "00000000-0000-4000-8000-000000000921" }) }
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(outputsQuery.range).toHaveBeenCalledWith(50, 100);
+    expect(payload.outputs).toHaveLength(50);
+    expect(payload.nextOutputOffset).toBe(100);
+  });
+
   it("rehydrates metadata first and only the newest default AI body afterward", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes("/ai-state")) {
@@ -160,6 +211,51 @@ describe("manual AI state contract", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("output-new"))).toBe(true);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("output-old"))).toBe(false);
     expect(container.querySelector("output")?.textContent).toBe("output-new");
+    await act(async () => root.unmount());
+  });
+
+  it("paginates metadata and hydrates all 55 bodies for an AI-inclusive export", async () => {
+    const metadata = Array.from({ length: 55 }, (_, index) => ({
+      body_loaded: false,
+      created_at: new Date(Date.UTC(2026, 8, 3, 10, 0, 55 - index)).toISOString(),
+      id: `output-${String(index).padStart(2, "0")}`,
+      processing_job_id: `job-${index}`,
+      processing_type: "summary",
+      transcript_id: "00000000-0000-4000-8000-000000000921"
+    }));
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/ai-state")) {
+        const offset = new URL(url, "https://vosio.test").searchParams.get("outputOffset");
+        return new Response(JSON.stringify(offset === "50"
+          ? { jobs: [], nextOutputOffset: null, outputs: metadata.slice(50) }
+          : { jobs: [], nextOutputOffset: 50, outputs: metadata.slice(0, 50) }
+        ), { status: 200 });
+      }
+      const outputId = url.match(/\/api\/ai-outputs\/([^?]+)/)?.[1] ?? "missing";
+      return new Response(JSON.stringify({
+        output: {
+          created_at: "2026-09-03T10:00:00.000Z",
+          id: outputId,
+          output_json: null,
+          output_text: outputId,
+          processing_job_id: `job-${outputId}`,
+          processing_type: "summary",
+          transcript_id: "00000000-0000-4000-8000-000000000921"
+        },
+        structuredItems: emptyStructuredItems
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-purpose="all"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(container.querySelector("output")?.textContent?.split(",")).toHaveLength(55);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/ai-state"))).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(57);
     await act(async () => root.unmount());
   });
 

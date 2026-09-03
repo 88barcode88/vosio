@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Copy, Download, Mail, Settings2, Sparkles } from "lucide-react";
 import { AiProcessingControls } from "@/components/ai-processing-controls";
@@ -177,11 +177,37 @@ function AiOutputCard({
   const lines = useMemo(() => output ? getAiOutputMarkdownLines(output) : [], [output]);
   const markdown = useMemo(() => output ? getAiOutputMarkdownText(output) : "", [output]);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(Boolean(defaultOpen));
+  const [loadState, setLoadState] = useState<"error" | "idle" | "loading">("idle");
+  const loadAttemptedRef = useRef(false);
+  const loadRequestRef = useRef<Promise<void> | null>(null);
   const isFollowUpEmail = metadata.processing_type === "follow_up_email";
 
+  // loadBody keeps one historical disclosure retryable without closing it during parent hydration.
+  const loadBody = useCallback(async (retry = false) => {
+    if (output) return;
+    if (loadRequestRef.current) return loadRequestRef.current;
+    if (loadAttemptedRef.current && !retry) return;
+
+    loadAttemptedRef.current = true;
+    setLoadState("loading");
+    const request = (async () => {
+      try {
+        const loaded = await loadOutput?.(metadata.id);
+        setLoadState(loaded ? "idle" : "error");
+      } catch {
+        setLoadState("error");
+      }
+    })().finally(() => {
+      loadRequestRef.current = null;
+    });
+    loadRequestRef.current = request;
+    return request;
+  }, [loadOutput, metadata.id, output]);
+
   useEffect(() => {
-    if (defaultOpen && !output) void loadOutput?.(metadata.id);
-  }, [defaultOpen, loadOutput, metadata.id, output]);
+    if (defaultOpen && !output) void loadBody();
+  }, [defaultOpen, loadBody, output]);
 
   // copyAiOutput copies this generated artifact into the clipboard.
   async function copyAiOutput() {
@@ -204,9 +230,11 @@ function AiOutputCard({
   return (
     <details
       className="note-card ai-output-detail"
-      open={defaultOpen}
+      open={isOpen}
       onToggle={(event) => {
-        if (event.currentTarget.open && !output) void loadOutput?.(metadata.id);
+        const open = event.currentTarget.open;
+        setIsOpen(open);
+        if (open && !output) void loadBody();
       }}
     >
       <summary>
@@ -238,7 +266,12 @@ function AiOutputCard({
         {copyMessage ? <small>{copyMessage}</small> : null}
       </div> : null}
       <div className="ai-markdown-preview">
-        {!output ? <p>Načítám uložený AI výstup…</p> : null}
+        {!output && loadState === "loading" ? <p>Načítám uložený AI výstup…</p> : null}
+        {!output && loadState === "error" ? (
+          <p role="alert">
+            AI výstup se nepodařilo načíst. <button onClick={() => void loadBody(true)} type="button">Zkusit znovu</button>
+          </p>
+        ) : null}
         {lines.map((line, index) => {
           if (line.kind === "heading") {
             return <strong className="ai-markdown-heading" key={`${line.text}-${index}`}>{line.text}</strong>;

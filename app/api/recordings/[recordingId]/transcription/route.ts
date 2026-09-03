@@ -448,8 +448,6 @@ async function createSegmentedTranscriptionJobs(input: {
 async function refreshSegmentBatchJobs(input: {
   admin: ReturnType<typeof createAdminClient>;
   jobs: SegmentTranscriptionJob[];
-  recordingId: string;
-  userId: string;
 }) {
   const refreshResults = await Promise.allSettled(input.jobs.map(async (job) => {
     if (!job.provider_job_id || job.status === "done" || job.status === "failed") {
@@ -487,13 +485,6 @@ async function refreshSegmentBatchJobs(input: {
   );
 
   if (rejected) {
-    await settleTranscriptionProviderFailure({
-      admin: input.admin,
-      jobIds: input.jobs.map((job) => job.id),
-      providerError: rejected.reason,
-      recordingId: input.recordingId,
-      userId: input.userId
-    });
     throw rejected.reason;
   }
   const refreshedJobs = refreshResults.map(
@@ -849,9 +840,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
       const refreshedJobs = await refreshSegmentBatchJobs({
         admin,
-        jobs: segmentJobs,
-        recordingId: recording.id,
-        userId: user.id
+        jobs: segmentJobs
       });
       const jobStatus = getAggregateJobStatus(refreshedJobs);
 
@@ -914,18 +903,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     const region = getTranscriptionJobRegion(latestJob.provider_config);
-    const transcription = await getSonioxTranscription(region, latestJob.provider_job_id).catch(
-      async (error: unknown) => {
-        await settleTranscriptionProviderFailure({
-          admin,
-          jobIds: [latestJob.id],
-          providerError: error,
-          recordingId: recording.id,
-          userId: user.id
-        });
-        throw error;
-      }
-    );
+    const transcription = await getSonioxTranscription(region, latestJob.provider_job_id);
     const jobStatus = mapSonioxStatus(transcription.status);
 
     const { error: jobUpdateError } = await admin
