@@ -37,6 +37,7 @@ const routeParamsSchema = z.object({
 });
 
 type SegmentTranscriptionJob = {
+  error_message?: string | null;
   id: string;
   provider_config: unknown;
   provider_job_id: string | null;
@@ -61,10 +62,29 @@ function routeErrorResponse(error: unknown, fallbackMessage: string, status = 50
   return NextResponse.json({ error: fallbackMessage }, { status });
 }
 
+// getSafeTranscriptionProviderDetail preserves bounded diagnostics while redacting common credentials.
+function getSafeTranscriptionProviderDetail(error: unknown) {
+  const detail = error instanceof Error
+    ? error.message
+    : typeof error === "string"
+      ? error
+      : "Soniox provider failure";
+  const sanitized = detail
+    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-***")
+    .replace(/AIza[0-9A-Za-z_-]+/g, "AIza***")
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer ***")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+
+  return sanitized || "Soniox provider failure";
+}
+
 // settleTranscriptionProviderFailure fails one attempt while preserving the uploaded recording audio.
 export async function settleTranscriptionProviderFailure(input: {
   admin: ReturnType<typeof createAdminClient>;
   jobIds: string[];
+  providerError?: unknown;
   recordingId: string;
   userId: string;
 }) {
@@ -76,7 +96,7 @@ export async function settleTranscriptionProviderFailure(input: {
       .from("transcription_jobs")
       .update({
         completed_at: completedAt,
-        error_message: TRANSCRIPTION_PROVIDER_FAILURE_MESSAGE,
+        error_message: getSafeTranscriptionProviderDetail(input.providerError),
         status: "failed"
       })
       .eq("recording_id", input.recordingId)
@@ -233,7 +253,7 @@ async function getLatestSegmentBatch(input: {
 }) {
   const { data, error } = await input.admin
     .from("transcription_jobs")
-    .select("id,provider_job_id,status,provider_config,created_at")
+    .select("id,provider_job_id,status,provider_config,error_message,created_at")
     .eq("recording_id", input.recordingId)
     .eq("user_id", input.userId)
     .order("created_at", { ascending: false });
@@ -314,6 +334,7 @@ async function createSegmentedTranscriptionJobs(input: {
   const batchId = randomUUID();
   const providerConfig = getSonioxTranscriptionOptions();
   const createdJobs: SegmentTranscriptionJob[] = [];
+  let failedProviderDetail: unknown;
 
   for (const [index, segmentPath] of segmentPaths.entries()) {
     const { data: signedUrl, error: signedUrlError } = await input.admin.storage
@@ -358,6 +379,7 @@ async function createSegmentedTranscriptionJobs(input: {
       await settleTranscriptionProviderFailure({
         admin: input.admin,
         jobIds: [...createdJobs.map((job) => job.id), initialJob.id],
+        providerError: error,
         recordingId: input.recording.id,
         userId: input.userId
       });
@@ -367,19 +389,27 @@ async function createSegmentedTranscriptionJobs(input: {
     const { data: job, error: jobError } = await input.admin
       .from("transcription_jobs")
       .update({
+        error_message:
+          jobStatus === "failed"
+            ? getSafeTranscriptionProviderDetail(transcription.error_message ?? transcription.error_type)
+            : null,
         provider_job_id: transcription.id,
         started_at: jobStatus === "running" ? new Date().toISOString() : null,
         status: jobStatus
       })
       .eq("id", initialJob.id)
-      .select("id,provider_job_id,status,provider_config")
+      .select("id,provider_job_id,status,provider_config,error_message")
       .single();
 
     if (jobError || !job) {
       throw new Error("Nepodařilo se aktualizovat segmentový přepisovací job.");
     }
 
-    createdJobs.push(job as SegmentTranscriptionJob);
+    const persistedJob = job as SegmentTranscriptionJob;
+    if (jobStatus === "failed") {
+      failedProviderDetail = persistedJob.error_message ?? transcription.error_message ?? transcription.error_type;
+    }
+    createdJobs.push(persistedJob);
   }
 
   const status = getAggregateJobStatus(createdJobs);
@@ -388,6 +418,7 @@ async function createSegmentedTranscriptionJobs(input: {
     await settleTranscriptionProviderFailure({
       admin: input.admin,
       jobIds: createdJobs.map((job) => job.id),
+      providerError: failedProviderDetail,
       recordingId: input.recording.id,
       userId: input.userId
     });
@@ -395,8 +426,8 @@ async function createSegmentedTranscriptionJobs(input: {
 
   return {
     response: NextResponse.json({
-    job: { provider_job_id: null, status: getAggregateJobStatus(createdJobs) },
-    reused: false
+      job: { provider_job_id: null, status: getAggregateJobStatus(createdJobs) },
+      reused: false
     }),
     status
   };
@@ -411,32 +442,35 @@ async function refreshSegmentBatchJobs(input: {
   userId: string;
 }) {
   const refreshResults = await Promise.allSettled(input.jobs.map(async (job) => {
-      if (!job.provider_job_id || job.status === "done" || job.status === "failed") {
-        return job;
-      }
+    if (!job.provider_job_id || job.status === "done" || job.status === "failed") {
+      return job;
+    }
 
-      const transcription = await getSonioxTranscription(
-        getTranscriptionJobRegion(job.provider_config),
-        job.provider_job_id
-      );
-      const jobStatus = mapSonioxStatus(transcription.status);
-      const { data, error } = await input.admin
-        .from("transcription_jobs")
-        .update({
-          completed_at:
-            jobStatus === "done" || jobStatus === "failed" ? new Date().toISOString() : null,
-          error_message: transcription.error_message ?? null,
-          status: jobStatus
-        })
-        .eq("id", job.id)
-        .select("id,provider_job_id,status,provider_config")
-        .single();
+    const transcription = await getSonioxTranscription(
+      getTranscriptionJobRegion(job.provider_config),
+      job.provider_job_id
+    );
+    const jobStatus = mapSonioxStatus(transcription.status);
+    const safeProviderDetail = jobStatus === "failed"
+      ? getSafeTranscriptionProviderDetail(transcription.error_message ?? transcription.error_type)
+      : null;
+    const { data, error } = await input.admin
+      .from("transcription_jobs")
+      .update({
+        completed_at:
+          jobStatus === "done" || jobStatus === "failed" ? new Date().toISOString() : null,
+        error_message: safeProviderDetail,
+        status: jobStatus
+      })
+      .eq("id", job.id)
+      .select("id,provider_job_id,status,provider_config,error_message")
+      .single();
 
-      if (error || !data) {
-        throw new Error("Nepodařilo se aktualizovat stav segmentového přepisu.");
-      }
+    if (error || !data) {
+      throw new Error("Nepodařilo se aktualizovat stav segmentového přepisu.");
+    }
 
-      return data as SegmentTranscriptionJob;
+    return { ...(data as SegmentTranscriptionJob), error_message: safeProviderDetail };
   }));
   const rejected = refreshResults.find(
     (result): result is PromiseRejectedResult => result.status === "rejected"
@@ -446,6 +480,7 @@ async function refreshSegmentBatchJobs(input: {
     await settleTranscriptionProviderFailure({
       admin: input.admin,
       jobIds: input.jobs.map((job) => job.id),
+      providerError: rejected.reason,
       recordingId: input.recordingId,
       userId: input.userId
     });
@@ -714,6 +749,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       await settleTranscriptionProviderFailure({
         admin,
         jobIds: [initialJob.id],
+        providerError: error,
         recordingId: recording.id,
         userId: user.id
       });
@@ -724,6 +760,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { data: job, error: jobError } = await admin
       .from("transcription_jobs")
       .update({
+        error_message:
+          jobStatus === "failed"
+            ? getSafeTranscriptionProviderDetail(transcription.error_message ?? transcription.error_type)
+            : null,
         provider_job_id: transcription.id,
         started_at: jobStatus === "running" ? new Date().toISOString() : null,
         status: jobStatus
@@ -740,6 +780,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       await settleTranscriptionProviderFailure({
         admin,
         jobIds: [initialJob.id],
+        providerError: transcription.error_message ?? transcription.error_type,
         recordingId: recording.id,
         userId: user.id
       });
@@ -808,6 +849,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         await settleTranscriptionProviderFailure({
           admin,
           jobIds: refreshedJobs.map((job) => job.id),
+          providerError: refreshedJobs.find((job) => job.status === "failed")?.error_message,
           recordingId: recording.id,
           userId: user.id
         });
@@ -867,6 +909,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         await settleTranscriptionProviderFailure({
           admin,
           jobIds: [latestJob.id],
+          providerError: error,
           recordingId: recording.id,
           userId: user.id
         });
@@ -880,7 +923,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       .update({
         completed_at:
           jobStatus === "done" || jobStatus === "failed" ? new Date().toISOString() : null,
-        error_message: transcription.error_message ?? null,
+        error_message:
+          jobStatus === "failed"
+            ? getSafeTranscriptionProviderDetail(transcription.error_message ?? transcription.error_type)
+            : null,
         status: jobStatus
       })
       .eq("id", latestJob.id);
@@ -893,6 +939,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       await settleTranscriptionProviderFailure({
         admin,
         jobIds: [latestJob.id],
+        providerError: transcription.error_message ?? transcription.error_type,
         recordingId: recording.id,
         userId: user.id
       });

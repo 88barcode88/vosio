@@ -124,11 +124,15 @@ describe("transcription provider failure settlement", () => {
     await settleTranscriptionProviderFailure({
       admin: admin as never,
       jobIds: ["job-1"],
+      providerError: new Error("Soniox request sk-secret123 failed"),
       recordingId: "recording-1",
       userId: "user-1"
     });
 
-    expect(jobs.update).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+    expect(jobs.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "Soniox request sk-*** failed",
+      status: "failed"
+    }));
     expect(jobs.in).toHaveBeenCalledWith("id", ["job-1"]);
     expect(recording.update).toHaveBeenCalledWith({
       error_message: "Přepis u poskytovatele selhal. Zkuste jej spustit znovu.",
@@ -176,8 +180,12 @@ describe("transcription provider failure settlement", () => {
     );
 
     expect(response.status).toBe(500);
-    expect(jobFailure.update).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+    expect(jobFailure.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "provider create details",
+      status: "failed"
+    }));
     expect(recordingFailure.update).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
+    expect(JSON.stringify(await response.json())).not.toContain("provider create details");
   });
 
   it("settles the affected segmented batch when provider create rejects", async () => {
@@ -201,7 +209,11 @@ describe("transcription provider failure settlement", () => {
 
     expect(response.status).toBe(500);
     expect(batchFailure.in).toHaveBeenCalledWith("id", ["segment-create"]);
+    expect(batchFailure.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "provider create details"
+    }));
     expect(recordingFailure.update).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
+    expect(JSON.stringify(await response.json())).not.toContain("provider create details");
   });
 
   it("settles a regular terminal poll rejection instead of stranding transcribing", async () => {
@@ -226,7 +238,11 @@ describe("transcription provider failure settlement", () => {
 
     expect(response.status).toBe(500);
     expect(jobFailure.in).toHaveBeenCalledWith("id", ["regular-poll"]);
+    expect(jobFailure.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "provider poll details"
+    }));
     expect(recordingFailure.update).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
+    expect(JSON.stringify(await response.json())).not.toContain("provider poll details");
   });
 
   it("settles a segmented terminal poll rejection as one affected batch", async () => {
@@ -259,6 +275,108 @@ describe("transcription provider failure settlement", () => {
 
     expect(response.status).toBe(500);
     expect(batchFailure.in).toHaveBeenCalledWith("id", ["segment-poll-0", "segment-poll-1"]);
+    expect(batchFailure.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "provider poll details"
+    }));
     expect(recordingFailure.update).toHaveBeenCalledWith(expect.objectContaining({ status: "uploaded" }));
+    expect(JSON.stringify(await response.json())).not.toContain("provider poll details");
+  });
+
+  it("preserves a regular terminal provider detail only on the failed job", async () => {
+    mockAuthenticatedRecording(`${userId}/${recordingId}/recording.webm`);
+    mocks.getSonioxTranscription.mockResolvedValue({
+      error_message: "regular terminal detail",
+      id: "provider-regular",
+      status: "failed"
+    });
+    const latest = createQuery({
+      data: {
+        id: "regular-terminal",
+        provider_config: { region: "global" },
+        provider_job_id: "provider-regular",
+        status: "running"
+      },
+      error: null
+    });
+    const statusUpdate = createQuery({ data: null, error: null });
+    const jobFailure = createQuery({ data: null, error: null });
+    const recordingFailure = createQuery({ data: null, error: null });
+    mocks.createAdminClient.mockReturnValue(createFailureAdmin([
+      latest,
+      statusUpdate,
+      jobFailure,
+      recordingFailure
+    ]));
+
+    const response = await GET(
+      new NextRequest(`http://localhost/api/recordings/${recordingId}/transcription`),
+      { params: Promise.resolve({ recordingId }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(statusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "regular terminal detail",
+      status: "failed"
+    }));
+    expect(jobFailure.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "regular terminal detail"
+    }));
+    expect(recordingFailure.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "Přepis u poskytovatele selhal. Zkuste jej spustit znovu."
+    }));
+    expect(JSON.stringify(await response.json())).not.toContain("regular terminal detail");
+  });
+
+  it("preserves a segmented terminal provider detail while failing the current batch", async () => {
+    mockAuthenticatedRecording(`${userId}/${recordingId}/live/`);
+    const jobs = [0, 1].map((index) => ({
+      created_at: `2026-09-03T12:00:0${index}.000Z`,
+      id: `segment-terminal-${index}`,
+      provider_config: {
+        audio_source: "supabase_recording_segment",
+        batch_id: "batch-terminal",
+        region: "global",
+        segment_index: index
+      },
+      provider_job_id: `provider-segment-${index}`,
+      status: "running"
+    }));
+    mocks.getSonioxTranscription
+      .mockResolvedValueOnce({
+        error_message: "segment terminal detail",
+        id: "provider-segment-0",
+        status: "failed"
+      })
+      .mockResolvedValueOnce({ id: "provider-segment-1", status: "running" });
+    const latestBatch = createQuery({ data: jobs, error: null });
+    const failedRefresh = createQuery({ data: { ...jobs[0], status: "failed" }, error: null });
+    const runningRefresh = createQuery({ data: jobs[1], error: null });
+    const batchFailure = createQuery({ data: null, error: null });
+    const recordingFailure = createQuery({ data: null, error: null });
+    mocks.createAdminClient.mockReturnValue(createFailureAdmin([
+      latestBatch,
+      failedRefresh,
+      runningRefresh,
+      batchFailure,
+      recordingFailure
+    ]));
+
+    const response = await GET(
+      new NextRequest(`http://localhost/api/recordings/${recordingId}/transcription`),
+      { params: Promise.resolve({ recordingId }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(failedRefresh.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "segment terminal detail",
+      status: "failed"
+    }));
+    expect(batchFailure.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "segment terminal detail"
+    }));
+    expect(recordingFailure.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: "Přepis u poskytovatele selhal. Zkuste jej spustit znovu."
+    }));
+    expect(JSON.stringify(await response.json())).not.toContain("segment terminal detail");
   });
 });
