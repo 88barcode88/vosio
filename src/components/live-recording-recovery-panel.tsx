@@ -97,6 +97,7 @@ export function LiveRecordingRecoveryPanel() {
   const router = useRouter();
   const [recordings, setRecordings] = useState<RecoverableRecording[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [recoveredPath, setRecoveredPath] = useState<string | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -165,6 +166,7 @@ export function LiveRecordingRecoveryPanel() {
   async function recoverRecording(recording: RecoverableRecording) {
     setRecoveringId(recording.id);
     setMessage("Obnovuji nahrávku...");
+    setRecoveredPath(null);
 
     try {
       const response = await fetch(`/api/recordings/${recording.id}/recover-live`, { method: "POST" });
@@ -182,7 +184,9 @@ export function LiveRecordingRecoveryPanel() {
         return;
       }
 
-      let cleanupFailed = false;
+      const hasSearchWarning = hasTranscriptSearchIndexWarning(payload);
+      const path = `/recordings/${recording.id}`;
+      const targetPath = hasSearchWarning ? addTranscriptSearchIndexWarningToPath(path) : path;
 
       if (recording.localManifest?.recordingId === recording.id) {
         try {
@@ -193,27 +197,32 @@ export function LiveRecordingRecoveryPanel() {
           });
           setRecordings((current) => current.filter((item) => item.id !== recording.id));
         } catch {
-          cleanupFailed = true;
           setMessage(
             "Nahrávka je obnovená, ale lokální bezpečnostní kopii se nepodařilo odstranit."
           );
+          setRecoveredPath(targetPath);
+          return;
         }
       }
 
-      const hasSearchWarning = hasTranscriptSearchIndexWarning(payload);
-      const path = `/recordings/${recording.id}`;
-
-      if (hasSearchWarning && !cleanupFailed) {
+      if (hasSearchWarning) {
         setMessage(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
       }
 
-      router.push(hasSearchWarning ? addTranscriptSearchIndexWarningToPath(path) : path);
+      router.push(targetPath);
       router.refresh();
     } catch {
       setMessage("Obnova nahrávky selhala. Zkontrolujte připojení a zkuste to znovu.");
     } finally {
       setRecoveringId(null);
     }
+  }
+
+  // openRecoveredRecording lets the user leave after acknowledging a retained local cleanup warning.
+  function openRecoveredRecording() {
+    if (!recoveredPath) return;
+    router.push(recoveredPath);
+    router.refresh();
   }
 
   if (recordings.length === 0 && !message) {
@@ -227,6 +236,11 @@ export function LiveRecordingRecoveryPanel() {
         <strong>Nedokončené live nahrávky</strong>
       </div>
       {message ? <p aria-live="polite" role="status">{message}</p> : null}
+      {recoveredPath ? (
+        <button onClick={openRecoveredRecording} type="button">
+          Otevřít obnovenou nahrávku
+        </button>
+      ) : null}
       {recordings.map((recording) => (
         <article key={recording.id}>
           <div>

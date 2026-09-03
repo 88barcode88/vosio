@@ -387,6 +387,13 @@ describe("live recording local recovery", () => {
 
     expect(container.textContent).toContain("lokální bezpečnostní kopii se nepodařilo odstranit");
     expect(container.textContent).toContain("Lokální recovery");
+    expect(mocks.push).not.toHaveBeenCalled();
+    const openButton = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Otevřít obnovenou nahrávku");
+    expect(openButton).toBeDefined();
+
+    await act(async () => openButton?.click());
+
     expect(mocks.push).toHaveBeenCalledWith(`/recordings/${manifest.recordingId}`);
   });
 });
