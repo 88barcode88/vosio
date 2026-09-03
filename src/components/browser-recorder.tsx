@@ -188,6 +188,7 @@ export function BrowserRecorder({
   const realtimeSessionIndexRef = useRef(0);
   const realtimeSessionOffsetMsRef = useRef(0);
   const pendingRealtimeSessionOffsetMsRef = useRef<number | null>(null);
+  const providerConnectionHealthRef = useRef<"healthy" | "reconnecting">("healthy");
   const providerFallbackReasonRef = useRef<LiveProviderFallbackReason | null>(null);
   const isMountedRef = useRef(true);
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
@@ -1075,6 +1076,7 @@ export function BrowserRecorder({
       realtimeSessionIndexRef.current = 0;
       realtimeSessionOffsetMsRef.current = 0;
       pendingRealtimeSessionOffsetMsRef.current = null;
+      providerConnectionHealthRef.current = "healthy";
       providerFallbackReasonRef.current = null;
       resetLiveDraftRefs();
 
@@ -1155,6 +1157,7 @@ export function BrowserRecorder({
           return;
         }
 
+        providerConnectionHealthRef.current = "healthy";
         setRealtimeWarning(null);
       });
       sessionRecording.on("error", (error) => {
@@ -1172,6 +1175,7 @@ export function BrowserRecorder({
           return;
         }
 
+        providerConnectionHealthRef.current = "reconnecting";
         pendingRealtimeSessionOffsetMsRef.current ??= elapsedSecondsRef.current * 1000;
         setRealtimeWarning(getRealtimeStateWarning("reconnecting", selectedSaveMode));
       });
@@ -1198,6 +1202,7 @@ export function BrowserRecorder({
           return;
         }
 
+        providerConnectionHealthRef.current = "healthy";
         setRealtimeWarning(null);
       });
       sessionRecording.on("state_change", (update) => {
@@ -1206,6 +1211,7 @@ export function BrowserRecorder({
         }
 
         if (update.new_state === "recording") {
+          providerConnectionHealthRef.current = "healthy";
           liveCaptureActiveRef.current = true;
           setRecorderPhase("recording");
           setRealtimeWarning(null);
@@ -1218,6 +1224,9 @@ export function BrowserRecorder({
           update.new_state === "error" ||
           update.new_state === "canceled"
         ) {
+          if (update.new_state === "reconnecting") {
+            providerConnectionHealthRef.current = "reconnecting";
+          }
           if (storesAudio && update.new_state !== "reconnecting") {
             providerFallbackReasonRef.current ??= update.new_state === "canceled"
               ? "canceled"
@@ -1409,9 +1418,10 @@ export function BrowserRecorder({
     return hasTranscriptSearchIndexWarning(payload);
   }
 
-  // requestAsyncTranscription starts the existing durable Soniox job only after audio is uploaded.
-  async function requestAsyncTranscription(recordingId: string) {
-    const response = await fetch(`/api/recordings/${recordingId}/transcription`, {
+  // requestAsyncTranscription starts or explicitly replaces the durable job after audio is uploaded.
+  async function requestAsyncTranscription(recordingId: string, restart = false) {
+    const suffix = restart ? "?restart=1" : "";
+    const response = await fetch(`/api/recordings/${recordingId}/transcription${suffix}`, {
       cache: "no-store",
       method: "POST"
     });
@@ -1708,7 +1718,11 @@ export function BrowserRecorder({
 
       if (
         saveMode === "audio_and_live_transcript"
-        && (realtimeStopOutcome === "failed" || realtimeStopOutcome === "timed_out")
+        && (
+          realtimeStopOutcome === "failed"
+          || realtimeStopOutcome === "timed_out"
+          || providerConnectionHealthRef.current === "reconnecting"
+        )
       ) {
         providerFallbackReasonRef.current ??= "unhealthy_stop";
       }
@@ -1855,7 +1869,7 @@ export function BrowserRecorder({
 
       if (audioUploadCompleted && providerFallbackReasonRef.current) {
         try {
-          await requestAsyncTranscription(recording.id);
+          await requestAsyncTranscription(recording.id, true);
         } catch (error) {
           setRecorderFeedback(
             error instanceof Error

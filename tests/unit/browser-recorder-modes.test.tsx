@@ -323,7 +323,7 @@ describe("BrowserRecorder modes", () => {
       if (path.endsWith(`/api/recordings/${recordingId}/live-transcript`)) {
         events.push("live-transcript");
       }
-      if (path.endsWith(`/api/recordings/${recordingId}/transcription`)) {
+      if (path.endsWith(`/api/recordings/${recordingId}/transcription?restart=1`)) {
         events.push("async-transcription");
       }
       return { json: vi.fn().mockResolvedValue({}), ok: true };
@@ -362,7 +362,7 @@ describe("BrowserRecorder modes", () => {
     ]);
   });
 
-  it("does not request duplicate async transcription for a healthy reconnecting combined session", async () => {
+  it("continues capture while reconnecting and falls back at stop if provider stays unhealthy", async () => {
     const provider = createProviderRecording();
     const providerFactory = createProviderFactory(provider);
     mocks.realtimeRecord.mockImplementation(providerFactory);
@@ -385,15 +385,52 @@ describe("BrowserRecorder modes", () => {
       });
     });
 
-    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    const archiveRecorder = MediaRecorderFixture.instances[0]!;
+    archiveRecorder.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    expect(archiveRecorder.state).toBe("recording");
+    expect(mocks.fetch.mock.calls.some(([url]) => (
+      String(url).includes(`/api/recordings/${recordingId}/transcription`)
+    ))).toBe(false);
+
     await act(async () => {
       document.querySelector<HTMLButtonElement>(".record-button")?.click();
       await flushPromises(14);
     });
 
     expect(mocks.fetch.mock.calls.filter(([url]) => (
-      String(url).endsWith(`/api/recordings/${recordingId}/transcription`)
-    ))).toHaveLength(0);
+      String(url).endsWith(`/api/recordings/${recordingId}/transcription?restart=1`)
+    ))).toHaveLength(1);
+  });
+
+  it("does not request duplicate async transcription after reconnecting recovers", async () => {
+    const provider = createProviderRecording();
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+
+    await act(async () => {
+      root?.render(
+        <BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />
+      );
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+      provider.emit("state_change", { new_state: "recording" });
+      provider.emit("reconnecting", {});
+      provider.emit("reconnected", {});
+      provider.emit("result", {
+        tokens: [{ end_ms: 500, is_final: true, start_ms: 0, text: "Hotový text." }]
+      });
+    });
+
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(14);
+    });
+
+    expect(mocks.fetch.mock.calls.some(([url]) => (
+      String(url).includes(`/api/recordings/${recordingId}/transcription`)
+    ))).toBe(false);
   });
 
   it.each([
@@ -447,11 +484,12 @@ describe("BrowserRecorder modes", () => {
       await flushPromises(14);
     });
 
-    const asyncCalls = mocks.fetch.mock.calls.filter(([url]) => (
-      String(url).endsWith(`/api/recordings/${recordingId}/transcription`)
-    ));
+    const expectedAsyncPath = finalText
+      ? `/api/recordings/${recordingId}/transcription?restart=1`
+      : `/api/recordings/${recordingId}/transcription`;
+    const asyncCalls = mocks.fetch.mock.calls.filter(([url]) => String(url).endsWith(expectedAsyncPath));
     const asyncCallIndex = mocks.fetch.mock.calls.findIndex(([url]) => (
-      String(url).endsWith(`/api/recordings/${recordingId}/transcription`)
+      String(url).endsWith(expectedAsyncPath)
     ));
 
     expect(asyncCalls).toHaveLength(1);
