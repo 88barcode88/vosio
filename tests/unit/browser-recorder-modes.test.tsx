@@ -5,6 +5,10 @@ import { createRoot, type Root } from "react-dom/client";
 import type { AudioSource, RecordOptions, Recording } from "@soniox/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrowserRecorder } from "@/components/browser-recorder";
+import type {
+  DurableAudioPartRecord,
+  DurableSafetyManifest
+} from "@/lib/live-recording/durable-audio";
 
 const recordingId = "12a31215-9b8f-4c68-9e2f-89f4d31f96b0";
 
@@ -33,12 +37,13 @@ const mocks = vi.hoisted(() => ({
   failLiveRecordingUpload: vi.fn(),
   fetch: vi.fn(),
   persistDurableSafetyPart: vi.fn(),
-  promoteDurableSafetyParts: vi.fn(),
   realtimeRecord: vi.fn(),
   repositoryDeleteGeneration: vi.fn(),
   repositoryListForOwner: vi.fn(),
   repositoryMarkUploaded: vi.fn(),
   repositoryPut: vi.fn(),
+  removeRemoteDurableSafetyGeneration: vi.fn(),
+  resumeDurableSafetyPartsForOwner: vi.fn(),
   routerPush: vi.fn(),
   routerRefresh: vi.fn(),
   uploadLiveRecording: vi.fn(),
@@ -72,6 +77,7 @@ vi.mock("@/lib/recordings/upload", () => ({
   createLiveRecordingDraft: mocks.createLiveRecordingDraft,
   failLiveRecordingUpload: mocks.failLiveRecordingUpload,
   getLiveRecordingStoragePrefix: (userId: string, id: string) => `${userId}/${id}/live/`,
+  removeRemoteDurableSafetyGeneration: mocks.removeRemoteDurableSafetyGeneration,
   uploadLiveRecording: mocks.uploadLiveRecording,
   uploadLiveRecordingPart: mocks.uploadLiveRecordingPart
 }));
@@ -80,7 +86,7 @@ vi.mock("@/lib/live-recording/durable-audio", () => ({
   cleanupDurableSafetyGeneration: mocks.cleanupDurableSafetyGeneration,
   createIndexedDbDurableAudioRepository: mocks.createIndexedDbDurableAudioRepository,
   persistDurableSafetyPart: mocks.persistDurableSafetyPart,
-  promoteDurableSafetyParts: mocks.promoteDurableSafetyParts
+  resumeDurableSafetyPartsForOwner: mocks.resumeDurableSafetyPartsForOwner
 }));
 
 vi.mock("@/lib/supabase/browser", () => ({ createClient: mocks.createBrowserClient }));
@@ -221,6 +227,36 @@ function createProviderFactory(provider: ReturnType<typeof createProviderRecordi
   });
 }
 
+// createSafetyManifest builds one exact current-generation recovery result for integration tests.
+function createSafetyManifest(
+  parts: DurableAudioPartRecord[],
+  uploaded: boolean
+): DurableSafetyManifest {
+  const manifestParts = parts.map((part) => ({
+    ...part,
+    uploadedAt: uploaded ? "2026-09-03T12:05:00.000Z" : null
+  }));
+  const first = manifestParts[0]!;
+
+  return {
+    createdAt: first.createdAt,
+    generationId: first.generationId,
+    ownerId: first.ownerId,
+    partCount: manifestParts.length,
+    parts: manifestParts,
+    pendingPartCount: uploaded ? 0 : manifestParts.length,
+    recordingId: first.recordingId,
+    totalBytes: manifestParts.reduce((total, part) => total + part.size, 0)
+  };
+}
+
+// getPersistedFixtureParts resolves the durable records produced by the current test session.
+async function getPersistedFixtureParts() {
+  return Promise.all(mocks.persistDurableSafetyPart.mock.results.map(
+    (result) => result.value as Promise<DurableAudioPartRecord>
+  ));
+}
+
 // flushPromises crosses the recorder's acquisition, draft, and save promise boundaries.
 async function flushPromises(count = 8) {
   for (let index = 0; index < count; index += 1) {
@@ -257,7 +293,7 @@ beforeEach(() => {
     bytes: 32,
     storagePath: "live/archive.webm"
   });
-  mocks.completeLiveRecordingUpload.mockResolvedValue(undefined);
+  mocks.completeLiveRecordingUpload.mockResolvedValue({ id: recordingId });
   mocks.cleanupDurableSafetyGeneration.mockResolvedValue(undefined);
   mocks.createIndexedDbDurableAudioRepository.mockReturnValue({
     deleteGeneration: mocks.repositoryDeleteGeneration,
@@ -274,7 +310,12 @@ beforeEach(() => {
     recordingId,
     uploadedAt: null
   }));
-  mocks.promoteDurableSafetyParts.mockResolvedValue({ failed: [], promoted: [] });
+  mocks.removeRemoteDurableSafetyGeneration.mockResolvedValue({ removed: 1 });
+  mocks.resumeDurableSafetyPartsForOwner.mockResolvedValue({
+    failed: [],
+    manifests: [],
+    promoted: []
+  });
   mocks.uploadLiveRecordingPart.mockResolvedValue({
     bytes: 6,
     reused: false,
@@ -364,8 +405,26 @@ describe("BrowserRecorder modes", () => {
       events.push("upload-archive");
       return { bytes: 32, storagePath: "live/archive.webm" };
     });
+    mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async ({ uploadPart }) => {
+      const parts = await getPersistedFixtureParts();
+      await uploadPart(parts[0]!);
+      return {
+        failed: [],
+        manifests: [createSafetyManifest(parts, true)],
+        promoted: parts.map((part) => part.key)
+      };
+    });
+    mocks.uploadLiveRecordingPart.mockImplementation(async () => {
+      events.push("upload-safety");
+      return { bytes: 6, reused: false, storagePath: "part" };
+    });
     mocks.completeLiveRecordingUpload.mockImplementation(async () => {
       events.push("confirm-metadata");
+      return { id: recordingId };
+    });
+    mocks.removeRemoteDurableSafetyGeneration.mockImplementation(async () => {
+      events.push("cleanup-remote");
+      return { removed: 1 };
     });
     mocks.cleanupDurableSafetyGeneration.mockImplementation(async () => {
       events.push("cleanup-safety");
@@ -389,20 +448,316 @@ describe("BrowserRecorder modes", () => {
 
     expect(events).toEqual([
       "persist-safety",
+      "upload-safety",
       "upload-archive",
       "confirm-metadata",
+      "cleanup-remote",
       "cleanup-safety"
     ]);
+  });
+
+  it("progressively uploads only after durable persist while archive capture continues", async () => {
+    const events: string[] = [];
+    mocks.persistDurableSafetyPart.mockImplementation(async (input) => {
+      events.push("persist");
+      return {
+        ...input.part,
+        createdAt: "2026-09-03T00:00:00.000Z",
+        generationId: input.generationId,
+        key: `${input.ownerId}/${input.recordingId}/${input.generationId}/${input.part.index}`,
+        ownerId: input.ownerId,
+        recordingId: input.recordingId,
+        uploadedAt: null
+      };
+    });
+    mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async ({ uploadPart }) => {
+      const parts = await getPersistedFixtureParts();
+      events.push("promotion");
+      await uploadPart(parts.at(-1)!);
+      return {
+        failed: [],
+        manifests: [createSafetyManifest(parts, true)],
+        promoted: [parts.at(-1)!.key]
+      };
+    });
+    mocks.uploadLiveRecordingPart.mockImplementation(async () => {
+      events.push("upload");
+      return { bytes: 6, reused: false, storagePath: "part" };
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+
+    const archiveRecorder = MediaRecorderFixture.instances[0]!;
+    MediaRecorderFixture.instances[1]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+      await flushPromises(16);
+    });
+
+    expect(events).toEqual(["persist", "promotion", "upload"]);
+    expect(archiveRecorder.state).toBe("recording");
+  });
+
+  it.each(["remote_mismatch", "remote_failure", "local_failure"] as const)(
+    "reports a %s without invalidating the uploaded archive",
+    async (outcome) => {
+      mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async ({ uploadPart }) => {
+        const parts = await getPersistedFixtureParts();
+        await uploadPart(parts[0]!);
+        return {
+          failed: [],
+          manifests: [createSafetyManifest(parts, true)],
+          promoted: parts.map((part) => part.key)
+        };
+      });
+      if (outcome === "remote_failure") {
+        mocks.removeRemoteDurableSafetyGeneration.mockRejectedValue(new Error("remote cleanup failed"));
+      } else if (outcome === "remote_mismatch") {
+        mocks.removeRemoteDurableSafetyGeneration.mockResolvedValue({ removed: 0 });
+      } else {
+        mocks.cleanupDurableSafetyGeneration.mockRejectedValue(new Error("local cleanup failed"));
+      }
+
+      await act(async () => {
+        root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+      });
+      await act(async () => findMode("audio_only")?.click());
+      await act(async () => {
+        document.querySelector<HTMLButtonElement>(".record-button")?.click();
+        await flushPromises();
+      });
+
+      MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+      MediaRecorderFixture.instances[1]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
+      await act(async () => {
+        document.querySelector<HTMLButtonElement>(".record-button")?.click();
+        await flushPromises(30);
+      });
+
+      expect(mocks.completeLiveRecordingUpload).toHaveBeenCalledOnce();
+      if (outcome === "local_failure") {
+        expect(mocks.cleanupDurableSafetyGeneration).toHaveBeenCalledOnce();
+      } else {
+        expect(mocks.cleanupDurableSafetyGeneration).not.toHaveBeenCalled();
+      }
+      expect(container.textContent).toContain("bezpečnostní části");
+    }
+  );
+
+  it("blocks remote and local cleanup when archive metadata confirms no exact row", async () => {
+    mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async ({ uploadPart }) => {
+      const parts = await getPersistedFixtureParts();
+      await uploadPart(parts[0]!);
+      return {
+        failed: [],
+        manifests: [createSafetyManifest(parts, true)],
+        promoted: parts.map((part) => part.key)
+      };
+    });
+    mocks.completeLiveRecordingUpload.mockResolvedValue({ id: "different-recording" });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    MediaRecorderFixture.instances[1]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(30);
+    });
+
+    expect(mocks.removeRemoteDurableSafetyGeneration).not.toHaveBeenCalled();
+    expect(mocks.cleanupDurableSafetyGeneration).not.toHaveBeenCalled();
+  });
+
+  it("serializes two progressive parts without duplicate upload", async () => {
+    const firstPromotion = createDeferred<void>();
+    const uploadedKeys = new Set<string>();
+    mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async ({ uploadPart }) => {
+      const callNumber = mocks.resumeDurableSafetyPartsForOwner.mock.calls.length;
+      if (callNumber === 1) {
+        await firstPromotion.promise;
+      }
+      const parts = await getPersistedFixtureParts();
+      for (const part of parts) {
+        if (!uploadedKeys.has(part.key)) {
+          await uploadPart(part);
+          uploadedKeys.add(part.key);
+        }
+      }
+      return {
+        failed: [],
+        manifests: [createSafetyManifest(parts, true)],
+        promoted: [...uploadedKeys]
+      };
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+
+    MediaRecorderFixture.instances[1]?.emitData(new Blob(["first"], { type: "audio/webm" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+      await flushPromises(8);
+    });
+    MediaRecorderFixture.instances[2]?.emitData(new Blob(["second"], { type: "audio/webm" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+      await flushPromises(8);
+    });
+
+    expect(mocks.persistDurableSafetyPart).toHaveBeenCalledTimes(2);
+    expect(mocks.resumeDurableSafetyPartsForOwner).toHaveBeenCalledOnce();
+    await act(async () => {
+      firstPromotion.resolve();
+      await flushPromises(24);
+    });
+
+    expect(mocks.resumeDurableSafetyPartsForOwner).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadLiveRecordingPart).toHaveBeenCalledTimes(2);
+    expect(uploadedKeys.size).toBe(2);
+  });
+
+  it("retains offline progressive parts and warns without stopping archive capture", async () => {
+    mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async () => {
+      const parts = await getPersistedFixtureParts();
+      return {
+        failed: parts.map((part) => part.key),
+        manifests: [createSafetyManifest(parts, false)],
+        promoted: []
+      };
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+
+    const archiveRecorder = MediaRecorderFixture.instances[0]!;
+    MediaRecorderFixture.instances[1]?.emitData(new Blob(["offline"], { type: "audio/webm" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+      await flushPromises(16);
+    });
+
+    expect(mocks.persistDurableSafetyPart).toHaveBeenCalledOnce();
+    expect(archiveRecorder.state).toBe("recording");
+    expect(container.textContent).toContain("Bezpečnostní část");
+  });
+
+  it("waits for final progressive promotion before archive finalization", async () => {
+    const promotion = createDeferred<{
+      failed: string[];
+      manifests: DurableSafetyManifest[];
+      promoted: string[];
+    }>();
+    mocks.resumeDurableSafetyPartsForOwner.mockReturnValue(promotion.promise);
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    MediaRecorderFixture.instances[1]?.emitData(new Blob(["final"], { type: "audio/webm" }));
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(16);
+    });
+    expect(mocks.uploadLiveRecording).not.toHaveBeenCalled();
+
+    const parts = await getPersistedFixtureParts();
+    await act(async () => {
+      promotion.resolve({
+        failed: [],
+        manifests: [createSafetyManifest(parts, true)],
+        promoted: parts.map((part) => part.key)
+      });
+      await flushPromises(24);
+    });
+    expect(mocks.uploadLiveRecording).toHaveBeenCalledOnce();
+  });
+
+  it("prevents a stale generation from uploading or deleting safety audio", async () => {
+    const resumePromotion = createDeferred<void>();
+    mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async ({ uploadPart }) => {
+      await resumePromotion.promise;
+      const parts = await getPersistedFixtureParts();
+      await uploadPart(parts[0]!).catch(() => undefined);
+      return {
+        failed: [],
+        manifests: [createSafetyManifest(parts, true)],
+        promoted: parts.map((part) => part.key)
+      };
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+
+    MediaRecorderFixture.instances[1]?.emitData(new Blob(["stale"], { type: "audio/webm" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+      await flushPromises(12);
+    });
+    expect(mocks.resumeDurableSafetyPartsForOwner).toHaveBeenCalledOnce();
+
+    await act(async () => root?.unmount());
+    root = null;
+    await act(async () => {
+      resumePromotion.resolve();
+      await flushPromises(20);
+    });
+
+    expect(mocks.uploadLiveRecordingPart).not.toHaveBeenCalled();
+    expect(mocks.removeRemoteDurableSafetyGeneration).not.toHaveBeenCalled();
+    expect(mocks.cleanupDurableSafetyGeneration).not.toHaveBeenCalled();
   });
 
   it("promotes complete safety parts when archive upload fails and starts segmented transcription", async () => {
     const provider = createProviderRecording();
     mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
     mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
-    mocks.promoteDurableSafetyParts.mockImplementation(async ({ uploadPart }) => {
-      const durablePart = await mocks.persistDurableSafetyPart.mock.results.at(-1)?.value;
-      await uploadPart(durablePart);
-      return { failed: [], promoted: [durablePart.key] };
+    mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async ({ uploadPart }) => {
+      const parts = await getPersistedFixtureParts();
+      await uploadPart(parts[0]!);
+      return {
+        failed: [],
+        manifests: [createSafetyManifest(parts, true)],
+        promoted: parts.map((part) => part.key)
+      };
     });
 
     await act(async () => {
@@ -441,9 +796,13 @@ describe("BrowserRecorder modes", () => {
 
   it("leaves a complete local safety set recoverable when server promotion fails", async () => {
     mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
-    mocks.promoteDurableSafetyParts.mockImplementation(async () => {
-      const durablePart = await mocks.persistDurableSafetyPart.mock.results.at(-1)?.value;
-      return { failed: [durablePart.key], promoted: [] };
+    mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async () => {
+      const parts = await getPersistedFixtureParts();
+      return {
+        failed: parts.map((part) => part.key),
+        manifests: [createSafetyManifest(parts, false)],
+        promoted: []
+      };
     });
 
     await act(async () => {
@@ -716,6 +1075,7 @@ describe("BrowserRecorder modes", () => {
     });
     mocks.completeLiveRecordingUpload.mockImplementation(async () => {
       events.push("complete-upload");
+      return { id: recordingId };
     });
     mocks.fetch.mockImplementation(async (url) => {
       if (String(url).endsWith(`/api/recordings/${recordingId}/transcription`)) {
@@ -768,6 +1128,7 @@ describe("BrowserRecorder modes", () => {
     });
     mocks.completeLiveRecordingUpload.mockImplementation(async () => {
       events.push("complete-upload");
+      return { id: recordingId };
     });
     mocks.fetch.mockImplementation(async (url) => {
       const path = String(url);
