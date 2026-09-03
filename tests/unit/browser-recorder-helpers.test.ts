@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   getEstimatedLiveRecordingBytes,
+  getLiveAudioQualitySummary,
+  getLiveProviderHealthMessage,
   getPersistedLiveTranscriptAudioStorage,
   getTokenKey,
   getRecorderFeedbackAnnouncement,
@@ -124,20 +126,39 @@ describe("browser recorder helpers", () => {
     expect(getSaveModeLabel("audio_only", 100 * 1024 * 1024)).toBe("Jen audio do 100 MB");
     expect(getSaveModeLabel("audio_and_live_transcript", null))
       .toBe("Audio + live přepis není dostupné");
+    expect(getSaveModeLabel("live_transcript_only", 100 * 1024 * 1024)).toBe("Jen live přepis");
+  });
+
+  it("shows the selected live quality with a decimal hourly estimate", () => {
+    expect(getLiveAudioQualitySummary("economy")).toBe("Úsporná · 32 kbit/s · 14.4 MB/h");
+    expect(getLiveAudioQualitySummary("standard")).toBe("Standardní · 64 kbit/s · 28.8 MB/h");
+    expect(getLiveAudioQualitySummary("high")).toBe("Vysoká · 96 kbit/s · 43.2 MB/h");
   });
 
   it("keeps the active recording message independent from wake lock and realtime warnings", () => {
     expect(getRecordingActiveMessage("audio_and_live_transcript", 128 * 1024 * 1024)).toContain(
-      "Audio se uloží do 128 MB"
+      "Audio se nahrává."
     );
     expect(getRecordingActiveMessage("audio_only", 128 * 1024 * 1024)).toContain(
-      "potom se odešle k přepisu"
+      "Audio se nahrává."
     );
     expect(getRecordingActiveMessage("live_transcript_only", null)).toBe(
       "Přepisuji živě bez ukládání audio souboru."
     );
     expect(getWakeLockWarning(true)).toBeNull();
     expect(getWakeLockWarning(false)).toContain("telefon nezamykejte");
+  });
+
+  it("keeps provider health text separate from audio ownership", () => {
+    expect(getLiveProviderHealthMessage("audio_only", "disabled")).toBe(
+      "Live přepis: V režimu Jen audio je vypnutý."
+    );
+    expect(getLiveProviderHealthMessage("audio_and_live_transcript", "healthy")).toBe(
+      "Live přepis: Připojený."
+    );
+    expect(getLiveProviderHealthMessage("audio_and_live_transcript", "reconnecting")).toBe(
+      "Live přepis: Obnovuje spojení. Audio se dál nahrává."
+    );
   });
 
   it("announces capture errors assertively and progress politely", () => {

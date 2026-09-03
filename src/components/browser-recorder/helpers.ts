@@ -1,13 +1,20 @@
 import {
   LIVE_RECORDING_AUDIO_BITS_PER_SECOND,
-  formatFileSize
+  formatFileSize,
+  liveAudioQualityOptions,
+  type LiveAudioQuality
 } from "@/lib/recordings/types";
 import {
   getSonioxRealtimeLanguageConfig,
   type SonioxRealtimeLanguageId
 } from "@/lib/soniox/languages";
 import type { Recording, RealtimeToken, RecordOptions } from "@soniox/client";
-import type { LiveCaptionBlock, LiveSaveMode, RealtimeConfigErrorCode } from "@/components/browser-recorder/types";
+import type {
+  LiveCaptionBlock,
+  LiveProviderHealth,
+  LiveSaveMode,
+  RealtimeConfigErrorCode
+} from "@/components/browser-recorder/types";
 
 export type RecorderFeedbackTone = "error" | "status" | "working";
 
@@ -362,17 +369,58 @@ export function getSaveModeLabel(mode: LiveSaveMode, maxAudioFileSizeBytes: numb
     : `Audio do ${formatFileSize(maxAudioFileSizeBytes)} + live přepis`;
 }
 
+// getLiveAudioQualitySummary renders the session quality with its decimal hourly size estimate.
+export function getLiveAudioQualitySummary(quality: LiveAudioQuality) {
+  const option = liveAudioQualityOptions[quality];
+  return `${option.label} · ${option.audioBitsPerSecond / 1_000} kbit/s · ${option.estimatedMegabytesPerHour.toFixed(1)} MB/h`;
+}
+
 // getRecordingActiveMessage keeps the active capture status separate from provider and Wake Lock warnings.
 export function getRecordingActiveMessage(mode: LiveSaveMode, maxAudioFileSizeBytes: number | null) {
   if (mode === "audio_and_live_transcript" && maxAudioFileSizeBytes !== null) {
-    return `Nahrávání a přepis probíhají. Audio se uloží do ${formatFileSize(maxAudioFileSizeBytes)}.`;
+    return `Audio se nahrává. Live přepis probíhá a audio se uloží do ${formatFileSize(maxAudioFileSizeBytes)}.`;
   }
 
   if (mode === "audio_only" && maxAudioFileSizeBytes !== null) {
-    return `Nahrávání probíhá. Audio se uloží do ${formatFileSize(maxAudioFileSizeBytes)} a potom se odešle k přepisu.`;
+    return `Audio se nahrává. Uloží se do ${formatFileSize(maxAudioFileSizeBytes)} a potom se odešle k přepisu.`;
   }
 
   return "Přepisuji živě bez ukládání audio souboru.";
+}
+
+// getLiveProviderHealthMessage describes provider state without borrowing audio health semantics.
+export function getLiveProviderHealthMessage(mode: LiveSaveMode, health: LiveProviderHealth) {
+  if (mode === "audio_only" || health === "disabled") {
+    return "Live přepis: V režimu Jen audio je vypnutý.";
+  }
+
+  if (health === "ready") {
+    return "Live přepis: Připravený.";
+  }
+
+  if (health === "connecting") {
+    return "Live přepis: Připojuje se.";
+  }
+
+  if (health === "healthy") {
+    return "Live přepis: Připojený.";
+  }
+
+  if (health === "reconnecting") {
+    return mode === "live_transcript_only"
+      ? "Live přepis: Obnovuje spojení."
+      : "Live přepis: Obnovuje spojení. Audio se dál nahrává.";
+  }
+
+  if (health === "canceled") {
+    return mode === "live_transcript_only"
+      ? "Live přepis: Zrušený."
+      : "Live přepis: Zrušený. Audio se dál nahrává.";
+  }
+
+  return mode === "live_transcript_only"
+    ? "Live přepis: Chyba spojení."
+    : "Live přepis: Chyba spojení. Audio se dál nahrává.";
 }
 
 // getWakeLockWarning explains only the screen-awake capability, never the realtime recording state.

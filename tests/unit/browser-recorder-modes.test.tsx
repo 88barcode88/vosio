@@ -339,6 +339,81 @@ afterEach(async () => {
 });
 
 describe("BrowserRecorder modes", () => {
+  it.each([false, true])(
+    "renders separate audio and provider health while capture is %s compact",
+    async (compact) => {
+      const provider = createProviderRecording();
+      mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+
+      await act(async () => {
+        root?.render(
+          <BrowserRecorder
+            allowTranscriptOnly
+            compact={compact}
+            maxAudioFileSizeBytes={50 * 1024 * 1024}
+          />
+        );
+      });
+      await act(async () => {
+        document.querySelector<HTMLButtonElement>(".record-button")?.click();
+        await flushPromises();
+        provider.emit("state_change", { new_state: "recording" });
+      });
+
+      const audioHealth = container.querySelector('[data-recorder-health="audio"]');
+      const providerHealth = container.querySelector('[data-recorder-health="provider"]');
+      expect(audioHealth?.textContent).toContain("Audio se nahrává.");
+      expect(providerHealth?.textContent).toBe("Live přepis: Připojený.");
+
+      await act(async () => provider.emit("reconnecting", {}));
+      expect(audioHealth?.textContent).toContain("Audio se nahrává.");
+      expect(providerHealth?.textContent).toContain("Obnovuje spojení");
+      expect(MediaRecorderFixture.instances[0]?.state).toBe("recording");
+    }
+  );
+
+  it("shows and locks the selected quality, mode, and language for an active capture", async () => {
+    const provider = createProviderRecording();
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+
+    await act(async () => {
+      root?.render(
+        <BrowserRecorder
+          allowTranscriptOnly
+          liveAudioQuality="high"
+          maxAudioFileSizeBytes={50 * 1024 * 1024}
+          realtimeLanguage="cs"
+        />
+      );
+    });
+
+    expect(container.querySelector('[aria-label="Kvalita live audia"]')?.textContent)
+      .toContain("Vysoká · 96 kbit/s · 43.2 MB/h");
+    expect(findMode("audio_and_live_transcript")?.checked).toBe(true);
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Jazyk live přepisu"]')?.value).toBe("cs");
+
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+      provider.emit("state_change", { new_state: "recording" });
+    });
+    await act(async () => {
+      root?.render(
+        <BrowserRecorder
+          allowTranscriptOnly
+          liveAudioQuality="economy"
+          maxAudioFileSizeBytes={50 * 1024 * 1024}
+          realtimeLanguage="de"
+        />
+      );
+    });
+
+    expect(findMode("audio_and_live_transcript")?.closest("fieldset")?.hasAttribute("disabled")).toBe(true);
+    expect(container.querySelector('[aria-label="Jazyk live přepisu"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Kvalita live audia"]')?.textContent)
+      .toContain("Vysoká · 96 kbit/s · 43.2 MB/h");
+  });
+
   it("applies selected archive bitrate without changing Soniox encoding", async () => {
     const provider = createProviderRecording();
     const qualityProps = { liveAudioQuality: "high" as const };

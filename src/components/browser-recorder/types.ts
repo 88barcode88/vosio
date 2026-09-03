@@ -4,6 +4,14 @@ import type { LiveAudioQuality } from "@/lib/recordings/types";
 import type { SonioxRealtimeLanguageId } from "@/lib/soniox/languages";
 
 export type RecorderStatus = "idle" | "starting" | "recording" | "saving";
+export type LiveProviderHealth =
+  | "canceled"
+  | "connecting"
+  | "disabled"
+  | "error"
+  | "healthy"
+  | "ready"
+  | "reconnecting";
 export type LiveSaveMode =
   | "audio_and_live_transcript"
   | "audio_only"

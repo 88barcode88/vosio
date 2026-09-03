@@ -19,4 +19,17 @@ describe("recording detail AI loading", () => {
     expect(aiContent).toContain("loadOutput");
     expect(exportControls).toContain("loadAllOutputs");
   });
+
+  it("keeps the 25-output navigation fixture lazy and exposes every durable job state", () => {
+    const fixture = readFileSync("app/login/recording-layout-e2e/page.tsx", "utf8");
+    const spec = readFileSync("tests/e2e/recording-detail-layout.spec.ts", "utf8");
+
+    expect(fixture).toContain('"ai-many"');
+    expect(fixture).toContain('mode === "ai-many" ? [] : fixtureAiOutputs');
+    expect(spec).toContain("Array.from({ length: 25 }");
+    expect(spec).toContain("ai-state");
+    expect(spec).toContain("api/ai-outputs");
+    expect(spec).toContain("25 výstupů");
+    expect(spec).toContain("Trvá déle než obvykle");
+  });
 });

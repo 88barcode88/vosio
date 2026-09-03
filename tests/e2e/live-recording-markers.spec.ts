@@ -13,6 +13,8 @@ type CapturedBoundary = {
   releaseHeldMarker?: () => void;
   heldMarkerResponseSettled?: Promise<void>;
   recordingUpdates: unknown[];
+  storageEvents?: string[];
+  transcriptionRequests?: string[];
 };
 
 // createFixtureScope isolates browser projects while retaining one provider across client navigation.
@@ -204,7 +206,7 @@ async function installHttpBoundaries(page: Page, boundary: CapturedBoundary) {
 
     if (method === "PATCH") {
       boundary.recordingUpdates.push(route.request().postDataJSON());
-      await route.fulfill({ contentType: "application/json", json: {}, status: 200 });
+      await route.fulfill({ contentType: "application/json", json: { id: recordingId }, status: 200 });
       return;
     }
 
@@ -260,6 +262,48 @@ async function installHttpBoundaries(page: Page, boundary: CapturedBoundary) {
     await route.fulfill({ contentType: "application/json", json: { ok: true }, status: 200 });
   });
 
+  await page.route(`**/api/recordings/${recordingId}/transcription**`, async (route) => {
+    boundary.transcriptionRequests?.push(route.request().url());
+    await route.fulfill({ contentType: "application/json", json: { job: { id: "fixture-job" } }, status: 202 });
+  });
+
+  await page.route("**/api/recordings/recoverable", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      json: { ownerId: userId, recordings: [] },
+      status: 200
+    });
+  });
+
+  await page.route("**/storage/v1/object/**", async (route) => {
+    const request = route.request();
+    const url = request.url();
+
+    if (url.includes("/object/list/")) {
+      await route.fulfill({ contentType: "application/json", json: [], status: 200 });
+      return;
+    }
+
+    if (request.method() === "DELETE") {
+      boundary.storageEvents?.push("remote-cleanup");
+      const prefixes = (request.postDataJSON() as { prefixes?: string[] } | null)?.prefixes ?? [];
+      await route.fulfill({
+        contentType: "application/json",
+        json: prefixes.map((name) => ({ name })),
+        status: 200
+      });
+      return;
+    }
+
+    if (request.method() === "POST") {
+      boundary.storageEvents?.push(url.includes("part-") ? "safety-upload" : "archive-upload");
+      await route.fulfill({ contentType: "application/json", json: { Key: url }, status: 200 });
+      return;
+    }
+
+    await route.fulfill({ contentType: "application/json", json: {}, status: 200 });
+  });
+
   await page.route("**/api/live-marker-e2e/state**", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -268,6 +312,75 @@ async function installHttpBoundaries(page: Page, boundary: CapturedBoundary) {
     });
   });
 }
+
+test("provider loss keeps audio and markers alive before restart-safe fallback", async ({ page }) => {
+  const boundary: CapturedBoundary = {
+    liveTranscriptRequests: [], markerRequests: [], recordingUpdates: [],
+    storageEvents: [], transcriptionRequests: []
+  };
+  const scope = createFixtureScope();
+
+  await installBrowserMediaBoundaries(page);
+  await installHttpBoundaries(page, boundary);
+  await page.goto(`/login/live-marker-e2e?scope=${scope}`);
+  await page.getByRole("button", { name: "Nahrávat live" }).click();
+  await page.getByRole("button", { name: "Simulovat výpadek přepisu" }).click();
+  await expect(page.locator('[data-recorder-health="audio"]')).toContainText("Audio se nahrává");
+  await expect(page.locator('[data-recorder-health="provider"]')).toContainText("přerušen");
+  await page.getByRole("button", { name: "Označit moment" }).click();
+  await expect.poll(() => boundary.markerRequests.length).toBe(1);
+  await page.getByRole("button", { name: "Zastavit" }).click();
+  await expect.poll(() => boundary.transcriptionRequests?.length ?? 0).toBe(1);
+  expect(boundary.transcriptionRequests![0]).toContain("restart=1");
+});
+
+test("audio limit finalizes archive before exact remote and local safety cleanup", async ({ page }) => {
+  const boundary: CapturedBoundary = {
+    liveTranscriptRequests: [], markerRequests: [], recordingUpdates: [],
+    storageEvents: [], transcriptionRequests: []
+  };
+  const scope = createFixtureScope();
+
+  await installBrowserMediaBoundaries(page);
+  await installHttpBoundaries(page, boundary);
+  await page.goto(`/login/live-marker-e2e?scope=${scope}&scenario=audio-limit`);
+  await page.getByRole("button", { name: "Nahrávat live" }).click();
+  await expect(page.getByRole("button", { name: "Nahrávat live" })).toBeVisible({ timeout: 5_000 });
+  await expect.poll(() => boundary.recordingUpdates.length).toBe(1);
+  expect(boundary.storageEvents).toEqual(["safety-upload", "archive-upload", "remote-cleanup"]);
+  await expect.poll(async () => page.evaluate(async () => {
+    const request = indexedDB.open("vosio-live-audio");
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const rows = await new Promise<unknown[]>((resolve, reject) => {
+      const transaction = database.transaction("safety_parts", "readonly");
+      const getAll = transaction.objectStore("safety_parts").getAll();
+      getAll.onsuccess = () => resolve(getAll.result);
+      getAll.onerror = () => reject(getAll.error);
+    });
+    database.close();
+    return rows.length;
+  })).toBe(0);
+});
+
+test("reload keeps a locally durable safety part recoverable", async ({ page }) => {
+  const boundary: CapturedBoundary = {
+    liveTranscriptRequests: [], markerRequests: [], recordingUpdates: []
+  };
+  const scope = createFixtureScope();
+
+  await installBrowserMediaBoundaries(page);
+  await installHttpBoundaries(page, boundary);
+  await page.goto(`/login/live-marker-e2e?scope=${scope}`);
+  await page.getByRole("button", { name: "Nahrávat live" }).click();
+  await page.waitForTimeout(15_500);
+  await page.reload();
+  await page.goto(`/login/live-marker-e2e?scope=${scope}&view=recovery`);
+  await expect(page.getByText("Nedokončené live nahrávky")).toBeVisible();
+  await expect(page.getByText("Lokálně uložená live nahrávka")).toBeVisible();
+});
 
 // boxesOverlap reports whether two visible controls intercept the same viewport area.
 function boxesOverlap(

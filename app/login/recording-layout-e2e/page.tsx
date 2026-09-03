@@ -39,6 +39,7 @@ const fixtureStructuredItems: StructuredAiItems = {
     user_id: userId
   }]
 };
+const emptyFixtureStructuredItems: StructuredAiItems = { chapters: [], decisions: [], risks: [], tasks: [] };
 const fixtureAiOutputs: AiOutputView[] = [{
   created_at: "2026-08-06T10:00:00.000Z",
   id: "00000000-0000-4000-8000-000000000304",
@@ -61,7 +62,7 @@ const fixtureMarkers: RecordingMarkerRow[] = [{
   user_id: userId
 }];
 const fixtureScopePattern = /^[0-9a-f]{12}$/;
-const fixtureModes = ["blocks", "raw", "ai", "timeline", "files", "chat"] as const;
+const fixtureModes = ["blocks", "raw", "ai", "ai-many", "timeline", "files", "chat"] as const;
 type FixtureMode = (typeof fixtureModes)[number];
 
 // createFixtureSegments produces alternating speaker blocks that overflow the detail viewport.
@@ -128,6 +129,7 @@ function isFixtureMode(value: string | undefined): value is FixtureMode {
 
 // getFixtureInitialTab maps transcript-content fixture modes to the transcript tab.
 function getFixtureInitialTab(mode: FixtureMode): TranscriptTab {
+  if (mode === "ai-many") return "ai";
   return mode === "blocks" || mode === "raw" ? "transcript" : mode;
 }
 
@@ -156,14 +158,14 @@ export default async function RecordingLayoutE2EPage({
   return (
     <VosioWorkspace
       activeRecordingId={recordingId}
-      aiOutputs={fixtureAiOutputs}
+      aiOutputs={mode === "ai-many" ? [] : fixtureAiOutputs}
       initialTranscriptTab={getFixtureInitialTab(mode)}
       initialTranscriptTabFromCookie
       recordingMarkers={fixtureMarkers}
       recordingOrganization={{ client: null, folder: null, project: null, tags: [] }}
       recordingOrganizationOptions={{ clients: [], folders: [], projects: [], tags: [] }}
       recordings={[createFixtureRecording()]}
-      structuredItems={fixtureStructuredItems}
+      structuredItems={mode === "ai-many" ? emptyFixtureStructuredItems : fixtureStructuredItems}
       transcripts={[createFixtureTranscript(fixtureMode)]}
       userSettings={defaultUserSettings}
       userEmail="detail-e2e@vosio.local"

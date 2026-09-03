@@ -544,8 +544,36 @@
 .browser-recorder-compact .recording-state {
   grid-column: 1 / -1;
 }
+.browser-recorder-compact .live-recorder-health {
+  grid-column: 1 / -1;
+}
 .browser-recorder-compact .live-marker-actions {
   grid-column: 1 / -1;
+}
+.live-audio-quality-summary {
+  flex: 0 0 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.live-audio-quality-summary strong {
+  color: var(--text);
+}
+.live-recorder-health {
+  display: grid;
+  flex: 0 0 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.live-recorder-health p {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 7px 9px;
 }
 .live-language-select {
   display: grid;

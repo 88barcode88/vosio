@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 
-type FixtureMode = "blocks" | "raw" | "ai" | "timeline" | "files" | "chat";
+type FixtureMode = "blocks" | "raw" | "ai" | "ai-many" | "timeline" | "files" | "chat";
 
 // createFixtureScope supplies the exact twelve-hex token required by the guarded fixture route.
 function createFixtureScope() {
@@ -51,6 +51,84 @@ async function openFixture(page: Page, mode: FixtureMode = "blocks") {
   await page.goto(`/login/recording-layout-e2e?scope=${createFixtureScope()}&mode=${mode}`);
   await expect(page.locator(".recording-workbench")).toBeVisible();
 }
+
+// installManyAiBoundaries exposes 25 metadata rows, all durable states, and exact lazy bodies.
+async function installManyAiBoundaries(page: Page) {
+  const bodyRequests: string[] = [];
+  let releaseState!: () => void;
+  const stateRelease = new Promise<void>((resolve) => { releaseState = resolve; });
+  const outputs = Array.from({ length: 25 }, (_, index) => ({
+    body_loaded: false,
+    created_at: new Date(Date.UTC(2026, 7, 6, 10, index)).toISOString(),
+    id: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
+    processing_job_id: `00000000-0000-4000-8000-${String(index + 200).padStart(12, "0")}`,
+    processing_type: "summary",
+    transcript_id: "00000000-0000-4000-8000-000000000301"
+  }));
+  const jobBase = {
+    completed_at: null,
+    error_message: null,
+    processing_type: "summary"
+  };
+  const jobs = [
+    { ...jobBase, created_at: "2099-01-01T00:00:00.000Z", id: "job-queued", started_at: null, status: "queued" },
+    { ...jobBase, created_at: "2099-01-01T00:00:00.000Z", id: "job-running", started_at: "2099-01-01T00:00:00.000Z", status: "running" },
+    { ...jobBase, created_at: "2020-01-01T00:00:00.000Z", id: "job-stalled", started_at: "2020-01-01T00:00:00.000Z", status: "running" },
+    { ...jobBase, completed_at: "2026-08-06T10:00:00.000Z", created_at: "2026-08-06T09:00:00.000Z", id: "job-failed", error_message: "Model neodpověděl.", started_at: "2026-08-06T09:00:01.000Z", status: "failed" },
+    { ...jobBase, completed_at: "2026-08-06T10:00:00.000Z", created_at: "2026-08-06T09:00:00.000Z", id: "job-done", started_at: "2026-08-06T09:00:01.000Z", status: "done" }
+  ];
+
+  await page.route("**/api/transcripts/*/ai-state", async (route) => {
+    await stateRelease;
+    await route.fulfill({ contentType: "application/json", json: { jobs, outputs }, status: 200 });
+  });
+  await page.route("**/api/ai-outputs/*", async (route) => {
+    const outputId = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    bodyRequests.push(outputId);
+    await route.fulfill({
+      contentType: "application/json",
+      json: {
+        output: {
+          created_at: "2026-08-06T10:00:00.000Z",
+          id: outputId,
+          output_json: { markdown: `Lazy body ${outputId}` },
+          output_text: null,
+          processing_job_id: "00000000-0000-4000-8000-000000000999",
+          processing_type: "summary",
+          transcript_id: "00000000-0000-4000-8000-000000000301",
+          user_id: "00000000-0000-4000-8000-000000000303"
+        },
+        structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] }
+      },
+      status: 200
+    });
+  });
+
+  return { bodyRequests, releaseState };
+}
+
+test("AI jobs survive tab navigation while 25 output bodies stay lazy", async ({ page }) => {
+  const boundary = await installManyAiBoundaries(page);
+  await openFixture(page, "ai-many");
+  await expect(page.locator(".recording-workbench")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dlouhý testovací hovor" })).toBeVisible();
+  expect(boundary.bodyRequests).toHaveLength(0);
+
+  boundary.releaseState();
+  await expect(page.getByText("25 výstupů")).toBeVisible();
+  await expect(page.locator(".ai-output-detail")).toHaveCount(25);
+  for (const label of ["Ve frontě", "Probíhá", "Trvá déle než obvykle", "Selhalo", "Hotovo"]) {
+    await expect(page.getByText(label, { exact: false }).first()).toBeVisible();
+  }
+  await expect.poll(() => boundary.bodyRequests.length).toBe(1);
+
+  await page.locator(".ai-output-detail").last().locator("summary").click();
+  await expect.poll(() => boundary.bodyRequests.length).toBe(2);
+  await page.getByRole("tab", { name: "Přepis" }).click();
+  await page.getByRole("tab", { name: "AI zpracování" }).click();
+  await expect(page.getByText("Trvá déle než obvykle", { exact: false })).toBeVisible();
+  expect(boundary.bodyRequests).toHaveLength(2);
+});
 
 // readCompactStyle returns the rendered shape and first Lucide glyph size for one action.
 async function readCompactStyle(page: Page, selector: string) {

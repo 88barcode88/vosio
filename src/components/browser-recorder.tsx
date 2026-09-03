@@ -20,6 +20,8 @@ import {
 } from "@soniox/client";
 import {
   formatElapsedTime,
+  getLiveAudioQualitySummary,
+  getLiveProviderHealthMessage,
   getLiveRecordingTitle,
   getPersistedLiveTranscriptAudioStorage,
   getRecordedFileExtension,
@@ -53,6 +55,7 @@ import type {
   LiveMarkerAttempt,
   LiveMarkerFeedback,
   LiveProviderFallbackReason,
+  LiveProviderHealth,
   LiveSaveMode,
   RealtimeConfig,
   RealtimeConfigError,
@@ -225,6 +228,7 @@ export function BrowserRecorder({
   const pendingRealtimeSessionOffsetMsRef = useRef<number | null>(null);
   const providerConnectionHealthRef = useRef<"healthy" | "reconnecting">("healthy");
   const providerFallbackReasonRef = useRef<LiveProviderFallbackReason | null>(null);
+  const sessionLiveAudioQualityRef = useRef(liveAudioQuality);
   const isMountedRef = useRef(true);
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
   const wakeLockRequestRef = useRef<Promise<boolean> | null>(null);
@@ -239,6 +243,7 @@ export function BrowserRecorder({
   const [savedLiveMarkerCount, setSavedLiveMarkerCount] = useState(0);
   const [markerReady, setMarkerReady] = useState(false);
   const [feedback, setFeedback] = useState<RecorderFeedback | null>(null);
+  const [providerHealth, setProviderHealth] = useState<LiveProviderHealth>("ready");
   const [realtimeWarning, setRealtimeWarning] = useState<string | null>(null);
   const [selectedRealtimeLanguage, setSelectedRealtimeLanguage] = useState<SonioxRealtimeLanguageId>(realtimeLanguage);
   const [saveMode, setSaveMode] = useState<LiveSaveMode>(
@@ -1371,6 +1376,7 @@ export function BrowserRecorder({
     let localRecorderReadyPromise: Promise<boolean> | null = null;
 
     recordingSessionGenerationRef.current = sessionGeneration;
+    sessionLiveAudioQualityRef.current = liveAudioQuality;
     recorderStopOwnerRef.current = null;
     setRecorderPhase("starting");
     resetLiveMarkerSession();
@@ -1411,6 +1417,7 @@ export function BrowserRecorder({
       pendingRealtimeSessionOffsetMsRef.current = null;
       providerConnectionHealthRef.current = "healthy";
       providerFallbackReasonRef.current = null;
+      setProviderHealth(usesRealtime ? "connecting" : "disabled");
       resetLiveDraftRefs();
 
       if (storesAudio && selectedMaxAudioFileSizeBytes !== null) {
@@ -1446,6 +1453,7 @@ export function BrowserRecorder({
           }
 
           providerFallbackReasonRef.current = "start_failed";
+          setProviderHealth("error");
           setRealtimeWarning(getRealtimeErrorMessage(
             error instanceof Error ? error : new Error(String(error)),
             selectedSaveMode
@@ -1494,6 +1502,7 @@ export function BrowserRecorder({
         }
 
         providerConnectionHealthRef.current = "healthy";
+        setProviderHealth("healthy");
         setRealtimeWarning(null);
       });
       sessionRecording.on("error", (error) => {
@@ -1504,6 +1513,7 @@ export function BrowserRecorder({
         if (storesAudio) {
           providerFallbackReasonRef.current ??= "error";
         }
+        setProviderHealth("error");
         setRealtimeWarning(getRealtimeErrorMessage(error, selectedSaveMode));
       });
       sessionRecording.on("reconnecting", () => {
@@ -1512,6 +1522,7 @@ export function BrowserRecorder({
         }
 
         providerConnectionHealthRef.current = "reconnecting";
+        setProviderHealth("reconnecting");
         pendingRealtimeSessionOffsetMsRef.current ??= elapsedSecondsRef.current * 1000;
         setRealtimeWarning(getRealtimeStateWarning("reconnecting", selectedSaveMode));
       });
@@ -1539,6 +1550,7 @@ export function BrowserRecorder({
         }
 
         providerConnectionHealthRef.current = "healthy";
+        setProviderHealth("healthy");
         setRealtimeWarning(null);
       });
       sessionRecording.on("state_change", (update) => {
@@ -1548,6 +1560,7 @@ export function BrowserRecorder({
 
         if (update.new_state === "recording") {
           providerConnectionHealthRef.current = "healthy";
+          setProviderHealth("healthy");
           liveCaptureActiveRef.current = true;
           setRecorderPhase("recording");
           setRealtimeWarning(null);
@@ -1563,6 +1576,7 @@ export function BrowserRecorder({
           if (update.new_state === "reconnecting") {
             providerConnectionHealthRef.current = "reconnecting";
           }
+          setProviderHealth(update.new_state);
           if (storesAudio && update.new_state !== "reconnecting") {
             providerFallbackReasonRef.current ??= update.new_state === "canceled"
               ? "canceled"
@@ -2472,6 +2486,21 @@ export function BrowserRecorder({
   }
 
   const audioHealthNotice = getLiveAudioHealthNotice(audioHealth);
+  const displayedAudioQuality = status === "idle"
+    ? liveAudioQuality
+    : sessionLiveAudioQualityRef.current;
+  const displayedProviderHealth = status === "idle"
+    ? liveModeUsesRealtime(saveMode) ? "ready" : "disabled"
+    : providerHealth;
+  const audioCaptureHealthMessage = liveModeStoresAudio(saveMode)
+    ? status === "recording"
+      ? "Audio se nahrává."
+      : status === "saving"
+        ? "Audio se finalizuje a ukládá."
+        : status === "starting"
+          ? "Audio se připravuje."
+          : "Audio je připravené k nahrávání."
+    : "Audio se v režimu Jen live přepis neukládá.";
 
   return (
     <div
@@ -2489,6 +2518,19 @@ export function BrowserRecorder({
                 : "Probíhá nahrávání"}
           </strong>
           <Link data-touch-target="action" href="/recordings/new">Otevřít nahrávání</Link>
+        </div>
+      ) : null}
+      {!compact && liveModeStoresAudio(saveMode) ? (
+        <p aria-label="Kvalita live audia" className="live-audio-quality-summary">
+          <strong>Kvalita audia:</strong> {getLiveAudioQualitySummary(displayedAudioQuality)}
+        </p>
+      ) : null}
+      {status !== "idle" || !compact ? (
+        <div aria-label="Stav živého nahrávání" className="live-recorder-health" role="status">
+          <p data-recorder-health="audio">{audioCaptureHealthMessage}</p>
+          <p data-recorder-health="provider">
+            {getLiveProviderHealthMessage(saveMode, displayedProviderHealth)}
+          </p>
         </div>
       ) : null}
       {!compact && status === "idle" && liveModeUsesRealtime(saveMode) ? (

@@ -849,8 +849,9 @@ describe("BrowserRecorder live markers", () => {
     expect(mocks.fetch.mock.calls.some(([url]) =>
       String(url).endsWith(`/api/recordings/${recordingId}/live-transcript`)
     )).toBe(true);
-    expect(document.querySelector('[role="status"]')?.textContent)
-      .toBe(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
+    expect(Array.from(document.querySelectorAll('[role="status"]')).some((element) => (
+      element.textContent === TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
+    ))).toBe(true);
     expect(mocks.routerPush).toHaveBeenCalledWith(
       `/recordings/${recordingId}?warning=${TRANSCRIPT_SEARCH_INDEX_WARNING}`
     );
