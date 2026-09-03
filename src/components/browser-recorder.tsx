@@ -176,6 +176,21 @@ type SafetyAudioSession = {
 const LIVE_DRAFT_STOP_WAIT_MS = 5_000;
 const LIVE_SAFETY_PART_DURATION_MS = 15_000;
 
+// canAcceptArchiveAudio rejects only authoritative capture failures; mute and signal warnings stay advisory.
+function canAcceptArchiveAudio(snapshot: LiveAudioHealthSnapshot | null) {
+  return snapshot?.recorder === "healthy" && snapshot.track !== "ended";
+}
+
+// hasFailedTranscriptionJob detects terminal failure responses for regular and segmented jobs.
+function hasFailedTranscriptionJob(payload: unknown) {
+  if (!payload || typeof payload !== "object" || !("job" in payload)) {
+    return false;
+  }
+
+  const job = payload.job;
+  return Boolean(job && typeof job === "object" && "status" in job && job.status === "failed");
+}
+
 // BrowserRecorder captures microphone audio and can save audio plus transcript or transcript text only.
 export function BrowserRecorder({
   allowTranscriptOnly = false,
@@ -213,6 +228,7 @@ export function BrowserRecorder({
   const archiveAudioLeaseRef = useRef<SharedAudioTrackLease | null>(null);
   const audioHealthChangeCallbackRef = useRef(onAudioHealthChange);
   const audioHealthMonitorRef = useRef<LiveAudioHealthMonitor | null>(null);
+  const archiveAudioHealthRef = useRef<LiveAudioHealthSnapshot | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const safetyAudioSessionRef = useRef<SafetyAudioSession | null>(null);
   const sharedAudioSessionRef = useRef<SharedAudioSession | null>(null);
@@ -609,6 +625,7 @@ export function BrowserRecorder({
     if (sharedAudioSessionRef.current === session) {
       audioHealthMonitorRef.current?.stop();
       audioHealthMonitorRef.current = null;
+      archiveAudioHealthRef.current = null;
       archiveAudioLeaseRef.current = null;
       sonioxAudioSourceRef.current?.stop();
       sonioxAudioSourceRef.current = null;
@@ -851,6 +868,7 @@ export function BrowserRecorder({
           return;
         }
 
+        archiveAudioHealthRef.current = snapshot;
         setAudioHealth(snapshot);
         audioHealthChangeCallbackRef.current?.(snapshot);
       },
@@ -1417,6 +1435,7 @@ export function BrowserRecorder({
       pendingRealtimeSessionOffsetMsRef.current = null;
       providerConnectionHealthRef.current = "healthy";
       providerFallbackReasonRef.current = null;
+      archiveAudioHealthRef.current = null;
       setProviderHealth(usesRealtime ? "connecting" : "disabled");
       resetLiveDraftRefs();
 
@@ -1788,6 +1807,18 @@ export function BrowserRecorder({
     });
 
     if (!response.ok) {
+      throw new Error("Audio je uložené, ale přepis na pozadí se nepodařilo spustit.");
+    }
+
+    let payload: unknown = null;
+
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (hasFailedTranscriptionJob(payload)) {
       throw new Error("Audio je uložené, ale přepis na pozadí se nepodařilo spustit.");
     }
   }
@@ -2241,8 +2272,12 @@ export function BrowserRecorder({
       const tokens = [...tokensRef.current];
       const rawText = tokensToText(tokens);
       stoppedRawText = rawText;
-      const shouldKeepAudio = isLiveAudioBlobWithinLimit(audioBlob, maxAudioFileSizeBytes);
-      let audioSaveError: Error | null = null;
+      const archiveAudioHealthy = canAcceptArchiveAudio(archiveAudioHealthRef.current);
+      const shouldKeepAudio = archiveAudioHealthy
+        && isLiveAudioBlobWithinLimit(audioBlob, maxAudioFileSizeBytes);
+      let audioSaveError: Error | null = archiveAudioHealthy
+        ? null
+        : new Error("Hlavní audio není po chybě nahrávání potvrzené jako úplné.");
 
       if (shouldKeepAudio && audioBlob && maxAudioFileSizeBytes !== null) {
         try {

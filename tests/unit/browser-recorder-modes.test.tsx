@@ -162,6 +162,12 @@ class MediaRecorderFixture {
     this.ondataavailable?.({ data });
     this.listeners.get("dataavailable")?.forEach((listener) => listener(event));
   }
+
+  // emitError marks the archive encoder unhealthy without discarding already emitted bytes.
+  emitError(message = "archive encoder failed") {
+    const event = Object.assign(new Event("error"), { error: new Error(message) });
+    this.listeners.get("error")?.forEach((listener) => listener(event));
+  }
 }
 
 // createMasterStream returns one cloneable physical microphone fixture.
@@ -869,6 +875,54 @@ describe("BrowserRecorder modes", () => {
     ))).toBe(true);
   });
 
+  it.each(["recorder_error", "track_ended"] as const)(
+    "rejects a nonempty partial archive after authoritative $archiveFailure and retains safety audio",
+    async (archiveFailure) => {
+      mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async ({ uploadPart }) => {
+        const parts = await getPersistedFixtureParts();
+        await uploadPart(parts[0]!);
+        return {
+          failed: [],
+          manifests: [createSafetyManifest(parts, true)],
+          promoted: parts.map((part) => part.key)
+        };
+      });
+
+      await act(async () => {
+        root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+      });
+      await act(async () => findMode("audio_only")?.click());
+      await act(async () => {
+        document.querySelector<HTMLButtonElement>(".record-button")?.click();
+        await flushPromises();
+      });
+
+      const archiveRecorder = MediaRecorderFixture.instances[0]!;
+      archiveRecorder.emitData(new Blob(["partial archive"], { type: "audio/webm" }));
+      MediaRecorderFixture.instances[1]?.emitData(new Blob(["complete safety"], { type: "audio/webm" }));
+      await act(async () => {
+        if (archiveFailure === "recorder_error") {
+          archiveRecorder.emitError();
+        } else {
+          archiveRecorder.stream.getAudioTracks()[0]?.dispatchEvent(new Event("ended"));
+        }
+        await flushPromises();
+      });
+
+      await act(async () => {
+        document.querySelector<HTMLButtonElement>(".record-button")?.click();
+        await flushPromises(30);
+      });
+
+      expect(mocks.uploadLiveRecording).not.toHaveBeenCalled();
+      expect(mocks.completeLiveRecordingUpload).toHaveBeenCalledWith(expect.objectContaining({
+        storagePath: `user-1/${recordingId}/live/`
+      }));
+      expect(mocks.removeRemoteDurableSafetyGeneration).not.toHaveBeenCalled();
+      expect(mocks.cleanupDurableSafetyGeneration).not.toHaveBeenCalled();
+    }
+  );
+
   it("leaves a complete local safety set recoverable when server promotion fails", async () => {
     mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
     mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async () => {
@@ -1191,6 +1245,47 @@ describe("BrowserRecorder modes", () => {
 
     expect(events).toEqual(["upload", "complete-upload", "async-transcription"]);
   });
+
+  it.each(["regular", "segmented"] as const)(
+    "shows retry guidance when a successful $storageKind response returns a failed transcription job",
+    async (storageKind) => {
+      if (storageKind === "segmented") {
+        mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
+        mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async ({ uploadPart }) => {
+          const parts = await getPersistedFixtureParts();
+          await uploadPart(parts[0]!);
+          return {
+            failed: [],
+            manifests: [createSafetyManifest(parts, true)],
+            promoted: parts.map((part) => part.key)
+          };
+        });
+      }
+      mocks.fetch.mockResolvedValue({
+        json: vi.fn().mockResolvedValue({ job: { provider_job_id: null, status: "failed" } }),
+        ok: true
+      });
+
+      await act(async () => {
+        root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+      });
+      await act(async () => findMode("audio_only")?.click());
+      await act(async () => {
+        document.querySelector<HTMLButtonElement>(".record-button")?.click();
+        await flushPromises();
+      });
+
+      MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+      MediaRecorderFixture.instances[1]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
+      await act(async () => {
+        document.querySelector<HTMLButtonElement>(".record-button")?.click();
+        await flushPromises(30);
+      });
+
+      expect(container.textContent).toContain("Můžete ho zkusit znovu z detailu nahrávky.");
+      expect(container.textContent).not.toContain("přepis běží na pozadí");
+    }
+  );
 
   it("uploads combined audio before partial live text and terminal-provider fallback", async () => {
     const events: string[] = [];
