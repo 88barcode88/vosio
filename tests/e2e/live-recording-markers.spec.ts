@@ -96,6 +96,11 @@ async function installBrowserMediaBoundaries(page: Page) {
       // constructor stores the tracks owned by this synthetic stream.
       constructor(private readonly tracks: FixtureMediaStreamTrack[] = []) {}
 
+      // clone gives the rotating safety recorder an isolated synthetic stream.
+      clone() {
+        return new FixtureMediaStream(this.tracks.map((track) => track.clone()));
+      }
+
       // getAudioTracks returns all synthetic audio tracks.
       getAudioTracks() {
         return this.tracks.filter((track) => track.kind === "audio");
@@ -113,9 +118,22 @@ async function installBrowserMediaBoundaries(page: Page) {
         return true;
       }
 
-      audioBitsPerSecond = 128_000;
+      audioBitsPerSecond: number;
       ondataavailable: ((event: { data: Blob }) => void) | null = null;
       state: "inactive" | "recording" = "inactive";
+
+      // constructor records bitrate options for the synthetic archive, provider, and safety encoders.
+      constructor(_stream: FixtureMediaStream, options: MediaRecorderOptions = {}) {
+        super();
+        this.audioBitsPerSecond = options.audioBitsPerSecond ?? 128_000;
+        const fixtureWindow = window as typeof window & {
+          __fixtureMediaRecorderBitrates?: number[];
+        };
+        fixtureWindow.__fixtureMediaRecorderBitrates = [
+          ...(fixtureWindow.__fixtureMediaRecorderBitrates ?? []),
+          this.audioBitsPerSecond
+        ];
+      }
 
       // start marks this synthetic encoder as active.
       start() {
@@ -125,7 +143,9 @@ async function installBrowserMediaBoundaries(page: Page) {
       // stop emits the same terminal events consumed by BrowserRecorder.
       stop() {
         this.state = "inactive";
-        this.ondataavailable?.({ data: new Blob([], { type: "audio/webm" }) });
+        const data = new Blob(["fixture-audio"], { type: "audio/webm" });
+        this.ondataavailable?.({ data });
+        this.dispatchEvent(Object.assign(new Event("dataavailable"), { data }));
         this.dispatchEvent(new Event("stop"));
       }
     }
@@ -338,6 +358,10 @@ test("actual persistent recorder saves two markers and opens both from timeline"
   });
   expect(defaultOptions).not.toHaveProperty("language_hints");
   expect(defaultOptions).not.toHaveProperty("language_hints_strict");
+  await expect.poll(() => page.evaluate(() => (
+    (window as typeof window & { __fixtureMediaRecorderBitrates?: number[] })
+      .__fixtureMediaRecorderBitrates ?? []
+  ))).toEqual([96_000, 128_000, 96_000]);
   const fullMarker = page.getByRole("button", { name: "Označit moment" });
   await expect(fullMarker).toBeEnabled();
   await expect(page.getByText("Označené momenty: 0")).toBeVisible();

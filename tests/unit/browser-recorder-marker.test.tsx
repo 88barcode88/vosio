@@ -187,6 +187,11 @@ class MediaStreamMock {
   // constructor stores only the tracks owned by this synthetic stream.
   constructor(private readonly tracks: MediaStreamTrack[] = []) {}
 
+  // clone gives the rotating safety recorder its own stream and tracks.
+  clone() {
+    return new MediaStreamMock(this.tracks.map((track) => track.clone()));
+  }
+
   // getAudioTracks returns the audio tracks for master acquisition.
   getAudioTracks() {
     return this.tracks.filter((track) => track.kind === "audio");
@@ -696,11 +701,14 @@ describe("BrowserRecorder live markers", () => {
       await Promise.resolve();
     });
 
-    expect(MediaRecorderMock.instances).toHaveLength(2);
+    expect(MediaRecorderMock.instances).toHaveLength(3);
     const archiveRecorder = MediaRecorderMock.instances[0]!;
     const initialSonioxRecorder = MediaRecorderMock.instances[1]!;
+    const safetyRecorder = MediaRecorderMock.instances[2]!;
 
     expect(initialSonioxRecorder.stream.getAudioTracks()[0])
+      .not.toBe(archiveRecorder.stream.getAudioTracks()[0]);
+    expect(safetyRecorder.stream.getAudioTracks()[0])
       .not.toBe(archiveRecorder.stream.getAudioTracks()[0]);
 
     realtime.recording.reconnect();
@@ -710,10 +718,10 @@ describe("BrowserRecorder live markers", () => {
 
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
     expect(archiveRecorder.state).toBe("recording");
-    expect(MediaRecorderMock.instances.filter((recorder) => recorder !== archiveRecorder))
-      .toHaveLength(4);
+    expect(MediaRecorderMock.instances).toHaveLength(6);
+    expect(safetyRecorder.state).toBe("recording");
     expect(MediaRecorderMock.instances
-      .filter((recorder) => recorder !== archiveRecorder)
+      .filter((_, index) => [1, 3, 4, 5].includes(index))
       .every((recorder) => recorder.state === "inactive"))
       .toBe(true);
 
@@ -889,13 +897,12 @@ describe("BrowserRecorder live markers", () => {
       await Promise.resolve();
     });
 
-    expect(mocks.completeLiveRecordingWithoutAudio).toHaveBeenCalledWith({
-      durationSeconds: 0,
+    expect(mocks.completeLiveRecordingWithoutAudio).not.toHaveBeenCalled();
+    expect(mocks.failLiveRecordingUpload).toHaveBeenCalledWith(expect.objectContaining({
       recording: lateDraft
-    });
-    expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
+    }));
     expect(mocks.fetch.mock.calls.some(([url]) =>
-      String(url).endsWith(`/api/recordings/${recordingId}/live-transcript`)
+      String(url).endsWith(`/api/recordings/${recordingId}/live-draft`)
     )).toBe(true);
   });
 

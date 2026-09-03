@@ -209,6 +209,7 @@ function LiveMarkerCaptureFixture({ scope }: { scope: string }) {
                 allowTranscriptOnly
                 captionMode
                 developmentRecordingFactory={developmentRecordingFactory}
+                liveAudioQuality="high"
                 maxAudioFileSizeBytes={50 * 1024 * 1024}
               />
             ) : (

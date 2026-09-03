@@ -20,10 +20,12 @@ vi.mock("@/components/browser-recorder", async () => {
   return {
     BrowserRecorder: ({
       compact,
+      liveAudioQuality,
       onStatusChange,
       realtimeLanguage
     }: {
       compact?: boolean;
+      liveAudioQuality?: string;
       onStatusChange?: (status: "idle" | "starting" | "recording" | "saving") => void;
       realtimeLanguage?: string;
     }) => {
@@ -43,6 +45,7 @@ vi.mock("@/components/browser-recorder", async () => {
         <div
           data-compact={compact ? "true" : "false"}
           data-instance={instance}
+          data-live-audio-quality={liveAudioQuality}
           data-realtime-language={realtimeLanguage}
         >
           <button onClick={() => onStatusChange?.("recording")} type="button">
@@ -70,6 +73,7 @@ afterEach(() => {
 const recorderProps = {
   allowTranscriptOnly: true,
   captionMode: true,
+  liveAudioQuality: "high" as const,
   maxAudioFileSizeBytes: 128 * 1024 * 1024,
   realtimeLanguage: "de" as const,
   realtimeModel: "stt-rt-v5",
@@ -109,6 +113,7 @@ describe("persistent recording session", () => {
     await act(async () => root.render(renderSession(true)));
     const fullRecorder = document.querySelector<HTMLElement>("[data-instance]");
     expect(fullRecorder?.dataset.compact).toBe("false");
+    expect(fullRecorder?.dataset.liveAudioQuality).toBe("high");
     expect(fullRecorder?.dataset.realtimeLanguage).toBe("de");
     const instance = fullRecorder?.dataset.instance;
 
@@ -127,6 +132,7 @@ describe("persistent recording session", () => {
     const returnedRecorder = document.querySelector<HTMLElement>("[data-instance]");
     expect(returnedRecorder?.dataset.instance).toBe(instance);
     expect(returnedRecorder?.dataset.compact).toBe("false");
+    expect(returnedRecorder?.dataset.liveAudioQuality).toBe("high");
     expect(returnedRecorder?.dataset.realtimeLanguage).toBe("de");
     expect(recorderLifecycle.mounts).toBe(1);
 

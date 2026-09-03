@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   getEstimatedLiveRecordingBytes,
-  getLiveAudioFallbackMessage,
   getPersistedLiveTranscriptAudioStorage,
   getTokenKey,
   getRecorderFeedbackAnnouncement,
@@ -17,7 +16,7 @@ import {
   mergeRealtimeResultTokens,
   normalizeRealtimeToken,
   promoteRealtimePartialTokens,
-  shouldDiscardLiveRecordingAudio,
+  shouldStopLiveRecordingAtAudioLimit,
   tokensToCaptionBlocks,
   type LiveCaptionToken
 } from "@/components/browser-recorder/helpers";
@@ -100,14 +99,14 @@ describe("browser recorder helpers", () => {
     ]);
   });
 
-  it("switches a long live recording to transcript-only at the audio limit", () => {
+  it("stops a long live recording at the reserved audio limit", () => {
     const maxAudioFileSizeBytes = 100 * 1024 * 1024;
     const cutoffSeconds = (maxAudioFileSizeBytes * 8) / 128_000;
 
     expect(
-      shouldDiscardLiveRecordingAudio(128_000, cutoffSeconds - 1, maxAudioFileSizeBytes)
+      shouldStopLiveRecordingAtAudioLimit(128_000, cutoffSeconds - 1, maxAudioFileSizeBytes)
     ).toBe(false);
-    expect(shouldDiscardLiveRecordingAudio(128_000, cutoffSeconds, maxAudioFileSizeBytes)).toBe(true);
+    expect(shouldStopLiveRecordingAtAudioLimit(128_000, cutoffSeconds, maxAudioFileSizeBytes)).toBe(true);
   });
 
   it("keeps a one-hour default recording below the 50 MiB Storage reserve", () => {
@@ -125,19 +124,6 @@ describe("browser recorder helpers", () => {
     expect(getSaveModeLabel("audio_only", 100 * 1024 * 1024)).toBe("Jen audio do 100 MB");
     expect(getSaveModeLabel("audio_and_live_transcript", null))
       .toBe("Audio + live přepis není dostupné");
-  });
-
-  it("explains whether audio was discarded early or the final Blob could not be saved", () => {
-    const maxAudioFileSizeBytes = 128 * 1024 * 1024;
-
-    expect(getLiveAudioFallbackMessage({
-      audioDiscardedForSize: true,
-      maxAudioFileSizeBytes
-    })).toContain("zastaveno s rezervou před limitem");
-    expect(getLiveAudioFallbackMessage({
-      audioDiscardedForSize: false,
-      maxAudioFileSizeBytes
-    })).toContain("prázdný, neplatný nebo překročil limit");
   });
 
   it("keeps the active recording message independent from wake lock and realtime warnings", () => {
@@ -189,6 +175,8 @@ describe("browser recorder helpers", () => {
     expect(liveModeUsesRealtime("live_transcript_only")).toBe(true);
     expect(getPersistedLiveTranscriptAudioStorage("audio_and_live_transcript", true))
       .toBe("supabase_recording_upload");
+    expect(getPersistedLiveTranscriptAudioStorage("audio_and_live_transcript", true, true))
+      .toBe("supabase_recording_segments");
     expect(getPersistedLiveTranscriptAudioStorage("live_transcript_only", false))
       .toBe("transcript_only");
   });

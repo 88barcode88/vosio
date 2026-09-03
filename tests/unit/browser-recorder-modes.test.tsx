@@ -11,14 +11,23 @@ const recordingId = "12a31215-9b8f-4c68-9e2f-89f4d31f96b0";
 const mocks = vi.hoisted(() => ({
   completeLiveRecordingUpload: vi.fn(),
   completeLiveRecordingWithoutAudio: vi.fn(),
+  cleanupDurableSafetyGeneration: vi.fn(),
   createBrowserClient: vi.fn(),
+  createIndexedDbDurableAudioRepository: vi.fn(),
   createLiveRecordingDraft: vi.fn(),
   failLiveRecordingUpload: vi.fn(),
   fetch: vi.fn(),
+  persistDurableSafetyPart: vi.fn(),
+  promoteDurableSafetyParts: vi.fn(),
   realtimeRecord: vi.fn(),
+  repositoryDeleteGeneration: vi.fn(),
+  repositoryListForOwner: vi.fn(),
+  repositoryMarkUploaded: vi.fn(),
+  repositoryPut: vi.fn(),
   routerPush: vi.fn(),
   routerRefresh: vi.fn(),
-  uploadLiveRecording: vi.fn()
+  uploadLiveRecording: vi.fn(),
+  uploadLiveRecordingPart: vi.fn()
 }));
 
 vi.mock("next/navigation", () => ({
@@ -47,7 +56,16 @@ vi.mock("@/lib/recordings/upload", () => ({
   completeLiveRecordingWithoutAudio: mocks.completeLiveRecordingWithoutAudio,
   createLiveRecordingDraft: mocks.createLiveRecordingDraft,
   failLiveRecordingUpload: mocks.failLiveRecordingUpload,
-  uploadLiveRecording: mocks.uploadLiveRecording
+  getLiveRecordingStoragePrefix: (userId: string, id: string) => `${userId}/${id}/live/`,
+  uploadLiveRecording: mocks.uploadLiveRecording,
+  uploadLiveRecordingPart: mocks.uploadLiveRecordingPart
+}));
+
+vi.mock("@/lib/live-recording/durable-audio", () => ({
+  cleanupDurableSafetyGeneration: mocks.cleanupDurableSafetyGeneration,
+  createIndexedDbDurableAudioRepository: mocks.createIndexedDbDurableAudioRepository,
+  persistDurableSafetyPart: mocks.persistDurableSafetyPart,
+  promoteDurableSafetyParts: mocks.promoteDurableSafetyParts
 }));
 
 vi.mock("@/lib/supabase/browser", () => ({ createClient: mocks.createBrowserClient }));
@@ -55,6 +73,11 @@ vi.mock("@/lib/supabase/browser", () => ({ createClient: mocks.createBrowserClie
 class MediaStreamFixture {
   // constructor stores the tracks owned by this capture consumer.
   constructor(private readonly tracks: MediaStreamTrack[] = []) {}
+
+  // clone gives the safety primitive its separately owned stream and track.
+  clone() {
+    return new MediaStreamFixture(this.tracks.map((track) => track.clone()));
+  }
 
   // getAudioTracks returns the fixture's audio tracks.
   getAudioTracks() {
@@ -75,8 +98,11 @@ class MediaRecorderFixture {
   state: "inactive" | "recording" = "inactive";
   private readonly listeners = new Map<string, EventListener[]>();
 
-  // constructor records each isolated stream passed to a live encoder.
-  constructor(public readonly stream: MediaStream) {
+  // constructor records each isolated stream and its requested encoder options.
+  constructor(
+    public readonly stream: MediaStream,
+    public readonly options: MediaRecorderOptions = {}
+  ) {
     MediaRecorderFixture.instances.push(this);
   }
 
@@ -209,7 +235,7 @@ beforeEach(() => {
   });
   mocks.createLiveRecordingDraft.mockResolvedValue({
     id: recordingId,
-    storagePrefix: "live",
+    storagePrefix: `user-1/${recordingId}/live/`,
     userId: "user-1"
   });
   mocks.uploadLiveRecording.mockResolvedValue({
@@ -217,6 +243,28 @@ beforeEach(() => {
     storagePath: "live/archive.webm"
   });
   mocks.completeLiveRecordingUpload.mockResolvedValue(undefined);
+  mocks.cleanupDurableSafetyGeneration.mockResolvedValue(undefined);
+  mocks.createIndexedDbDurableAudioRepository.mockReturnValue({
+    deleteGeneration: mocks.repositoryDeleteGeneration,
+    listForOwner: mocks.repositoryListForOwner,
+    markUploaded: mocks.repositoryMarkUploaded,
+    put: mocks.repositoryPut
+  });
+  mocks.persistDurableSafetyPart.mockImplementation(async ({ generationId, ownerId, part, recordingId }) => ({
+    ...part,
+    createdAt: "2026-09-03T00:00:00.000Z",
+    generationId,
+    key: `${ownerId}/${recordingId}/${generationId}/${part.index}`,
+    ownerId,
+    recordingId,
+    uploadedAt: null
+  }));
+  mocks.promoteDurableSafetyParts.mockResolvedValue({ failed: [], promoted: [] });
+  mocks.uploadLiveRecordingPart.mockResolvedValue({
+    bytes: 6,
+    reused: false,
+    storagePath: `user-1/${recordingId}/live/part-000000.webm`
+  });
   mocks.fetch.mockResolvedValue({ json: vi.fn().mockResolvedValue({}), ok: true });
   MediaRecorderFixture.instances = [];
   container = document.createElement("div");
@@ -235,6 +283,239 @@ afterEach(async () => {
 });
 
 describe("BrowserRecorder modes", () => {
+  it("applies selected archive bitrate without changing Soniox encoding", async () => {
+    const provider = createProviderRecording();
+    const qualityProps = { liveAudioQuality: "high" as const };
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+
+    await act(async () => {
+      root?.render(
+        <BrowserRecorder
+          {...qualityProps}
+          allowTranscriptOnly
+          maxAudioFileSizeBytes={50 * 1024 * 1024}
+        />
+      );
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+
+    expect(MediaRecorderFixture.instances[0]?.options.audioBitsPerSecond).toBe(96_000);
+    expect(MediaRecorderFixture.instances[1]?.options.audioBitsPerSecond).not.toBe(96_000);
+    expect(MediaRecorderFixture.instances[2]?.options.audioBitsPerSecond).toBe(96_000);
+  });
+
+  it("owns the audio-limit stop instead of discarding archive capture and continuing", async () => {
+    const provider = createProviderRecording();
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={10_000} />);
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+      provider.emit("state_change", { new_state: "recording" });
+    });
+
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+      await flushPromises(20);
+    });
+
+    expect(mocks.completeLiveRecordingUpload).toHaveBeenCalledOnce();
+    expect(document.querySelector("[data-recording-status]")?.getAttribute("data-recording-status"))
+      .toBe("idle");
+  });
+
+  it("persists the final safety part before archive upload and cleans it only after metadata", async () => {
+    const events: string[] = [];
+    mocks.persistDurableSafetyPart.mockImplementation(async (input) => {
+      events.push("persist-safety");
+      return {
+        ...input.part,
+        createdAt: "2026-09-03T00:00:00.000Z",
+        generationId: input.generationId,
+        key: `${input.ownerId}/${input.recordingId}/${input.generationId}/${input.part.index}`,
+        ownerId: input.ownerId,
+        recordingId: input.recordingId,
+        uploadedAt: null
+      };
+    });
+    mocks.uploadLiveRecording.mockImplementation(async () => {
+      events.push("upload-archive");
+      return { bytes: 32, storagePath: "live/archive.webm" };
+    });
+    mocks.completeLiveRecordingUpload.mockImplementation(async () => {
+      events.push("confirm-metadata");
+    });
+    mocks.cleanupDurableSafetyGeneration.mockImplementation(async () => {
+      events.push("cleanup-safety");
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    MediaRecorderFixture.instances[1]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(18);
+    });
+
+    expect(events).toEqual([
+      "persist-safety",
+      "upload-archive",
+      "confirm-metadata",
+      "cleanup-safety"
+    ]);
+  });
+
+  it("promotes complete safety parts when archive upload fails and starts segmented transcription", async () => {
+    const provider = createProviderRecording();
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+    mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
+    mocks.promoteDurableSafetyParts.mockImplementation(async ({ uploadPart }) => {
+      const durablePart = await mocks.persistDurableSafetyPart.mock.results.at(-1)?.value;
+      await uploadPart(durablePart);
+      return { failed: [], promoted: [durablePart.key] };
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+      provider.emit("state_change", { new_state: "recording" });
+      provider.emit("result", {
+        tokens: [{ end_ms: 500, is_final: true, start_ms: 0, text: "Hotový text." }]
+      });
+    });
+
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    MediaRecorderFixture.instances[2]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(24);
+    });
+
+    expect(mocks.uploadLiveRecordingPart).toHaveBeenCalledOnce();
+    expect(mocks.completeLiveRecordingUpload).toHaveBeenCalledWith(expect.objectContaining({
+      storagePath: `user-1/${recordingId}/live/`
+    }));
+    const liveTranscriptCall = mocks.fetch.mock.calls.find(([url]) => (
+      String(url).endsWith(`/api/recordings/${recordingId}/live-transcript`)
+    ));
+    expect(JSON.parse(String(liveTranscriptCall?.[1]?.body))).toEqual(expect.objectContaining({
+      audioStorage: "supabase_recording_segments"
+    }));
+    expect(mocks.fetch.mock.calls.some(([url]) => (
+      String(url).endsWith(`/api/recordings/${recordingId}/transcription?restart=1`)
+    ))).toBe(true);
+  });
+
+  it("leaves a complete local safety set recoverable when server promotion fails", async () => {
+    mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
+    mocks.promoteDurableSafetyParts.mockImplementation(async () => {
+      const durablePart = await mocks.persistDurableSafetyPart.mock.results.at(-1)?.value;
+      return { failed: [durablePart.key], promoted: [] };
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    MediaRecorderFixture.instances[1]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(24);
+    });
+
+    expect(mocks.completeLiveRecordingUpload).not.toHaveBeenCalled();
+    expect(mocks.completeLiveRecordingWithoutAudio).not.toHaveBeenCalled();
+    expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("obnovení");
+  });
+
+  it("preserves the transcript draft and marks failed when no audio path survives", async () => {
+    const provider = createProviderRecording();
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+    mocks.persistDurableSafetyPart.mockRejectedValue(new DOMException("quota", "QuotaExceededError"));
+    mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+      provider.emit("state_change", { new_state: "recording" });
+      provider.emit("result", {
+        tokens: [{ end_ms: 500, is_final: true, start_ms: 0, text: "Zachovaný koncept." }]
+      });
+    });
+
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    MediaRecorderFixture.instances[2]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(24);
+    });
+
+    expect(mocks.fetch.mock.calls.some(([url]) => (
+      String(url).endsWith(`/api/recordings/${recordingId}/live-draft`)
+    ))).toBe(true);
+    expect(mocks.failLiveRecordingUpload).toHaveBeenCalledOnce();
+    expect(mocks.completeLiveRecordingWithoutAudio).not.toHaveBeenCalled();
+  });
+
+  it("downgrades quota-backed crash protection while the continuous archive keeps recording", async () => {
+    mocks.persistDurableSafetyPart.mockRejectedValue(new DOMException("quota", "QuotaExceededError"));
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+
+    const archiveRecorder = MediaRecorderFixture.instances[0]!;
+    archiveRecorder.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    MediaRecorderFixture.instances[1]?.emitData(new Blob(["safety"], { type: "audio/webm" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushPromises(12);
+    });
+
+    expect(archiveRecorder.state).toBe("recording");
+    expect(container.textContent).toContain("Ochrana proti pádu");
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(18);
+    });
+
+    expect(mocks.completeLiveRecordingUpload).toHaveBeenCalledOnce();
+    expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
+  });
+
   it("defaults to combined and disables both audio modes when Storage is unavailable", async () => {
     await act(async () => {
       root?.render(

@@ -331,8 +331,8 @@ export function getEstimatedLiveRecordingBytes(audioBitsPerSecond: number, elaps
   return Math.ceil((bitrate * Math.max(0, elapsedSeconds)) / 8);
 }
 
-// shouldDiscardLiveRecordingAudio switches long live sessions to transcript-only before Storage rejects them.
-export function shouldDiscardLiveRecordingAudio(
+// shouldStopLiveRecordingAtAudioLimit reserves encoder headroom before the owned final save begins.
+export function shouldStopLiveRecordingAtAudioLimit(
   audioBitsPerSecond: number,
   elapsedSeconds: number,
   maxBytes: number
@@ -415,25 +415,12 @@ export function liveModeUsesRealtime(mode: LiveSaveMode) {
 // getPersistedLiveTranscriptAudioStorage maps product modes onto existing provider metadata values.
 export function getPersistedLiveTranscriptAudioStorage(
   mode: LiveSaveMode,
-  audioUploadCompleted: boolean
-): "supabase_recording_upload" | "transcript_only" {
+  audioUploadCompleted: boolean,
+  audioStoredAsSegments = false
+): "supabase_recording_segments" | "supabase_recording_upload" | "transcript_only" {
   return liveModeStoresAudio(mode) && audioUploadCompleted
-    ? "supabase_recording_upload"
+    ? audioStoredAsSegments
+      ? "supabase_recording_segments"
+      : "supabase_recording_upload"
     : "transcript_only";
-}
-
-// getLiveAudioFallbackMessage reports the precise reason a completed live transcript has no audio file.
-export function getLiveAudioFallbackMessage(input: {
-  audioDiscardedForSize: boolean;
-  maxAudioFileSizeBytes: number | null;
-}) {
-  if (input.maxAudioFileSizeBytes === null) {
-    return "Přepis je uložený bez audia, protože ukládání audia teď není dostupné.";
-  }
-
-  if (input.audioDiscardedForSize) {
-    return `Přepis je uložený bez audia, protože ukládání audia bylo zastaveno s rezervou před limitem ${formatFileSize(input.maxAudioFileSizeBytes)}.`;
-  }
-
-  return `Přepis je uložený bez audia, protože výsledný audio soubor byl prázdný, neplatný nebo překročil limit ${formatFileSize(input.maxAudioFileSizeBytes)}.`;
 }

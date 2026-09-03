@@ -79,6 +79,7 @@ export function NewRecordingWorkspace({
               <PersistentRecorderSlot
                 allowTranscriptOnly
                 captionMode
+                liveAudioQuality={userSettings.liveAudioQuality}
                 maxAudioFileSizeBytes={liveAudioMaxFileSizeBytes}
                 realtimeLanguage={userSettings.sonioxRealtimeLanguage}
                 realtimeModel={userSettings.sonioxRealtimeModel}

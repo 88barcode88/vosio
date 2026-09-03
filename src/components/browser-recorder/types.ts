@@ -1,5 +1,6 @@
 import type { RecordOptions, Recording } from "@soniox/client";
 import type { LiveAudioHealthSnapshot } from "@/lib/live-recording/audio-health";
+import type { LiveAudioQuality } from "@/lib/recordings/types";
 import type { SonioxRealtimeLanguageId } from "@/lib/soniox/languages";
 
 export type RecorderStatus = "idle" | "starting" | "recording" | "saving";
@@ -35,6 +36,7 @@ export type BrowserRecorderProps = {
   captionMode?: boolean;
   compact?: boolean;
   developmentRecordingFactory?: DevelopmentRecordingFactory;
+  liveAudioQuality?: LiveAudioQuality;
   maxAudioFileSizeBytes: number | null;
   onAudioHealthChange?: (health: LiveAudioHealthSnapshot | null) => void;
   onStatusChange?: (status: RecorderStatus) => void;
