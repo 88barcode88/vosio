@@ -9,8 +9,10 @@ import {
   getRecoveredLiveRecordingUpdate,
   getLiveStorageListPrefix,
   getRecoverableLiveStoragePrefix,
-  isRecoverableLiveRecording
+  isRecoverableLiveRecording,
+  summarizeSafetyPartStorageObjects
 } from "@/lib/live-recording/recovery";
+import { InvalidSafetyPartListingError } from "@/lib/live-recording/safety-parts";
 
 const routeParamsSchema = z.object({
   recordingId: z.uuid()
@@ -36,17 +38,6 @@ type SegmentSummary = {
   totalBytes: number;
 };
 
-// getStorageObjectSize safely reads Supabase object metadata size.
-function getStorageObjectSize(item: { metadata?: unknown }) {
-  if (typeof item.metadata !== "object" || item.metadata === null || !("size" in item.metadata)) {
-    return 0;
-  }
-
-  const size = (item.metadata as { size?: unknown }).size;
-
-  return typeof size === "number" && Number.isFinite(size) ? size : 0;
-}
-
 // summarizeSegments counts recoverable live audio parts under one Storage prefix.
 async function summarizeSegments(input: {
   admin: ReturnType<typeof createAdminClient>;
@@ -64,19 +55,9 @@ async function summarizeSegments(input: {
     throw new Error("Nepodařilo se načíst části live nahrávky.");
   }
 
-  return (data ?? []).reduce<SegmentSummary>(
-    (summary, item) => {
-      if (!item.name || item.name.endsWith("/")) {
-        return summary;
-      }
+  const summary = summarizeSafetyPartStorageObjects(data ?? []);
 
-      return {
-        count: summary.count + 1,
-        totalBytes: summary.totalBytes + getStorageObjectSize(item)
-      };
-    },
-    { count: 0, totalBytes: 0 }
-  );
+  return { count: summary.count, totalBytes: summary.totalBytes } satisfies SegmentSummary;
 }
 
 // getTranscriptSummary checks whether a recoverable recording has a saved transcript draft.
@@ -188,7 +169,11 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       },
       ...(indexResult ? getTranscriptSearchWarningPayload(indexResult) : {})
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof InvalidSafetyPartListingError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+
     return NextResponse.json({ error: "Obnova nahrávky selhala." }, { status: 500 });
   }
 }

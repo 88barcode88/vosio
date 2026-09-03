@@ -32,15 +32,27 @@ export function LiveRecordingRecoveryPanel() {
     let cancelled = false;
 
     fetch("/api/recordings/recoverable", { cache: "no-store" })
-      .then((response) => response.json())
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as
+          | { error?: string; recordings?: RecoverableRecording[] }
+          | null;
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Nepodařilo se načíst nedokončené nahrávky.");
+        }
+
+        return payload;
+      })
       .then((payload) => {
         if (!cancelled) {
-          setRecordings(Array.isArray(payload.recordings) ? payload.recordings : []);
+          setRecordings(Array.isArray(payload?.recordings) ? payload.recordings : []);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          setMessage("Nepodařilo se načíst nedokončené nahrávky.");
+          setMessage(
+            error instanceof Error ? error.message : "Nepodařilo se načíst nedokončené nahrávky."
+          );
         }
       });
 

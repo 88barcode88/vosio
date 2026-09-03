@@ -1,3 +1,5 @@
+import { validateSafetyPartListing } from "@/lib/live-recording/safety-parts";
+
 export const LIVE_RECORDING_AUTOSAVE_INTERVAL_MS = 15 * 1000;
 
 type AutosaveInput = {
@@ -10,6 +12,43 @@ type RecoverableLiveRecordingInput = {
   source_type: string;
   status: string;
 };
+
+type SafetyPartStorageObject = {
+  created_at?: string | null;
+  metadata?: unknown;
+  name: string;
+  updated_at?: string | null;
+};
+
+// getStorageObjectSize reads a finite non-negative byte count from Storage metadata.
+function getStorageObjectSize(item: SafetyPartStorageObject) {
+  if (typeof item.metadata !== "object" || item.metadata === null || !("size" in item.metadata)) {
+    return 0;
+  }
+
+  const size = (item.metadata as { size?: unknown }).size;
+
+  return typeof size === "number" && Number.isFinite(size) && size >= 0 ? size : 0;
+}
+
+// summarizeSafetyPartStorageObjects validates canonical parts before exposing recovery metadata.
+export function summarizeSafetyPartStorageObjects(items: readonly SafetyPartStorageObject[]) {
+  return validateSafetyPartListing(items).reduce(
+    (summary, part) => {
+      const updatedAt = part.item.updated_at ?? part.item.created_at ?? null;
+
+      return {
+        count: summary.count + 1,
+        newestUpdatedAt:
+          updatedAt && (!summary.newestUpdatedAt || updatedAt > summary.newestUpdatedAt)
+            ? updatedAt
+            : summary.newestUpdatedAt,
+        totalBytes: summary.totalBytes + getStorageObjectSize(part.item)
+      };
+    },
+    { count: 0, newestUpdatedAt: null as string | null, totalBytes: 0 }
+  );
+}
 
 // getLiveDraftAutosavePayload normalizes partial live transcript data before persistence.
 export function getLiveDraftAutosavePayload(input: AutosaveInput) {

@@ -228,9 +228,13 @@ Browser PWA neumí garantovat nepřerušený realtime WebSocket, pokud systém u
 
 Recovery panel na `/recordings` není náhrada za background recording. Umí dokončit jen to, co už je v Supabase: partial transcript v `transcripts`, jeden již uploadovaný audio objekt nebo části starší segmentované nahrávky. Aktivní MediaRecorder soubor a tokeny, které ještě neproběhly autosavem, může prohlížeč při zavření nebo uspání ztratit.
 
+Safety audio helpery jsou source-only příprava pro navazující recorder integraci. Dokud je centrální recorder nepoužívá, nemají se prezentovat jako aktivní ochrana běžícího live hovoru. IndexedDB je lokální prohlížečová recovery vrstva, ne serverová fronta: resume smí číst pouze exact current-owner rows a cleanup pouze exact owner/recording/generation. Storage část se považuje za idempotentně uloženou jen při shodě deterministické cesty, velikosti a MIME; jiná data na stejné cestě jsou konflikt, nikdy důvod k overwrite.
+
 ## Starší live audio segmenty zůstávají čitelné
 
 Nové live nahrávky se už nedělí; pod limitem ukládají jeden objekt `{user_id}/{recording_id}/live/recording.<ext>`. Databáze a serverové přepisovací cesty dál podporují existující záznamy, jejichž `recordings.storage_path` končí `/live/` a označuje složku starších segmentů. Znovupřepis takového legacy záznamu stále založí jeden Soniox async job pro každý objekt a výsledky spojí chronologicky.
+
+Server přijímá v `/live/` jako audio části výhradně `part-000000.webm` nebo `part-000000.m4a` se souvislými indexy od nuly. Unrelated objekty se ignorují; starší či ručně vytvořené názvy, duplicitní index, smíšené přípony nebo mezera v řadě znamenají bezpečný `409`, protože jejich pořadí ani obsah nelze spolehlivě odvodit. Soniox create nebo pozdější poll failure nesmí shodit samotný recording do `failed`; pouze aktuální job/batch je failed a recording zůstane `uploaded` se stejnými audio metadaty pro nový retry.
 
 ## Speaker diarization závisí na tokenech
 

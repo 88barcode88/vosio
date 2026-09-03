@@ -338,7 +338,7 @@ describe("recording transcription Soniox region", () => {
     });
     const recordingUpdateQuery = createQuery({ result: { data: null, error: null } });
     const queries = [existingBatchQuery, initialJobQuery, updatedJobQuery, recordingUpdateQuery];
-    const list = vi.fn(async () => ({ data: [{ name: "0001.webm" }], error: null }));
+    const list = vi.fn(async () => ({ data: [{ name: "part-000000.webm" }], error: null }));
     const createSignedUrl = vi.fn(async () => ({
       data: { signedUrl: "https://storage.test/segment" },
       error: null

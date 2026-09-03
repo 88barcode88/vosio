@@ -40,6 +40,8 @@ When the user checks transcription:
 
 When a recording is in status `transcribing`, the client also polls the same `GET` endpoint automatically about every 15 seconds while the detail view is open. The request uses `cache: "no-store"` so the browser does not reuse stale status responses. The UI shows that Soniox is processing on the provider side, the last check time, and the latest returned job status. This is a foreground convenience poll, not a durable background worker.
 
+If Soniox rejects creation of a regular job or any job in a segmented batch, or a later provider poll rejects or returns terminal failure, only that job or complete current batch becomes `failed`. The recording returns to `uploaded`; its `storage_path`, MIME, byte size and duration remain unchanged, so an explicit retry creates a fresh job or batch. API and stored recording copy are stable and do not expose provider details.
+
 When a completed transcript contains Soniox token-level `speaker` fields, the transcript tab groups consecutive tokens by speaker and displays one compact transcript table with columns for time, speaker, and text. Each speaker gets a stable color class. The speaker summary above the table lets the user save a manual speaker name and business role (`client_customer`, `delivery_team`, or `unknown`) into `transcripts.speakers`; the compact speaker editor scrolls internally when a call has many speakers, so 8+ speakers do not push the whole detail page down. If the provider did not return speaker ids, the UI falls back to the plain `raw_text` transcript.
 
 ## Private Audio Playback
@@ -61,6 +63,10 @@ When the user records live in the browser:
 5. In `Audio do {efektivní live limit} + přepis` mode, the browser records one local audio file at a requested 64 kbit/s. Its hard live limit is `min(effective manual upload limit, 128 MiB)`, and the finalized Blob is uploaded on stop only after validation against that hard limit.
 6. The browser estimates an earlier cutoff at `hard live limit - min(5% of hard live limit, 2 MiB)`. When the estimate reaches that cutoff, or the user selects `Jen live přepis`, local audio is discarded while realtime transcription continues and saves the final transcript without a Storage audio object.
 7. The final live transcript is stored in `transcripts` and linked to a realtime `transcription_jobs` row. The job `provider_config.storage` records whether the source was `supabase_recording_upload` or `transcript_only`.
+
+The source also contains the isolated safety-audio primitives intended for the next recorder integration step. A rotating recorder owns only a clone of the supplied stream and its timer, fully stops each part, and exposes no Blob until that part is final. A complete part is atomically stored in IndexedDB with owner, recording, generation, zero-based index, offset, MIME and byte size before bounded promotion. Promotion resumes only rows belonging to the current authenticated owner and uses deterministic non-overwriting Storage paths. These primitives are not yet wired into the central browser recorder.
+
+Safety parts use exactly `part-000000.webm` or `part-000000.m4a`: lowercase, six digits and zero-based. Every browser formatter and server Storage listing shares one parser/validator. Unrelated objects are ignored, but duplicate indexes, mixed extensions or any gap return safe `409`; accepted parts are always processed in numeric order.
 
 Live language selection is separate from audio retention and speaker identification:
 
