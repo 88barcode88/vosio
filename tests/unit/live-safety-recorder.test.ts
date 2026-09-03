@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRotatingSafetyRecorder } from "@/lib/live-recording/rotating-safety-recorder";
+import {
+  createRotatingSafetyRecorder,
+  type FinalizedSafetyPart
+} from "@/lib/live-recording/rotating-safety-recorder";
 
 class FakeMediaRecorder extends EventTarget {
+  private finalData: Blob | null = null;
   readonly mimeType: string;
   state: RecordingState = "inactive";
 
@@ -19,12 +23,23 @@ class FakeMediaRecorder extends EventTarget {
   // stop emits the final boundary and no data remains pending afterward.
   stop() {
     this.state = "inactive";
+
+    if (this.finalData) {
+      this.emitData(this.finalData);
+      this.finalData = null;
+    }
+
     this.dispatchEvent(new Event("stop"));
   }
 
   // emitData simulates browser data without declaring the part finalized.
   emitData(blob: Blob) {
     this.dispatchEvent(Object.assign(new Event("dataavailable"), { data: blob }));
+  }
+
+  // emitFinalDataOnStop models the browser flush between stop() and the stop event.
+  emitFinalDataOnStop(blob: Blob) {
+    this.finalData = blob;
   }
 }
 
@@ -36,6 +51,33 @@ async function settleQueuedWork() {
 }
 
 describe("rotating live safety recorder", () => {
+  it("persists data emitted during stop before the final stop event", async () => {
+    const clone = { getTracks: () => [{ stop: vi.fn() }] };
+    const recorder = new FakeMediaRecorder("audio/webm;codecs=opus");
+    const finalized = vi.fn(async (_part: FinalizedSafetyPart) => undefined);
+    const controller = createRotatingSafetyRecorder({
+      createRecorder: () => recorder as unknown as MediaRecorder,
+      mimeType: "audio/webm;codecs=opus",
+      onPartFinalized: finalized,
+      partDurationMs: 5_000,
+      setTimer: vi.fn(() => 1),
+      stream: { clone: vi.fn(() => clone) } as unknown as MediaStream
+    });
+
+    controller.start();
+    recorder.emitFinalDataOnStop(new Blob(["browser-final-chunk"], { type: "audio/webm" }));
+    await controller.stop();
+
+    expect(finalized).toHaveBeenCalledOnce();
+    const part = finalized.mock.calls[0]?.[0];
+    expect(part).toEqual(expect.objectContaining({
+      index: 0,
+      name: "part-000000.webm",
+      size: 19
+    }));
+    await expect(part?.blob.text()).resolves.toBe("browser-final-chunk");
+  });
+
   it("persists only fully stopped parts and owns only its cloned stream", async () => {
     const stopTrack = vi.fn();
     const clone = { getTracks: () => [{ stop: stopTrack }] };

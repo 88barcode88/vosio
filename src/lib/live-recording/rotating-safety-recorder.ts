@@ -153,12 +153,12 @@ class RotatingSafetyRecorder {
 
     this.active = null;
     this.clearRotationTimer();
-    const chunks = this.chunks;
     const offsetMs = this.activeOffsetMs;
-    this.chunks = [];
     await new Promise<void>((resolve, reject) => {
       const handleStop = () => {
         recorder.removeEventListener("dataavailable", this.handleData);
+        const chunks = this.chunks;
+        this.chunks = [];
         const mimeType = recorder.mimeType || this.mimeType;
         const blob = new Blob(chunks, { type: mimeType });
         const part = blob.size > 0 ? {
