@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  cleanupDurableSafetyGeneration: vi.fn(),
   push: vi.fn(),
   refresh: vi.fn(),
   resumeDurableSafetyPartsForOwner: vi.fn(),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push, refresh: mocks.refresh }) }));
 vi.mock("@/lib/live-recording/durable-audio", () => ({
+  cleanupDurableSafetyGeneration: mocks.cleanupDurableSafetyGeneration,
   resumeDurableSafetyPartsForOwner: mocks.resumeDurableSafetyPartsForOwner
 }));
 vi.mock("@/lib/recordings/upload", () => ({
@@ -67,6 +69,19 @@ function createLocalManifest(): DurableSafetyManifest {
   };
 }
 
+// createServerRecording models compact state returned by the owner-scoped recovery endpoint.
+function createServerRecording(id: string, title: string) {
+  return {
+    created_at: "2026-09-03T12:00:00.000Z",
+    duration_seconds: 15,
+    id,
+    segment_count: 1,
+    storage_bytes: 5,
+    title,
+    transcript_chars: 0
+  };
+}
+
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true;
@@ -74,6 +89,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   vi.clearAllMocks();
+  mocks.cleanupDurableSafetyGeneration.mockResolvedValue(undefined);
 });
 
 afterEach(async () => {
@@ -199,5 +215,178 @@ describe("live recording local recovery", () => {
     expect(container.textContent).toContain("Lokálně uložená live nahrávka");
     expect(container.textContent).toContain("části zůstávají bezpečně uložené v tomto prohlížeči");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("cleans the exact local generation after matching recovery and does not restore a stale row", async () => {
+    const manifest = createLocalManifest();
+    const recovered = createServerRecording(manifest.recordingId, "Obnovená lokální nahrávka");
+    let cleaned = false;
+    mocks.resumeDurableSafetyPartsForOwner.mockImplementation(async () => cleaned
+      ? { failed: [], manifests: [], promoted: [] }
+      : { failed: [], manifests: [manifest], promoted: [] });
+    mocks.cleanupDurableSafetyGeneration.mockImplementation(async () => {
+      cleaned = true;
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        json: vi.fn(async () => ({ ownerId: "owner-1", recordings: [] })),
+        ok: true
+      })
+      .mockResolvedValueOnce({
+        json: vi.fn(async () => ({ ownerId: "owner-1", recordings: [recovered] })),
+        ok: true
+      })
+      .mockResolvedValueOnce({
+        json: vi.fn(async () => ({ recording: { id: manifest.recordingId } })),
+        ok: true
+      })
+      .mockResolvedValueOnce({
+        json: vi.fn(async () => ({ ownerId: "owner-1", recordings: [] })),
+        ok: true
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(createElement(LiveRecordingRecoveryPanel)));
+    await flushRecoveryEffect();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.cleanupDurableSafetyGeneration).toHaveBeenCalledWith({
+      generationId: manifest.generationId,
+      ownerId: manifest.ownerId,
+      recordingId: manifest.recordingId
+    });
+    expect(mocks.push).toHaveBeenCalledWith(`/recordings/${manifest.recordingId}`);
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(createElement(LiveRecordingRecoveryPanel)));
+    await flushRecoveryEffect();
+
+    expect(container.textContent).not.toContain("Obnovená lokální nahrávka");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("retains the local generation when the recovery request fails", async () => {
+    const manifest = createLocalManifest();
+    const recovered = createServerRecording(manifest.recordingId, "Lokální recovery");
+    mocks.resumeDurableSafetyPartsForOwner.mockResolvedValue({
+      failed: [],
+      manifests: [manifest],
+      promoted: []
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ json: vi.fn(async () => ({ ownerId: "owner-1", recordings: [] })), ok: true })
+      .mockResolvedValueOnce({
+        json: vi.fn(async () => ({ ownerId: "owner-1", recordings: [recovered] })),
+        ok: true
+      })
+      .mockResolvedValueOnce({ json: vi.fn(async () => ({ error: "Není co obnovit." })), ok: false });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(createElement(LiveRecordingRecoveryPanel)));
+    await flushRecoveryEffect();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.cleanupDurableSafetyGeneration).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Lokální recovery");
+    expect(container.textContent).toContain("Není co obnovit.");
+  });
+
+  it("retains the local generation when recovery returns a different recording identity", async () => {
+    const manifest = createLocalManifest();
+    const recovered = createServerRecording(manifest.recordingId, "Lokální recovery");
+    mocks.resumeDurableSafetyPartsForOwner.mockResolvedValue({
+      failed: [],
+      manifests: [manifest],
+      promoted: []
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ json: vi.fn(async () => ({ ownerId: "owner-1", recordings: [] })), ok: true })
+      .mockResolvedValueOnce({
+        json: vi.fn(async () => ({ ownerId: "owner-1", recordings: [recovered] })),
+        ok: true
+      })
+      .mockResolvedValueOnce({ json: vi.fn(async () => ({ recording: { id: "other-recording" } })), ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(createElement(LiveRecordingRecoveryPanel)));
+    await flushRecoveryEffect();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.cleanupDurableSafetyGeneration).not.toHaveBeenCalled();
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Obnova nevrátila očekávanou nahrávku.");
+  });
+
+  it("does not delete local data after a successful server-only recovery", async () => {
+    const serverOnly = createServerRecording("server-recording", "Pouze na serveru");
+    mocks.resumeDurableSafetyPartsForOwner.mockResolvedValue({ failed: [], manifests: [], promoted: [] });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        json: vi.fn(async () => ({ ownerId: "owner-1", recordings: [serverOnly] })),
+        ok: true
+      })
+      .mockResolvedValueOnce({
+        json: vi.fn(async () => ({ recording: { id: serverOnly.id } })),
+        ok: true
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(createElement(LiveRecordingRecoveryPanel)));
+    await flushRecoveryEffect();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.cleanupDurableSafetyGeneration).not.toHaveBeenCalled();
+    expect(mocks.push).toHaveBeenCalledWith(`/recordings/${serverOnly.id}`);
+  });
+
+  it("shows a nonfatal warning and retains the row when local cleanup fails", async () => {
+    const manifest = createLocalManifest();
+    const recovered = createServerRecording(manifest.recordingId, "Lokální recovery");
+    mocks.resumeDurableSafetyPartsForOwner.mockResolvedValue({
+      failed: [],
+      manifests: [manifest],
+      promoted: []
+    });
+    mocks.cleanupDurableSafetyGeneration.mockRejectedValue(new Error("IndexedDB unavailable"));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ json: vi.fn(async () => ({ ownerId: "owner-1", recordings: [] })), ok: true })
+      .mockResolvedValueOnce({
+        json: vi.fn(async () => ({ ownerId: "owner-1", recordings: [recovered] })),
+        ok: true
+      })
+      .mockResolvedValueOnce({
+        json: vi.fn(async () => ({ recording: { id: manifest.recordingId } })),
+        ok: true
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(createElement(LiveRecordingRecoveryPanel)));
+    await flushRecoveryEffect();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("lokální bezpečnostní kopii se nepodařilo odstranit");
+    expect(container.textContent).toContain("Lokální recovery");
+    expect(mocks.push).toHaveBeenCalledWith(`/recordings/${manifest.recordingId}`);
   });
 });

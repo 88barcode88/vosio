@@ -5,6 +5,7 @@ import { RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatDuration } from "@/components/workspace/utils";
 import {
+  cleanupDurableSafetyGeneration,
   resumeDurableSafetyPartsForOwner,
   type DurableSafetyManifest
 } from "@/lib/live-recording/durable-audio";
@@ -23,6 +24,7 @@ type RecoverableRecording = {
   created_at: string;
   duration_seconds: number | null;
   id: string;
+  localManifest?: DurableSafetyManifest;
   segment_count: number;
   storage_bytes: number;
   title: string;
@@ -41,6 +43,7 @@ function getLocalRecoverableRecording(manifest: DurableSafetyManifest): Recovera
     created_at: manifest.createdAt,
     duration_seconds: null,
     id: manifest.recordingId,
+    localManifest: manifest,
     segment_count: manifest.partCount,
     storage_bytes: manifest.totalBytes,
     title: "Lokálně uložená live nahrávka",
@@ -159,14 +162,14 @@ export function LiveRecordingRecoveryPanel() {
   }, []);
 
   // recoverRecording asks the server to finalize one unfinished live recording.
-  async function recoverRecording(recordingId: string) {
-    setRecoveringId(recordingId);
+  async function recoverRecording(recording: RecoverableRecording) {
+    setRecoveringId(recording.id);
     setMessage("Obnovuji nahrávku...");
 
     try {
-      const response = await fetch(`/api/recordings/${recordingId}/recover-live`, { method: "POST" });
+      const response = await fetch(`/api/recordings/${recording.id}/recover-live`, { method: "POST" });
       const payload = (await response.json().catch(() => null)) as
-        | { error?: string; warnings?: unknown }
+        | { error?: string; recording?: { id?: unknown }; warnings?: unknown }
         | null;
 
       if (!response.ok) {
@@ -174,10 +177,33 @@ export function LiveRecordingRecoveryPanel() {
         return;
       }
 
-      const hasSearchWarning = hasTranscriptSearchIndexWarning(payload);
-      const path = `/recordings/${recordingId}`;
+      if (payload?.recording?.id !== recording.id) {
+        setMessage("Obnova nevrátila očekávanou nahrávku.");
+        return;
+      }
 
-      if (hasSearchWarning) {
+      let cleanupFailed = false;
+
+      if (recording.localManifest?.recordingId === recording.id) {
+        try {
+          await cleanupDurableSafetyGeneration({
+            generationId: recording.localManifest.generationId,
+            ownerId: recording.localManifest.ownerId,
+            recordingId: recording.localManifest.recordingId
+          });
+          setRecordings((current) => current.filter((item) => item.id !== recording.id));
+        } catch {
+          cleanupFailed = true;
+          setMessage(
+            "Nahrávka je obnovená, ale lokální bezpečnostní kopii se nepodařilo odstranit."
+          );
+        }
+      }
+
+      const hasSearchWarning = hasTranscriptSearchIndexWarning(payload);
+      const path = `/recordings/${recording.id}`;
+
+      if (hasSearchWarning && !cleanupFailed) {
         setMessage(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
       }
 
@@ -215,7 +241,7 @@ export function LiveRecordingRecoveryPanel() {
           </div>
           <button
             disabled={recoveringId === recording.id}
-            onClick={() => recoverRecording(recording.id)}
+            onClick={() => recoverRecording(recording)}
             type="button"
           >
             {recoveringId === recording.id ? "Obnovuji..." : "Obnovit"}
