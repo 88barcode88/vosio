@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { access, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { createConnection } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -28,14 +29,20 @@ function startTestRunner({
   marker = randomUUID(),
   mode,
   port = 3175,
+  readinessDelayMs = 0,
+  serverMode = "listen",
   signalAfterSpawn = false,
-  signalBeforeSpawn = false
+  signalBeforeSpawn = false,
+  signalDuringReadiness = false
 }: {
   marker?: string;
   mode: "delay-zero" | "exit-one" | "exit-zero";
   port?: number;
+  readinessDelayMs?: number;
+  serverMode?: "listen" | "spawn-child";
   signalAfterSpawn?: boolean;
   signalBeforeSpawn?: boolean;
+  signalDuringReadiness?: boolean;
 }) {
   ownedMarkers.add(marker);
   const child = spawn(process.execPath, ["scripts/run-isolated-playwright.mjs"], {
@@ -46,14 +53,29 @@ function startTestRunner({
       PLAYWRIGHT_PORT: String(port),
       VOSIO_E2E_TEST_CHILD_MODE: mode,
       VOSIO_E2E_TEST_MARKER: marker,
+      VOSIO_E2E_TEST_READINESS_DELAY_MS: String(readinessDelayMs),
+      VOSIO_E2E_TEST_SERVER_MODE: serverMode,
       VOSIO_E2E_TEST_SIGNAL_AFTER_SPAWN: signalAfterSpawn ? "1" : "0",
       VOSIO_E2E_TEST_SIGNAL_BEFORE_SPAWN: signalBeforeSpawn ? "1" : "0",
+      VOSIO_E2E_TEST_SIGNAL_DURING_READINESS: signalDuringReadiness ? "1" : "0",
       VOSIO_E2E_TEST_SKIP_COPY: "1"
     },
     stdio: "ignore",
     windowsHide: true
   });
   return { child, exit: waitForExit(child), marker };
+}
+
+// isPortClosed verifies the runner released only the exact listener it started.
+async function isPortClosed(port: number) {
+  return new Promise<boolean>((resolve) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once("error", () => resolve(true));
+  });
 }
 
 // findMarkedWorkspace returns only a test workspace carrying this test's exact marker.
@@ -122,9 +144,10 @@ describe("isolated Playwright outer runner", () => {
   }, 15_000);
 
   it("cleans its workspace after successful and failed Playwright exits", async () => {
-    for (const [mode, expectedCode] of [["exit-zero", 0], ["exit-one", 1]] as const) {
-      const run = startTestRunner({ mode });
+    for (const [mode, expectedCode, port] of [["exit-zero", 0, 3175], ["exit-one", 1, 3176]] as const) {
+      const run = startTestRunner({ mode, port });
       await expect(run.exit).resolves.toMatchObject({ code: expectedCode });
+      await expect(isPortClosed(port)).resolves.toBe(true);
       await expect(findMarkedWorkspace(run.marker)).resolves.toBeNull();
     }
   });
@@ -136,24 +159,50 @@ describe("isolated Playwright outer runner", () => {
     await expect(findMarkedWorkspace(run.marker)).resolves.toBeNull();
   });
 
-  it("leaves only its ignored workspace when interruption makes child teardown unproven", async () => {
-    const run = startTestRunner({ mode: "delay-zero", signalAfterSpawn: true });
+  it("stops its owned server and cleans its workspace after an interrupted Playwright child", async () => {
+    const port = 3177;
+    const run = startTestRunner({ mode: "delay-zero", port, signalAfterSpawn: true });
 
     await expect(run.exit).resolves.toMatchObject({ code: 143 });
-    await expect(findMarkedWorkspace(run.marker)).resolves.not.toBeNull();
+    await expect(isPortClosed(port)).resolves.toBe(true);
+    await expect(findMarkedWorkspace(run.marker)).resolves.toBeNull();
   });
 
-  it("gives concurrent same-port runners different workspaces and independent cleanup", async () => {
-    const first = startTestRunner({ mode: "delay-zero", port: 3176 });
-    const second = startTestRunner({ mode: "delay-zero", port: 3176 });
+  it("allows only one same-port runner to reach Playwright through its owned readiness token", async () => {
+    const first = startTestRunner({ mode: "delay-zero", port: 3178 });
+    const second = startTestRunner({ mode: "delay-zero", port: 3178 });
     const firstWorkspace = await waitForMarkedWorkspace(first.marker);
     const secondWorkspace = await waitForMarkedWorkspace(second.marker);
 
     expect(firstWorkspace).not.toBe(secondWorkspace);
-    await expect(first.exit).resolves.toMatchObject({ code: 0 });
-    await expect(second.exit).resolves.toMatchObject({ code: 0 });
+    const results = await Promise.all([first.exit, second.exit]);
+    expect(results.map((result) => result.code).sort()).toEqual([0, 1]);
+    await expect(isPortClosed(3178)).resolves.toBe(true);
     await expect(findMarkedWorkspace(first.marker)).resolves.toBeNull();
     await expect(findMarkedWorkspace(second.marker)).resolves.toBeNull();
+  }, 10_000);
+
+  it("interrupts readiness immediately and cleans after its bounded owned-server stop", async () => {
+    const port = 3179;
+    const run = startTestRunner({
+      mode: "exit-zero",
+      port,
+      readinessDelayMs: 10_000,
+      signalDuringReadiness: true
+    });
+
+    await expect(run.exit).resolves.toMatchObject({ code: 143 });
+    await expect(isPortClosed(port)).resolves.toBe(true);
+    await expect(findMarkedWorkspace(run.marker)).resolves.toBeNull();
+  }, 5_000);
+
+  it("fails closed and retains its workspace when a descendant tree cannot be proven stopped", async () => {
+    const port = 3180;
+    const run = startTestRunner({ mode: "exit-zero", port, serverMode: "spawn-child" });
+
+    await expect(run.exit).resolves.toMatchObject({ code: 1 });
+    await expect(isPortClosed(port)).resolves.toBe(true);
+    await expect(findMarkedWorkspace(run.marker)).resolves.not.toBeNull();
   });
 
   it("rejects every cleanup path outside an exact mkdtemp workspace", () => {

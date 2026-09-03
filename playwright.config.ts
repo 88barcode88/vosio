@@ -21,13 +21,14 @@ if (process.env.VOSIO_PLAYWRIGHT_RUNNER !== "1") {
 }
 
 const playwrightPort = getPlaywrightPort();
-const isolatedProjectRoot = assertIsolatedPlaywrightWorkspace(
+assertIsolatedPlaywrightWorkspace(
   process.cwd(),
   process.env.VOSIO_PLAYWRIGHT_PROJECT_ROOT ?? ""
 );
-const nextProjectArgument = isolatedProjectRoot.replaceAll("\\", "/");
+if (process.env.VOSIO_PLAYWRIGHT_SERVER_READY !== "1") {
+  throw new Error("Run Playwright only after its runner-owned Next server is ready.");
+}
 const playwrightBaseUrl = `http://127.0.0.1:${playwrightPort}`;
-const isolatedDevCommand = `node node_modules/next/dist/bin/next dev "${nextProjectArgument}" --hostname 127.0.0.1 --port ${playwrightPort}`;
 
 export default defineConfig({
   expect: {
@@ -43,12 +44,6 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "on-first-retry",
     video: "retain-on-failure"
-  },
-  webServer: {
-    command: isolatedDevCommand,
-    reuseExistingServer: false,
-    timeout: 120_000,
-    url: playwrightBaseUrl
   },
   workers: process.env.CI ? 1 : undefined,
   projects: [
