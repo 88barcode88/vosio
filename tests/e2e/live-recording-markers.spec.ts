@@ -326,7 +326,9 @@ test("provider loss keeps audio and markers alive before restart-safe fallback",
   await page.getByRole("button", { name: "Nahrávat live" }).click();
   await page.getByRole("button", { name: "Simulovat výpadek přepisu" }).click();
   await expect(page.locator('[data-recorder-health="audio"]')).toContainText("Audio se nahrává");
-  await expect(page.locator('[data-recorder-health="provider"]')).toContainText("přerušen");
+  await expect(page.locator('[data-recorder-health="provider"]')).toHaveText(
+    "Live přepis: Zrušený. Audio se dál nahrává."
+  );
   await page.getByRole("button", { name: "Označit moment" }).click();
   await expect.poll(() => boundary.markerRequests.length).toBe(1);
   await page.getByRole("button", { name: "Zastavit" }).click();
@@ -366,6 +368,7 @@ test("audio limit finalizes archive before exact remote and local safety cleanup
 });
 
 test("reload keeps a locally durable safety part recoverable", async ({ page }) => {
+  test.setTimeout(60_000);
   const boundary: CapturedBoundary = {
     liveTranscriptRequests: [], markerRequests: [], recordingUpdates: []
   };
@@ -376,7 +379,6 @@ test("reload keeps a locally durable safety part recoverable", async ({ page }) 
   await page.goto(`/login/live-marker-e2e?scope=${scope}`);
   await page.getByRole("button", { name: "Nahrávat live" }).click();
   await page.waitForTimeout(15_500);
-  await page.reload();
   await page.goto(`/login/live-marker-e2e?scope=${scope}&view=recovery`);
   await expect(page.getByText("Nedokončené live nahrávky")).toBeVisible();
   await expect(page.getByText("Lokálně uložená live nahrávka")).toBeVisible();

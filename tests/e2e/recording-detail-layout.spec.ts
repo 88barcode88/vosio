@@ -28,8 +28,8 @@ function createSilentWav(durationSeconds = 2) {
   return buffer;
 }
 
-// stubSignedAudioUrl keeps the real private-source and media controls deterministic.
-async function stubSignedAudioUrl(page: Page) {
+// stubFixtureBoundaries keeps private audio and empty Chat activation deterministic.
+async function stubFixtureBoundaries(page: Page) {
   await page.route("**/api/recordings/*/audio", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -43,11 +43,18 @@ async function stubSignedAudioUrl(page: Page) {
   await page.route("https://media.vosio.test/recording-layout.wav", async (route) => {
     await route.fulfill({ body: createSilentWav(), contentType: "audio/wav", status: 200 });
   });
+  await page.route("**/api/transcripts/*/chat", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      json: { thread: null, turns: [] },
+      status: 200
+    });
+  });
 }
 
 // openFixture navigates to the guarded route after installing the private-audio seam.
 async function openFixture(page: Page, mode: FixtureMode = "blocks") {
-  await stubSignedAudioUrl(page);
+  await stubFixtureBoundaries(page);
   await page.goto(`/login/recording-layout-e2e?scope=${createFixtureScope()}&mode=${mode}`);
   await expect(page.locator(".recording-workbench")).toBeVisible();
 }
@@ -497,7 +504,8 @@ test("tabs support arrow, Home and End keyboard navigation", async ({ page }) =>
   await page.keyboard.press("ArrowRight");
   await expect(page.getByRole("tab", { name: "AI zpracování" })).toBeFocused();
   await page.keyboard.press("End");
-  await expect(page.getByRole("tab", { name: "Soubory" })).toBeFocused();
+  await expect(page.getByRole("tab", { name: "Chat" })).toBeFocused();
+  await expect(page.getByText("Zeptejte se na tento přepis.")).toBeVisible();
   await page.keyboard.press("Home");
   await expect(transcript).toBeFocused();
 });
