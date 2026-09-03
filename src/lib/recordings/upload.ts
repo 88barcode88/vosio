@@ -8,8 +8,13 @@ import {
 } from "@/lib/recordings/types";
 import {
   formatSafetyPartName,
-  getSafetyPartExtension
+  getSafetyPartExtension,
+  validateSafetyPartListing
 } from "@/lib/live-recording/safety-parts";
+import {
+  getDurableAudioPartKey,
+  type DurableSafetyManifest
+} from "@/lib/live-recording/durable-audio";
 import {
   createResumableRecordingUpload,
   RecordingUploadCancelledError,
@@ -422,6 +427,51 @@ export async function uploadLiveRecordingPart(input: LiveRecordingPartUploadInpu
   return { bytes: input.blob.size, reused: false, storagePath };
 }
 
+// removeRemoteDurableSafetyGeneration removes only confirmed uploaded parts from one exact manifest.
+export async function removeRemoteDurableSafetyGeneration(input: {
+  manifest: DurableSafetyManifest;
+}) {
+  const manifest = input.manifest;
+  const validatedParts = validateSafetyPartListing(manifest.parts).map(({ item }) => item);
+
+  if (
+    !manifest.ownerId ||
+    !manifest.recordingId ||
+    !manifest.generationId ||
+    validatedParts.length !== manifest.partCount ||
+    validatedParts.some((part) => (
+      part.ownerId !== manifest.ownerId ||
+      part.recordingId !== manifest.recordingId ||
+      part.generationId !== manifest.generationId ||
+      part.uploadedAt === null ||
+      part.key !== getDurableAudioPartKey(part) ||
+      part.name !== formatSafetyPartName(part.index, part.extension)
+    ))
+  ) {
+    throw new Error("Bezpečnostní části nemají potvrzenou identitu pro odstranění.");
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser();
+
+  if (userError || !user || user.id !== manifest.ownerId) {
+    throw new Error("Přihlášení vypršelo. Přihlaste se znovu.");
+  }
+
+  const storagePrefix = getLiveRecordingStoragePrefix(manifest.ownerId, manifest.recordingId);
+  const paths = validatedParts.map((part) => `${storagePrefix}${part.name}`);
+  const { data, error } = await supabase.storage.from(RECORDINGS_BUCKET).remove(paths);
+
+  if (error || (data ?? []).length !== paths.length) {
+    throw new Error("Úložiště nepotvrdilo odstranění všech bezpečnostních částí.");
+  }
+
+  return { removed: paths.length };
+}
+
 // completeLiveRecordingUpload marks one finalized live audio object as uploaded.
 export async function completeLiveRecordingUpload(input: {
   contentType: string;
@@ -431,7 +481,7 @@ export async function completeLiveRecordingUpload(input: {
   totalBytes: number;
 }) {
   const supabase = createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("recordings")
     .update({
       duration_seconds: input.durationSeconds,
@@ -441,11 +491,15 @@ export async function completeLiveRecordingUpload(input: {
       storage_path: input.storagePath
     })
     .eq("id", input.recording.id)
-    .eq("user_id", input.recording.userId);
+    .eq("user_id", input.recording.userId)
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
+  if (error || data?.id !== input.recording.id) {
     throw new Error("Audio je uložené, ale metadata nahrávky se neuložila.");
   }
+
+  return { id: data.id as string };
 }
 
 // completeLiveRecordingWithoutAudio converts an oversized live capture into a text-only recording.

@@ -29,6 +29,7 @@ import {
   InvalidSafetyPartListingError,
   validateSafetyPartListing
 } from "@/lib/live-recording/safety-parts";
+import { listStorageObjectsToExhaustion } from "@/lib/live-recording/recovery";
 
 const SEGMENTED_AUDIO_SOURCE = "supabase_recording_segment";
 
@@ -288,18 +289,18 @@ async function getLatestSegmentBatch(input: {
 }
 
 // listSegmentStoragePaths returns live recording segment objects under a Storage prefix.
-async function listSegmentStoragePaths(
+export async function listSegmentStoragePaths(
   admin: ReturnType<typeof createAdminClient>,
   storagePrefix: string
 ) {
   const folder = storagePrefix.replace(/\/$/, "");
-  const { data, error } = await admin.storage.from(RECORDINGS_BUCKET).list(folder);
+  const bucket = admin.storage.from(RECORDINGS_BUCKET);
+  const data = await listStorageObjectsToExhaustion({
+    folder,
+    listPage: (path, options) => bucket.list(path, options)
+  });
 
-  if (error) {
-    throw new Error(`Unable to list live recording segments: ${error.message}`);
-  }
-
-  return validateSafetyPartListing(data ?? []).map((part) => `${folder}/${part.name}`);
+  return validateSafetyPartListing(data).map((part) => `${folder}/${part.name}`);
 }
 
 // offsetSegmentTokenTimings shifts token timings by the cumulative duration of previous segments.

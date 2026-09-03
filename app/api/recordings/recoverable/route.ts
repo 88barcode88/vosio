@@ -5,6 +5,7 @@ import { RECORDINGS_BUCKET } from "@/lib/recordings/types";
 import {
   getLiveStorageListPrefix,
   getRecoverableLiveStoragePrefix,
+  listStorageObjectsToExhaustion,
   summarizeSafetyPartStorageObjects
 } from "@/lib/live-recording/recovery";
 import { InvalidSafetyPartListingError } from "@/lib/live-recording/safety-parts";
@@ -31,7 +32,7 @@ type TranscriptSummary = {
 };
 
 // summarizeStorageObjects returns compact metadata for live audio parts without signed URLs.
-async function summarizeStorageObjects(input: {
+export async function summarizeStorageObjects(input: {
   admin: ReturnType<typeof createAdminClient>;
   storagePrefix: string | null;
 }) {
@@ -39,15 +40,14 @@ async function summarizeStorageObjects(input: {
     return { count: 0, newestUpdatedAt: null, totalBytes: 0 } satisfies StorageObjectSummary;
   }
 
-  const { data, error } = await input.admin.storage
-    .from(RECORDINGS_BUCKET)
-    .list(getLiveStorageListPrefix(input.storagePrefix));
+  const folder = getLiveStorageListPrefix(input.storagePrefix);
+  const bucket = input.admin.storage.from(RECORDINGS_BUCKET);
+  const data = await listStorageObjectsToExhaustion({
+    folder,
+    listPage: (path, options) => bucket.list(path, options)
+  });
 
-  if (error) {
-    return { count: 0, newestUpdatedAt: null, totalBytes: 0 } satisfies StorageObjectSummary;
-  }
-
-  return summarizeSafetyPartStorageObjects(data ?? []) satisfies StorageObjectSummary;
+  return summarizeSafetyPartStorageObjects(data) satisfies StorageObjectSummary;
 }
 
 // summarizeTranscript reads only transcript metadata needed for recovery UI.
@@ -137,5 +137,5 @@ export async function GET() {
     (recording) => recording.segment_count > 0 || recording.transcript_chars > 0
   );
 
-  return NextResponse.json({ recordings });
+  return NextResponse.json({ ownerId: user.id, recordings });
 }

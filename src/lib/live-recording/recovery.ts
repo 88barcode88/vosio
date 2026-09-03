@@ -20,6 +20,19 @@ type SafetyPartStorageObject = {
   updated_at?: string | null;
 };
 
+type StorageListError = {
+  message: string;
+};
+
+type StorageListOptions = {
+  limit: number;
+  offset: number;
+  sortBy: {
+    column: "name";
+    order: "asc";
+  };
+};
+
 // getStorageObjectSize reads a finite non-negative byte count from Storage metadata.
 function getStorageObjectSize(item: SafetyPartStorageObject) {
   if (typeof item.metadata !== "object" || item.metadata === null || !("size" in item.metadata)) {
@@ -29,6 +42,38 @@ function getStorageObjectSize(item: SafetyPartStorageObject) {
   const size = (item.metadata as { size?: unknown }).size;
 
   return typeof size === "number" && Number.isFinite(size) && size >= 0 ? size : 0;
+}
+
+// listStorageObjectsToExhaustion collects every stable page before callers validate the sequence.
+export async function listStorageObjectsToExhaustion<T extends { name: string }>(input: {
+  folder: string;
+  listPage: (
+    folder: string,
+    options: StorageListOptions
+  ) => PromiseLike<{ data: T[] | null; error: StorageListError | null }>;
+  pageSize?: number;
+}) {
+  const pageSize = Math.max(1, Math.min(1_000, Math.floor(input.pageSize ?? 100)));
+  const items: T[] = [];
+
+  while (true) {
+    const { data, error } = await input.listPage(input.folder, {
+      limit: pageSize,
+      offset: items.length,
+      sortBy: { column: "name", order: "asc" }
+    });
+
+    if (error) {
+      throw new Error(`Unable to list live recording parts: ${error.message}`);
+    }
+
+    const page = data ?? [];
+    items.push(...page);
+
+    if (page.length < pageSize) {
+      return items;
+    }
+  }
 }
 
 // summarizeSafetyPartStorageObjects validates canonical parts before exposing recovery metadata.

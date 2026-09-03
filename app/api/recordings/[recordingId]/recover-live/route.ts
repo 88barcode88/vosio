@@ -10,6 +10,7 @@ import {
   getLiveStorageListPrefix,
   getRecoverableLiveStoragePrefix,
   isRecoverableLiveRecording,
+  listStorageObjectsToExhaustion,
   summarizeSafetyPartStorageObjects
 } from "@/lib/live-recording/recovery";
 import { InvalidSafetyPartListingError } from "@/lib/live-recording/safety-parts";
@@ -39,7 +40,7 @@ type SegmentSummary = {
 };
 
 // summarizeSegments counts recoverable live audio parts under one Storage prefix.
-async function summarizeSegments(input: {
+export async function summarizeSegments(input: {
   admin: ReturnType<typeof createAdminClient>;
   storagePrefix: string | null;
 }) {
@@ -47,15 +48,14 @@ async function summarizeSegments(input: {
     return { count: 0, totalBytes: 0 } satisfies SegmentSummary;
   }
 
-  const { data, error } = await input.admin.storage
-    .from(RECORDINGS_BUCKET)
-    .list(getLiveStorageListPrefix(input.storagePrefix));
+  const folder = getLiveStorageListPrefix(input.storagePrefix);
+  const bucket = input.admin.storage.from(RECORDINGS_BUCKET);
+  const data = await listStorageObjectsToExhaustion({
+    folder,
+    listPage: (path, options) => bucket.list(path, options)
+  });
 
-  if (error) {
-    throw new Error("Nepodařilo se načíst části live nahrávky.");
-  }
-
-  const summary = summarizeSafetyPartStorageObjects(data ?? []);
+  const summary = summarizeSafetyPartStorageObjects(data);
 
   return { count: summary.count, totalBytes: summary.totalBytes } satisfies SegmentSummary;
 }

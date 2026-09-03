@@ -1,5 +1,8 @@
 import type { FinalizedSafetyPart } from "@/lib/live-recording/rotating-safety-recorder";
-import { formatSafetyPartName } from "@/lib/live-recording/safety-parts";
+import {
+  formatSafetyPartName,
+  validateSafetyPartListing
+} from "@/lib/live-recording/safety-parts";
 
 const DURABLE_AUDIO_DATABASE_NAME = "vosio-live-audio";
 const DURABLE_AUDIO_DATABASE_VERSION = 1;
@@ -20,6 +23,17 @@ export type DurableAudioPartRecord = {
   recordingId: string;
   size: number;
   uploadedAt: string | null;
+};
+
+export type DurableSafetyManifest = {
+  createdAt: string;
+  generationId: string;
+  ownerId: string;
+  partCount: number;
+  parts: DurableAudioPartRecord[];
+  pendingPartCount: number;
+  recordingId: string;
+  totalBytes: number;
 };
 
 export type DurableAudioRepository = {
@@ -253,6 +267,73 @@ export async function promoteDurableSafetyParts(input: {
     },
     { failed: [] as string[], promoted: [] as string[] }
   );
+}
+
+// listDurableSafetyManifestsForOwner reconstructs validated recovery scopes from current-owner rows.
+export async function listDurableSafetyManifestsForOwner(input: {
+  ownerId: string;
+  repository?: DurableAudioRepository;
+}) {
+  const repository = input.repository ?? createIndexedDbDurableAudioRepository();
+  const rows = (await repository.listForOwner(input.ownerId))
+    .filter((row) => row.ownerId === input.ownerId);
+  const grouped = new Map<string, DurableAudioPartRecord[]>();
+
+  for (const row of rows) {
+    const groupKey = `${row.recordingId}\u0000${row.generationId}`;
+    const group = grouped.get(groupKey) ?? [];
+    group.push(row);
+    grouped.set(groupKey, group);
+  }
+
+  return [...grouped.values()].map((group) => {
+    const parts = validateSafetyPartListing(group).map(({ item }) => item);
+    const first = parts[0];
+
+    if (!first || parts.some((part) => (
+      part.ownerId !== input.ownerId ||
+      part.recordingId !== first.recordingId ||
+      part.generationId !== first.generationId ||
+      part.key !== getDurableAudioPartKey(part) ||
+      part.name !== formatSafetyPartName(part.index, part.extension) ||
+      part.size <= 0 ||
+      part.size !== part.blob.size
+    ))) {
+      throw new Error("Lokálně uložené části audia nemají platnou identitu.");
+    }
+
+    return {
+      createdAt: parts.reduce(
+        (earliest, part) => part.createdAt < earliest ? part.createdAt : earliest,
+        first.createdAt
+      ),
+      generationId: first.generationId,
+      ownerId: first.ownerId,
+      partCount: parts.length,
+      parts,
+      pendingPartCount: parts.filter((part) => part.uploadedAt === null).length,
+      recordingId: first.recordingId,
+      totalBytes: parts.reduce((total, part) => total + part.size, 0)
+    } satisfies DurableSafetyManifest;
+  }).sort((left, right) => (
+    right.createdAt.localeCompare(left.createdAt) ||
+    left.recordingId.localeCompare(right.recordingId) ||
+    left.generationId.localeCompare(right.generationId)
+  ));
+}
+
+// resumeDurableSafetyPartsForOwner discovers manifests before retrying pending uploads with a bound.
+export async function resumeDurableSafetyPartsForOwner(input: {
+  maxConcurrent?: number;
+  ownerId: string;
+  repository?: DurableAudioRepository;
+  uploadPart: (part: DurableAudioPartRecord) => Promise<void>;
+}) {
+  await listDurableSafetyManifestsForOwner(input);
+  const promotion = await promoteDurableSafetyParts(input);
+  const manifests = await listDurableSafetyManifestsForOwner(input);
+
+  return { manifests, ...promotion };
 }
 
 // cleanupDurableSafetyGeneration removes one promoted scope without touching another owner or retry generation.
