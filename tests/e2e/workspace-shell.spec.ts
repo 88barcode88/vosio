@@ -24,10 +24,23 @@ function fixturePath(view: FixtureView, scope = createFixtureScope()) {
 async function expectNoHorizontalOverflow(page: Page) {
   const overflow = await page.evaluate(() => {
     const shell = document.querySelector<HTMLElement>(".workspace-shell")!;
+    const isInsideHorizontalScroller = (element: HTMLElement) => {
+      let ancestor = element.parentElement;
+      while (ancestor && ancestor !== shell) {
+        const style = getComputedStyle(ancestor);
+        if (["auto", "scroll"].includes(style.overflowX)
+          && ancestor.scrollWidth > ancestor.clientWidth + 1) {
+          return true;
+        }
+        ancestor = ancestor.parentElement;
+      }
+      return false;
+    };
     return {
       document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       offenders: Array.from(shell.querySelectorAll<HTMLElement>("*"))
-        .filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
+        .filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1
+          && !isInsideHorizontalScroller(element))
         .slice(0, 6)
         .map((element) => ({ className: element.className, right: element.getBoundingClientRect().right }))
     };

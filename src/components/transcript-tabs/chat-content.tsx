@@ -67,6 +67,7 @@ function mergeChatTurn(turns: SafeRecordingChatTurn[], nextTurn: SafeRecordingCh
 // ChatContent loads and submits the single persisted transcript chat without sending transcript audio or context.
 export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }: ChatContentProps) {
   const [history, setHistory] = useState<ChatHistory>(emptyHistory);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [draft, setDraft] = useState("");
@@ -117,7 +118,9 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     }
   }, [updatePendingSubmission]);
 
+  // This hydration gate prevents pre-hydration form changes from being overwritten by the first controlled render.
   useEffect(() => {
+    setIsHydrated(true);
     activeTranscriptRef.current = activeTranscriptId;
     setHistory(emptyHistory);
     setDraft("");
@@ -157,7 +160,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
 
   const hasServerRunningTurn = history.turns.some((turn) => turn.status === "queued" || turn.status === "running");
   const hasPendingSubmission = pendingSubmission?.transcriptId === activeTranscriptId;
-  const isComposerDisabled = !activeTranscriptId || isLoading || isSubmitting || hasServerRunningTurn || transportUncertain || hasPendingSubmission;
+  const isComposerDisabled = !isHydrated || !activeTranscriptId || isLoading || isSubmitting || hasServerRunningTurn || transportUncertain || hasPendingSubmission;
 
   useEffect(() => {
     if (!activeTranscriptId || !hasServerRunningTurn) {
@@ -327,10 +330,13 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     event.preventDefault();
     const question = draft.trim();
     if (!activeTranscriptId || !question || isComposerDisabled) return;
+    const submittedModel = new FormData(event.currentTarget).get("model");
 
     const pending = {
       clientTurnId: crypto.randomUUID(),
-      model,
+      model: typeof submittedModel === "string" && getAiModelOption(submittedModel)
+        ? submittedModel
+        : model,
       question,
       transcriptId: activeTranscriptId
     };
@@ -385,7 +391,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
         <div className="recording-chat-composer-controls">
           <label>
             Model
-            <select disabled={isComposerDisabled} onChange={(event) => setModel(event.currentTarget.value)} value={model}>
+            <select disabled={isComposerDisabled} name="model" onChange={(event) => setModel(event.currentTarget.value)} value={model}>
               {aiModelOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
           </label>

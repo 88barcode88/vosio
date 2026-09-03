@@ -2,6 +2,7 @@
 
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatContent } from "@/components/transcript-tabs/chat-content";
 
@@ -49,6 +50,18 @@ afterEach(async () => {
 });
 
 describe("recording chat content", () => {
+  it("keeps the server-rendered composer disabled until React owns its controls", () => {
+    const host = document.createElement("div");
+    host.innerHTML = renderToString(createElement(ChatContent, {
+      activeTranscriptId: transcriptId,
+      defaultModel: "gpt-5.6-terra",
+      onOpenEvidence: vi.fn()
+    }));
+
+    expect(host.querySelector<HTMLSelectElement>("select")?.disabled).toBe(true);
+    expect(host.querySelector<HTMLTextAreaElement>("textarea")?.disabled).toBe(true);
+  });
+
   it("shows a no-transcript state without loading history", async () => {
     await renderChat(null);
 
@@ -123,6 +136,37 @@ describe("recording chat content", () => {
       body: JSON.stringify({
         clientTurnId: "00000000-0000-4000-8000-000000000003",
         model: "gpt-5.6-terra",
+        question: "Jaký je další krok?"
+      }),
+      method: "POST"
+    }));
+  });
+
+  it("submits the model selected immediately before the form submit", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ thread: null, turns: [] }) as never)
+      .mockResolvedValueOnce(response({
+        thread: { id: "thread-1", transcriptId },
+        turn: {
+          answerMarkdown: "Ano",
+          clientTurnId: "00000000-0000-4000-8000-000000000003",
+          evidence: [], id: "turn-1", model: "gpt-5.6-sol", provider: "openai",
+          question: "Jaký je další krok?", safeError: null, status: "completed", usage: { inputTokens: null, outputTokens: null }
+        }
+      }) as never);
+    await renderChat();
+    const textarea = container?.querySelector<HTMLTextAreaElement>("textarea");
+    const modelPicker = container?.querySelector<HTMLSelectElement>("select");
+    const form = container?.querySelector<HTMLFormElement>("form");
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "Jaký je další krok?");
+    await act(async () => textarea?.dispatchEvent(new Event("input", { bubbles: true })));
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(modelPicker, "gpt-5.6-sol");
+    await act(async () => form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+
+    expect(fetch).toHaveBeenLastCalledWith(`/api/transcripts/${transcriptId}/chat`, expect.objectContaining({
+      body: JSON.stringify({
+        clientTurnId: "00000000-0000-4000-8000-000000000003",
+        model: "gpt-5.6-sol",
         question: "Jaký je další krok?"
       }),
       method: "POST"
