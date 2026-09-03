@@ -140,6 +140,55 @@ describe("transcription provider failure settlement", () => {
     });
   });
 
+  it("redacts query credentials, signed URLs, and credential-like headers while keeping context", async () => {
+    const jobs = createWriteQuery();
+    const recording = createWriteQuery();
+    const admin = { from: vi.fn((table: string) => table === "transcription_jobs" ? jobs : recording) };
+
+    await settleTranscriptionProviderFailure({
+      admin: admin as never,
+      jobIds: ["job-sensitive"],
+      providerError: new Error([
+        "Soniox upload failed with status 403",
+        "https://api.test/upload?token=token-secret&api_key=key-secret&region=eu",
+        "https://storage.test/audio?X-Amz-Credential=credential-secret&X-Amz-Signature=signature-secret",
+        "Authorization: Basic auth-secret",
+        "X-API-Key: header-secret"
+      ].join("\n")),
+      recordingId: "recording-1",
+      userId: "user-1"
+    });
+
+    expect(jobs.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: [
+        "Soniox upload failed with status 403",
+        "https://api.test/upload?token=***&api_key=***&region=eu",
+        "https://storage.test/audio?X-Amz-Credential=***&X-Amz-Signature=***",
+        "Authorization: ***",
+        "X-API-Key: ***"
+      ].join(" ")
+    }));
+  });
+
+  it("bounds provider diagnostics without removing useful noncredential context", async () => {
+    const jobs = createWriteQuery();
+    const recording = createWriteQuery();
+    const admin = { from: vi.fn((table: string) => table === "transcription_jobs" ? jobs : recording) };
+    const context = "Soniox timeout in eu region after 30 seconds: ";
+
+    await settleTranscriptionProviderFailure({
+      admin: admin as never,
+      jobIds: ["job-long"],
+      providerError: new Error(`${context}${"x".repeat(600)}`),
+      recordingId: "recording-1",
+      userId: "user-1"
+    });
+
+    const persisted = jobs.update.mock.calls[0]?.[0]?.error_message as string;
+    expect(persisted).toHaveLength(500);
+    expect(persisted).toMatch(/^Soniox timeout in eu region after 30 seconds: /);
+  });
+
   it("fails every job in one affected segmented batch without rewriting audio metadata", async () => {
     const jobs = createWriteQuery();
     const recording = createWriteQuery();

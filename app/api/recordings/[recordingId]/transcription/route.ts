@@ -70,6 +70,15 @@ function getSafeTranscriptionProviderDetail(error: unknown) {
       ? error
       : "Soniox provider failure";
   const sanitized = detail
+    .replace(
+      /([?&](?:access[_-]?token|api[_-]?key|apikey|auth(?:orization)?|awsaccesskeyid|client[_-]?secret|credential|googleaccessid|id[_-]?token|jwt|key|password|refresh[_-]?token|secret|session|sig(?:nature)?|token|x-amz-(?:credential|security-token|signature)|x-goog-(?:credential|signature))=)[^&#\s]*/gi,
+      "$1***"
+    )
+    .replace(
+      /\b((?:access[_-]?token|api[_-]?key|apikey|authorization|proxy-authorization|client[_-]?secret|credential|id[_-]?token|password|refresh[_-]?token|secret|session|signature|token|x-access-token|x-api-key|x-auth-token|x-amz-(?:credential|security-token|signature)|x-goog-(?:credential|signature))\s*[:=]\s*)(?:(?:basic|bearer|digest)\s+)?(?:"[^"]*"|'[^']*'|[^\s,;&#]+)/gi,
+      "$1***"
+    )
+    .replace(/\b((?:cookie|set-cookie)\s*:\s*)[^\r\n]*/gi, "$1***")
     .replace(/sk-[A-Za-z0-9_-]+/g, "sk-***")
     .replace(/AIza[0-9A-Za-z_-]+/g, "AIza***")
     .replace(/Bearer\s+[^\s]+/gi, "Bearer ***")
