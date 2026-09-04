@@ -10,13 +10,19 @@ type TrackFixture = MediaStreamTrack & {
   stop: ReturnType<typeof vi.fn>;
 };
 
-// createTrackFixture returns a cloneable EventTarget-backed audio track for ownership tests.
-function createTrackFixture(id: string): TrackFixture {
+// createTrackFixture returns an EventTarget-backed media track for ownership tests.
+function createTrackFixture(
+  id: string,
+  kind: "audio" | "video" = "audio",
+  displaySurface = kind === "video" ? "browser" : undefined
+): TrackFixture {
   const track = new EventTarget() as TrackFixture;
 
   Object.assign(track, {
+    getSettings: vi.fn(() => displaySurface ? { displaySurface } : {}),
     id,
-    kind: "audio",
+    kind,
+    muted: false,
     readyState: "live",
     stop: vi.fn()
   });
@@ -43,6 +49,14 @@ function createMasterStreamFixture() {
   } as unknown as MediaStream;
 
   return { clones, masterStream, masterTrack };
+}
+
+// createStreamFixture exposes the supplied raw capture tracks without cloning them.
+function createStreamFixture(tracks: TrackFixture[]) {
+  return {
+    getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === "audio")),
+    getTracks: vi.fn(() => [...tracks])
+  } as unknown as MediaStream;
 }
 
 class MediaRecorderFixture extends EventTarget {
@@ -127,6 +141,242 @@ describe("shared live audio source", () => {
     session.close();
     expect(soniox.track.stop).toHaveBeenCalledOnce();
     expect(fixture.masterTrack.stop).toHaveBeenCalledOnce();
+  });
+
+  it("mixes microphone and selected tab audio into one leased master stream", async () => {
+    const microphoneTrack = createTrackFixture("microphone");
+    const tabAudioTrack = createTrackFixture("tab-audio");
+    const tabVideoTrack = createTrackFixture("tab-video", "video");
+    const microphoneStream = createStreamFixture([microphoneTrack]);
+    const displayStream = createStreamFixture([tabAudioTrack, tabVideoTrack]);
+    const mixed = createMasterStreamFixture();
+    const events: string[] = [];
+    const mixer = {
+      mix: vi.fn(() => {
+        events.push("mix");
+        return mixed.masterStream;
+      }),
+      close: vi.fn(),
+      ready: Promise.resolve()
+    };
+    const getDisplayMedia = vi.fn((_constraints: DisplayMediaStreamOptions) => {
+      events.push("display");
+      return Promise.resolve(displayStream);
+    });
+    const getUserMedia = vi.fn(() => {
+      events.push("microphone");
+      return Promise.resolve(microphoneStream);
+    });
+    const createAudioMixer = vi.fn(() => {
+      events.push("mixer");
+      return mixer;
+    });
+
+    const session = await acquireSharedAudioSession({
+      captureMode: "microphone_and_tab",
+      createAudioMixer,
+      getDisplayMedia,
+      getUserMedia
+    });
+    const archive = session.lease("archive");
+    const soniox = session.lease("soniox");
+
+    expect(events).toEqual(["mixer", "display", "microphone", "mix"]);
+    expect(getDisplayMedia).toHaveBeenCalledOnce();
+    expect(getDisplayMedia.mock.calls[0]?.[0]).toMatchObject({
+      audio: { suppressLocalAudioPlayback: false },
+      video: { displaySurface: "browser" }
+    });
+    expect(mixer.mix).toHaveBeenCalledWith(microphoneStream, displayStream);
+    expect(archive.track).not.toBe(soniox.track);
+    expect(archive.track).not.toBe(microphoneTrack);
+    expect(archive.track).not.toBe(tabAudioTrack);
+
+    session.close();
+    expect(archive.track.stop).toHaveBeenCalledOnce();
+    expect(soniox.track.stop).toHaveBeenCalledOnce();
+    expect(microphoneTrack.stop).toHaveBeenCalledOnce();
+    expect(tabAudioTrack.stop).toHaveBeenCalledOnce();
+    expect(tabVideoTrack.stop).toHaveBeenCalledOnce();
+    expect(mixed.masterTrack.stop).toHaveBeenCalledOnce();
+    expect(mixer.close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a selected tab without shared audio before acquiring the microphone", async () => {
+    const tabVideoTrack = createTrackFixture("tab-video", "video");
+    const displayStream = createStreamFixture([tabVideoTrack]);
+    const mixer = { mix: vi.fn(), close: vi.fn(), ready: Promise.resolve() };
+    const getUserMedia = vi.fn();
+
+    await expect(acquireSharedAudioSession({
+      captureMode: "microphone_and_tab",
+      createAudioMixer: () => mixer,
+      getDisplayMedia: vi.fn().mockResolvedValue(displayStream),
+      getUserMedia
+    })).rejects.toThrow(/Sdílet také zvuk karty/u);
+
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(tabVideoTrack.stop).toHaveBeenCalledOnce();
+    expect(mixer.close).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a non-tab surface even when it exposes system audio", async () => {
+    const systemAudioTrack = createTrackFixture("system-audio");
+    const windowVideoTrack = createTrackFixture("window-video", "video", "window");
+    const displayStream = createStreamFixture([systemAudioTrack, windowVideoTrack]);
+    const mixer = { mix: vi.fn(), close: vi.fn(), ready: Promise.resolve() };
+    const getUserMedia = vi.fn();
+
+    await expect(acquireSharedAudioSession({
+      captureMode: "microphone_and_tab",
+      createAudioMixer: () => mixer,
+      getDisplayMedia: vi.fn().mockResolvedValue(displayStream),
+      getUserMedia
+    })).rejects.toThrow(/přímo kartu/u);
+
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(systemAudioTrack.stop).toHaveBeenCalledOnce();
+    expect(windowVideoTrack.stop).toHaveBeenCalledOnce();
+  });
+
+  it("turns a canceled tab picker into an actionable safe error", async () => {
+    const pickerError = Object.assign(new Error("Permission denied"), { name: "NotAllowedError" });
+    const mixer = { mix: vi.fn(), close: vi.fn(), ready: Promise.resolve() };
+
+    await expect(acquireSharedAudioSession({
+      captureMode: "microphone_and_tab",
+      createAudioMixer: () => mixer,
+      getDisplayMedia: vi.fn().mockRejectedValue(pickerError),
+      getUserMedia: vi.fn()
+    })).rejects.toThrow(/Sdílení zvuku karty nebylo potvrzené/u);
+
+    expect(mixer.close).toHaveBeenCalledOnce();
+  });
+
+  it("cleans the selected tab when microphone acquisition fails", async () => {
+    const tabAudioTrack = createTrackFixture("tab-audio");
+    const tabVideoTrack = createTrackFixture("tab-video", "video");
+    const displayStream = createStreamFixture([tabAudioTrack, tabVideoTrack]);
+    const mixer = { mix: vi.fn(), close: vi.fn(), ready: Promise.resolve() };
+
+    await expect(acquireSharedAudioSession({
+      captureMode: "microphone_and_tab",
+      createAudioMixer: () => mixer,
+      getDisplayMedia: vi.fn().mockResolvedValue(displayStream),
+      getUserMedia: vi.fn().mockRejectedValue(new Error("microphone denied"))
+    })).rejects.toThrow("microphone denied");
+
+    expect(tabAudioTrack.stop).toHaveBeenCalledOnce();
+    expect(tabVideoTrack.stop).toHaveBeenCalledOnce();
+    expect(mixer.close).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when the selected tab ends while microphone permission is pending", async () => {
+    const tabAudioTrack = createTrackFixture("tab-audio");
+    const tabVideoTrack = createTrackFixture("tab-video", "video");
+    const microphoneTrack = createTrackFixture("microphone");
+    let resolveMicrophone!: (stream: MediaStream) => void;
+    const microphonePromise = new Promise<MediaStream>((resolve) => {
+      resolveMicrophone = resolve;
+    });
+    const mixer = { mix: vi.fn(), close: vi.fn(), ready: Promise.resolve() };
+    const acquisition = acquireSharedAudioSession({
+      captureMode: "microphone_and_tab",
+      createAudioMixer: () => mixer,
+      getDisplayMedia: vi.fn().mockResolvedValue(createStreamFixture([tabAudioTrack, tabVideoTrack])),
+      getUserMedia: vi.fn(() => microphonePromise)
+    });
+
+    await Promise.resolve();
+    Object.assign(tabAudioTrack, { readyState: "ended" });
+    resolveMicrophone(createStreamFixture([microphoneTrack]));
+
+    await expect(acquisition).rejects.toThrow(/sdílení zvuku karty skončilo/ui);
+    expect(mixer.mix).not.toHaveBeenCalled();
+    expect(microphoneTrack.stop).toHaveBeenCalledOnce();
+    expect(tabAudioTrack.stop).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when the Web Audio mixer cannot reach running state", async () => {
+    const tabAudioTrack = createTrackFixture("tab-audio");
+    const tabVideoTrack = createTrackFixture("tab-video", "video");
+    const microphoneTrack = createTrackFixture("microphone");
+    const mixer = {
+      close: vi.fn(),
+      mix: vi.fn(),
+      ready: Promise.reject(new Error("Míchání zvuku se nepodařilo aktivovat."))
+    };
+
+    await expect(acquireSharedAudioSession({
+      captureMode: "microphone_and_tab",
+      createAudioMixer: () => mixer,
+      getDisplayMedia: vi.fn().mockResolvedValue(createStreamFixture([tabAudioTrack, tabVideoTrack])),
+      getUserMedia: vi.fn().mockResolvedValue(createStreamFixture([microphoneTrack]))
+    })).rejects.toThrow(/Míchání zvuku/u);
+
+    expect(mixer.mix).not.toHaveBeenCalled();
+    expect(microphoneTrack.stop).toHaveBeenCalledOnce();
+    expect(tabAudioTrack.stop).toHaveBeenCalledOnce();
+    expect(mixer.close).toHaveBeenCalledOnce();
+  });
+
+  it("reports an ended raw input once and suppresses shutdown events", async () => {
+    const microphoneTrack = createTrackFixture("microphone");
+    const tabAudioTrack = createTrackFixture("tab-audio");
+    const tabVideoTrack = createTrackFixture("tab-video", "video");
+    const mixed = createMasterStreamFixture();
+    const session = await acquireSharedAudioSession({
+      captureMode: "microphone_and_tab",
+      createAudioMixer: () => ({
+        close: vi.fn(),
+        mix: () => mixed.masterStream,
+        ready: Promise.resolve()
+      }),
+      getDisplayMedia: vi.fn().mockResolvedValue(createStreamFixture([tabAudioTrack, tabVideoTrack])),
+      getUserMedia: vi.fn().mockResolvedValue(createStreamFixture([microphoneTrack]))
+    });
+    const onSourceEnded = vi.fn();
+
+    session.onSourceEnded(onSourceEnded);
+    tabVideoTrack.dispatchEvent(new Event("ended"));
+    tabAudioTrack.dispatchEvent(new Event("ended"));
+
+    expect(onSourceEnded).toHaveBeenCalledOnce();
+    expect(onSourceEnded).toHaveBeenCalledWith("shared_tab");
+
+    session.close();
+    microphoneTrack.dispatchEvent(new Event("ended"));
+    expect(onSourceEnded).toHaveBeenCalledOnce();
+  });
+
+  it("reports independent raw input mute and unmute state", async () => {
+    const microphoneTrack = createTrackFixture("microphone");
+    const tabAudioTrack = createTrackFixture("tab-audio");
+    const tabVideoTrack = createTrackFixture("tab-video", "video");
+    const mixed = createMasterStreamFixture();
+    const session = await acquireSharedAudioSession({
+      captureMode: "microphone_and_tab",
+      createAudioMixer: () => ({
+        close: vi.fn(),
+        mix: () => mixed.masterStream,
+        ready: Promise.resolve()
+      }),
+      getDisplayMedia: vi.fn().mockResolvedValue(createStreamFixture([tabAudioTrack, tabVideoTrack])),
+      getUserMedia: vi.fn().mockResolvedValue(createStreamFixture([microphoneTrack]))
+    });
+    const onSourceMuted = vi.fn();
+
+    session.onSourceMuted(onSourceMuted);
+    tabAudioTrack.dispatchEvent(new Event("mute"));
+    microphoneTrack.dispatchEvent(new Event("mute"));
+    tabAudioTrack.dispatchEvent(new Event("unmute"));
+
+    expect(onSourceMuted.mock.calls).toEqual([
+      ["shared_tab", true],
+      ["microphone", true],
+      ["shared_tab", false]
+    ]);
+    session.close();
   });
 
   it("rejects duplicate active lease names", async () => {

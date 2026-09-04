@@ -11,6 +11,7 @@ import type {
 } from "@/lib/live-recording/durable-audio";
 
 const recordingId = "12a31215-9b8f-4c68-9e2f-89f4d31f96b0";
+const defaultUserAgent = navigator.userAgent;
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -170,18 +171,52 @@ class MediaRecorderFixture {
   }
 }
 
-// createMasterStream returns one cloneable physical microphone fixture.
-function createMasterStream() {
-  const createTrack = () => Object.assign(new EventTarget(), {
+// createCaptureTrack returns one cloneable raw media track fixture.
+function createCaptureTrack(kind: "audio" | "video" = "audio") {
+  const track = Object.assign(new EventTarget(), {
     clone: vi.fn(),
-    kind: "audio",
+    getSettings: vi.fn(() => kind === "video" ? { displaySurface: "browser" } : {}),
+    kind,
     muted: false,
     readyState: "live",
     stop: vi.fn()
   }) as unknown as MediaStreamTrack;
-  const master = createTrack();
-  vi.mocked(master.clone).mockImplementation(createTrack);
+
+  vi.mocked(track.clone).mockImplementation(() => createCaptureTrack(kind));
+  return track;
+}
+
+// createMasterStream returns one cloneable physical microphone fixture.
+function createMasterStream() {
+  const master = createCaptureTrack();
   return new MediaStreamFixture([master]) as unknown as MediaStream;
+}
+
+// createAudioContextFixture produces a mixed destination stream without browser Web Audio.
+function createAudioContextFixture() {
+  return class AudioContextFixture {
+    state = "running";
+
+    // createMediaStreamDestination exposes the mixed master used by all recorder branches.
+    createMediaStreamDestination() {
+      return { stream: createMasterStream() };
+    }
+
+    // createMediaStreamSource returns a connectable node for either raw input.
+    createMediaStreamSource() {
+      return { connect: vi.fn(), disconnect: vi.fn() };
+    }
+
+    // close releases the fake audio graph.
+    close() {
+      return Promise.resolve();
+    }
+
+    // resume keeps the fake graph in its already-running state.
+    resume() {
+      return Promise.resolve();
+    }
+  };
 }
 
 // createProviderRecording exposes deterministic Soniox lifecycle callbacks.
@@ -275,6 +310,19 @@ function findMode(value: string) {
   return document.querySelector<HTMLInputElement>(`input[name="liveSaveMode"][value="${value}"]`);
 }
 
+// findAudioSource returns one rendered capture-source radio by its stable value.
+function findAudioSource(value: string) {
+  return document.querySelector<HTMLInputElement>(`input[name="liveAudioCaptureMode"][value="${value}"]`);
+}
+
+// useDesktopChromeUserAgent enables the production-supported shared-tab browser family.
+function useDesktopChromeUserAgent() {
+  Object.defineProperty(navigator, "userAgent", {
+    configurable: true,
+    value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0.0.0 Safari/537.36"
+  });
+}
+
 let container: HTMLDivElement;
 let root: Root | null;
 
@@ -289,6 +337,10 @@ beforeEach(() => {
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
     value: { getUserMedia: vi.fn().mockResolvedValue(createMasterStream()) }
+  });
+  Object.defineProperty(navigator, "userAgent", {
+    configurable: true,
+    value: defaultUserAgent
   });
   mocks.createLiveRecordingDraft.mockResolvedValue({
     id: recordingId,
@@ -345,6 +397,192 @@ afterEach(async () => {
 });
 
 describe("BrowserRecorder modes", () => {
+  it("defaults desktop browsers to microphone plus shared-tab audio", async () => {
+    const getUserMedia = vi.fn().mockResolvedValue(createMasterStream());
+    const getDisplayMedia = vi.fn();
+
+    useDesktopChromeUserAgent();
+    vi.stubGlobal("AudioContext", createAudioContextFixture());
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getDisplayMedia, getUserMedia }
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+      await flushPromises();
+    });
+
+    expect(findAudioSource("microphone_and_tab")?.checked).toBe(true);
+    expect(findAudioSource("microphone")?.checked).toBe(false);
+    expect(container.textContent).toContain("Sdílet také zvuk karty");
+  });
+
+  it("disables shared-tab capture when Web Audio mixing is unavailable", async () => {
+    useDesktopChromeUserAgent();
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getDisplayMedia: vi.fn(),
+        getUserMedia: vi.fn().mockResolvedValue(createMasterStream())
+      }
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+      await flushPromises();
+    });
+
+    expect(findAudioSource("microphone")?.checked).toBe(true);
+    expect(findAudioSource("microphone_and_tab")?.disabled).toBe(true);
+  });
+
+  it("does not advertise shared-tab audio in an unverified desktop browser", async () => {
+    vi.stubGlobal("AudioContext", createAudioContextFixture());
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getDisplayMedia: vi.fn(),
+        getUserMedia: vi.fn().mockResolvedValue(createMasterStream())
+      }
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+      await flushPromises();
+    });
+
+    expect(findAudioSource("microphone")?.checked).toBe(true);
+    expect(findAudioSource("microphone_and_tab")?.disabled).toBe(true);
+  });
+
+  it("keeps microphone-only selected when shared-tab capture is unavailable", async () => {
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+    });
+
+    expect(findAudioSource("microphone")?.checked).toBe(true);
+    expect(findAudioSource("microphone_and_tab")?.disabled).toBe(true);
+  });
+
+  it("returns to idle without a draft when the shared-tab picker is canceled", async () => {
+    const getUserMedia = vi.fn().mockResolvedValue(createMasterStream());
+    const pickerError = Object.assign(new Error("Permission denied"), { name: "NotAllowedError" });
+
+    useDesktopChromeUserAgent();
+    vi.stubGlobal("AudioContext", createAudioContextFixture());
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getDisplayMedia: vi.fn().mockRejectedValue(pickerError),
+        getUserMedia
+      }
+    });
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+      await flushPromises();
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(20);
+    });
+
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(mocks.createLiveRecordingDraft).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Sdílení zvuku karty nebylo potvrzené");
+    expect(document.querySelector("[data-recording-status]")?.getAttribute("data-recording-status"))
+      .toBe("idle");
+  });
+
+  it("stops and saves the current audio when shared-tab capture ends", async () => {
+    const provider = createProviderRecording();
+    const tabAudioTrack = createCaptureTrack("audio");
+    const tabVideoTrack = createCaptureTrack("video");
+    const displayStream = new MediaStreamFixture([
+      tabAudioTrack,
+      tabVideoTrack
+    ]) as unknown as MediaStream;
+
+    useDesktopChromeUserAgent();
+    vi.stubGlobal("AudioContext", createAudioContextFixture());
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getDisplayMedia: vi.fn().mockResolvedValue(displayStream),
+        getUserMedia: vi.fn().mockResolvedValue(createMasterStream())
+      }
+    });
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+      await flushPromises();
+    });
+    expect(findAudioSource("microphone_and_tab")?.checked).toBe(true);
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(20);
+      provider.emit("state_change", { new_state: "recording" });
+    });
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+
+    await act(async () => tabAudioTrack.dispatchEvent(new Event("mute")));
+    expect(container.textContent).toContain("Zvuk sdílené karty je dočasně ztlumený");
+    await act(async () => tabAudioTrack.dispatchEvent(new Event("unmute")));
+    expect(container.textContent).not.toContain("Zvuk sdílené karty je dočasně ztlumený");
+
+    await act(async () => {
+      tabVideoTrack.dispatchEvent(new Event("ended"));
+      await flushPromises(30);
+    });
+
+    expect(mocks.completeLiveRecordingUpload).toHaveBeenCalledOnce();
+    expect(document.querySelector("[data-recording-status]")?.getAttribute("data-recording-status"))
+      .toBe("idle");
+  });
+
+  it("identifies microphone loss while safely finalizing microphone-only capture", async () => {
+    const provider = createProviderRecording();
+    const microphoneTrack = createCaptureTrack("audio");
+    const completion = createDeferred<{ id: string }>();
+
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue(
+          new MediaStreamFixture([microphoneTrack]) as unknown as MediaStream
+        )
+      }
+    });
+    mocks.completeLiveRecordingUpload.mockImplementation(() => completion.promise);
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+
+    await act(async () => {
+      root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />);
+      await flushPromises();
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(20);
+      provider.emit("state_change", { new_state: "recording" });
+    });
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+
+    await act(async () => {
+      microphoneTrack.dispatchEvent(new Event("ended"));
+      await flushPromises(20);
+    });
+
+    expect(container.textContent).toContain("Mikrofon se odpojil");
+    await act(async () => {
+      completion.resolve({ id: recordingId });
+      await flushPromises(30);
+    });
+    expect(document.querySelector("[data-recording-status]")?.getAttribute("data-recording-status"))
+      .toBe("idle");
+  });
+
   it.each([false, true])(
     "renders separate audio and provider health while capture is %s compact",
     async (compact) => {

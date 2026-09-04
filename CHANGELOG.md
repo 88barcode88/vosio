@@ -4,6 +4,16 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-04
+
+### Added
+
+- Desktopové live nahrávání umí smíchat mikrofon se zvukem vybrané karty hovoru do jednoho zdroje pro archiv, Soniox i safety části.
+
+### Fixed
+
+- Zrušený výběr karty nebo karta bez sdíleného audia už tiše nepokračuje jen s mikrofonem a zánik vstupu během hovoru bezpečně zastaví a uloží dosavadní nahrávku.
+
 ## [0.2.0] - 2026-09-04
 
 ### Added

@@ -311,7 +311,12 @@ export function isSafeRecordingStartErrorMessage(message: string) {
     "EU region Soniox",
     "Soniox API key",
     "Soniox nevydal",
-    "Nepovedlo se získat"
+    "Nepovedlo se získat",
+    "Míchání mikrofonu",
+    "Míchání zvuku",
+    "Sdílení zvuku karty",
+    "Vybraná karta",
+    "Vybraný zdroj"
   ].some((prefix) => message.startsWith(prefix));
 }
 

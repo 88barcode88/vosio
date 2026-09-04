@@ -95,6 +95,8 @@ import {
 import {
   acquireSharedAudioSession,
   createSonioxAudioSource,
+  type LiveAudioCaptureMode,
+  type SharedAudioInputName,
   type SharedAudioSession,
   type SharedAudioTrackLease,
   type SonioxAudioSource
@@ -130,6 +132,7 @@ type RecorderFeedback = {
 };
 
 type RecorderLifecyclePhase = RecorderStatus | "unmounted";
+type RecorderStopReason = "audio_limit" | "manual" | "microphone_ended" | "shared_tab_ended";
 
 type PendingLiveDraftSession = {
   cleanupScheduled: boolean;
@@ -191,7 +194,37 @@ function hasFailedTranscriptionJob(payload: unknown) {
   return Boolean(job && typeof job === "object" && "status" in job && job.status === "failed");
 }
 
-// BrowserRecorder captures microphone audio and can save audio plus transcript or transcript text only.
+// canUseSharedTabAudio limits call capture to desktop browsers with both required media APIs.
+function canUseSharedTabAudio() {
+  if (typeof navigator === "undefined" || typeof window === "undefined") {
+    return false;
+  }
+
+  const mobileBrowser = /Android|iPhone|iPad|iPod/u.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const supportedChromiumBrowser = /(?:Chrome|Chromium|Edg)\//u.test(navigator.userAgent);
+
+  return !mobileBrowser
+    && supportedChromiumBrowser
+    && typeof navigator.mediaDevices?.getDisplayMedia === "function"
+    && typeof window.AudioContext === "function";
+}
+
+// getCaptureSourceWarning explains which independently monitored raw input is currently muted.
+function getCaptureSourceWarning(mutedSources: Set<SharedAudioInputName>) {
+  if (mutedSources.has("microphone") && mutedSources.has("shared_tab")) {
+    return "Mikrofon ani zvuk sdílené karty teď neposílají audio.";
+  }
+  if (mutedSources.has("shared_tab")) {
+    return "Zvuk sdílené karty je dočasně ztlumený nebo nedostupný.";
+  }
+  if (mutedSources.has("microphone")) {
+    return "Mikrofon je dočasně ztlumený nebo nedostupný.";
+  }
+  return null;
+}
+
+// BrowserRecorder captures a selected browser audio topology and can save audio plus transcript or text only.
 export function BrowserRecorder({
   allowTranscriptOnly = false,
   captionMode = false,
@@ -229,6 +262,7 @@ export function BrowserRecorder({
   const audioHealthChangeCallbackRef = useRef(onAudioHealthChange);
   const audioHealthMonitorRef = useRef<LiveAudioHealthMonitor | null>(null);
   const archiveAudioHealthRef = useRef<LiveAudioHealthSnapshot | null>(null);
+  const mutedCaptureSourcesRef = useRef<Set<SharedAudioInputName>>(new Set());
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const safetyAudioSessionRef = useRef<SafetyAudioSession | null>(null);
   const sharedAudioSessionRef = useRef<SharedAudioSession | null>(null);
@@ -259,6 +293,10 @@ export function BrowserRecorder({
   const [savedLiveMarkerCount, setSavedLiveMarkerCount] = useState(0);
   const [markerReady, setMarkerReady] = useState(false);
   const [feedback, setFeedback] = useState<RecorderFeedback | null>(null);
+  const [audioCaptureMode, setAudioCaptureMode] = useState<LiveAudioCaptureMode>("microphone");
+  const [audioCaptureCapabilityResolved, setAudioCaptureCapabilityResolved] = useState(false);
+  const [captureSourceWarning, setCaptureSourceWarning] = useState<string | null>(null);
+  const [tabAudioCaptureSupported, setTabAudioCaptureSupported] = useState(false);
   const [providerHealth, setProviderHealth] = useState<LiveProviderHealth>("ready");
   const [realtimeWarning, setRealtimeWarning] = useState<string | null>(null);
   const [selectedRealtimeLanguage, setSelectedRealtimeLanguage] = useState<SonioxRealtimeLanguageId>(realtimeLanguage);
@@ -271,6 +309,17 @@ export function BrowserRecorder({
   const [wakeLockWarning, setWakeLockWarning] = useState<string | null>(null);
 
   audioHealthChangeCallbackRef.current = onAudioHealthChange;
+
+  // detectTabAudioCapture selects the safer desktop call topology only when the browser exposes it.
+  useEffect(() => {
+    const supported = canUseSharedTabAudio();
+
+    setTabAudioCaptureSupported(supported);
+    if (supported) {
+      setAudioCaptureMode("microphone_and_tab");
+    }
+    setAudioCaptureCapabilityResolved(true);
+  }, []);
 
   // syncSelectedRealtimeLanguage refreshes the per-call choice when the persisted default changes between sessions.
   useEffect(() => {
@@ -626,12 +675,14 @@ export function BrowserRecorder({
       audioHealthMonitorRef.current?.stop();
       audioHealthMonitorRef.current = null;
       archiveAudioHealthRef.current = null;
+      mutedCaptureSourcesRef.current = new Set();
       archiveAudioLeaseRef.current = null;
       sonioxAudioSourceRef.current?.stop();
       sonioxAudioSourceRef.current = null;
       sharedAudioSessionRef.current = null;
       if (isMountedRef.current) {
         setAudioHealth(null);
+        setCaptureSourceWarning(null);
       }
       audioHealthChangeCallbackRef.current?.(null);
     }
@@ -1370,8 +1421,20 @@ export function BrowserRecorder({
 
   // startRecording begins the selected audio and provider owners without coupling their lifecycles.
   async function startRecording() {
+    if (!audioCaptureCapabilityResolved) {
+      return;
+    }
+
     if (!navigator.mediaDevices?.getUserMedia) {
       setRecorderFeedback("Tento prohlížeč neumí nahrávání přes mikrofon.", "error");
+      return;
+    }
+
+    if (
+      audioCaptureMode === "microphone_and_tab"
+      && typeof navigator.mediaDevices.getDisplayMedia !== "function"
+    ) {
+      setRecorderFeedback("Sdílení zvuku karty není v tomto prohlížeči dostupné.", "error");
       return;
     }
 
@@ -1406,12 +1469,16 @@ export function BrowserRecorder({
     }
 
     setRecorderFeedback(
-      usesRealtime ? "Připravuji mikrofon a live přepis..." : "Připravuji mikrofon a audio záznam...",
+      audioCaptureMode === "microphone_and_tab"
+        ? "Čekám na výběr karty hovoru se zapnutým sdílením zvuku..."
+        : usesRealtime
+          ? "Připravuji mikrofon a live přepis..."
+          : "Připravuji mikrofon a audio záznam...",
       "working"
     );
 
     try {
-      audioSession = await acquireSharedAudioSession();
+      audioSession = await acquireSharedAudioSession({ captureMode: audioCaptureMode });
 
       if (!isCurrentStartSession(sessionGeneration)) {
         audioSession.close();
@@ -1436,6 +1503,8 @@ export function BrowserRecorder({
       providerConnectionHealthRef.current = "healthy";
       providerFallbackReasonRef.current = null;
       archiveAudioHealthRef.current = null;
+      mutedCaptureSourcesRef.current = new Set();
+      setCaptureSourceWarning(null);
       setProviderHealth(usesRealtime ? "connecting" : "disabled");
       resetLiveDraftRefs();
 
@@ -1642,8 +1711,31 @@ export function BrowserRecorder({
         return;
       }
 
-      setRecorderFeedback(getRecordingActiveMessage(selectedSaveMode, selectedMaxAudioFileSizeBytes));
       setRecorderPhase("recording");
+      audioSession.onSourceEnded((source) => {
+        if (
+          recordingSessionGenerationRef.current === sessionGeneration
+          && recorderLifecyclePhaseRef.current === "recording"
+        ) {
+          void stopRecording(source === "microphone" ? "microphone_ended" : "shared_tab_ended");
+        }
+      });
+      audioSession.onSourceMuted((source, muted) => {
+        if (!isCurrentCaptureSession(sessionGeneration)) {
+          return;
+        }
+
+        if (muted) {
+          mutedCaptureSourcesRef.current.add(source);
+        } else {
+          mutedCaptureSourcesRef.current.delete(source);
+        }
+        setCaptureSourceWarning(getCaptureSourceWarning(mutedCaptureSourcesRef.current));
+      });
+      if (!isCurrentCaptureSession(sessionGeneration)) {
+        return;
+      }
+      setRecorderFeedback(getRecordingActiveMessage(selectedSaveMode, selectedMaxAudioFileSizeBytes));
       timerRef.current = window.setInterval(() => {
         if (!isCurrentCaptureSession(sessionGeneration)) {
           return;
@@ -1930,13 +2022,20 @@ export function BrowserRecorder({
   }
 
   // finishTranscriptOnlyRecording stops Soniox and saves only the live transcript text.
-  async function finishTranscriptOnlyRecording() {
+  async function finishTranscriptOnlyRecording(reason: RecorderStopReason = "manual") {
     const recording = sonioxRecordingRef.current;
     const resultSession = sonioxResultSessionRef.current;
     const audioSession = sharedAudioSessionRef.current;
     const stopGeneration = beginRecorderStop(recording);
 
-    setRecorderFeedback("Dokončuji live přepis a ukládám text...", "working");
+    setRecorderFeedback(
+      reason === "shared_tab_ended"
+        ? "Sdílení zvuku hovoru skončilo. Dokončuji a ukládám dosavadní přepis..."
+        : reason === "microphone_ended"
+          ? "Mikrofon se odpojil. Dokončuji a ukládám dosavadní přepis..."
+        : "Dokončuji live přepis a ukládám text...",
+      "working"
+    );
 
     try {
       stopTimer();
@@ -2183,9 +2282,9 @@ export function BrowserRecorder({
   }
 
   // stopRecording finalizes the selected live save mode under one generation-owned stop reason.
-  async function stopRecording(reason: "audio_limit" | "manual" = "manual") {
+  async function stopRecording(reason: RecorderStopReason = "manual") {
     if (saveMode === "live_transcript_only") {
-      await finishTranscriptOnlyRecording();
+      await finishTranscriptOnlyRecording(reason);
       return;
     }
 
@@ -2207,6 +2306,10 @@ export function BrowserRecorder({
       setRecorderFeedback(
         reason === "audio_limit"
           ? "Dosažen limit audia. Dokončuji a ukládám nahrávku..."
+          : reason === "shared_tab_ended"
+            ? "Sdílení zvuku hovoru skončilo. Dokončuji a bezpečně ukládám dosavadní nahrávku..."
+          : reason === "microphone_ended"
+            ? "Mikrofon se odpojil. Dokončuji a bezpečně ukládám dosavadní nahrávku..."
           : saveMode === "audio_only"
           ? "Dokončuji audio a ukládám nahrávku..."
           : "Dokončuji live přepis a ukládám nahrávku...",
@@ -2582,6 +2685,38 @@ export function BrowserRecorder({
           </select>
         </label>
       ) : null}
+      {!compact ? (
+        <>
+          <fieldset className="live-save-mode live-audio-source" disabled={status !== "idle"}>
+            <legend>Zdroj zvuku</legend>
+            <label>
+              <input
+                checked={audioCaptureMode === "microphone_and_tab"}
+                disabled={!tabAudioCaptureSupported}
+                name="liveAudioCaptureMode"
+                onChange={() => setAudioCaptureMode("microphone_and_tab")}
+                type="radio"
+                value="microphone_and_tab"
+              />
+              <span>Videohovor: mikrofon + karta</span>
+            </label>
+            <label>
+              <input
+                checked={audioCaptureMode === "microphone"}
+                name="liveAudioCaptureMode"
+                onChange={() => setAudioCaptureMode("microphone")}
+                type="radio"
+                value="microphone"
+              />
+              <span>Jen mikrofon</span>
+            </label>
+          </fieldset>
+          <p className="live-audio-source-help">
+            V Chrome nebo Edge vyberte kartu Google Meet a nechte zapnuté Sdílet také zvuk karty.
+            Bez toho se zvuk protistrany nenahraje.
+          </p>
+        </>
+      ) : null}
       {allowTranscriptOnly && !compact ? (
         <fieldset className="live-save-mode" disabled={status !== "idle"}>
           <legend>Ukládání</legend>
@@ -2603,6 +2738,7 @@ export function BrowserRecorder({
       <button
         className={status === "recording" ? "record-button record-button-active" : "record-button"}
         disabled={
+          !audioCaptureCapabilityResolved ||
           status === "starting" ||
           status === "saving" ||
           (liveModeStoresAudio(saveMode) && maxAudioFileSizeBytes === null)
@@ -2684,6 +2820,9 @@ export function BrowserRecorder({
       ) : null}
       {durabilityWarning ? (
         <p className="recording-state" role="alert">{durabilityWarning}</p>
+      ) : null}
+      {captureSourceWarning ? (
+        <p className="recording-state" role="alert">{captureSourceWarning}</p>
       ) : null}
       {feedback ? (
         <p
