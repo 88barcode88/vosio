@@ -14,17 +14,17 @@ import {
 } from "react";
 import {
   getEmptyLoadedManualAiState,
-  MANUAL_AI_WATCHER_MAX_MS,
   mergeLoadedManualAiOutput,
   mergeManualAiState,
   type LoadedManualAiState,
   type ManualAiJobStatus,
   type ManualAiStateSnapshot
 } from "@/lib/ai/manual-job-state";
+import { getManualAiPollIntervalMs } from "@/lib/ai/manual-route-runtime";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 
-type AiStatePurpose = "ai" | "metadata" | "timeline";
+export type AiStatePurpose = "ai" | "metadata" | "timeline";
 type ExactOutputPayload = { output: AiOutputView; structuredItems: StructuredAiItems };
 const OUTPUT_BODY_LOAD_CONCURRENCY = 8;
 
@@ -36,6 +36,7 @@ export type TranscriptAiStateContextValue = LoadedManualAiState & {
   loadAllOutputs: () => Promise<Pick<LoadedManualAiState, "loadedOutputs" | "structuredItems"> | null>;
   loadForPurpose: (purpose: AiStatePurpose) => Promise<void>;
   loadOutput: (outputId: string) => Promise<ExactOutputPayload | null>;
+  setActivePurpose: (purpose: "ai" | "timeline" | null) => void;
 };
 
 const TranscriptAiStateContext = createContext<TranscriptAiStateContextValue | null>(null);
@@ -62,8 +63,7 @@ export function TranscriptAiStateProvider({
   const scopeRef = useRef({ generation: 0, transcriptId: null as string | null });
   const stateRequestRef = useRef<Promise<ManualAiStateSnapshot | null> | null>(null);
   const outputRequestsRef = useRef(new Map<string, Promise<ExactOutputPayload | null>>());
-  const purposesRef = useRef(new Set<AiStatePurpose>());
-  const watcherStartedAtRef = useRef<number | null>(null);
+  const [activePurpose, setActivePurpose] = useState<"ai" | "timeline" | null>(null);
 
   // replaceState keeps the synchronous ref and React snapshot consistent for chained lazy loads.
   const replaceState = useCallback((next: LoadedManualAiState) => {
@@ -75,8 +75,7 @@ export function TranscriptAiStateProvider({
     scopeRef.current = { generation: scopeRef.current.generation + 1, transcriptId };
     stateRequestRef.current = null;
     outputRequestsRef.current.clear();
-    purposesRef.current.clear();
-    watcherStartedAtRef.current = null;
+    setActivePurpose(null);
     const next = createInitialState(initialAiOutputs, initialStructuredItems);
     stateRef.current = next;
     setState(next);
@@ -164,14 +163,12 @@ export function TranscriptAiStateProvider({
 
   // loadForPurpose marks a lazy consumer and hydrates only its default-open body.
   const loadForPurpose = useCallback(async (purpose: AiStatePurpose) => {
-    purposesRef.current.add(purpose);
     const metadata = await refreshMetadata();
     await hydratePurpose(purpose, metadata);
   }, [hydratePurpose, refreshMetadata]);
 
   // loadAllOutputs hydrates every artifact only for an explicitly AI-inclusive export.
   const loadAllOutputs = useCallback(async () => {
-    purposesRef.current.add("metadata");
     const metadata = await refreshMetadata();
     if (!metadata) return null;
     const scope = scopeRef.current;
@@ -207,72 +204,137 @@ export function TranscriptAiStateProvider({
     if (!transcriptId) return;
     const now = new Date().toISOString();
     const metadata = mergeManualAiState(stateRef.current, {
-      jobs: [{ completed_at: null, created_at: now, error_message: null, id: job.id, processing_type: processingType, started_at: null, status: job.status }],
+      jobs: [{
+        attempt_count: 0,
+        completed_at: null,
+        created_at: now,
+        failure_code: null,
+        id: job.id,
+        lease_expires_at: null,
+        max_attempts: 1,
+        model: "",
+        processing_type: processingType,
+        retry_after_at: null,
+        started_at: null,
+        status: job.status
+      }],
       outputs: []
     });
-    purposesRef.current.add("metadata");
-    watcherStartedAtRef.current ??= Date.now();
     replaceState({ ...stateRef.current, ...metadata });
     setIsLoaded(true);
   }, [replaceState, transcriptId]);
 
-  useEffect(() => {
-    const hasActiveJob = state.jobs.some((job) => job.status === "queued" || job.status === "running");
-    if (!transcriptId || !isLoaded || !hasActiveJob) {
-      watcherStartedAtRef.current = null;
-      return;
-    }
+  const hasActiveJobs = state.jobs.some((job) => job.status === "queued" || job.status === "running");
 
-    watcherStartedAtRef.current ??= Date.now();
+  useEffect(() => {
+    if (!transcriptId || !isLoaded || !activePurpose || !hasActiveJobs) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let focusCatchupQueued = false;
+    let cycleInFlight = false;
+    let catchupPending = false;
+    let transientBackoffUntil = 0;
     let disposed = false;
 
-    // schedulePoll uses a faster first 30 seconds and pauses timers while the document is hidden.
-    const schedulePoll = () => {
-      if (disposed || document.visibilityState === "hidden") return;
-      const elapsed = Date.now() - (watcherStartedAtRef.current ?? Date.now());
-      if (elapsed >= MANUAL_AI_WATCHER_MAX_MS) return;
-      timer = setTimeout(async () => {
-        timer = null;
-        const metadata = await refreshMetadata();
-        for (const purpose of purposesRef.current) await hydratePurpose(purpose, metadata);
-        schedulePoll();
-      }, elapsed < 30_000 ? 2_000 : 5_000);
-    };
-
-    // catchUpOnce deduplicates focus and visibility events into one immediate refresh.
-    const catchUpOnce = () => {
-      if (document.visibilityState === "hidden" || focusCatchupQueued || disposed) return;
-      focusCatchupQueued = true;
+    const clearTimer = () => {
       if (timer) clearTimeout(timer);
       timer = null;
+    };
+
+    const isEligible = () => document.visibilityState !== "hidden" && navigator.onLine;
+    const currentActiveJobs = () => stateRef.current.jobs.filter((job) => job.status === "queued" || job.status === "running");
+
+    // schedulePoll derives cadence from persisted age and pauses while hidden, offline or inactive.
+    const schedulePoll = (transientError = false) => {
+      if (disposed || !isEligible()) return;
+      const activeJobs = currentActiveJobs();
+      if (activeJobs.length === 0) return;
+      clearTimer();
+      const youngestStartedAt = Math.max(...activeJobs.map((job) => Date.parse(job.started_at ?? job.created_at)));
+      const ageMs = Math.max(0, Date.now() - youngestStartedAt);
+      timer = setTimeout(async () => {
+        timer = null;
+        await runCycle();
+      }, getManualAiPollIntervalMs(ageMs, transientError));
+    };
+
+    // runCycle is the sole continuation owner for an immediate catch-up or the next cadence timer.
+    const runCycle = async () => {
+      if (disposed || !isEligible()) return;
+      if (cycleInFlight) {
+        catchupPending = true;
+        return;
+      }
+      cycleInFlight = true;
+      let metadata: ManualAiStateSnapshot | null = null;
+      try {
+        metadata = await refreshMetadata();
+        await hydratePurpose(activePurpose, metadata);
+      } catch {
+        metadata = null;
+      } finally {
+        cycleInFlight = false;
+      }
+      if (disposed || !isEligible() || currentActiveJobs().length === 0) return;
+      if (metadata === null) {
+        catchupPending = false;
+        transientBackoffUntil = Date.now() + 30_000;
+        schedulePoll(true);
+        return;
+      }
+      transientBackoffUntil = 0;
+      if (catchupPending) {
+        catchupPending = false;
+        queueMicrotask(async () => runCycle());
+        return;
+      }
+      schedulePoll();
+    };
+
+    // catchUpOnce coalesces focus, visibility and online bursts, including while one poll is in flight.
+    const catchUpOnce = () => {
+      if (disposed || !isEligible()) return;
+      if (Date.now() < transientBackoffUntil) {
+        schedulePoll(true);
+        return;
+      }
+      clearTimer();
+      if (cycleInFlight) {
+        catchupPending = true;
+        return;
+      }
+      if (catchupPending) return;
+      catchupPending = true;
       queueMicrotask(async () => {
-        const metadata = await refreshMetadata();
-        for (const purpose of purposesRef.current) await hydratePurpose(purpose, metadata);
-        focusCatchupQueued = false;
-        schedulePoll();
+        if (disposed) return;
+        catchupPending = false;
+        await runCycle();
       });
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === "hidden") {
-        if (timer) clearTimeout(timer);
-        timer = null;
+        clearTimer();
       } else {
         catchUpOnce();
       }
     };
+    const handleOnline = () => catchUpOnce();
+    const handleOffline = () => {
+      clearTimer();
+    };
     window.addEventListener("focus", catchUpOnce);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
     document.addEventListener("visibilitychange", handleVisibility);
     schedulePoll();
     return () => {
       disposed = true;
-      if (timer) clearTimeout(timer);
+      clearTimer();
       window.removeEventListener("focus", catchUpOnce);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [hydratePurpose, isLoaded, refreshMetadata, state.jobs, transcriptId]);
+  }, [activePurpose, hasActiveJobs, hydratePurpose, isLoaded, refreshMetadata, transcriptId]);
 
   const value = useMemo<TranscriptAiStateContextValue>(() => ({
     ...state,
@@ -282,7 +344,8 @@ export function TranscriptAiStateProvider({
     isLoading,
     loadAllOutputs,
     loadForPurpose,
-    loadOutput
+    loadOutput,
+    setActivePurpose
   }), [acceptJob, error, isLoaded, isLoading, loadAllOutputs, loadForPurpose, loadOutput, state]);
 
   // The callbacks read refs only after user/effect invocation; createElement does not execute them during render.

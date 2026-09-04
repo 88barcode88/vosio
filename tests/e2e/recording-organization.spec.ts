@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { cleanupOrganizationFixture } from "./support/organization-fixture-cleanup";
 
 // createFixtureScope isolates desktop and mobile projects in the dev-only server store.
 function createFixtureScope() {
@@ -43,7 +44,7 @@ test.beforeEach(() => {
 
 test.afterEach(async ({ request }) => {
   if (fixtureScope) {
-    await request.delete(`/login/recording-organization-e2e/fixture?scope=${fixtureScope}`);
+    await cleanupOrganizationFixture(request, fixtureScope);
   }
 });
 

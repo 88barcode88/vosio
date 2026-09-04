@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 
-// AutomaticTimelineReconciler performs one owner-authenticated recovery attempt when detail opens.
-export function AutomaticTimelineReconciler({ transcriptId }: { transcriptId: string | null }) {
-  const router = useRouter();
-
+// AutomaticTimelineReconciler performs one owner-authenticated recovery attempt only in the active timeline.
+export function AutomaticTimelineReconciler({
+  onReconciled,
+  transcriptId
+}: {
+  onReconciled?: () => Promise<void>;
+  transcriptId: string | null;
+}) {
   useEffect(() => {
     if (!transcriptId) {
       return;
@@ -27,7 +30,7 @@ export function AutomaticTimelineReconciler({ transcriptId }: { transcriptId: st
         const payload = await response.json().catch(() => null) as { status?: string } | null;
 
         if (payload?.status === "done") {
-          router.refresh();
+          await onReconciled?.();
         }
       } catch {
         // Recovery is best-effort and will be attempted again on the next detail open.
@@ -35,7 +38,7 @@ export function AutomaticTimelineReconciler({ transcriptId }: { transcriptId: st
     }
 
     void reconcile();
-  }, [router, transcriptId]);
+  }, [onReconciled, transcriptId]);
 
   return null;
 }

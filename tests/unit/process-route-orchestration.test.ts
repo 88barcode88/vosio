@@ -5,16 +5,21 @@ import { POST } from "../../app/api/transcripts/[transcriptId]/process/route";
 
 const routeMocks = vi.hoisted(() => ({
   afterCallbacks: [] as Array<() => unknown>,
+  afterError: null as Error | null,
   createAdminClient: vi.fn(),
   createClient: vi.fn(),
   rateLimit: vi.fn(),
   runGeminiProcessing: vi.fn(),
+  runManualAiJob: vi.fn(),
   runOpenAIProcessing: vi.fn(),
 }));
 
 vi.mock("next/server", async (importOriginal) => ({
   ...await importOriginal<typeof import("next/server")>(),
-  after: (callback: () => unknown) => routeMocks.afterCallbacks.push(callback)
+  after: (callback: () => unknown) => {
+    if (routeMocks.afterError) throw routeMocks.afterError;
+    routeMocks.afterCallbacks.push(callback);
+  }
 }));
 
 vi.mock("@/lib/rate-limit", () => ({
@@ -22,6 +27,7 @@ vi.mock("@/lib/rate-limit", () => ({
 }));
 vi.mock("@/lib/env.server", () => ({ getAiProviderConfigurationError: () => null }));
 vi.mock("@/lib/ai/gemini", () => ({ runGeminiProcessing: routeMocks.runGeminiProcessing }));
+vi.mock("@/lib/ai/manual-processing.server", () => ({ runManualAiJob: routeMocks.runManualAiJob }));
 vi.mock("@/lib/ai/openai", () => ({ runOpenAIProcessing: routeMocks.runOpenAIProcessing }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: routeMocks.createAdminClient }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: routeMocks.createClient }));
@@ -34,6 +40,7 @@ const overrideId = "00000000-0000-4000-8000-000000000814";
 beforeEach(() => {
   vi.resetAllMocks();
   routeMocks.afterCallbacks.length = 0;
+  routeMocks.afterError = null;
   routeMocks.rateLimit.mockReturnValue({ allowed: true, retryAfterSeconds: 0 });
 });
 
@@ -117,13 +124,16 @@ function createRouteFixture(effectivePrompt: {
 }
 
 // postActionItems invokes the route with the intentionally prompt-agnostic browser contract.
-function postActionItems() {
+function postActionItems(overrides: { metadata?: Record<string, unknown>; temperature?: number } = {}) {
   return POST(
     new NextRequest(`https://vosio.test/api/transcripts/${transcriptId}/process`, {
       body: JSON.stringify({
+        metadata: { source: "manual-button", workspace: "sales" },
         model: "gpt-5.6-terra",
         processingType: "action_items",
-        requestId: "00000000-0000-4000-8000-000000000815"
+        requestId: "00000000-0000-4000-8000-000000000815",
+        temperature: 0.7,
+        ...overrides
       }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
@@ -164,10 +174,20 @@ describe("process route prompt resolution", () => {
       prompt_output_schema_snapshot: effectivePrompt.output_schema,
       prompt_revision_snapshot: 5,
       prompt_snapshot_exact: true,
+      provider_config: expect.objectContaining({
+        metadata: { source: "manual-button", workspace: "sales" },
+        temperature: 0.7
+      })
     }));
     const jobPayload = fixture.jobInsert.mock.calls[0]?.[0];
     expect(JSON.stringify((jobPayload as { provider_config: unknown }).provider_config)).not.toContain(effectivePrompt.prompt_text);
     expect(routeMocks.runOpenAIProcessing).not.toHaveBeenCalled();
+    await routeMocks.afterCallbacks[0]!();
+    expect(routeMocks.runManualAiJob).toHaveBeenCalledWith({
+      jobId: "job-1",
+      transcriptId,
+      userId
+    });
   });
 
   it("snapshots the authoritative system fallback without inventing an override revision", async () => {
@@ -215,6 +235,15 @@ describe("process route prompt resolution", () => {
         id: "00000000-0000-4000-8000-000000000815",
         model: "gpt-5.6-terra",
         processing_type: "action_items",
+        prompt_output_schema_snapshot: { type: "object" },
+        provider: "openai",
+        provider_config: {
+          reasoning_effort: "high",
+          temperature: 0.7,
+          response_format: "json_schema",
+          provider: "openai",
+          metadata: { workspace: "sales", source: "manual-button" }
+        },
         status: "running",
         transcript_id: transcriptId,
         user_id: userId
@@ -231,6 +260,151 @@ describe("process route prompt resolution", () => {
     expect(routeMocks.rateLimit).not.toHaveBeenCalled();
     expect(fixture.jobInsert).not.toHaveBeenCalled();
     expect(routeMocks.afterCallbacks).toHaveLength(0);
+  });
+
+  it.each([
+    ["temperature", { temperature: 0.8 }],
+    ["metadata", { metadata: { source: "manual-button", workspace: "support" } }]
+  ])("rejects same UUID reuse with changed normalized %s", async (_label, overrides) => {
+    const fixture = createRouteFixture({
+      system_prompt_id: systemPromptId,
+      override_id: null,
+      name: "System action items",
+      processing_type: "action_items",
+      prompt_text: "Systémový prompt.",
+      output_schema: { type: "object" },
+      source: "system",
+      revision: null
+    });
+    fixture.jobQuery.maybeSingle.mockResolvedValue({
+      data: {
+        execution_mode: "manual",
+        id: "00000000-0000-4000-8000-000000000815",
+        model: "gpt-5.6-terra",
+        processing_type: "action_items",
+        prompt_output_schema_snapshot: { type: "object" },
+        provider: "openai",
+        provider_config: {
+          metadata: { source: "manual-button", workspace: "sales" },
+          provider: "openai",
+          reasoning_effort: "high",
+          response_format: "json_schema",
+          temperature: 0.7
+        },
+        status: "queued",
+        transcript_id: transcriptId,
+        user_id: userId
+      },
+      error: null
+    });
+
+    const response = await postActionItems(overrides);
+
+    expect(response.status).toBe(409);
+    expect(routeMocks.rateLimit).not.toHaveBeenCalled();
+    expect(fixture.jobInsert).not.toHaveBeenCalled();
+    expect(routeMocks.afterCallbacks).toHaveLength(0);
+  });
+
+  it("returns conflict when a raced same UUID has a different provider snapshot", async () => {
+    const fixture = createRouteFixture({
+      system_prompt_id: systemPromptId,
+      override_id: null,
+      name: "System action items",
+      processing_type: "action_items",
+      prompt_text: "Systémový prompt.",
+      output_schema: { type: "object" },
+      source: "system",
+      revision: null
+    });
+    fixture.jobQuery.maybeSingle
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({
+        data: {
+          execution_mode: "manual",
+          id: "00000000-0000-4000-8000-000000000815",
+          model: "gpt-5.6-terra",
+          processing_type: "action_items",
+          prompt_output_schema_snapshot: { type: "object" },
+          provider: "openai",
+          provider_config: {
+            metadata: { source: "manual-button", workspace: "sales" },
+            provider: "openai",
+            reasoning_effort: "high",
+            response_format: "json_schema",
+            temperature: 0.7
+          },
+          status: "queued",
+          transcript_id: transcriptId,
+          user_id: userId
+        },
+        error: null
+      });
+    fixture.jobQuery.single.mockResolvedValueOnce({
+      data: null,
+      error: { message: "SECRET-SENTINEL-duplicate" }
+    });
+
+    const response = await postActionItems({ temperature: 0.8 });
+
+    expect(response.status).toBe(409);
+    expect(JSON.stringify(await response.json())).not.toContain("SECRET-SENTINEL");
+    expect(routeMocks.afterCallbacks).toHaveLength(0);
+  });
+
+  it("terminalizes a new queued row safely when after scheduling fails", async () => {
+    const fixture = createRouteFixture({
+      system_prompt_id: systemPromptId,
+      override_id: null,
+      name: "System action items",
+      processing_type: "action_items",
+      prompt_text: "Systémový prompt.",
+      output_schema: { type: "object" },
+      source: "system",
+      revision: null
+    });
+    fixture.jobQuery.maybeSingle
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: { id: "job-1" }, error: null });
+    routeMocks.afterError = new Error("SECRET-SENTINEL-scheduler");
+    const response = await postActionItems();
+    expect(response.status).toBe(500);
+    expect(fixture.jobQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      error_message: null,
+      failure_code: "execution_interrupted",
+      status: "failed"
+    }));
+    expect(JSON.stringify(await response.json())).not.toContain("SECRET-SENTINEL");
+  });
+
+  it.each([
+    ["database error", { data: null, error: { message: "SECRET-SENTINEL-update" } }],
+    ["zero rows", { data: null, error: null }]
+  ])("does not report scheduling terminalization as successful after %s", async (_label, terminalizeResult) => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const fixture = createRouteFixture({
+      system_prompt_id: systemPromptId,
+      override_id: null,
+      name: "System action items",
+      processing_type: "action_items",
+      prompt_text: "Systémový prompt.",
+      output_schema: { type: "object" },
+      source: "system",
+      revision: null
+    });
+    fixture.jobQuery.maybeSingle
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce(terminalizeResult);
+    routeMocks.afterError = new Error("SECRET-SENTINEL-scheduler");
+
+    const response = await postActionItems();
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "AI zpracování se nepodařilo naplánovat ani bezpečně ukončit."
+    });
+    expect(JSON.stringify(consoleSpy.mock.calls)).not.toContain("SECRET-SENTINEL");
+    consoleSpy.mockRestore();
   });
 });
 

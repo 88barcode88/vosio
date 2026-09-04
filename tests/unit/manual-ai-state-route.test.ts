@@ -34,8 +34,12 @@ function AiStateHarness() {
     "div",
     null,
     createElement("button", { "data-purpose": "metadata", onClick: () => void state.loadForPurpose("metadata") }, "Metadata"),
-    createElement("button", { "data-purpose": "ai", onClick: () => void state.loadForPurpose("ai") }, "AI"),
+    createElement("button", { "data-purpose": "ai", onClick: () => {
+      state.setActivePurpose("ai");
+      void state.loadForPurpose("ai");
+    } }, "AI"),
     createElement("button", { "data-purpose": "all", onClick: () => void state.loadAllOutputs() }, "All"),
+    createElement("button", { "data-purpose": "inactive", onClick: () => state.setActivePurpose(null) }, "Inactive"),
     createElement("output", null, state.loadedOutputs.map((output) => output.id).join(","))
   );
 }
@@ -91,11 +95,16 @@ function createStateQuery(result: { data: unknown; error: unknown }) {
 describe("manual AI state contract", () => {
   it("derives stalled queued and running jobs without mutating persisted status", () => {
     const queued = {
+      attempt_count: 0,
       completed_at: null,
       created_at: "2026-09-03T09:00:00.000Z",
-      error_message: null,
+      failure_code: null,
       id: "job-queued",
+      lease_expires_at: null,
+      max_attempts: 1,
+      model: "gpt-5.6-terra",
       processing_type: "summary",
+      retry_after_at: null,
       started_at: null,
       status: "queued" as const
     };
@@ -110,8 +119,8 @@ describe("manual AI state contract", () => {
   it("merges parallel same-type jobs and metadata idempotently", () => {
     const initial = mergeManualAiState(undefined, {
       jobs: [
-        { completed_at: null, created_at: "2026-09-03T09:01:00.000Z", error_message: null, id: "job-2", processing_type: "summary", started_at: null, status: "queued" },
-        { completed_at: null, created_at: "2026-09-03T09:00:00.000Z", error_message: null, id: "job-1", processing_type: "summary", started_at: null, status: "running" }
+        { attempt_count: 0, completed_at: null, created_at: "2026-09-03T09:01:00.000Z", failure_code: null, id: "job-2", lease_expires_at: null, max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: null, status: "queued" },
+        { attempt_count: 1, completed_at: null, created_at: "2026-09-03T09:00:00.000Z", failure_code: null, id: "job-1", lease_expires_at: "2026-09-03T09:08:00.000Z", max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: "2026-09-03T09:00:00.000Z", status: "running" }
       ],
       outputs: []
     });
@@ -130,7 +139,7 @@ describe("manual AI state contract", () => {
     const outputRoute = readFileSync("app/api/ai-outputs/[outputId]/route.ts", "utf8");
 
     expect(stateRoute).toContain("execution_mode");
-    expect(stateRoute).not.toMatch(/output_text|output_json|prompt_text_snapshot|provider_config|raw_text/);
+    expect(stateRoute).not.toMatch(/output_text|output_json|prompt_text_snapshot|provider_config|raw_text|error_message|lease_token/);
     expect(outputRoute).toContain('.eq("transcript_id", transcriptId)');
     expect(outputRoute).toContain('.eq("user_id", user.id)');
     expect(outputRoute).toContain("transcript_tasks");
@@ -214,6 +223,22 @@ describe("manual AI state contract", () => {
     await act(async () => root.unmount());
   });
 
+  it("deduplicates concurrent state loads to one request in flight", async () => {
+    let resolve!: (response: Response) => void;
+    const pending = new Promise<Response>((settle) => { resolve = settle; });
+    const fetchMock = vi.fn().mockReturnValue(pending);
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click();
+      container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click();
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => resolve(new Response(JSON.stringify({ jobs: [], outputs: [] }), { status: 200 })));
+    await act(async () => root.unmount());
+  });
+
   it("paginates metadata and hydrates all 55 bodies for an AI-inclusive export", async () => {
     const metadata = Array.from({ length: 55 }, (_, index) => ({
       body_loaded: false,
@@ -259,19 +284,19 @@ describe("manual AI state contract", () => {
     await act(async () => root.unmount());
   });
 
-  it("polls at two seconds, pauses hidden, and deduplicates focus catch-up", async () => {
+  it("polls at five seconds only for active visible online AI and deduplicates focus catch-up", async () => {
     vi.useFakeTimers();
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
       jobs: [{ completed_at: null, created_at: new Date().toISOString(), error_message: null, id: "job-running", processing_type: "summary", started_at: new Date().toISOString(), status: "running" }],
       outputs: []
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const { container, root } = await renderAiStateHarness();
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
@@ -283,9 +308,163 @@ describe("manual AI state contract", () => {
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
       window.dispatchEvent(new Event("focus"));
+      await vi.runAllTicks();
+      await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(async () => root.unmount());
+  });
+
+  it("does not poll for metadata-only or inactive tabs", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      jobs: [{ attempt_count: 0, completed_at: null, created_at: new Date().toISOString(), failure_code: null, id: "job-queued", lease_expires_at: null, max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: null, status: "queued" }],
+      outputs: []
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click();
+      await Promise.resolve();
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="inactive"]')?.click());
+    const afterInactive = fetchMock.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(fetchMock).toHaveBeenCalledTimes(afterInactive);
+    await act(async () => root.unmount());
+  });
+
+  it("pauses offline, deduplicates online/focus/visibility burst, and uses old persisted age", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      jobs: [{ attempt_count: 1, completed_at: null, created_at: new Date(Date.now() - 300_000).toISOString(), failure_code: null, id: "job-running", lease_expires_at: new Date(Date.now() + 180_000).toISOString(), max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: new Date(Date.now() - 300_000).toISOString(), status: "running" }],
+      outputs: []
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.runAllTicks();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(29_999));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(async () => root.unmount());
+  });
+
+  it("queues only one catch-up when lifecycle events burst during an in-flight poll", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    const startedAt = new Date().toISOString();
+    const activePayload = {
+      jobs: [{ attempt_count: 1, completed_at: null, created_at: startedAt, failure_code: null, id: "job-running", lease_expires_at: new Date(Date.now() + 480_000).toISOString(), max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: startedAt, status: "running" }],
+      outputs: []
+    };
+    let resolveScheduledPoll!: (response: Response) => void;
+    const scheduledPoll = new Promise<Response>((resolve) => { resolveScheduledPoll = resolve; });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(activePayload), { status: 200 }))
+      .mockReturnValueOnce(scheduledPoll)
+      .mockResolvedValue(new Response(JSON.stringify(activePayload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
+
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("online"));
+      await vi.runAllTicks();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolveScheduledPoll(new Response(JSON.stringify(activePayload), { status: 200 }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(async () => vi.advanceTimersByTimeAsync(4_999));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    await act(async () => root.unmount());
+  });
+
+  it("backs off a transient state fetch failure for at least thirty seconds", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    const startedAt = new Date().toISOString();
+    const activePayload = {
+      jobs: [{ attempt_count: 1, completed_at: null, created_at: startedAt, failure_code: null, id: "job-running", lease_expires_at: new Date(Date.now() + 480_000).toISOString(), max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: startedAt, status: "running" }],
+      outputs: []
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(activePayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "temporary" }), { status: 503 }))
+      .mockResolvedValue(new Response(JSON.stringify(activePayload), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
+
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("online"));
+      await vi.runAllTicks();
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(29_999));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(async () => root.unmount());
+  });
+
+  it("stays within 25 state requests during five visible minutes", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    const startedAt = new Date().toISOString();
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      jobs: [{ attempt_count: 1, completed_at: null, created_at: startedAt, failure_code: null, id: "job-running", lease_expires_at: new Date(Date.now() + 480_000).toISOString(), max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: startedAt, status: "running" }],
+      outputs: []
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
+    await act(async () => vi.advanceTimersByTimeAsync(300_000));
+    const stateRequests = fetchMock.mock.calls.filter(([url]) => String(url).includes("/ai-state"));
+    expect(stateRequests.length).toBeLessThanOrEqual(25);
     await act(async () => root.unmount());
   });
 });

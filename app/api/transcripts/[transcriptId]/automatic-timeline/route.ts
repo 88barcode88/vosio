@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 const routeParamsSchema = z.object({
   transcriptId: z.uuid()
 });
+// Next requires a statically analyzable literal; the runtime contract test locks it to the shared budget.
+export const maxDuration = 300;
 
 type RouteContext = {
   params: Promise<{

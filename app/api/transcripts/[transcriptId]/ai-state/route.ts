@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import type { ManualAiJobSummary, ManualAiOutputMetadata } from "@/lib/ai/manual-job-state";
+import { AI_FAILURE_CODES, type AiFailureCode } from "@/lib/ai/provider-errors";
 import { createClient } from "@/lib/supabase/server";
 
 const routeParamsSchema = z.object({ transcriptId: z.uuid() });
@@ -17,18 +18,11 @@ function getJoinedRow<T>(value: T | T[] | null | undefined) {
   return Array.isArray(value) ? value[0] ?? null : value ?? null;
 }
 
-// getSafeStoredJobError prevents historical provider details from crossing the metadata route.
-function getSafeStoredJobError(job: Pick<ManualAiJobSummary, "error_message" | "status">) {
-  if (job.status !== "failed") return null;
-  const allowed = [
-    "AI zpracování se nepodařilo naplánovat.",
-    "AI zpracování nelze dokončit, protože přepis už není dostupný.",
-    "Gemini zpracování selhalo. Zkontrolujte GEMINI_API_KEY, dostupnost modelu v Google AI účtu nebo zvolte OpenAI model.",
-    "OpenAI zpracování selhalo. Zkontrolujte OPENAI_API_KEY, dostupnost modelu nebo zkuste jiný model."
-  ];
-  return job.error_message && allowed.includes(job.error_message)
-    ? job.error_message
-    : "AI zpracování selhalo. Spusťte nový pokus.";
+// getSafeFailureCode drops any unrecognized historical value at the API boundary.
+function getSafeFailureCode(value: unknown): AiFailureCode | null {
+  return typeof value === "string" && (AI_FAILURE_CODES as readonly string[]).includes(value)
+    ? value as AiFailureCode
+    : null;
 }
 
 // GET returns bounded owner-scoped manual job summaries and artifact metadata for one transcript.
@@ -50,7 +44,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const [jobsResult, outputsResult] = await Promise.all([
     supabase.from("ai_processing_jobs")
-      .select("id,processing_type,status,created_at,started_at,completed_at,error_message")
+      .select("id,processing_type,model,status,created_at,started_at,completed_at,attempt_count,max_attempts,lease_expires_at,failure_code,retry_after_at")
       .eq("transcript_id", transcriptId).eq("user_id", user.id).eq("execution_mode", "manual")
       .in("status", ["queued", "running", "done", "failed"])
       .order("created_at", { ascending: false }).order("id", { ascending: false })
@@ -66,7 +60,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "AI stav se nepodařilo načíst." }, { status: 500 });
   }
 
-  const jobs = (jobsResult.data ?? []).map((job) => ({ ...job, error_message: getSafeStoredJobError(job) }));
+  const jobs = (jobsResult.data ?? []).map((job) => ({
+    ...job,
+    failure_code: getSafeFailureCode(job.failure_code)
+  }));
   const outputRows = outputsResult.data ?? [];
   const outputs = outputRows.slice(0, MAX_MANUAL_AI_STATE_ROWS).map((output): ManualAiOutputMetadata => ({
     body_loaded: false,

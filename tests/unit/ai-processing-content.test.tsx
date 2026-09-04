@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AiProcessingContent } from "@/components/transcript-tabs/ai-processing-content";
 import type { AiOutputView } from "@/lib/ai/types";
+import type { ManualAiJobSummary } from "@/lib/ai/manual-job-state";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/recordings/test" }));
 vi.mock("@/components/ai-processing-controls", () => ({ AiProcessingControls: () => null }));
@@ -45,7 +46,10 @@ const oldOutput: AiOutputView = {
   processing_job_id: metadata[1]!.processing_job_id
 };
 
-afterEach(() => document.body.replaceChildren());
+afterEach(() => {
+  document.body.replaceChildren();
+  vi.unstubAllGlobals();
+});
 
 // Harness turns a successful lazy request into the same parent rerender used by the AI state provider.
 function Harness({ loadOutput }: { loadOutput: (outputId: string) => Promise<unknown> }) {
@@ -133,6 +137,181 @@ describe("AI processing historical output details", () => {
     expect(loadOutput).toHaveBeenCalledTimes(2);
     expect(historical.open).toBe(true);
     expect(historical.textContent).toContain("Historical body");
+    await act(async () => root.unmount());
+  });
+
+  it("keeps the failed audit row, disables cooldown, and creates a new UUID after cooldown", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      job: { id: "new-job-id", status: "queued" }
+    }), { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const baseJob = {
+      attempt_count: 1,
+      completed_at: "2026-09-04T10:00:00.000Z",
+      created_at: "2026-09-04T09:59:00.000Z",
+      failure_code: "rate_limited" as const,
+      id: "old-job-id",
+      lease_expires_at: null,
+      max_attempts: 1,
+      model: "gpt-5.6-terra",
+      processing_type: "summary",
+      retry_after_at: new Date(Date.now() + 60_000).toISOString(),
+      started_at: "2026-09-04T09:59:00.000Z",
+      status: "failed" as const
+    };
+    const props = {
+      activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
+      aiOutputs: [],
+      jobs: [baseJob],
+      onOpenEvidence: () => undefined,
+      resolveEvidenceTarget: () => null,
+      structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] },
+      userSettings: {} as never
+    };
+    await act(async () => root.render(createElement(AiProcessingContent, props)));
+    const cooldownButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Zkusit znovu")!;
+    expect(cooldownButton.disabled).toBe(true);
+    expect(container.textContent).toContain("AI služba dočasně omezuje požadavky. Zkuste to znovu později.");
+
+    await act(async () => root.render(createElement(AiProcessingContent, {
+      ...props,
+      jobs: [{ ...baseJob, retry_after_at: new Date(Date.now() - 1_000).toISOString() }]
+    })));
+    const retryButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Zkusit znovu")!;
+    await act(async () => retryButton.click());
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.requestId).not.toBe("old-job-id");
+    expect(container.textContent).toContain("Selhalo");
+    await act(async () => root.unmount());
+  });
+
+  it.each([
+    ["queued", { attempt_count: 0, lease_expires_at: null, started_at: null, status: "queued" }],
+    ["stale running", { attempt_count: 1, lease_expires_at: new Date(Date.now() - 1_000).toISOString(), started_at: new Date(Date.now() - 9 * 60_000).toISOString(), status: "running" }]
+  ])("offers a safe interrupt for a new-protocol %s job", async (_label, state) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "interrupted" }), { status: 200 }));
+    const onReload = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("fetch", fetchMock);
+    const job: ManualAiJobSummary = {
+      attempt_count: state.attempt_count,
+      completed_at: null,
+      created_at: new Date(Date.now() - 9 * 60_000).toISOString(),
+      failure_code: null,
+      id: `job-${String(_label).replace(" ", "-")}`,
+      lease_expires_at: state.lease_expires_at,
+      max_attempts: 1,
+      model: "gpt-5.6-terra",
+      processing_type: "summary",
+      retry_after_at: null,
+      started_at: state.started_at,
+      status: state.status as "queued" | "running"
+    };
+    await act(async () => root.render(createElement(AiProcessingContent, {
+      activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
+      aiOutputs: [],
+      jobs: [job],
+      onOpenEvidence: () => undefined,
+      onReload,
+      resolveEvidenceTarget: () => null,
+      structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] },
+      userSettings: {} as never
+    })));
+
+    const interrupt = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Ukončit požadavek")!;
+    expect(interrupt).toBeDefined();
+    await act(async () => interrupt.click());
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ action: "interrupt", jobId: job.id });
+    expect(onReload).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("Přerušené zpracování bylo bezpečně ukončeno.");
+    await act(async () => root.unmount());
+  });
+
+  it.each([
+    ["fresh running", { attempt_count: 1, lease_expires_at: new Date(Date.now() + 60_000).toISOString(), max_attempts: 1, started_at: new Date().toISOString(), status: "running" }],
+    ["legacy queued", { attempt_count: 0, lease_expires_at: null, max_attempts: 3, started_at: null, status: "queued" }]
+  ])("does not offer interrupt or POST repeatedly for %s", async (_label, state) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const job: ManualAiJobSummary = {
+      attempt_count: state.attempt_count,
+      completed_at: null,
+      created_at: new Date().toISOString(),
+      failure_code: null,
+      id: `job-${String(_label).replace(" ", "-")}`,
+      lease_expires_at: state.lease_expires_at,
+      max_attempts: state.max_attempts,
+      model: "gpt-5.6-terra",
+      processing_type: "summary",
+      retry_after_at: null,
+      started_at: state.started_at,
+      status: state.status as "queued" | "running"
+    };
+    await act(async () => root.render(createElement(AiProcessingContent, {
+      activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
+      aiOutputs: [],
+      jobs: [job],
+      onOpenEvidence: () => undefined,
+      resolveEvidenceTarget: () => null,
+      structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] },
+      userSettings: {} as never
+    })));
+
+    expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Ukončit požadavek")).toBe(false);
+    await act(async () => { await Promise.resolve(); });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  it.each([
+    [200, { status: "busy" }, "Zpracování ještě běží."],
+    [409, { error: "SECRET-SENTINEL-conflict" }, "AI požadavek se mezitím změnil. Obnovte jeho stav."]
+  ])("shows a safe interrupt response for HTTP %s and refreshes local metadata", async (statusCode, responsePayload, expectedMessage) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(responsePayload), { status: statusCode }));
+    const onReload = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("fetch", fetchMock);
+    const job: ManualAiJobSummary = {
+      attempt_count: 0,
+      completed_at: null,
+      created_at: new Date().toISOString(),
+      failure_code: null,
+      id: "job-conflict",
+      lease_expires_at: null,
+      max_attempts: 1,
+      model: "gpt-5.6-terra",
+      processing_type: "summary",
+      retry_after_at: null,
+      started_at: null,
+      status: "queued"
+    };
+    await act(async () => root.render(createElement(AiProcessingContent, {
+      activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
+      aiOutputs: [],
+      jobs: [job],
+      onOpenEvidence: () => undefined,
+      onReload,
+      resolveEvidenceTarget: () => null,
+      structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] },
+      userSettings: {} as never
+    })));
+
+    await act(async () => Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Ukončit požadavek")?.click());
+    expect(container.textContent).toContain(expectedMessage);
+    expect(container.textContent).not.toContain("SECRET-SENTINEL");
+    expect(onReload).toHaveBeenCalledTimes(1);
     await act(async () => root.unmount());
   });
 });

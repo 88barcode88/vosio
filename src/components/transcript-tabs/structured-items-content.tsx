@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -153,22 +153,29 @@ function StructuredTaskRowView({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [localStatus, setLocalStatus] = useState(task.status);
+  const pendingStatusActionRef = useRef<number | null>(null);
+  const statusActionIdRef = useRef(0);
   const router = useRouter();
   const isDone = localStatus === "done";
   const meta = getTaskMeta(task);
 
   useEffect(() => {
-    setLocalStatus(task.status);
+    if (pendingStatusActionRef.current === null) {
+      setLocalStatus(task.status);
+    }
   }, [task.status]);
 
   // toggleTaskStatus saves one checklist status without leaving the current scroll position.
   function toggleTaskStatus() {
-    if (!task.id || isPending) {
+    if (!task.id || isPending || pendingStatusActionRef.current !== null) {
       return;
     }
 
     const previousStatus = localStatus;
     const nextStatus = getNextStructuredTaskStatus(localStatus);
+    const actionId = statusActionIdRef.current + 1;
+    statusActionIdRef.current = actionId;
+    pendingStatusActionRef.current = actionId;
 
     setLocalStatus(nextStatus);
     setErrorMessage(null);
@@ -181,13 +188,37 @@ function StructuredTaskRowView({
           method: "PATCH"
         });
 
-        if (!response.ok) {
-          setLocalStatus(previousStatus);
-          setErrorMessage("Stav úkolu se nepodařilo uložit.");
+        const payload = await response.json().catch(() => null) as {
+          ok?: unknown;
+          status?: unknown;
+        } | null;
+
+        if (
+          !response.ok
+          || !payload
+          || payload.ok !== true
+          || payload.status !== nextStatus
+        ) {
+          throw new Error("Task status response was not accepted.");
         }
+
+        if (pendingStatusActionRef.current !== actionId) {
+          return;
+        }
+
+        setLocalStatus(nextStatus);
+        setErrorMessage(null);
       } catch {
+        if (pendingStatusActionRef.current !== actionId) {
+          return;
+        }
+
         setLocalStatus(previousStatus);
-        setErrorMessage("Stav úkolu se nepodařilo uložit. Zkontrolujte připojení.");
+        setErrorMessage("Stav úkolu se nepodařilo uložit.");
+      } finally {
+        if (pendingStatusActionRef.current === actionId) {
+          pendingStatusActionRef.current = null;
+        }
       }
     });
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { AudioLines } from "lucide-react";
 import { AiProcessingContent } from "@/components/transcript-tabs/ai-processing-content";
@@ -90,6 +90,7 @@ export function TranscriptTabs({
   const playerRef = useRef<RecordingAudioPlayerHandle | null>(null);
   const lazyAiState = useOptionalTranscriptAiState();
   const loadAiForPurpose = lazyAiState?.loadForPurpose;
+  const setActiveAiPurpose = lazyAiState?.setActivePurpose;
   const displayedAiOutputs = lazyAiState?.loadedOutputs ?? activeAiOutputs;
   const displayedStructuredItems = lazyAiState?.structuredItems ?? activeStructuredItems;
   const tabStorageKey = getTranscriptTabStorageKey(activeRecording);
@@ -97,12 +98,18 @@ export function TranscriptTabs({
     () => deriveRuntimeEvidenceLocations(displayedStructuredItems, activeTranscript?.segments),
     [displayedStructuredItems, activeTranscript?.segments]
   );
+  const reloadTimelineAiState = useCallback(
+    () => loadAiForPurpose?.("timeline") ?? Promise.resolve(),
+    [loadAiForPurpose]
+  );
 
   useEffect(() => {
+    setActiveAiPurpose?.(activeTab === "ai" || activeTab === "timeline" ? activeTab : null);
     if (activeTab === "ai" || activeTab === "timeline") {
       void loadAiForPurpose?.(activeTab);
     }
-  }, [activeTab, loadAiForPurpose]);
+    return () => setActiveAiPurpose?.(null);
+  }, [activeTab, loadAiForPurpose, setActiveAiPurpose]);
 
   useEffect(() => {
     const activeIdentity = `${activeRecording?.id ?? "none"}:${activeTranscript?.id ?? "none"}`;
@@ -477,7 +484,6 @@ export function TranscriptTabs({
 
   return (
     <>
-      <AutomaticTimelineReconciler transcriptId={activeTranscript?.id ?? null} />
       <div className="recording-detail-sticky">
         <RecordingAudioPlayer activeRecording={activeRecording} ref={playerRef} />
         <div className="tabs-row">
@@ -542,17 +548,23 @@ export function TranscriptTabs({
           />
         ) : null}
         {activeTab === "timeline" ? (
-          <TimelineContent
-            activeTranscript={activeTranscript}
-            aiOutputs={displayedAiOutputs}
-            defaultAiModel={userSettings.defaultOpenaiModel}
-            onJobAccepted={lazyAiState?.acceptJob}
-            onReload={() => lazyAiState?.loadForPurpose("timeline") ?? Promise.resolve()}
-            markers={activeRecordingMarkers}
-            onOpenMarker={openRecordingMarker}
-            structuredItems={runtimeStructuredItems}
-            stateError={lazyAiState?.error ?? null}
-          />
+          <>
+            <AutomaticTimelineReconciler
+              onReconciled={reloadTimelineAiState}
+              transcriptId={activeTranscript?.id ?? null}
+            />
+            <TimelineContent
+              activeTranscript={activeTranscript}
+              aiOutputs={displayedAiOutputs}
+              defaultAiModel={userSettings.defaultOpenaiModel}
+              onJobAccepted={lazyAiState?.acceptJob}
+              onReload={reloadTimelineAiState}
+              markers={activeRecordingMarkers}
+              onOpenMarker={openRecordingMarker}
+              structuredItems={runtimeStructuredItems}
+              stateError={lazyAiState?.error ?? null}
+            />
+          </>
         ) : null}
         {activeTab === "files" ? <FilesContent activeRecording={activeRecording} /> : null}
         {activeTab === "chat" ? (

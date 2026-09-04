@@ -1,18 +1,19 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   executePersistedAiProcessing,
-  getAiProviderFailureMessage,
   type PersistedAiProcessingJob,
   type PersistedAiTranscript
 } from "@/lib/ai/processing-service.server";
+import { getSafeAiFailure, SafeAiProviderError, type SafeAiFailure } from "@/lib/ai/provider-errors";
 import type { AiProviderId } from "@/lib/model-options";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type ClaimedManualAiJob = {
   id: string;
   model: string;
-  output_schema_snapshot: unknown;
+  prompt_output_schema_snapshot: unknown;
   prompt_text_snapshot: string;
   provider: AiProviderId;
   provider_config: Record<string, unknown>;
@@ -22,77 +23,98 @@ type ClaimedManualAiJob = {
 
 type ManualAiJobIdentity = {
   jobId: string;
-  metadata?: Record<string, unknown>;
-  temperature?: number;
   transcriptId: string;
   userId: string;
 };
 
+type ManualSettlement = SafeAiFailure & {
+  inputTokenCount: number | null;
+  outputTokenCount: number | null;
+  succeeded: boolean;
+};
+
 export type ManualAiProcessingDependencies = {
-  claimJob: (identity: ManualAiJobIdentity) => Promise<ClaimedManualAiJob | null>;
+  claimJob: (identity: ManualAiJobIdentity, leaseToken: string) => Promise<ClaimedManualAiJob | null>;
   executeJob: (input: {
+    completeJob: (_admin: SupabaseClient, jobId: string, usage: { inputTokenCount: number | null; outputTokenCount: number | null }) => Promise<void>;
     job: PersistedAiProcessingJob;
     metadata?: Record<string, unknown>;
     temperature?: number;
     transcript: PersistedAiTranscript;
   }) => Promise<unknown>;
-  findOutput: (jobId: string, userId: string) => Promise<{ id: string } | null>;
+  findOutput: (jobId: string, transcriptId: string, userId: string) => Promise<{ id: string } | null>;
   loadTranscript: (transcriptId: string, userId: string) => Promise<PersistedAiTranscript | null>;
-  settleDone: (jobId: string, userId: string, transcriptId: string) => Promise<void>;
-  settleFailed: (jobId: string, userId: string, transcriptId: string, errorMessage: string) => Promise<void>;
+  settle: (identity: ManualAiJobIdentity, leaseToken: string, settlement: ManualSettlement) => Promise<boolean>;
 };
 
-// runManualAiJob owns one accepted manual generation after the HTTP response has been released.
+// readProviderExecutionSnapshot validates the complete normalized provider input stored with a new manual job.
+function readProviderExecutionSnapshot(providerConfig: Record<string, unknown>) {
+  const metadata = providerConfig.metadata;
+  const temperature = providerConfig.temperature;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)
+    || typeof temperature !== "number" || !Number.isFinite(temperature)
+    || temperature < 0 || temperature > 2) {
+    throw new SafeAiProviderError({ failureCode: "execution_interrupted", retryAfterAt: null });
+  }
+  return { metadata: metadata as Record<string, unknown>, temperature };
+}
+
+// runManualAiJob owns one accepted manual generation behind an exact database lease.
 export async function runManualAiJob(
   identity: ManualAiJobIdentity,
   dependencies?: ManualAiProcessingDependencies
 ) {
   const owner = dependencies ?? createManualAiProcessingDependencies();
-  const job = await owner.claimJob(identity);
+  const leaseToken = randomUUID();
+  const job = await owner.claimJob(identity, leaseToken);
+  if (!job) return { status: "not_claimed" as const };
 
-  if (!job) {
-    return { status: "not_claimed" as const };
-  }
-
-  const existingOutput = await owner.findOutput(job.id, job.user_id);
-  if (existingOutput) {
-    await owner.settleDone(job.id, job.user_id, job.transcript_id);
-    return { outputId: existingOutput.id, status: "already_completed" as const };
-  }
-
-  const transcript = await owner.loadTranscript(job.transcript_id, job.user_id);
-  if (!transcript) {
-    await owner.settleFailed(
-      job.id,
-      job.user_id,
-      job.transcript_id,
-      "AI zpracování nelze dokončit, protože přepis už není dostupný."
-    );
-    return { status: "failed" as const };
-  }
+  // settleExactly fails loudly on DB errors or a lost/wrong lease instead of inventing completion.
+  const settleExactly = async (settlement: ManualSettlement) => {
+    const settled = await owner.settle(identity, leaseToken, settlement);
+    if (!settled) throw new Error("manual_ai_settlement_not_persisted");
+  };
 
   try {
+    const existingOutput = await owner.findOutput(job.id, job.transcript_id, job.user_id);
+    if (existingOutput) {
+      await settleExactly({ failureCode: "unknown", inputTokenCount: null, outputTokenCount: null, retryAfterAt: null, succeeded: true });
+      return { outputId: existingOutput.id, status: "already_completed" as const };
+    }
+
+    const transcript = await owner.loadTranscript(job.transcript_id, job.user_id);
+    if (!transcript) throw new SafeAiProviderError({ failureCode: "execution_interrupted", retryAfterAt: null });
+    const executionSnapshot = readProviderExecutionSnapshot(job.provider_config);
+
     await owner.executeJob({
+      completeJob: async (_admin, _jobId, usage) => settleExactly({
+        failureCode: "unknown",
+        inputTokenCount: usage.inputTokenCount,
+        outputTokenCount: usage.outputTokenCount,
+        retryAfterAt: null,
+        succeeded: true
+      }),
       job: {
         id: job.id,
         model: job.model,
-        outputSchemaSnapshot: job.output_schema_snapshot,
+        outputSchemaSnapshot: job.prompt_output_schema_snapshot,
         promptTextSnapshot: job.prompt_text_snapshot,
         provider: job.provider,
         providerConfig: job.provider_config
       },
-      metadata: identity.metadata,
-      temperature: identity.temperature,
+      metadata: executionSnapshot.metadata,
+      temperature: executionSnapshot.temperature,
       transcript
     });
     return { status: "done" as const };
-  } catch {
-    await owner.settleFailed(
-      job.id,
-      job.user_id,
-      job.transcript_id,
-      getAiProviderFailureMessage(job.provider)
-    );
+  } catch (error) {
+    const durableOutput = await owner.findOutput(job.id, job.transcript_id, job.user_id);
+    if (durableOutput) {
+      await settleExactly({ failureCode: "unknown", inputTokenCount: null, outputTokenCount: null, retryAfterAt: null, succeeded: true });
+      return { outputId: durableOutput.id, status: "already_completed" as const };
+    }
+    const failure = getSafeAiFailure(error);
+    await settleExactly({ ...failure, inputTokenCount: null, outputTokenCount: null, succeeded: false });
     return { status: "failed" as const };
   }
 }
@@ -100,108 +122,65 @@ export async function runManualAiJob(
 // createManualAiProcessingDependencies binds the durable owner to one server-only Supabase admin client.
 function createManualAiProcessingDependencies(): ManualAiProcessingDependencies {
   const admin = createAdminClient();
-
   return {
-    claimJob: (identity) => claimManualAiJob(admin, identity),
+    claimJob: (identity, leaseToken) => claimManualAiJob(admin, identity, leaseToken),
     executeJob: (input) => executePersistedAiProcessing({ admin, ...input }),
-    findOutput: (jobId, userId) => findManualAiOutput(admin, jobId, userId),
+    findOutput: (jobId, transcriptId, userId) => findManualAiOutput(admin, jobId, transcriptId, userId),
     loadTranscript: (transcriptId, userId) => loadManualAiTranscript(admin, transcriptId, userId),
-    settleDone: (jobId, userId, transcriptId) => settleManualAiJobDone(admin, jobId, userId, transcriptId),
-    settleFailed: (jobId, userId, transcriptId, errorMessage) =>
-      settleManualAiJobFailed(admin, jobId, userId, transcriptId, errorMessage)
+    settle: (identity, leaseToken, settlement) => settleManualAiJob(admin, identity, leaseToken, settlement)
   };
 }
 
-// claimManualAiJob atomically changes exactly one queued manual job to running.
-async function claimManualAiJob(admin: SupabaseClient, identity: ManualAiJobIdentity) {
-  const { data, error } = await admin
-    .from("ai_processing_jobs")
-    .update({ error_message: null, started_at: new Date().toISOString(), status: "running" })
-    .eq("id", identity.jobId)
-    .eq("user_id", identity.userId)
-    .eq("transcript_id", identity.transcriptId)
-    .eq("execution_mode", "manual")
-    .eq("status", "queued")
-    .select("id,model,output_schema_snapshot,prompt_text_snapshot,provider,provider_config,transcript_id,user_id")
-    .maybeSingle<ClaimedManualAiJob>();
-
-  if (error) {
-    console.error("[Vosio manual AI owner] claim_failed");
-    return null;
-  }
-
+// claimManualAiJob calls the atomic queued-only RPC with a fresh exact lease token.
+async function claimManualAiJob(admin: SupabaseClient, identity: ManualAiJobIdentity, leaseToken: string) {
+  const { data, error } = await admin.rpc("claim_manual_ai_job_v1", {
+    p_job_id: identity.jobId,
+    p_lease_token: leaseToken,
+    p_now: new Date().toISOString(),
+    p_transcript_id: identity.transcriptId,
+    p_user_id: identity.userId
+  }).returns<ClaimedManualAiJob[]>().maybeSingle();
+  if (error) throw new Error("manual_ai_claim_failed");
   return data;
 }
 
-// findManualAiOutput checks the durable raw artifact before any paid provider call.
-async function findManualAiOutput(admin: SupabaseClient, jobId: string, userId: string) {
-  const { data } = await admin
-    .from("ai_outputs")
-    .select("id")
-    .eq("processing_job_id", jobId)
-    .eq("user_id", userId)
-    .maybeSingle<{ id: string }>();
-
+// findManualAiOutput checks the durable raw artifact before every possible provider call or settlement retry.
+async function findManualAiOutput(admin: SupabaseClient, jobId: string, transcriptId: string, userId: string) {
+  const { data, error } = await admin.from("ai_outputs").select("id")
+    .eq("processing_job_id", jobId).eq("transcript_id", transcriptId).eq("user_id", userId).maybeSingle<{ id: string }>();
+  if (error) throw new Error("manual_ai_output_check_failed");
   return data;
 }
 
 // loadManualAiTranscript reloads the exact owner-scoped transcript after the queued job is claimed.
 async function loadManualAiTranscript(admin: SupabaseClient, transcriptId: string, userId: string) {
-  const { data, error } = await admin
-    .from("transcripts")
-    .select("id,raw_text,segments,speakers,user_id")
-    .eq("id", transcriptId)
-    .eq("user_id", userId)
-    .maybeSingle<{
-      id: string;
-      raw_text: string;
-      segments: unknown;
-      speakers: unknown;
-      user_id: string;
+  const { data, error } = await admin.from("transcripts").select("id,raw_text,segments,speakers,user_id")
+    .eq("id", transcriptId).eq("user_id", userId).maybeSingle<{
+      id: string; raw_text: string; segments: unknown; speakers: unknown; user_id: string;
     }>();
-
-  if (error || !data) {
-    return null;
-  }
-
-  return {
-    id: data.id,
-    rawText: data.raw_text,
-    segments: data.segments,
-    speakers: data.speakers,
-    userId: data.user_id
-  };
+  if (error || !data) return null;
+  return { id: data.id, rawText: data.raw_text, segments: data.segments, speakers: data.speakers, userId: data.user_id };
 }
 
-// settleManualAiJobDone repairs an accepted job whose raw output already exists.
-async function settleManualAiJobDone(
+// settleManualAiJob invokes exact-token settlement and treats both RPC error and false as failure.
+async function settleManualAiJob(
   admin: SupabaseClient,
-  jobId: string,
-  userId: string,
-  transcriptId: string
+  identity: ManualAiJobIdentity,
+  leaseToken: string,
+  settlement: ManualSettlement
 ) {
-  await admin
-    .from("ai_processing_jobs")
-    .update({ completed_at: new Date().toISOString(), error_message: null, status: "done" })
-    .eq("id", jobId)
-    .eq("user_id", userId)
-    .eq("transcript_id", transcriptId)
-    .eq("status", "running");
-}
-
-// settleManualAiJobFailed stores only stable public failure copy for later rehydration.
-async function settleManualAiJobFailed(
-  admin: SupabaseClient,
-  jobId: string,
-  userId: string,
-  transcriptId: string,
-  errorMessage: string
-) {
-  await admin
-    .from("ai_processing_jobs")
-    .update({ completed_at: new Date().toISOString(), error_message: errorMessage, status: "failed" })
-    .eq("id", jobId)
-    .eq("user_id", userId)
-    .eq("transcript_id", transcriptId)
-    .eq("status", "running");
+  const { data, error } = await admin.rpc("settle_manual_ai_job_v1", {
+    p_failure_code: settlement.succeeded ? null : settlement.failureCode,
+    p_input_token_count: settlement.inputTokenCount,
+    p_job_id: identity.jobId,
+    p_lease_token: leaseToken,
+    p_now: new Date().toISOString(),
+    p_output_token_count: settlement.outputTokenCount,
+    p_retry_after_at: settlement.retryAfterAt,
+    p_succeeded: settlement.succeeded,
+    p_transcript_id: identity.transcriptId,
+    p_user_id: identity.userId
+  });
+  if (error) throw new Error("manual_ai_settlement_failed");
+  return data === true;
 }

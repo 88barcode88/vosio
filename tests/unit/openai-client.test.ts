@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { createOpenAIChatRequestBody, createOpenAIRequestBody } from "@/lib/ai/openai";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createOpenAIChatRequestBody, createOpenAIRequestBody, runOpenAIChat, runOpenAIProcessing } from "@/lib/ai/openai";
+
+vi.mock("@/lib/env.server", () => ({ getOpenAIEnv: () => ({ openaiApiKey: "test-key" }) }));
+afterEach(() => vi.unstubAllGlobals());
 
 const baseInput = {
   outputSchema: null,
@@ -64,5 +67,29 @@ describe("OpenAI client request body", () => {
       model: "gpt-5.6-terra",
       reasoningEffort: null
     })).not.toHaveProperty("reasoning");
+  });
+
+  it("throws only safe structured processing metadata and keeps Chat generic", async () => {
+    const sentinel = "SECRET-SENTINEL-openai";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: "insufficient_quota", message: sentinel }
+    }), { status: 429 })));
+    await expect(runOpenAIProcessing({ ...baseInput, model: "gpt-5.6-terra" }))
+      .rejects.toMatchObject({ failureCode: "insufficient_credit_or_quota" });
+    await expect(runOpenAIProcessing({ ...baseInput, model: "gpt-5.6-terra" }))
+      .rejects.not.toThrow(sentinel);
+    await expect(runOpenAIChat({ messages: [], model: "gpt-5.6-terra", outputSchema: null, systemInstruction: "safe" }))
+      .rejects.toThrow("OpenAI chat request failed.");
+  });
+
+  it("wraps transport failures without exposing their text", async () => {
+    const sentinel = "SECRET-SENTINEL-openai-transport";
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError(sentinel)));
+    await expect(runOpenAIProcessing({ ...baseInput, model: "gpt-5.6-terra" }))
+      .rejects.toMatchObject({ failureCode: "provider_unavailable" });
+    await expect(runOpenAIProcessing({ ...baseInput, model: "gpt-5.6-terra" }))
+      .rejects.not.toThrow(sentinel);
+    await expect(runOpenAIChat({ messages: [], model: "gpt-5.6-terra", outputSchema: null, systemInstruction: "safe" }))
+      .rejects.toThrow("OpenAI chat request failed.");
   });
 });
