@@ -1,6 +1,8 @@
 import type { AudioSource, AudioSourceHandlers } from "@soniox/client";
 
 export type SharedAudioLeaseName = "archive" | "soniox";
+export type LiveAudioCaptureMode = "microphone" | "microphone_and_tab";
+export type SharedAudioInputName = "microphone" | "shared_tab";
 
 export type SharedAudioTrackLease = {
   readonly name: SharedAudioLeaseName;
@@ -15,11 +17,24 @@ export type SharedAudioSession = {
   readonly closed: boolean;
   close: () => void;
   lease: (name: SharedAudioLeaseName) => SharedAudioTrackLease;
+  onSourceEnded: (listener: (source: SharedAudioInputName) => void) => () => void;
+  onSourceMuted: (
+    listener: (source: SharedAudioInputName, muted: boolean) => void
+  ) => () => void;
 };
 
 type AcquireSharedAudioSessionOptions = {
+  captureMode?: LiveAudioCaptureMode;
   constraints?: MediaTrackConstraints | boolean;
+  createAudioMixer?: () => SharedAudioMixer;
+  getDisplayMedia?: (constraints: DisplayMediaStreamOptions) => Promise<MediaStream>;
   getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
+};
+
+type SharedAudioMixer = {
+  close: () => void;
+  mix: (microphoneStream: MediaStream, displayStream: MediaStream) => MediaStream;
+  ready: Promise<void>;
 };
 
 type SonioxAudioSourceOptions = {
@@ -33,6 +48,22 @@ export type SonioxAudioSource = AudioSource & {
 
 const DEFAULT_SONIOX_TIMESLICE_MS = 250;
 
+const TAB_AUDIO_CAPTURE_CONSTRAINTS = {
+  audio: {
+    suppressLocalAudioPlayback: false
+  },
+  video: {
+    displaySurface: "browser",
+    frameRate: { max: 5 },
+    height: { max: 180 },
+    width: { max: 320 }
+  },
+  preferCurrentTab: false,
+  selfBrowserSurface: "exclude",
+  surfaceSwitching: "include",
+  systemAudio: "exclude"
+} as unknown as DisplayMediaStreamOptions;
+
 // createSingleTrackStream wraps one owned clone without sharing the master stream object.
 function createSingleTrackStream(track: MediaStreamTrack) {
   if (typeof MediaStream === "undefined") {
@@ -42,9 +73,72 @@ function createSingleTrackStream(track: MediaStreamTrack) {
   return new MediaStream([track]);
 }
 
-// acquireSharedAudioSession opens the physical microphone once and owns all session-scoped clones.
+// stopStreams releases every unique raw track owned by one capture attempt.
+function stopStreams(streams: Array<MediaStream | null | undefined>) {
+  const stopped = new Set<MediaStreamTrack>();
+
+  streams.forEach((stream) => {
+    stream?.getTracks().forEach((track) => {
+      if (!stopped.has(track)) {
+        stopped.add(track);
+        track.stop();
+      }
+    });
+  });
+}
+
+// createBrowserAudioMixer combines microphone and shared-tab audio into one owned stream.
+function createBrowserAudioMixer(): SharedAudioMixer {
+  if (typeof AudioContext === "undefined") {
+    throw new Error("Míchání mikrofonu a zvuku karty není v tomto prohlížeči dostupné.");
+  }
+
+  const context = new AudioContext();
+  const destination = context.createMediaStreamDestination();
+  const sources: MediaStreamAudioSourceNode[] = [];
+  let closed = false;
+  const ready = context.state === "running"
+    ? Promise.resolve()
+    : context.resume().then(() => {
+        if (context.state !== "running") {
+          throw new Error("Míchání zvuku se nepodařilo aktivovat.");
+        }
+      }).catch(() => {
+        throw new Error("Míchání zvuku se nepodařilo aktivovat.");
+      });
+
+  return {
+    // mix connects both live inputs to the same destination track.
+    mix(microphoneStream, displayStream) {
+      const microphoneSource = context.createMediaStreamSource(microphoneStream);
+      const displaySource = context.createMediaStreamSource(displayStream);
+
+      microphoneSource.connect(destination);
+      displaySource.connect(destination);
+      sources.push(microphoneSource, displaySource);
+      return destination.stream;
+    },
+
+    // close disconnects the graph and releases its browser audio context.
+    close() {
+      if (closed) {
+        return;
+      }
+
+      closed = true;
+      sources.forEach((source) => source.disconnect());
+      void context.close();
+    },
+    ready
+  };
+}
+
+// acquireSharedAudioSession opens one source topology and owns all raw tracks and consumer clones.
 export async function acquireSharedAudioSession({
+  captureMode = "microphone",
   constraints = true,
+  createAudioMixer: createMixer = createBrowserAudioMixer,
+  getDisplayMedia,
   getUserMedia
 }: AcquireSharedAudioSessionOptions = {}): Promise<SharedAudioSession> {
   const acquire = getUserMedia
@@ -54,16 +148,156 @@ export async function acquireSharedAudioSession({
     throw new Error("navigator.mediaDevices.getUserMedia není dostupné.");
   }
 
-  const masterStream = await acquire({ audio: constraints });
+  let mixer: SharedAudioMixer | null = null;
+  let microphoneStream: MediaStream | null = null;
+  let displayStream: MediaStream | null = null;
+  let masterStream: MediaStream;
+
+  if (captureMode === "microphone_and_tab") {
+    const acquireDisplay = getDisplayMedia
+      ?? navigator.mediaDevices?.getDisplayMedia?.bind(navigator.mediaDevices);
+
+    if (!acquireDisplay) {
+      throw new Error("Sdílení zvuku karty není v tomto prohlížeči dostupné.");
+    }
+
+    mixer = createMixer();
+    void mixer.ready.catch(() => undefined);
+
+    try {
+      displayStream = await acquireDisplay(TAB_AUDIO_CAPTURE_CONSTRAINTS);
+      const displayAudioTrack = displayStream.getAudioTracks()[0];
+      const displayVideoTrack = displayStream.getTracks().find((track) => track.kind === "video");
+
+      if (!displayAudioTrack) {
+        throw new Error(
+          "Vybraná karta nesdílí zvuk. Zvolte kartu Google Meet a zapněte Sdílet také zvuk karty."
+        );
+      }
+      if (!displayVideoTrack || displayVideoTrack.getSettings().displaySurface !== "browser") {
+        throw new Error(
+          "Vybraný zdroj není karta prohlížeče. Zvolte přímo kartu Google Meet se zapnutým sdílením zvuku."
+        );
+      }
+
+      microphoneStream = await acquire({ audio: constraints });
+      const microphoneTrack = microphoneStream.getAudioTracks()[0];
+
+      if (!microphoneTrack) {
+        throw new Error("Mikrofon nevrátil žádnou audio stopu.");
+      }
+      await mixer.ready;
+      if (displayAudioTrack.readyState === "ended" || displayVideoTrack.readyState === "ended") {
+        throw new Error(
+          "Sdílení zvuku karty skončilo před spuštěním nahrávání. Vyberte kartu znovu."
+        );
+      }
+      if (microphoneTrack.readyState === "ended") {
+        throw new Error("Mikrofon se odpojil před spuštěním nahrávání.");
+      }
+
+      masterStream = mixer.mix(microphoneStream, displayStream);
+    } catch (error) {
+      stopStreams([microphoneStream, displayStream]);
+      mixer.close();
+      if (
+        !displayStream
+        && error instanceof Error
+        && (error.name === "AbortError" || error.name === "NotAllowedError")
+      ) {
+        throw new Error(
+          "Sdílení zvuku karty nebylo potvrzené. Vyberte kartu Google Meet a ponechte zapnuté Sdílet také zvuk karty."
+        );
+      }
+      throw error;
+    }
+  } else {
+    microphoneStream = await acquire({ audio: constraints });
+    masterStream = microphoneStream;
+  }
+
   const masterTrack = masterStream.getAudioTracks()[0];
 
   if (!masterTrack) {
-    masterStream.getTracks().forEach((track) => track.stop());
+    stopStreams([masterStream, microphoneStream, displayStream]);
+    mixer?.close();
     throw new Error("Mikrofon nevrátil žádnou audio stopu.");
   }
 
   const leases = new Map<SharedAudioLeaseName, SharedAudioTrackLease>();
+  const endedInputs = new Set<SharedAudioInputName>();
+  const mutedInputs = new Set<SharedAudioInputName>();
+  const sourceEndedListeners = new Set<(source: SharedAudioInputName) => void>();
+  const sourceMutedListeners = new Set<(
+    source: SharedAudioInputName,
+    muted: boolean
+  ) => void>();
+  const sourceTrackCleanups: Array<() => void> = [];
   let closed = false;
+
+  // bindSourceTrack reports unexpected raw-input loss independently from the mixed output track.
+  function bindSourceTrack(track: MediaStreamTrack | undefined, source: SharedAudioInputName) {
+    if (!track) {
+      return;
+    }
+
+    const listener = () => {
+      if (closed || endedInputs.has(source)) {
+        return;
+      }
+
+      endedInputs.add(source);
+      sourceEndedListeners.forEach((notify) => notify(source));
+    };
+
+    track.addEventListener("ended", listener);
+    sourceTrackCleanups.push(() => track.removeEventListener("ended", listener));
+  }
+
+  // bindSourceMuteTrack reports temporary loss and recovery for each raw audio input.
+  function bindSourceMuteTrack(track: MediaStreamTrack | undefined, source: SharedAudioInputName) {
+    if (!track) {
+      return;
+    }
+
+    if (track.muted) {
+      mutedInputs.add(source);
+    }
+    const onMute = () => {
+      if (closed || mutedInputs.has(source)) {
+        return;
+      }
+
+      mutedInputs.add(source);
+      sourceMutedListeners.forEach((notify) => notify(source, true));
+    };
+    const onUnmute = () => {
+      if (closed || !mutedInputs.delete(source)) {
+        return;
+      }
+
+      sourceMutedListeners.forEach((notify) => notify(source, false));
+    };
+
+    track.addEventListener("mute", onMute);
+    track.addEventListener("unmute", onUnmute);
+    sourceTrackCleanups.push(() => {
+      track.removeEventListener("mute", onMute);
+      track.removeEventListener("unmute", onUnmute);
+    });
+  }
+
+  const microphoneTrack = microphoneStream.getAudioTracks()[0];
+
+  bindSourceTrack(microphoneTrack, "microphone");
+  bindSourceMuteTrack(microphoneTrack, "microphone");
+  if (captureMode === "microphone_and_tab") {
+    const displayAudioTrack = displayStream?.getAudioTracks()[0];
+
+    bindSourceTrack(displayAudioTrack, "shared_tab");
+    bindSourceMuteTrack(displayAudioTrack, "shared_tab");
+    bindSourceTrack(displayStream?.getTracks().find((track) => track.kind === "video"), "shared_tab");
+  }
 
   // close releases each owned clone before releasing the physical master stream.
   function close() {
@@ -72,8 +306,35 @@ export async function acquireSharedAudioSession({
     }
 
     closed = true;
+    sourceTrackCleanups.forEach((cleanup) => cleanup());
+    sourceTrackCleanups.length = 0;
+    sourceEndedListeners.clear();
+    sourceMutedListeners.clear();
     [...leases.values()].forEach((lease) => lease.release());
-    masterStream.getTracks().forEach((track) => track.stop());
+    stopStreams([masterStream, microphoneStream, displayStream]);
+    mixer?.close();
+  }
+
+  // onSourceEnded subscribes to raw microphone or shared-tab loss and replays an already-ended input.
+  function onSourceEnded(listener: (source: SharedAudioInputName) => void) {
+    if (closed) {
+      return () => undefined;
+    }
+
+    sourceEndedListeners.add(listener);
+    endedInputs.forEach((source) => listener(source));
+    return () => sourceEndedListeners.delete(listener);
+  }
+
+  // onSourceMuted subscribes to raw input mute changes and replays currently muted inputs.
+  function onSourceMuted(listener: (source: SharedAudioInputName, muted: boolean) => void) {
+    if (closed) {
+      return () => undefined;
+    }
+
+    sourceMutedListeners.add(listener);
+    mutedInputs.forEach((source) => listener(source, true));
+    return () => sourceMutedListeners.delete(listener);
   }
 
   // lease creates one independently stoppable clone for a named capture consumer.
@@ -119,7 +380,9 @@ export async function acquireSharedAudioSession({
       return closed;
     },
     close,
-    lease
+    lease,
+    onSourceEnded,
+    onSourceMuted
   };
 }
 

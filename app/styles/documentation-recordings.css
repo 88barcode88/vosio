@@ -1442,6 +1442,7 @@
 .capture-card .live-audio-quality-summary,
 .capture-card .live-recorder-health,
 .capture-card .live-save-mode,
+.capture-card .live-audio-source-help,
 .capture-card .caption-surface,
 .capture-card .recording-state {
   grid-column: 1 / -1;

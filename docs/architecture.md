@@ -72,7 +72,8 @@ Tento režim je povinný cílový režim.
 ```text
 Uživatel
 -> spustí realtime nahrávání
--> browser otevře mikrofon
+-> browser otevře mikrofon a ve výchozím desktopovém režimu vyžádá kartu hovoru se zvukem
+-> Web Audio smíchá mikrofon a zvuk vybrané karty do jednoho master streamu
 -> audio stream jde přes bezpečný realtime mechanismus do Soniox
 -> segmenty se průběžně zobrazují a ukládají
 -> po ukončení vznikne finální transcript
@@ -81,7 +82,7 @@ Uživatel
 
 Realtime je cílová schopnost. Datový model a UI stavy s ní musí počítat, i když implementace přijde až po standardním nahrávání.
 
-Aktuální realtime implementace používá Soniox Web SDK v browseru a server-side endpoint pro vydání krátkodobého `transcribe_websocket` klíče. Hlavní `SONIOX_API_KEY` nikdy nejde do frontendu. Live karta nabízí přesně tři režimy: `Audio do {live limit} + live přepis`, `Jen audio do {live limit}` a `Jen live přepis`. Audio režimy získají mikrofon jednou a z master streamu oddělí vlastněné klony pro kontinuální archiv, Soniox source a rotující bezpečnostní rekordér; zastavení nebo restart Sonioxu tak nesmí zastavit archiv. Audio-only vůbec nežádá realtime klíč a async přepis spustí až po potvrzeném uploadu. Combined při terminálním výpadku provideru dál nahrává audio a po jeho potvrzeném uložení spustí restart-safe async přepis. Transcriptové režimy průběžně ukládají partial draft přes `PUT /api/recordings/{recordingId}/live-draft`.
+Aktuální realtime implementace používá Soniox Web SDK v browseru a server-side endpoint pro vydání krátkodobého `transcribe_websocket` klíče. Hlavní `SONIOX_API_KEY` nikdy nejde do frontendu. Live karta nabízí přesně tři režimy: `Audio do {live limit} + live přepis`, `Jen audio do {live limit}` a `Jen live přepis`. Zdroj zvuku je samostatná volba: podporovaný desktopový Chrome nebo Edge s Web Audio předvolí `Videohovor: mikrofon + karta`, zatímco nepodporované prostředí zůstane na `Jen mikrofon`. Videohovorový režim přes povinný browser picker získá mikrofon a audio vybrané browserové karty, smíchá je přes Web Audio do jediného master streamu a teprve z něj oddělí vlastněné klony pro kontinuální archiv a Soniox source; rotující safety rekordér používá svůj vlastní klon stejného masteru. Zrušený picker, jiný typ sdílené plochy, karta bez audio stopy, ukončený raw vstup nebo neaktivní AudioContext nikdy tiše nespadne na samotný mikrofon. Dočasné ztlumení každého raw audio vstupu má samostatné UI varování. Ukončení některého raw vstupu během aktivního záznamu spustí bezpečný stop a finalizaci dosavadní nahrávky. Zastavení nebo restart Sonioxu nesmí zastavit archiv. Audio-only vůbec nežádá realtime klíč a async přepis spustí až po potvrzeném uploadu. Combined při terminálním výpadku provideru dál nahrává audio a po jeho potvrzeném uložení spustí restart-safe async přepis. Transcriptové režimy průběžně ukládají partial draft přes `PUT /api/recordings/{recordingId}/live-draft`.
 
 Live Soniox jazyk je samostatná preference od režimu ukládání audia. Nabídka podporuje `auto` (Automaticky), `cs` (čeština), `en` (angličtina), `de` (němčina), `es` (španělština), `it` (italština), `sk` (slovenština), `sl` (slovinština), `hu` (maďarština) a `pl` (polština). `auto` zapíná identifikaci jazyka a neposílá žádné `language_hints`; pevná volba posílá jeden `language_hints` kód s `language_hints_strict = true`. V obou režimech zůstává `enable_speaker_diarization = true`, protože volba jazyka sama o sobě rozpoznávání mluvčích nevypíná. Hint je providerovi pouze preference/omezení podle jeho runtime chování, ne absolutní záruka výsledného jazyka.
 
