@@ -47,4 +47,4 @@ export type ExportTarget =
   | { id: "recording"; label: string; type: "recording" }
   | { id: "workspace"; label: string; type: "workspace" }
   | { id: "transcript"; label: string; type: "transcript" }
-  | { id: string; label: string; output: AiOutputView; type: "ai_output" };
+  | { id: string; label: string; output?: AiOutputView; type: "ai_output" };

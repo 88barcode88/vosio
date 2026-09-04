@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
+import type { ManualAiJobStatus } from "@/lib/ai/manual-job-state";
 
 export type AiProcessingType =
   | "summary"
@@ -36,11 +36,12 @@ export function getAiProcessingRunError(payload: unknown) {
     : "Nepodařilo se spustit AI zpracování.";
 }
 
-// useAiProcessingRun owns parallel AI request indicators and refreshes persisted output after success.
-export function useAiProcessingRun(transcriptId: string | null) {
-  const router = useRouter();
+// useAiProcessingRun owns parallel acceptance requests without cancelling potentially accepted jobs.
+export function useAiProcessingRun(
+  transcriptId: string | null,
+  onAccepted?: (job: { id: string; status: ManualAiJobStatus }, processingType: AiProcessingType) => void
+) {
   const [state, setState] = useState<AiProcessingState>({ activeRuns: [], message: null, transcriptId });
-  const controllersRef = useRef(new Map<string, AbortController>());
   const messageOwnerRef = useRef<string | null>(null);
   const scopeRef = useRef({ generation: 0, transcriptId: null as string | null });
   const currentState = state.transcriptId === transcriptId
@@ -49,10 +50,7 @@ export function useAiProcessingRun(transcriptId: string | null) {
 
   useLayoutEffect(() => {
     const generation = scopeRef.current.generation + 1;
-    const controllers = controllersRef.current;
     scopeRef.current = { generation, transcriptId };
-    controllers.forEach((controller) => controller.abort());
-    controllers.clear();
     messageOwnerRef.current = null;
 
     return () => {
@@ -60,8 +58,6 @@ export function useAiProcessingRun(transcriptId: string | null) {
         return;
       }
       scopeRef.current = { generation: generation + 1, transcriptId: null };
-      controllers.forEach((controller) => controller.abort());
-      controllers.clear();
       messageOwnerRef.current = null;
     };
   }, [transcriptId]);
@@ -74,8 +70,6 @@ export function useAiProcessingRun(transcriptId: string | null) {
     }
 
     const runId = crypto.randomUUID();
-    const controller = new AbortController();
-    controllersRef.current.set(runId, controller);
     messageOwnerRef.current = runId;
     setState((current) => {
       const scoped = current.transcriptId === transcriptId
@@ -90,8 +84,7 @@ export function useAiProcessingRun(transcriptId: string | null) {
 
     // ownsCurrentScope prevents an old transcript request from mutating the newly mounted identity.
     const ownsCurrentScope = () => scopeRef.current.generation === scope.generation
-      && scopeRef.current.transcriptId === transcriptId
-      && !controller.signal.aborted;
+      && scopeRef.current.transcriptId === transcriptId;
 
     // setOwnedMessage keeps shared copy bound to the most recently started run in this scope.
     const setOwnedMessage = (message: string) => {
@@ -104,12 +97,7 @@ export function useAiProcessingRun(transcriptId: string | null) {
     };
 
     try {
-      const response = await fetch(`/api/transcripts/${transcriptId}/process`, {
-        body: JSON.stringify(input),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-        signal: controller.signal
-      });
+      const response = await postManualAiRequest(transcriptId, input, runId);
       const payload = await response.json().catch(() => null) as unknown;
 
       if (!ownsCurrentScope()) {
@@ -121,16 +109,22 @@ export function useAiProcessingRun(transcriptId: string | null) {
         return false;
       }
 
-      setOwnedMessage("AI výstup je uložený v Supabase.");
-      router.refresh();
+      const accepted = payload as { job?: { id?: unknown; status?: unknown } };
+      if (
+        typeof accepted.job?.id !== "string"
+        || !["queued", "running", "done", "failed"].includes(String(accepted.job.status))
+      ) {
+        setOwnedMessage("Server nepotvrdil AI zpracování.");
+        return false;
+      }
+      const acceptedJob = { id: accepted.job.id, status: accepted.job.status as ManualAiJobStatus };
+      onAccepted?.(acceptedJob, input.processingType);
+      setOwnedMessage("AI požadavek je přijatý a pokračuje na serveru.");
       return true;
     } catch {
       setOwnedMessage("Nepodařilo se spojit se serverem pro AI zpracování.");
       return false;
     } finally {
-      if (controllersRef.current.get(runId) === controller) {
-        controllersRef.current.delete(runId);
-      }
       if (ownsCurrentScope()) {
         setState((current) => current.transcriptId === transcriptId
           ? {
@@ -150,4 +144,22 @@ export function useAiProcessingRun(transcriptId: string | null) {
     message: currentState.message,
     run
   };
+}
+
+// postManualAiRequest reuses one UUID for a single transport retry and keeps the request alive across navigation.
+async function postManualAiRequest(transcriptId: string, input: AiProcessingRunInput, requestId: string) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await fetch(`/api/transcripts/${transcriptId}/process`, {
+        body: JSON.stringify({ ...input, requestId }),
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        method: "POST"
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }

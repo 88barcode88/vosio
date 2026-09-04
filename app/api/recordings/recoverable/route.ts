@@ -4,8 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import { RECORDINGS_BUCKET } from "@/lib/recordings/types";
 import {
   getLiveStorageListPrefix,
-  getRecoverableLiveStoragePrefix
+  getRecoverableLiveStoragePrefix,
+  listStorageObjectsToExhaustion,
+  summarizeSafetyPartStorageObjects
 } from "@/lib/live-recording/recovery";
+import { InvalidSafetyPartListingError } from "@/lib/live-recording/safety-parts";
 
 type RecoverableRecordingRow = {
   created_at: string;
@@ -28,19 +31,8 @@ type TranscriptSummary = {
   rawTextChars: number;
 };
 
-// getStorageObjectSize safely reads Supabase object metadata size.
-function getStorageObjectSize(item: { metadata?: unknown }) {
-  if (typeof item.metadata !== "object" || item.metadata === null || !("size" in item.metadata)) {
-    return 0;
-  }
-
-  const size = (item.metadata as { size?: unknown }).size;
-
-  return typeof size === "number" && Number.isFinite(size) ? size : 0;
-}
-
 // summarizeStorageObjects returns compact metadata for live audio parts without signed URLs.
-async function summarizeStorageObjects(input: {
+export async function summarizeStorageObjects(input: {
   admin: ReturnType<typeof createAdminClient>;
   storagePrefix: string | null;
 }) {
@@ -48,34 +40,14 @@ async function summarizeStorageObjects(input: {
     return { count: 0, newestUpdatedAt: null, totalBytes: 0 } satisfies StorageObjectSummary;
   }
 
-  const { data, error } = await input.admin.storage
-    .from(RECORDINGS_BUCKET)
-    .list(getLiveStorageListPrefix(input.storagePrefix));
+  const folder = getLiveStorageListPrefix(input.storagePrefix);
+  const bucket = input.admin.storage.from(RECORDINGS_BUCKET);
+  const data = await listStorageObjectsToExhaustion({
+    folder,
+    listPage: (path, options) => bucket.list(path, options)
+  });
 
-  if (error) {
-    return { count: 0, newestUpdatedAt: null, totalBytes: 0 } satisfies StorageObjectSummary;
-  }
-
-  return (data ?? []).reduce<StorageObjectSummary>(
-    (summary, item) => {
-      if (!item.name || item.name.endsWith("/")) {
-        return summary;
-      }
-
-      const updatedAt = item.updated_at ?? item.created_at ?? null;
-      const newestUpdatedAt =
-        updatedAt && (!summary.newestUpdatedAt || updatedAt > summary.newestUpdatedAt)
-          ? updatedAt
-          : summary.newestUpdatedAt;
-
-      return {
-        count: summary.count + 1,
-        newestUpdatedAt,
-        totalBytes: summary.totalBytes + getStorageObjectSize(item)
-      };
-    },
-    { count: 0, newestUpdatedAt: null, totalBytes: 0 }
-  );
+  return summarizeSafetyPartStorageObjects(data) satisfies StorageObjectSummary;
 }
 
 // summarizeTranscript reads only transcript metadata needed for recovery UI.
@@ -129,31 +101,41 @@ export async function GET() {
   }
 
   const admin = createAdminClient();
-  const recoverableRows = await Promise.all(
-    ((rows ?? []) as RecoverableRecordingRow[]).map(async (row) => {
-      const storagePrefix =
-        row.storage_path ?? (row.source_type === "in_app_recording" ? getRecoverableLiveStoragePrefix(user.id, row.id) : null);
-      const [storage, transcript] = await Promise.all([
-        summarizeStorageObjects({ admin, storagePrefix }),
-        summarizeTranscript({ admin, recordingId: row.id, userId: user.id })
-      ]);
+  let recoverableRows;
 
-      return {
-        created_at: row.created_at,
-        duration_seconds: row.duration_seconds,
-        id: row.id,
-        segment_count: storage.count,
-        storage_bytes: storage.totalBytes,
-        storage_updated_at: storage.newestUpdatedAt,
-        title: row.title,
-        transcript_chars: transcript.rawTextChars,
-        transcript_count: transcript.count
-      };
-    })
-  );
+  try {
+    recoverableRows = await Promise.all(
+      ((rows ?? []) as RecoverableRecordingRow[]).map(async (row) => {
+        const storagePrefix =
+          row.storage_path ?? (row.source_type === "in_app_recording" ? getRecoverableLiveStoragePrefix(user.id, row.id) : null);
+        const [storage, transcript] = await Promise.all([
+          summarizeStorageObjects({ admin, storagePrefix }),
+          summarizeTranscript({ admin, recordingId: row.id, userId: user.id })
+        ]);
+
+        return {
+          created_at: row.created_at,
+          duration_seconds: row.duration_seconds,
+          id: row.id,
+          segment_count: storage.count,
+          storage_bytes: storage.totalBytes,
+          storage_updated_at: storage.newestUpdatedAt,
+          title: row.title,
+          transcript_chars: transcript.rawTextChars,
+          transcript_count: transcript.count
+        };
+      })
+    );
+  } catch (listingError) {
+    if (listingError instanceof InvalidSafetyPartListingError) {
+      return NextResponse.json({ error: listingError.message }, { status: 409 });
+    }
+
+    return NextResponse.json({ error: "Nepodařilo se načíst nedokončené nahrávky." }, { status: 500 });
+  }
   const recordings = recoverableRows.filter(
     (recording) => recording.segment_count > 0 || recording.transcript_chars > 0
   );
 
-  return NextResponse.json({ recordings });
+  return NextResponse.json({ ownerId: user.id, recordings });
 }

@@ -8,8 +8,9 @@ export type AiOutputRow = {
   user_id: string;
 };
 
-export type AiOutputView = AiOutputRow & {
+export type AiOutputView = Omit<AiOutputRow, "user_id"> & {
   processing_type: string | null;
+  user_id?: string;
 };
 
 export type AiArchiveItem = Omit<AiOutputView, "user_id"> & {

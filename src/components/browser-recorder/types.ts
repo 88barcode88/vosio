@@ -1,8 +1,27 @@
 import type { RecordOptions, Recording } from "@soniox/client";
+import type { LiveAudioHealthSnapshot } from "@/lib/live-recording/audio-health";
+import type { LiveAudioQuality } from "@/lib/recordings/types";
 import type { SonioxRealtimeLanguageId } from "@/lib/soniox/languages";
 
 export type RecorderStatus = "idle" | "starting" | "recording" | "saving";
-export type LiveSaveMode = "audio_and_transcript" | "transcript_only";
+export type LiveProviderHealth =
+  | "canceled"
+  | "connecting"
+  | "disabled"
+  | "error"
+  | "healthy"
+  | "ready"
+  | "reconnecting";
+export type LiveSaveMode =
+  | "audio_and_live_transcript"
+  | "audio_only"
+  | "live_transcript_only";
+export type LiveProviderFallbackReason =
+  | "canceled"
+  | "empty_final_text"
+  | "error"
+  | "start_failed"
+  | "unhealthy_stop";
 export type LiveCaptionBlock = {
   speaker: string;
   speakerClassName: string;
@@ -25,7 +44,9 @@ export type BrowserRecorderProps = {
   captionMode?: boolean;
   compact?: boolean;
   developmentRecordingFactory?: DevelopmentRecordingFactory;
+  liveAudioQuality?: LiveAudioQuality;
   maxAudioFileSizeBytes: number | null;
+  onAudioHealthChange?: (health: LiveAudioHealthSnapshot | null) => void;
   onStatusChange?: (status: RecorderStatus) => void;
   realtimeLanguage?: SonioxRealtimeLanguageId;
   redirectAfterSave?: "detail" | "list";

@@ -13,6 +13,7 @@ import {
 } from "@/components/transcript-tabs/recording-audio-player";
 import { TimelineContent } from "@/components/transcript-tabs/timeline-content";
 import { transcriptTabs } from "@/components/transcript-tabs/constants";
+import { useOptionalTranscriptAiState } from "@/components/transcript-tabs/use-transcript-ai-state";
 import {
   getTranscriptStatusLabel,
   getTranscriptTabCookieValue,
@@ -87,11 +88,21 @@ export function TranscriptTabs({
   const initialDeepLinkAppliedRef = useRef<string | null>(null);
   const initialDeepLinkStagedRef = useRef<string | null>(null);
   const playerRef = useRef<RecordingAudioPlayerHandle | null>(null);
+  const lazyAiState = useOptionalTranscriptAiState();
+  const loadAiForPurpose = lazyAiState?.loadForPurpose;
+  const displayedAiOutputs = lazyAiState?.loadedOutputs ?? activeAiOutputs;
+  const displayedStructuredItems = lazyAiState?.structuredItems ?? activeStructuredItems;
   const tabStorageKey = getTranscriptTabStorageKey(activeRecording);
   const runtimeStructuredItems = useMemo(
-    () => deriveRuntimeEvidenceLocations(activeStructuredItems, activeTranscript?.segments),
-    [activeStructuredItems, activeTranscript?.segments]
+    () => deriveRuntimeEvidenceLocations(displayedStructuredItems, activeTranscript?.segments),
+    [displayedStructuredItems, activeTranscript?.segments]
   );
+
+  useEffect(() => {
+    if (activeTab === "ai" || activeTab === "timeline") {
+      void loadAiForPurpose?.(activeTab);
+    }
+  }, [activeTab, loadAiForPurpose]);
 
   useEffect(() => {
     const activeIdentity = `${activeRecording?.id ?? "none"}:${activeTranscript?.id ?? "none"}`;
@@ -516,21 +527,31 @@ export function TranscriptTabs({
         {activeTab === "ai" ? (
           <AiProcessingContent
             activeTranscript={activeTranscript}
-            aiOutputs={activeAiOutputs}
+            aiOutputs={displayedAiOutputs}
+            isLoading={lazyAiState?.isLoading ?? false}
+            jobs={lazyAiState?.jobs ?? []}
+            loadOutput={lazyAiState?.loadOutput}
             onOpenEvidence={openStructuredEvidence}
+            onJobAccepted={lazyAiState?.acceptJob}
+            onReload={() => lazyAiState?.loadForPurpose("ai") ?? Promise.resolve()}
+            outputMetadata={lazyAiState?.outputs}
             resolveEvidenceTarget={resolveStructuredEvidenceTarget}
             structuredItems={runtimeStructuredItems}
+            stateError={lazyAiState?.error ?? null}
             userSettings={userSettings}
           />
         ) : null}
         {activeTab === "timeline" ? (
           <TimelineContent
             activeTranscript={activeTranscript}
-            aiOutputs={activeAiOutputs}
+            aiOutputs={displayedAiOutputs}
             defaultAiModel={userSettings.defaultOpenaiModel}
+            onJobAccepted={lazyAiState?.acceptJob}
+            onReload={() => lazyAiState?.loadForPurpose("timeline") ?? Promise.resolve()}
             markers={activeRecordingMarkers}
             onOpenMarker={openRecordingMarker}
             structuredItems={runtimeStructuredItems}
+            stateError={lazyAiState?.error ?? null}
           />
         ) : null}
         {activeTab === "files" ? <FilesContent activeRecording={activeRecording} /> : null}

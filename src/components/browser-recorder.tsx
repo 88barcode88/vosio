@@ -6,8 +6,7 @@ import Link from "next/link";
 import { Flag, Mic, Square } from "lucide-react";
 import { useRecordingNavigationBlocker } from "@/components/recording-navigation-guard";
 import {
-  LIVE_RECORDING_AUDIO_BITS_PER_SECOND,
-  formatFileSize
+  liveAudioQualityOptions
 } from "@/lib/recordings/types";
 import {
   getLiveAudioDiscardEstimateBytes,
@@ -21,8 +20,10 @@ import {
 } from "@soniox/client";
 import {
   formatElapsedTime,
+  getLiveAudioQualitySummary,
+  getLiveProviderHealthMessage,
   getLiveRecordingTitle,
-  getLiveAudioFallbackMessage,
+  getPersistedLiveTranscriptAudioStorage,
   getRecordedFileExtension,
   getRecordingActiveMessage,
   getRealtimeRecordingOptions,
@@ -36,9 +37,11 @@ import {
   getSupportedMimeType,
   getTokenKey,
   getWakeLockWarning,
+  liveModeStoresAudio,
+  liveModeUsesRealtime,
   mergeRealtimeResultTokens,
   promoteRealtimePartialTokens,
-  shouldDiscardLiveRecordingAudio,
+  shouldStopLiveRecordingAtAudioLimit,
   stopRealtimeRecording,
   tokensToCaptionBlocks,
   tokensToText,
@@ -51,6 +54,8 @@ import type {
   LiveCaptionBlock,
   LiveMarkerAttempt,
   LiveMarkerFeedback,
+  LiveProviderFallbackReason,
+  LiveProviderHealth,
   LiveSaveMode,
   RealtimeConfig,
   RealtimeConfigError,
@@ -65,7 +70,9 @@ import {
   completeLiveRecordingUpload,
   createLiveRecordingDraft,
   failLiveRecordingUpload,
+  removeRemoteDurableSafetyGeneration,
   uploadLiveRecording,
+  uploadLiveRecordingPart,
   type LiveRecordingDraft
 } from "@/lib/recordings/upload";
 import { LIVE_RECORDING_AUTOSAVE_INTERVAL_MS } from "@/lib/live-recording/recovery";
@@ -79,6 +86,32 @@ import {
   sonioxRealtimeLanguageOptions,
   type SonioxRealtimeLanguageId
 } from "@/lib/soniox/languages";
+import {
+  createLiveAudioHealthMonitor,
+  getLiveAudioHealthNotice,
+  type LiveAudioHealthMonitor,
+  type LiveAudioHealthSnapshot
+} from "@/lib/live-recording/audio-health";
+import {
+  acquireSharedAudioSession,
+  createSonioxAudioSource,
+  type SharedAudioSession,
+  type SharedAudioTrackLease,
+  type SonioxAudioSource
+} from "@/lib/live-recording/shared-audio-source";
+import {
+  cleanupDurableSafetyGeneration,
+  createIndexedDbDurableAudioRepository,
+  persistDurableSafetyPart,
+  resumeDurableSafetyPartsForOwner,
+  type DurableAudioPartRecord,
+  type DurableAudioRepository,
+  type DurableSafetyManifest
+} from "@/lib/live-recording/durable-audio";
+import {
+  createRotatingSafetyRecorder,
+  type FinalizedSafetyPart
+} from "@/lib/live-recording/rotating-safety-recorder";
 
 type WakeLockSentinelLike = {
   addEventListener: (type: "release", listener: () => void, options?: AddEventListenerOptions) => void;
@@ -101,9 +134,16 @@ type RecorderLifecyclePhase = RecorderStatus | "unmounted";
 type PendingLiveDraftSession = {
   cleanupScheduled: boolean;
   promise: Promise<LiveRecordingDraft>;
-  recording: Recording;
   sessionGeneration: number;
 };
+
+type PendingLiveDraftSave = {
+  promise: Promise<"failed" | "saved">;
+  recordingId: string;
+  sessionGeneration: number;
+};
+
+type FinalLiveDraftPersistOutcome = "empty" | "failed" | "saved" | "stale";
 
 type PendingLiveDraftSettlement =
   | { draft: LiveRecordingDraft; kind: "adopted" }
@@ -120,7 +160,36 @@ type RecorderStopOwner = {
   stopGeneration: number;
 };
 
+type SafetyAudioSession = {
+  captureGeneration: number;
+  controller: ReturnType<typeof createRotatingSafetyRecorder>;
+  durableParts: DurableAudioPartRecord[];
+  finalizedParts: FinalizedSafetyPart[];
+  generationId: string;
+  latestManifest: DurableSafetyManifest | null;
+  persistenceFailed: boolean;
+  promotionQueue: Promise<void>;
+  recording: LiveRecordingDraft;
+  repository: DurableAudioRepository;
+};
+
 const LIVE_DRAFT_STOP_WAIT_MS = 5_000;
+const LIVE_SAFETY_PART_DURATION_MS = 15_000;
+
+// canAcceptArchiveAudio rejects only authoritative capture failures; mute and signal warnings stay advisory.
+function canAcceptArchiveAudio(snapshot: LiveAudioHealthSnapshot | null) {
+  return snapshot?.recorder === "healthy" && snapshot.track !== "ended";
+}
+
+// hasFailedTranscriptionJob detects terminal failure responses for regular and segmented jobs.
+function hasFailedTranscriptionJob(payload: unknown) {
+  if (!payload || typeof payload !== "object" || !("job" in payload)) {
+    return false;
+  }
+
+  const job = payload.job;
+  return Boolean(job && typeof job === "object" && "status" in job && job.status === "failed");
+}
 
 // BrowserRecorder captures microphone audio and can save audio plus transcript or transcript text only.
 export function BrowserRecorder({
@@ -128,7 +197,9 @@ export function BrowserRecorder({
   captionMode = false,
   compact = false,
   developmentRecordingFactory,
+  liveAudioQuality = "standard",
   maxAudioFileSizeBytes,
+  onAudioHealthChange,
   onStatusChange,
   realtimeLanguage = "auto",
   redirectAfterSave,
@@ -138,8 +209,6 @@ export function BrowserRecorder({
   const router = useRouter();
   const { registerNavigationBlocker } = useRecordingNavigationBlocker();
   const elapsedSecondsRef = useRef(0);
-  const audioDiscardedForSizeRef = useRef(false);
-  const audioDiscardPromiseRef = useRef<Promise<void> | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStartedAtRef = useRef<number | null>(null);
   const liveRecordingContentTypeRef = useRef("audio/webm");
@@ -154,11 +223,17 @@ export function BrowserRecorder({
   const pendingLiveDraftSessionRef = useRef<PendingLiveDraftSession | null>(null);
   const sonioxResultSessionRef = useRef<SonioxResultSession | null>(null);
   const recorderStopOwnerRef = useRef<RecorderStopOwner | null>(null);
-  const draftAutosaveInFlightRef = useRef(false);
+  const pendingLiveDraftSaveRef = useRef<PendingLiveDraftSave | null>(null);
   const lastDraftAutosaveAtRef = useRef(0);
+  const archiveAudioLeaseRef = useRef<SharedAudioTrackLease | null>(null);
+  const audioHealthChangeCallbackRef = useRef(onAudioHealthChange);
+  const audioHealthMonitorRef = useRef<LiveAudioHealthMonitor | null>(null);
+  const archiveAudioHealthRef = useRef<LiveAudioHealthSnapshot | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const safetyAudioSessionRef = useRef<SafetyAudioSession | null>(null);
+  const sharedAudioSessionRef = useRef<SharedAudioSession | null>(null);
+  const sonioxAudioSourceRef = useRef<SonioxAudioSource | null>(null);
   const sonioxRecordingRef = useRef<Recording | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
   const tokenArrivalTimesRef = useRef<Map<string, number>>(new Map());
   const finalTokensRef = useRef<StoredRealtimeToken[]>([]);
@@ -167,11 +242,15 @@ export function BrowserRecorder({
   const realtimeSessionIndexRef = useRef(0);
   const realtimeSessionOffsetMsRef = useRef(0);
   const pendingRealtimeSessionOffsetMsRef = useRef<number | null>(null);
+  const providerConnectionHealthRef = useRef<"healthy" | "reconnecting">("healthy");
+  const providerFallbackReasonRef = useRef<LiveProviderFallbackReason | null>(null);
+  const sessionLiveAudioQualityRef = useRef(liveAudioQuality);
   const isMountedRef = useRef(true);
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
   const wakeLockRequestRef = useRef<Promise<boolean> | null>(null);
   const wakeLockRequestGenerationRef = useRef(0);
-  const [audioLimitReached, setAudioLimitReached] = useState(false);
+  const [audioHealth, setAudioHealth] = useState<LiveAudioHealthSnapshot | null>(null);
+  const [durabilityWarning, setDurabilityWarning] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [liveCaptionBlocks, setLiveCaptionBlocks] = useState<LiveCaptionBlock[]>([]);
   const [liveTranscript, setLiveTranscript] = useState("");
@@ -180,15 +259,18 @@ export function BrowserRecorder({
   const [savedLiveMarkerCount, setSavedLiveMarkerCount] = useState(0);
   const [markerReady, setMarkerReady] = useState(false);
   const [feedback, setFeedback] = useState<RecorderFeedback | null>(null);
+  const [providerHealth, setProviderHealth] = useState<LiveProviderHealth>("ready");
   const [realtimeWarning, setRealtimeWarning] = useState<string | null>(null);
   const [selectedRealtimeLanguage, setSelectedRealtimeLanguage] = useState<SonioxRealtimeLanguageId>(realtimeLanguage);
   const [saveMode, setSaveMode] = useState<LiveSaveMode>(
     maxAudioFileSizeBytes === null && allowTranscriptOnly
-      ? "transcript_only"
-      : "audio_and_transcript"
+      ? "live_transcript_only"
+      : "audio_and_live_transcript"
   );
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [wakeLockWarning, setWakeLockWarning] = useState<string | null>(null);
+
+  audioHealthChangeCallbackRef.current = onAudioHealthChange;
 
   // syncSelectedRealtimeLanguage refreshes the per-call choice when the persisted default changes between sessions.
   useEffect(() => {
@@ -206,6 +288,22 @@ export function BrowserRecorder({
   function setRecorderPhase(nextPhase: RecorderStatus) {
     recorderLifecyclePhaseRef.current = nextPhase;
     setStatus(nextPhase);
+  }
+
+  // isCurrentStartSession rejects stale microphone acquisition before a Soniox recording exists.
+  function isCurrentStartSession(sessionGeneration: number) {
+    return isMountedRef.current
+      && recordingSessionGenerationRef.current === sessionGeneration
+      && recorderLifecyclePhaseRef.current === "starting";
+  }
+
+  // isCurrentCaptureSession keeps audio-owned lifecycle work independent from Soniox presence.
+  function isCurrentCaptureSession(sessionGeneration: number) {
+    const phase = recorderLifecyclePhaseRef.current;
+
+    return isMountedRef.current
+      && sessionGeneration === recordingSessionGenerationRef.current
+      && (phase === "starting" || phase === "recording");
   }
 
   // isCurrentSonioxSession rejects callbacks from stale, stopped, or unmounted capture sessions.
@@ -294,7 +392,7 @@ export function BrowserRecorder({
     sessionGeneration,
     stopGeneration
   }: {
-    recording: Recording;
+    recording: Recording | null;
     sessionGeneration: number;
     stopGeneration: number;
   }): Promise<PendingLiveDraftSettlement> {
@@ -310,7 +408,6 @@ export function BrowserRecorder({
 
     if (
       !pending
-      || pending.recording !== recording
       || pending.sessionGeneration !== sessionGeneration
     ) {
       return { kind: "missing" };
@@ -353,9 +450,9 @@ export function BrowserRecorder({
   }
 
   // establishLiveMarkerClock starts one monotonic marker clock only after capture and draft are both ready.
-  function establishLiveMarkerClock(recording: Recording, sessionGeneration: number) {
+  function establishLiveMarkerClock(sessionGeneration: number) {
     if (
-      !isCurrentSonioxSession(recording, sessionGeneration)
+      !isCurrentCaptureSession(sessionGeneration)
       || liveRecordingStartedAtMsRef.current !== null
       || !liveCaptureActiveRef.current
       || !liveRecordingDraftRef.current
@@ -519,11 +616,28 @@ export function BrowserRecorder({
     }
   }
 
-  // cleanupStream releases microphone tracks after recording stops.
-  function cleanupStream() {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-  }
+  // cleanupAudioSession releases only the addressed session and cannot tear down a newer capture.
+  const cleanupAudioSession = useCallback((session: SharedAudioSession | null) => {
+    if (!session) {
+      return;
+    }
+
+    if (sharedAudioSessionRef.current === session) {
+      audioHealthMonitorRef.current?.stop();
+      audioHealthMonitorRef.current = null;
+      archiveAudioHealthRef.current = null;
+      archiveAudioLeaseRef.current = null;
+      sonioxAudioSourceRef.current?.stop();
+      sonioxAudioSourceRef.current = null;
+      sharedAudioSessionRef.current = null;
+      if (isMountedRef.current) {
+        setAudioHealth(null);
+      }
+      audioHealthChangeCallbackRef.current?.(null);
+    }
+
+    session.close();
+  }, []);
 
   // invalidateWakeLockRequest makes any in-flight browser Wake Lock request stale for this recorder session.
   const invalidateWakeLockRequest = useCallback(() => {
@@ -657,8 +771,14 @@ export function BrowserRecorder({
         mediaRecorderRef.current.stop();
       }
 
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
+      const safetySession = safetyAudioSessionRef.current;
+
+      safetyAudioSessionRef.current = null;
+      void safetySession?.controller.stop().catch(() => undefined);
+
+      const audioSession = sharedAudioSessionRef.current;
+
+      cleanupAudioSession(audioSession);
 
       const wakeLock = wakeLockRef.current;
 
@@ -669,7 +789,7 @@ export function BrowserRecorder({
 
     isMountedRef.current = true;
     return cleanupRecorder;
-  }, [invalidateWakeLockRequest]);
+  }, [cleanupAudioSession, invalidateWakeLockRequest]);
 
   useEffect(() => {
     // handleVisibilityChange reacquires Wake Lock without restarting a healthy Soniox session.
@@ -704,7 +824,7 @@ export function BrowserRecorder({
 
   // resetLiveDraftRefs clears transient autosave state between recording sessions.
   function resetLiveDraftRefs() {
-    draftAutosaveInFlightRef.current = false;
+    pendingLiveDraftSaveRef.current = null;
     lastDraftAutosaveAtRef.current = 0;
   }
 
@@ -718,11 +838,11 @@ export function BrowserRecorder({
     setLiveCaptionBlocks(tokensToCaptionBlocks(getStableLiveCaptionTokens(tokens, nowMs)));
   }
 
-  // createLocalAudioRecorder builds the single MediaRecorder used for a bounded live audio file.
-  function createLocalAudioRecorder(stream: MediaStream) {
+  // createLocalAudioRecorder builds the continuous archive encoder at the session-locked quality.
+  function createLocalAudioRecorder(stream: MediaStream, audioBitsPerSecond: number) {
     const mimeType = getSupportedMimeType();
     const recorder = new MediaRecorder(stream, {
-      audioBitsPerSecond: LIVE_RECORDING_AUDIO_BITS_PER_SECOND,
+      audioBitsPerSecond,
       ...(mimeType ? { mimeType } : {})
     });
 
@@ -735,20 +855,42 @@ export function BrowserRecorder({
     return recorder;
   }
 
-  // startLocalAudioRecording starts one local audio file for the live session.
-  function startLocalAudioRecording() {
-    const stream = streamRef.current;
+  // startLocalAudioRecording starts archive encoding and independent health checks on its clone.
+  function startLocalAudioRecording(
+    lease: SharedAudioTrackLease,
+    sessionGeneration: number,
+    audioBitsPerSecond: number
+  ) {
+    const recorder = createLocalAudioRecorder(lease.stream, audioBitsPerSecond);
+    const monitor = createLiveAudioHealthMonitor({
+      onChange: (snapshot) => {
+        if (!isCurrentCaptureSession(sessionGeneration)) {
+          return;
+        }
 
-    if (!stream) {
-      throw new Error("Mikrofon není připravený pro lokální nahrávání.");
-    }
-
-    const recorder = createLocalAudioRecorder(stream);
+        archiveAudioHealthRef.current = snapshot;
+        setAudioHealth(snapshot);
+        audioHealthChangeCallbackRef.current?.(snapshot);
+      },
+      recorder,
+      stream: lease.stream,
+      track: lease.track
+    });
 
     audioChunksRef.current = [];
     audioStartedAtRef.current = Date.now();
+    archiveAudioLeaseRef.current = lease;
+    audioHealthMonitorRef.current = monitor;
     mediaRecorderRef.current = recorder;
-    recorder.start();
+
+    try {
+      recorder.start();
+    } catch (error) {
+      monitor.stop();
+      audioHealthMonitorRef.current = null;
+      mediaRecorderRef.current = null;
+      throw error;
+    }
   }
 
   // getCurrentAudioAgeSeconds returns how long the local audio file has been recording.
@@ -760,52 +902,257 @@ export function BrowserRecorder({
     return Math.floor((Date.now() - audioStartedAtRef.current) / 1000);
   }
 
-  // discardLocalAudioAfterLimit stops buffering audio while the realtime transcript keeps running.
-  async function discardLocalAudioAfterLimit() {
-    const recorder = mediaRecorderRef.current;
+  // ownsSafetyAudioSession accepts work only from the active capture or its generation-owned stop.
+  function ownsSafetyAudioSession(session: SafetyAudioSession) {
+    const phase = recorderLifecyclePhaseRef.current;
+    const expectedGeneration = phase === "saving"
+      ? session.captureGeneration + 1
+      : session.captureGeneration;
 
-    if (!recorder || recorder.state !== "recording" || audioDiscardedForSizeRef.current) {
-      return;
+    return isMountedRef.current
+      && safetyAudioSessionRef.current === session
+      && recordingSessionGenerationRef.current === expectedGeneration
+      && (phase === "starting" || phase === "recording" || phase === "saving");
+  }
+
+  // isSafetyAudioPartOwnedBySession rejects rows from another recording or retry generation.
+  function isSafetyAudioPartOwnedBySession(
+    session: SafetyAudioSession,
+    part: DurableAudioPartRecord
+  ) {
+    return part.ownerId === session.recording.userId
+      && part.recordingId === session.recording.id
+      && part.generationId === session.generationId
+      && session.durableParts.some((candidate) => candidate.key === part.key);
+  }
+
+  // createSafetyGenerationRepository limits owner-wide recovery helpers to one live generation.
+  function createSafetyGenerationRepository(session: SafetyAudioSession): DurableAudioRepository {
+    return {
+      // deleteGeneration delegates only the exact session identity.
+      async deleteGeneration(ownerId, recordingId, generationId) {
+        if (
+          ownerId !== session.recording.userId
+          || recordingId !== session.recording.id
+          || generationId !== session.generationId
+        ) {
+          throw new Error("Bezpečnostní části patří jiné nahrávací relaci.");
+        }
+
+        await session.repository.deleteGeneration(ownerId, recordingId, generationId);
+      },
+
+      // listForOwner exposes only rows owned by this exact recording generation.
+      async listForOwner(ownerId) {
+        if (ownerId !== session.recording.userId) {
+          return [];
+        }
+
+        const rows = await session.repository.listForOwner(ownerId);
+        return rows.filter((part) => (
+          part.recordingId === session.recording.id
+          && part.generationId === session.generationId
+        ));
+      },
+
+      // markUploaded accepts only a durable row already attached to this session.
+      async markUploaded(key, uploadedAt) {
+        const part = session.durableParts.find((candidate) => candidate.key === key);
+
+        if (!part || !isSafetyAudioPartOwnedBySession(session, part)) {
+          throw new Error("Bezpečnostní část patří jiné nahrávací relaci.");
+        }
+
+        await session.repository.markUploaded(key, uploadedAt);
+      },
+
+      // put accepts only a fully scoped row for this session.
+      async put(record) {
+        if (!isSafetyAudioPartOwnedBySession(session, record)) {
+          throw new Error("Bezpečnostní část patří jiné nahrávací relaci.");
+        }
+
+        await session.repository.put(record);
+      }
+    };
+  }
+
+  // getCurrentSafetyManifest returns only a fully uploaded exact-generation manifest.
+  function getCurrentSafetyManifest(session: SafetyAudioSession) {
+    const manifest = session.latestManifest;
+    const expectedKeys = new Set(session.durableParts.map((part) => part.key));
+
+    if (!manifest) {
+      return null;
     }
 
-    audioDiscardedForSizeRef.current = true;
-    const discard = (async () => {
-      try {
-        const stopped = new Promise<void>((resolve) => {
-          recorder.addEventListener("stop", () => resolve(), { once: true });
-        });
+    const manifestKeys = new Set(manifest.parts.map((part) => part.key));
 
-        recorder.stop();
-        await stopped;
-        audioChunksRef.current = [];
-        audioStartedAtRef.current = null;
-        mediaRecorderRef.current = null;
-        cleanupStream();
-        setAudioLimitReached(true);
-      } finally {
-        audioDiscardPromiseRef.current = null;
+    if (
+      manifest.ownerId !== session.recording.userId
+      || manifest.recordingId !== session.recording.id
+      || manifest.generationId !== session.generationId
+      || manifest.partCount !== expectedKeys.size
+      || manifest.pendingPartCount !== 0
+      || manifest.parts.length !== expectedKeys.size
+      || manifestKeys.size !== expectedKeys.size
+      || manifest.parts.some((part) => (
+        part.uploadedAt === null
+        || !expectedKeys.has(part.key)
+        || !isSafetyAudioPartOwnedBySession(session, part)
+      ))
+    ) {
+      return null;
+    }
+
+    return manifest;
+  }
+
+  // queueSafetyAudioPromotion serializes durable promotion without delaying recorder rotation.
+  function queueSafetyAudioPromotion(
+    session: SafetyAudioSession,
+    maxFileSizeBytes: number
+  ) {
+    const scopedRepository = createSafetyGenerationRepository(session);
+    const nextPromotion = session.promotionQueue.then(async () => {
+      if (!ownsSafetyAudioSession(session)) {
+        return;
       }
-    })();
 
-    audioDiscardPromiseRef.current = discard;
-    await discard;
+      const promotion = await resumeDurableSafetyPartsForOwner({
+        maxConcurrent: 2,
+        ownerId: session.recording.userId,
+        repository: scopedRepository,
+        uploadPart: async (part) => {
+          if (!ownsSafetyAudioSession(session) || !isSafetyAudioPartOwnedBySession(session, part)) {
+            throw new Error("Bezpečnostní část patří ukončené nahrávací relaci.");
+          }
+
+          await uploadLiveRecordingPart({
+            blob: part.blob,
+            contentType: part.mimeType,
+            maxFileSizeBytes,
+            partIndex: part.index,
+            recording: session.recording
+          });
+        }
+      });
+
+      if (!ownsSafetyAudioSession(session)) {
+        return;
+      }
+
+      session.latestManifest = promotion.manifests.find((manifest) => (
+        manifest.ownerId === session.recording.userId
+        && manifest.recordingId === session.recording.id
+        && manifest.generationId === session.generationId
+      )) ?? null;
+      const currentKeys = new Set(session.durableParts.map((part) => part.key));
+      const currentFailed = promotion.failed.some((key) => currentKeys.has(key));
+
+      if (currentFailed || (session.latestManifest?.pendingPartCount ?? 0) > 0) {
+        setDurabilityWarning(
+          "Bezpečnostní část se nepodařilo odeslat. Zůstává uložená pro pozdější obnovení a hlavní audio pokračuje."
+        );
+      } else if (!session.persistenceFailed) {
+        setDurabilityWarning(null);
+      }
+    }).catch(() => {
+      if (ownsSafetyAudioSession(session)) {
+        setDurabilityWarning(
+          "Bezpečnostní část se nepodařilo odeslat. Zůstává uložená pro pozdější obnovení a hlavní audio pokračuje."
+        );
+      }
+    });
+
+    session.promotionQueue = nextPromotion;
+  }
+
+  // startSafetyAudioRecording rotates an isolated master clone and durably commits every complete part.
+  function startSafetyAudioRecording(
+    masterStream: MediaStream,
+    recording: LiveRecordingDraft,
+    sessionGeneration: number,
+    audioBitsPerSecond: number,
+    mimeType: string,
+    maxFileSizeBytes: number
+  ) {
+    const repository = createIndexedDbDurableAudioRepository();
+    let safetySession: SafetyAudioSession | null = null;
+    const controller = createRotatingSafetyRecorder({
+      createRecorder: (stream, options) => new MediaRecorder(stream, {
+        ...options,
+        audioBitsPerSecond
+      }),
+      mimeType,
+      onPartFinalized: async (part) => {
+        const session = safetySession;
+
+        if (!session) {
+          return;
+        }
+
+        session.finalizedParts.push(part);
+
+        try {
+          const durablePart = await persistDurableSafetyPart({
+            generationId: session.generationId,
+            ownerId: recording.userId,
+            part,
+            recordingId: recording.id,
+            repository
+          });
+          session.durableParts.push(durablePart);
+          queueSafetyAudioPromotion(session, maxFileSizeBytes);
+        } catch {
+          session.persistenceFailed = true;
+          if (safetyAudioSessionRef.current === session && isMountedRef.current) {
+            setDurabilityWarning(
+              "Ochrana proti pádu pro tuto nahrávku není dostupná. Hlavní audio se dál ukládá."
+            );
+          }
+        }
+      },
+      partDurationMs: LIVE_SAFETY_PART_DURATION_MS,
+      stream: masterStream
+    });
+
+    safetySession = {
+      captureGeneration: sessionGeneration,
+      controller,
+      durableParts: [],
+      finalizedParts: [],
+      generationId: crypto.randomUUID(),
+      latestManifest: null,
+      persistenceFailed: false,
+      promotionQueue: Promise.resolve(),
+      recording,
+      repository
+    };
+    safetyAudioSessionRef.current = safetySession;
+    controller.start();
   }
 
   // createLocalMediaRecorder starts one bounded local audio file alongside live transcription.
   async function createLocalMediaRecorder(
-    sonioxRecording: Recording,
-    sessionGeneration: number
+    sessionGeneration: number,
+    archiveLease: SharedAudioTrackLease,
+    masterStream: MediaStream,
+    audioBitsPerSecond: number,
+    maxFileSizeBytes: number
   ) {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    if (!isCurrentSonioxSession(sonioxRecording, sessionGeneration)) {
-      stream.getTracks().forEach((track) => track.stop());
+    if (!isCurrentCaptureSession(sessionGeneration)) {
       return false;
     }
 
-    streamRef.current = stream;
     const mimeType = getSupportedMimeType();
     const contentType = mimeType ? mimeType.split(";")[0] ?? "audio/webm" : "audio/webm";
+    liveRecordingContentTypeRef.current = contentType;
+    audioChunksRef.current = [];
+    audioStartedAtRef.current = null;
+    startLocalAudioRecording(archiveLease, sessionGeneration, audioBitsPerSecond);
+    liveCaptureActiveRef.current = true;
+    setRecorderPhase("recording");
     const draftPromise = createLiveRecordingDraft({
       contentType,
       title: getLiveRecordingTitle("Live nahrávka")
@@ -813,15 +1160,13 @@ export function BrowserRecorder({
     const pendingDraft = {
       cleanupScheduled: false,
       promise: draftPromise,
-      recording: sonioxRecording,
       sessionGeneration
     };
 
     pendingLiveDraftSessionRef.current = pendingDraft;
     const recording = await draftPromise;
 
-    if (!isCurrentSonioxSession(sonioxRecording, sessionGeneration)) {
-      stream.getTracks().forEach((track) => track.stop());
+    if (!isCurrentCaptureSession(sessionGeneration)) {
       return false;
     }
 
@@ -829,14 +1174,22 @@ export function BrowserRecorder({
       pendingLiveDraftSessionRef.current = null;
     }
 
-    liveRecordingContentTypeRef.current = contentType;
     liveRecordingDraftRef.current = recording;
-    establishLiveMarkerClock(sonioxRecording, sessionGeneration);
-    audioChunksRef.current = [];
-    audioDiscardedForSizeRef.current = false;
-    audioDiscardPromiseRef.current = null;
-    audioStartedAtRef.current = null;
-    startLocalAudioRecording();
+    try {
+      startSafetyAudioRecording(
+        masterStream,
+        recording,
+        sessionGeneration,
+        audioBitsPerSecond,
+        contentType,
+        maxFileSizeBytes
+      );
+    } catch {
+      setDurabilityWarning(
+        "Ochrana proti pádu pro tuto nahrávku není dostupná. Hlavní audio se dál ukládá."
+      );
+    }
+    establishLiveMarkerClock(sessionGeneration);
     return true;
   }
 
@@ -875,59 +1228,147 @@ export function BrowserRecorder({
     };
   }
 
-  // saveLiveDraft stores partial transcript progress so unfinished live recordings can be recovered.
+  // persistLiveDraftSnapshot sends one immutable transcript snapshot and reports search-index warnings.
+  async function persistLiveDraftSnapshot(
+    recording: LiveRecordingDraft,
+    snapshot: { elapsedSeconds: number; rawText: string; tokens: RealtimeToken[] }
+  ) {
+    const response = await fetch(`/api/recordings/${recording.id}/live-draft`, {
+      body: JSON.stringify({
+        elapsedSeconds: snapshot.elapsedSeconds,
+        rawText: snapshot.rawText,
+        segments: snapshot.tokens
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "PUT"
+    });
+
+    if (!response.ok) {
+      throw new Error("Koncept live přepisu se nepodařilo uložit.");
+    }
+
+    let payload: unknown = null;
+
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    return hasTranscriptSearchIndexWarning(payload);
+  }
+
+  // saveLiveDraft coalesces periodic autosaves while retaining their explicit settlement promise.
   async function saveLiveDraft() {
     const recording = liveRecordingDraftRef.current;
 
-    if (!recording || draftAutosaveInFlightRef.current) {
-      return;
+    if (!recording) {
+      return "failed" as const;
+    }
+
+    const existing = pendingLiveDraftSaveRef.current;
+    if (existing?.recordingId === recording.id) {
+      return existing.promise;
     }
 
     const tokens = [...tokensRef.current];
     const rawText = tokensToText(tokens);
 
     if (!rawText) {
-      return;
+      return "saved" as const;
     }
 
-    draftAutosaveInFlightRef.current = true;
-
-    try {
-      const response = await fetch(`/api/recordings/${recording.id}/live-draft`, {
-        body: JSON.stringify({
+    const sessionGeneration = recordingSessionGenerationRef.current;
+    const promise = (async (): Promise<"failed" | "saved"> => {
+      try {
+        const hasSearchWarning = await persistLiveDraftSnapshot(recording, {
           elapsedSeconds: elapsedSecondsRef.current,
           rawText,
-          segments: tokens
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "PUT"
+          tokens
+        });
+
+        if (
+          hasSearchWarning
+          && isCurrentCaptureSession(sessionGeneration)
+          && liveRecordingDraftRef.current === recording
+        ) {
+          setRecorderFeedback(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
+        }
+        return "saved";
+      } catch {
+        return "failed";
+      } finally {
+        if (
+          isCurrentCaptureSession(sessionGeneration)
+          && liveRecordingDraftRef.current === recording
+        ) {
+          lastDraftAutosaveAtRef.current = Date.now();
+        }
+      }
+    })();
+    const pending = { promise, recordingId: recording.id, sessionGeneration };
+
+    pendingLiveDraftSaveRef.current = pending;
+    const outcome = await promise;
+    if (pendingLiveDraftSaveRef.current === pending) {
+      pendingLiveDraftSaveRef.current = null;
+    }
+    return outcome;
+  }
+
+  // persistFinalLiveDraft waits for this capture's autosave, then confirms the latest stop-owned text.
+  async function persistFinalLiveDraft({
+    captureGeneration,
+    recording,
+    recordingSession,
+    stopGeneration
+  }: {
+    captureGeneration: number;
+    recording: LiveRecordingDraft;
+    recordingSession: Recording | null;
+    stopGeneration: number;
+  }): Promise<FinalLiveDraftPersistOutcome> {
+    const pending = pendingLiveDraftSaveRef.current;
+
+    if (
+      pending?.recordingId === recording.id
+      && pending.sessionGeneration === captureGeneration
+    ) {
+      await pending.promise;
+    }
+
+    if (!stillOwnsStop(recordingSession, stopGeneration)) {
+      return "stale";
+    }
+
+    const tokens = [...tokensRef.current];
+    const rawText = tokensToText(tokens);
+
+    if (!rawText) {
+      return "empty";
+    }
+
+    try {
+      const hasSearchWarning = await persistLiveDraftSnapshot(recording, {
+        elapsedSeconds: elapsedSecondsRef.current,
+        rawText,
+        tokens
       });
 
-      if (!response.ok) {
-        throw new Error("Koncept live přepisu se nepodařilo uložit.");
+      if (!stillOwnsStop(recordingSession, stopGeneration)) {
+        return "stale";
       }
-
-      let payload: unknown = null;
-
-      try {
-        payload = await response.json();
-      } catch {
-        payload = null;
-      }
-
-      if (hasTranscriptSearchIndexWarning(payload)) {
+      if (hasSearchWarning) {
         setRecorderFeedback(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
       }
-
       lastDraftAutosaveAtRef.current = Date.now();
+      return "saved";
     } catch {
-      lastDraftAutosaveAtRef.current = Date.now();
-    } finally {
-      draftAutosaveInFlightRef.current = false;
+      return stillOwnsStop(recordingSession, stopGeneration) ? "failed" : "stale";
     }
   }
 
-  // startRecording asks for microphone access and starts live STT with the selected save mode.
+  // startRecording begins the selected audio and provider owners without coupling their lifecycles.
   async function startRecording() {
     if (!navigator.mediaDevices?.getUserMedia) {
       setRecorderFeedback("Tento prohlížeč neumí nahrávání přes mikrofon.", "error");
@@ -935,19 +1376,25 @@ export function BrowserRecorder({
     }
 
     const selectedSaveMode = saveMode;
-    const selectedMaxAudioFileSizeBytes = selectedSaveMode === "audio_and_transcript"
+    const storesAudio = liveModeStoresAudio(selectedSaveMode);
+    const usesRealtime = liveModeUsesRealtime(selectedSaveMode);
+    const selectedAudioBitsPerSecond = liveAudioQualityOptions[liveAudioQuality].audioBitsPerSecond;
+    const selectedMaxAudioFileSizeBytes = storesAudio
       ? maxAudioFileSizeBytes
       : null;
 
-    if (selectedSaveMode === "audio_and_transcript" && selectedMaxAudioFileSizeBytes === null) {
+    if (storesAudio && selectedMaxAudioFileSizeBytes === null) {
       setRecorderFeedback("Audio se teď neukládá. Můžete pokračovat jen s přepisem.", "error");
       return;
     }
 
     const sessionGeneration = recordingSessionGenerationRef.current + 1;
     let recording: Recording | null = null;
+    let audioSession: SharedAudioSession | null = null;
+    let localRecorderReadyPromise: Promise<boolean> | null = null;
 
     recordingSessionGenerationRef.current = sessionGeneration;
+    sessionLiveAudioQualityRef.current = liveAudioQuality;
     recorderStopOwnerRef.current = null;
     setRecorderPhase("starting");
     resetLiveMarkerSession();
@@ -958,20 +1405,22 @@ export function BrowserRecorder({
       failLateLiveDraft(abandonedPendingDraft);
     }
 
-    setRecorderFeedback("Připravuji mikrofon a live přepis...", "working");
+    setRecorderFeedback(
+      usesRealtime ? "Připravuji mikrofon a live přepis..." : "Připravuji mikrofon a audio záznam...",
+      "working"
+    );
 
     try {
-      const recordingOptions = getRealtimeRecordingOptions(realtimeModel, selectedRealtimeLanguage);
-      recording = developmentRecordingFactory
-        ? developmentRecordingFactory(recordingOptions)
-        : new SonioxClient({
-          config: fetchRealtimeConfig,
-          permissions: new BrowserPermissionResolver()
-        }).realtime.record(recordingOptions);
-      const sessionRecording = recording;
+      audioSession = await acquireSharedAudioSession();
 
+      if (!isCurrentStartSession(sessionGeneration)) {
+        audioSession.close();
+        return;
+      }
+
+      sharedAudioSessionRef.current = audioSession;
       setElapsedSeconds(0);
-      setAudioLimitReached(false);
+      setDurabilityWarning(null);
       elapsedSecondsRef.current = 0;
       setLiveCaptionBlocks([]);
       setLiveTranscript("");
@@ -984,12 +1433,60 @@ export function BrowserRecorder({
       realtimeSessionIndexRef.current = 0;
       realtimeSessionOffsetMsRef.current = 0;
       pendingRealtimeSessionOffsetMsRef.current = null;
+      providerConnectionHealthRef.current = "healthy";
+      providerFallbackReasonRef.current = null;
+      archiveAudioHealthRef.current = null;
+      setProviderHealth(usesRealtime ? "connecting" : "disabled");
       resetLiveDraftRefs();
+
+      if (storesAudio && selectedMaxAudioFileSizeBytes !== null) {
+        const archiveLease = audioSession.lease("archive");
+        localRecorderReadyPromise = createLocalMediaRecorder(
+          sessionGeneration,
+          archiveLease,
+          audioSession.masterStream,
+          selectedAudioBitsPerSecond,
+          selectedMaxAudioFileSizeBytes
+        );
+      }
+
+      if (usesRealtime) {
+        const sonioxLease = audioSession.lease("soniox");
+        const sonioxAudioSource = createSonioxAudioSource(sonioxLease);
+        const recordingOptions = {
+          ...getRealtimeRecordingOptions(realtimeModel, selectedRealtimeLanguage),
+          source: sonioxAudioSource
+        };
+
+        sonioxAudioSourceRef.current = sonioxAudioSource;
+        try {
+          recording = developmentRecordingFactory
+            ? developmentRecordingFactory(recordingOptions)
+            : new SonioxClient({
+              config: fetchRealtimeConfig,
+              permissions: new BrowserPermissionResolver()
+            }).realtime.record(recordingOptions);
+        } catch (error) {
+          if (!storesAudio) {
+            throw error;
+          }
+
+          providerFallbackReasonRef.current = "start_failed";
+          setProviderHealth("error");
+          setRealtimeWarning(getRealtimeErrorMessage(
+            error instanceof Error ? error : new Error(String(error)),
+            selectedSaveMode
+          ));
+        }
+      }
+
+      const sessionRecording = recording;
+
       sonioxRecordingRef.current = sessionRecording;
-      sonioxResultSessionRef.current = {
-        recording: sessionRecording,
-        sessionGeneration
-      };
+      sonioxResultSessionRef.current = sessionRecording
+        ? { recording: sessionRecording, sessionGeneration }
+        : null;
+      if (sessionRecording) {
       sessionRecording.on("result", (result) => {
         if (!acceptsSonioxResult(sessionRecording, sessionGeneration)) {
           return;
@@ -1023,6 +1520,8 @@ export function BrowserRecorder({
           return;
         }
 
+        providerConnectionHealthRef.current = "healthy";
+        setProviderHealth("healthy");
         setRealtimeWarning(null);
       });
       sessionRecording.on("error", (error) => {
@@ -1030,6 +1529,10 @@ export function BrowserRecorder({
           return;
         }
 
+        if (storesAudio) {
+          providerFallbackReasonRef.current ??= "error";
+        }
+        setProviderHealth("error");
         setRealtimeWarning(getRealtimeErrorMessage(error, selectedSaveMode));
       });
       sessionRecording.on("reconnecting", () => {
@@ -1037,6 +1540,8 @@ export function BrowserRecorder({
           return;
         }
 
+        providerConnectionHealthRef.current = "reconnecting";
+        setProviderHealth("reconnecting");
         pendingRealtimeSessionOffsetMsRef.current ??= elapsedSecondsRef.current * 1000;
         setRealtimeWarning(getRealtimeStateWarning("reconnecting", selectedSaveMode));
       });
@@ -1063,6 +1568,8 @@ export function BrowserRecorder({
           return;
         }
 
+        providerConnectionHealthRef.current = "healthy";
+        setProviderHealth("healthy");
         setRealtimeWarning(null);
       });
       sessionRecording.on("state_change", (update) => {
@@ -1071,10 +1578,12 @@ export function BrowserRecorder({
         }
 
         if (update.new_state === "recording") {
+          providerConnectionHealthRef.current = "healthy";
+          setProviderHealth("healthy");
           liveCaptureActiveRef.current = true;
           setRecorderPhase("recording");
           setRealtimeWarning(null);
-          establishLiveMarkerClock(sessionRecording, sessionGeneration);
+          establishLiveMarkerClock(sessionGeneration);
           return;
         }
 
@@ -1083,32 +1592,39 @@ export function BrowserRecorder({
           update.new_state === "error" ||
           update.new_state === "canceled"
         ) {
+          if (update.new_state === "reconnecting") {
+            providerConnectionHealthRef.current = "reconnecting";
+          }
+          setProviderHealth(update.new_state);
+          if (storesAudio && update.new_state !== "reconnecting") {
+            providerFallbackReasonRef.current ??= update.new_state === "canceled"
+              ? "canceled"
+              : "error";
+          }
           setRealtimeWarning(getRealtimeStateWarning(update.new_state, selectedSaveMode));
         }
       });
+      }
 
-      if (selectedSaveMode === "audio_and_transcript") {
-        const localRecorderReady = await createLocalMediaRecorder(
-          sessionRecording,
-          sessionGeneration
-        );
+      if (localRecorderReadyPromise && !(await localRecorderReadyPromise)) {
+        return;
+      }
 
-        if (!localRecorderReady) {
-          return;
+      if (!storesAudio) {
+        if (!sessionRecording) {
+          throw new Error("Live přepis se nepodařilo spustit.");
         }
-      } else {
         const draftPromise = createTranscriptOnlyDraft();
         const pendingDraft = {
           cleanupScheduled: false,
           promise: draftPromise,
-          recording: sessionRecording,
           sessionGeneration
         };
 
         pendingLiveDraftSessionRef.current = pendingDraft;
         const draft = await draftPromise;
 
-        if (!isCurrentSonioxSession(sessionRecording, sessionGeneration)) {
+        if (!isCurrentCaptureSession(sessionGeneration)) {
           return;
         }
 
@@ -1119,17 +1635,17 @@ export function BrowserRecorder({
         liveRecordingDraftRef.current = draft;
       }
 
-      establishLiveMarkerClock(sessionRecording, sessionGeneration);
+      establishLiveMarkerClock(sessionGeneration);
       await requestWakeLock();
 
-      if (!isCurrentSonioxSession(sessionRecording, sessionGeneration)) {
+      if (!isCurrentCaptureSession(sessionGeneration)) {
         return;
       }
 
       setRecorderFeedback(getRecordingActiveMessage(selectedSaveMode, selectedMaxAudioFileSizeBytes));
       setRecorderPhase("recording");
       timerRef.current = window.setInterval(() => {
-        if (!isCurrentSonioxSession(sessionRecording, sessionGeneration)) {
+        if (!isCurrentCaptureSession(sessionGeneration)) {
           return;
         }
 
@@ -1141,19 +1657,18 @@ export function BrowserRecorder({
           void saveLiveDraft();
         }
 
-        const discardEstimateBytes = getLiveAudioDiscardEstimateBytes(selectedMaxAudioFileSizeBytes);
+        const stopEstimateBytes = getLiveAudioDiscardEstimateBytes(selectedMaxAudioFileSizeBytes);
 
         if (
-          discardEstimateBytes !== null &&
-          !audioDiscardedForSizeRef.current &&
+          stopEstimateBytes !== null &&
           mediaRecorderRef.current?.state === "recording" &&
-          shouldDiscardLiveRecordingAudio(
+          shouldStopLiveRecordingAtAudioLimit(
             mediaRecorderRef.current.audioBitsPerSecond,
             getCurrentAudioAgeSeconds(),
-            discardEstimateBytes
+            stopEstimateBytes
           )
         ) {
-          void discardLocalAudioAfterLimit();
+          void stopRecording("audio_limit");
         }
 
         setElapsedSeconds((current) => {
@@ -1189,10 +1704,7 @@ export function BrowserRecorder({
 
         const pendingDraft = pendingLiveDraftSessionRef.current;
 
-        if (
-          pendingDraft?.recording === recording
-          && pendingDraft.sessionGeneration === sessionGeneration
-        ) {
+        if (pendingDraft?.sessionGeneration === sessionGeneration) {
           pendingLiveDraftSessionRef.current = null;
         }
       }
@@ -1206,6 +1718,15 @@ export function BrowserRecorder({
       }
 
       if (!ownsSession) {
+        const staleSafetySession = safetyAudioSessionRef.current;
+
+        if (staleSafetySession?.captureGeneration === sessionGeneration) {
+          if (safetyAudioSessionRef.current === staleSafetySession) {
+            safetyAudioSessionRef.current = null;
+          }
+          void staleSafetySession.controller.stop().catch(() => undefined);
+        }
+        cleanupAudioSession(audioSession);
         return;
       }
 
@@ -1221,13 +1742,17 @@ export function BrowserRecorder({
       }
 
       setRecorderFeedback(message, "error");
-      cleanupStream();
+      const failedSafetySession = safetyAudioSessionRef.current;
+
+      if (failedSafetySession?.captureGeneration === sessionGeneration) {
+        safetyAudioSessionRef.current = null;
+        await failedSafetySession.controller.stop().catch(() => undefined);
+      }
+      cleanupAudioSession(audioSession);
       stopTimer();
       audioChunksRef.current = [];
-      audioDiscardedForSizeRef.current = false;
-      audioDiscardPromiseRef.current = null;
       audioStartedAtRef.current = null;
-      setAudioLimitReached(false);
+      setDurabilityWarning(null);
       setRealtimeWarning(null);
       setWakeLockWarning(null);
       liveRecordingDraftRef.current = null;
@@ -1271,6 +1796,31 @@ export function BrowserRecorder({
     }
 
     return hasTranscriptSearchIndexWarning(payload);
+  }
+
+  // requestAsyncTranscription starts or explicitly replaces the durable job after audio is uploaded.
+  async function requestAsyncTranscription(recordingId: string, restart = false) {
+    const suffix = restart ? "?restart=1" : "";
+    const response = await fetch(`/api/recordings/${recordingId}/transcription${suffix}`, {
+      cache: "no-store",
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      throw new Error("Audio je uložené, ale přepis na pozadí se nepodařilo spustit.");
+    }
+
+    let payload: unknown = null;
+
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (hasFailedTranscriptionJob(payload)) {
+      throw new Error("Audio je uložené, ale přepis na pozadí se nepodařilo spustit.");
+    }
   }
 
   // createTranscriptOnlyRecording stores or completes a recording row without an audio object.
@@ -1383,6 +1933,7 @@ export function BrowserRecorder({
   async function finishTranscriptOnlyRecording() {
     const recording = sonioxRecordingRef.current;
     const resultSession = sonioxResultSessionRef.current;
+    const audioSession = sharedAudioSessionRef.current;
     const stopGeneration = beginRecorderStop(recording);
 
     setRecorderFeedback("Dokončuji live přepis a ukládám text...", "working");
@@ -1484,6 +2035,7 @@ export function BrowserRecorder({
 
         liveRecordingDraftRef.current = null;
         resetLiveDraftRefs();
+        cleanupAudioSession(audioSession);
         void releaseWakeLock();
         recorderStopOwnerRef.current = null;
         setRecorderPhase("idle");
@@ -1493,13 +2045,9 @@ export function BrowserRecorder({
 
   // finalizeLocalAudioBlob stops the local recorder and returns its single finalized audio file.
   async function finalizeLocalAudioBlob() {
-    if (audioDiscardPromiseRef.current) {
-      await audioDiscardPromiseRef.current.catch(() => undefined);
-    }
-
     const recorder = mediaRecorderRef.current;
 
-    if (audioDiscardedForSizeRef.current || !recorder) {
+    if (!recorder) {
       return null;
     }
 
@@ -1520,22 +2068,156 @@ export function BrowserRecorder({
     return blob;
   }
 
-  // stopRecording finalizes the selected live save mode.
-  async function stopRecording() {
-    if (saveMode === "transcript_only") {
+  // finalizeSafetyAudioSession waits for the final durable part and its generation promotion queue.
+  async function finalizeSafetyAudioSession(session: SafetyAudioSession | null) {
+    try {
+      await session?.controller.stop();
+      await session?.promotionQueue;
+    } catch {
+      if (session) {
+        session.persistenceFailed = true;
+      }
+      if (safetyAudioSessionRef.current === session && isMountedRef.current) {
+        setDurabilityWarning(
+          "Ochrana proti pádu pro tuto nahrávku není dostupná. Hlavní audio se dál ukládá."
+        );
+      }
+    }
+  }
+
+  // cleanupConfirmedSafetyAudio removes remote parts before local recovery after exact archive metadata.
+  async function cleanupConfirmedSafetyAudio(
+    session: SafetyAudioSession | null,
+    confirmedRecordingId: string
+  ) {
+    if (
+      !session
+      || confirmedRecordingId !== session.recording.id
+      || !ownsSafetyAudioSession(session)
+    ) {
+      return;
+    }
+
+    const manifest = getCurrentSafetyManifest(session);
+
+    if (!manifest) {
+      return;
+    }
+
+    try {
+      const remoteCleanup = await removeRemoteDurableSafetyGeneration({ manifest });
+
+      if (!ownsSafetyAudioSession(session) || remoteCleanup.removed !== manifest.partCount) {
+        throw new Error("Úložiště nepotvrdilo odstranění všech bezpečnostních částí.");
+      }
+    } catch {
+      if (ownsSafetyAudioSession(session)) {
+        setDurabilityWarning(
+          "Uložené bezpečnostní části se nepodařilo přesně uklidit. Zůstávají dostupné pro bezpečné obnovení."
+        );
+      }
+      return;
+    }
+
+    try {
+      await cleanupDurableSafetyGeneration({
+        generationId: session.generationId,
+        ownerId: session.recording.userId,
+        recordingId: session.recording.id,
+        repository: session.repository
+      });
+    } catch {
+      if (ownsSafetyAudioSession(session)) {
+        setDurabilityWarning(
+          "Vzdálené bezpečnostní části jsou uklizené, ale místní kopii se nepodařilo odstranit."
+        );
+      }
+    }
+  }
+
+  // hasCompleteDurableSafetyAudio accepts only contiguous parts durably owned by this exact generation.
+  function hasCompleteDurableSafetyAudio(session: SafetyAudioSession | null) {
+    if (
+      !session
+      || session.persistenceFailed
+      || session.finalizedParts.length === 0
+      || session.durableParts.length !== session.finalizedParts.length
+    ) {
+      return false;
+    }
+
+    return [...session.durableParts]
+      .sort((left, right) => left.index - right.index)
+      .every((part, index) => (
+        part.index === index
+        && part.generationId === session.generationId
+        && part.ownerId === session.recording.userId
+        && part.recordingId === session.recording.id
+      ));
+  }
+
+  // promoteSafetyAudioSession confirms already promoted exact-generation parts as segmented audio.
+  async function promoteSafetyAudioSession(
+    session: SafetyAudioSession | null,
+    durationSeconds: number
+  ) {
+    if (!session || !hasCompleteDurableSafetyAudio(session)) {
+      return false;
+    }
+
+    const manifest = getCurrentSafetyManifest(session);
+
+    if (!manifest) {
+      return false;
+    }
+
+    const parts = [...session.durableParts].sort((left, right) => left.index - right.index);
+    const completion = await completeLiveRecordingUpload({
+      contentType: parts[0]?.mimeType ?? liveRecordingContentTypeRef.current,
+      durationSeconds,
+      recording: session.recording,
+      storagePath: session.recording.storagePrefix,
+      totalBytes: parts.reduce((total, part) => total + part.size, 0)
+    });
+    return completion.id === session.recording.id;
+  }
+
+  // stopRecording finalizes the selected live save mode under one generation-owned stop reason.
+  async function stopRecording(reason: "audio_limit" | "manual" = "manual") {
+    if (saveMode === "live_transcript_only") {
       await finishTranscriptOnlyRecording();
       return;
     }
 
     const recordingSession = sonioxRecordingRef.current;
     const resultSession = sonioxResultSessionRef.current;
+    const audioSession = sharedAudioSessionRef.current;
+    const safetySession = safetyAudioSessionRef.current;
+    const captureGeneration = recordingSessionGenerationRef.current;
     const stopGeneration = beginRecorderStop(recordingSession);
     let audioUploadCompleted = false;
+    let audioStoredAsSegments = false;
+    let finalDraftPersistOutcome: FinalLiveDraftPersistOutcome | null = null;
+    let stoppedRecordingDraft: LiveRecordingDraft | null = null;
+    let stoppedRawText = "";
 
     stopTimer();
 
     try {
-      setRecorderFeedback("Dokončuji live přepis a ukládám nahrávku...", "working");
+      setRecorderFeedback(
+        reason === "audio_limit"
+          ? "Dosažen limit audia. Dokončuji a ukládám nahrávku..."
+          : saveMode === "audio_only"
+          ? "Dokončuji audio a ukládám nahrávku..."
+          : "Dokončuji live přepis a ukládám nahrávku...",
+        "working"
+      );
+
+      await finalizeSafetyAudioSession(safetySession);
+
+      if (!stillOwnsStop(recordingSession, stopGeneration)) {
+        return;
+      }
 
       const audioBlob = await finalizeLocalAudioBlob();
 
@@ -1543,34 +2225,40 @@ export function BrowserRecorder({
         return;
       }
 
-      await stopRealtimeRecording(recordingSession);
+      const realtimeStopOutcome = await stopRealtimeRecording(recordingSession);
 
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
         return;
       }
 
-      if (recordingSession && resultSession?.recording === recordingSession) {
-        closeSonioxResultSession(recordingSession, resultSession.sessionGeneration);
-        const draftSettlement = await adoptPendingLiveDraftForStop({
-          recording: recordingSession,
-          sessionGeneration: resultSession.sessionGeneration,
-          stopGeneration
-        });
-
-        if (!stillOwnsStop(recordingSession, stopGeneration)) {
-          return;
-        }
-
-        if (draftSettlement.kind === "timed_out") {
-          failLateLiveDraft(draftSettlement.pending);
-        } else if (draftSettlement.kind === "stale") {
-          return;
-        }
+      if (
+        saveMode === "audio_and_live_transcript"
+        && (
+          realtimeStopOutcome === "failed"
+          || realtimeStopOutcome === "timed_out"
+          || providerConnectionHealthRef.current === "reconnecting"
+        )
+      ) {
+        providerFallbackReasonRef.current ??= "unhealthy_stop";
       }
 
-      await saveLiveDraft();
+      if (recordingSession && resultSession?.recording === recordingSession) {
+        closeSonioxResultSession(recordingSession, resultSession.sessionGeneration);
+      }
+
+      const draftSettlement = await adoptPendingLiveDraftForStop({
+        recording: recordingSession,
+        sessionGeneration: resultSession?.sessionGeneration ?? captureGeneration,
+        stopGeneration
+      });
 
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
+        return;
+      }
+
+      if (draftSettlement.kind === "timed_out") {
+        failLateLiveDraft(draftSettlement.pending);
+      } else if (draftSettlement.kind === "stale") {
         return;
       }
 
@@ -1579,11 +2267,17 @@ export function BrowserRecorder({
       if (!recording) {
         throw new Error("Záznam live nahrávky nebyl připravený.");
       }
+      stoppedRecordingDraft = recording;
 
       const tokens = [...tokensRef.current];
       const rawText = tokensToText(tokens);
-      const shouldKeepAudio = isLiveAudioBlobWithinLimit(audioBlob, maxAudioFileSizeBytes);
-      let audioSaveError: Error | null = null;
+      stoppedRawText = rawText;
+      const archiveAudioHealthy = canAcceptArchiveAudio(archiveAudioHealthRef.current);
+      const shouldKeepAudio = archiveAudioHealthy
+        && isLiveAudioBlobWithinLimit(audioBlob, maxAudioFileSizeBytes);
+      let audioSaveError: Error | null = archiveAudioHealthy
+        ? null
+        : new Error("Hlavní audio není po chybě nahrávání potvrzené jako úplné.");
 
       if (shouldKeepAudio && audioBlob && maxAudioFileSizeBytes !== null) {
         try {
@@ -1603,7 +2297,7 @@ export function BrowserRecorder({
             throw new Error("Nahrávka je prázdná. Zkuste nahrávání spustit znovu.");
           }
 
-          await completeLiveRecordingUpload({
+          const completion = await completeLiveRecordingUpload({
             contentType: liveRecordingContentTypeRef.current,
             durationSeconds: elapsedSecondsRef.current,
             recording,
@@ -1615,7 +2309,12 @@ export function BrowserRecorder({
             return;
           }
 
+          if (completion.id !== recording.id) {
+            throw new Error("Audio je uložené, ale metadata nahrávky se neuložila.");
+          }
+
           audioUploadCompleted = true;
+          await cleanupConfirmedSafetyAudio(safetySession, completion.id);
         } catch (error) {
           if (!stillOwnsStop(recordingSession, stopGeneration)) {
             return;
@@ -1625,23 +2324,85 @@ export function BrowserRecorder({
         }
       }
 
-      if (!rawText && !audioUploadCompleted) {
-        throw audioSaveError ?? new Error("Live přepis je prázdný. Není co uložit.");
-      }
-
-      if (!audioUploadCompleted) {
-        await completeLiveRecordingWithoutAudio({
-          durationSeconds: elapsedSecondsRef.current,
-          recording
-        });
-
-        if (!stillOwnsStop(recordingSession, stopGeneration)) {
-          return;
+      if (!audioUploadCompleted && maxAudioFileSizeBytes !== null) {
+        try {
+          audioStoredAsSegments = await promoteSafetyAudioSession(
+            safetySession,
+            elapsedSecondsRef.current
+          );
+          audioUploadCompleted = audioStoredAsSegments;
+        } catch (error) {
+          audioSaveError = error instanceof Error
+            ? error
+            : new Error("Bezpečnostní části audia se nepodařilo uložit.");
         }
       }
 
+      finalDraftPersistOutcome = await persistFinalLiveDraft({
+        captureGeneration,
+        recording,
+        recordingSession,
+        stopGeneration
+      });
+
+      if (finalDraftPersistOutcome === "stale") {
+        return;
+      }
+
+      if (!audioUploadCompleted) {
+        if (hasCompleteDurableSafetyAudio(safetySession)) {
+          setRecorderFeedback(
+            finalDraftPersistOutcome === "saved"
+              ? "Serverové uložení audia selhalo. Místní bezpečnostní části zůstaly připravené k obnovení a koncept přepisu je uložený."
+              : stoppedRawText
+                ? "Serverové uložení audia selhalo. Místní audio lze obnovit, ale poslední text se nepodařilo potvrdit na serveru a zůstává v tomto okně."
+                : "Serverové uložení audia selhalo. Místní bezpečnostní části zůstaly připravené k obnovení.",
+            "error"
+          );
+          navigateAfterSave(recording.id);
+          return;
+        }
+
+        throw audioSaveError ?? new Error(
+          rawText
+            ? "Audio se nepodařilo uložit."
+            : "Audio se nepodařilo uložit a není dostupná bezpečnostní kopie."
+        );
+      }
+
+      if (saveMode === "audio_only") {
+        try {
+          await requestAsyncTranscription(recording.id);
+          setRecorderFeedback("Audio je uložené a přepis běží na pozadí.");
+        } catch (error) {
+          setRecorderFeedback(
+            error instanceof Error
+              ? `${error.message} Můžete ho zkusit znovu z detailu nahrávky.`
+              : "Audio je uložené, přepis můžete zkusit znovu z detailu nahrávky.",
+            "error"
+          );
+        }
+
+        navigateAfterSave(recording.id);
+        return;
+      }
+
       if (!rawText) {
-        setRecorderFeedback("Audio je uložené, ale live přepis zůstal prázdný.");
+        providerFallbackReasonRef.current ??= "empty_final_text";
+      }
+
+      if (!rawText) {
+        try {
+          await requestAsyncTranscription(recording.id);
+          setRecorderFeedback("Audio je uložené. Live přepis byl prázdný, nový přepis běží na pozadí.");
+        } catch (error) {
+          setRecorderFeedback(
+            error instanceof Error
+              ? `${error.message} Můžete ho zkusit znovu z detailu nahrávky.`
+              : "Audio je uložené, přepis můžete zkusit znovu z detailu nahrávky.",
+            "error"
+          );
+        }
         navigateAfterSave(recording.id);
         return;
       }
@@ -1650,24 +2411,45 @@ export function BrowserRecorder({
         recording.id,
         rawText,
         tokens,
-        audioUploadCompleted ? "supabase_recording_upload" : "transcript_only"
+        getPersistedLiveTranscriptAudioStorage(
+          saveMode,
+          audioUploadCompleted,
+          audioStoredAsSegments
+        )
       );
 
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
         return;
       }
 
+      if (
+        audioUploadCompleted
+        && (audioStoredAsSegments || providerFallbackReasonRef.current)
+      ) {
+        try {
+          await requestAsyncTranscription(recording.id, true);
+        } catch (error) {
+          setRecorderFeedback(
+            error instanceof Error
+              ? `${error.message} Částečný live přepis i audio zůstaly uložené.`
+              : "Audio a částečný live přepis jsou uložené, přepis můžete zkusit znovu z detailu.",
+            "error"
+          );
+          navigateAfterSave(recording.id, hasSearchWarning);
+          return;
+        }
+      }
+
       setRecorderFeedback(
         hasSearchWarning
           ? TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
+          : providerFallbackReasonRef.current
+            ? "Audio a částečný live přepis jsou uložené. Nový přepis běží na pozadí."
+          : audioStoredAsSegments
+            ? "Audio části a live přepis jsou uložené. Úplný přepis běží na pozadí."
           : audioUploadCompleted
           ? "Live nahrávka a přepis jsou uložené."
-          : audioSaveError
-            ? `Přepis je uložený bez audia. ${audioSaveError.message}`
-            : getLiveAudioFallbackMessage({
-              audioDiscardedForSize: audioLimitReached || audioDiscardedForSizeRef.current,
-              maxAudioFileSizeBytes
-            }),
+          : `Audio není potvrzené. ${audioSaveError?.message ?? "Záznam zůstal k obnovení."}`,
         audioSaveError ? "error" : "status"
       );
       navigateAfterSave(recording.id, hasSearchWarning);
@@ -1684,36 +2466,76 @@ export function BrowserRecorder({
         return;
       }
 
+      if (finalDraftPersistOutcome === null && stoppedRecordingDraft) {
+        finalDraftPersistOutcome = await persistFinalLiveDraft({
+          captureGeneration,
+          recording: stoppedRecordingDraft,
+          recordingSession,
+          stopGeneration
+        });
+      }
+
+      if (
+        finalDraftPersistOutcome === "stale"
+        || !stillOwnsStop(recordingSession, stopGeneration)
+      ) {
+        return;
+      }
+
       await failLiveRecordingUpload({ message, recording: liveRecordingDraftRef.current });
 
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
         return;
       }
-      setRecorderFeedback(error instanceof Error ? error.message : "Nahrávku se nepodařilo uložit.", "error");
+      setRecorderFeedback(
+        stoppedRawText
+          ? finalDraftPersistOutcome === "saved"
+            ? `${message} Poslední koncept přepisu je uložený.`
+            : `${message} Poslední text se nepodařilo potvrdit na serveru a zůstává viditelný jen v tomto okně.`
+          : message,
+        "error"
+      );
     } finally {
       if (stillOwnsStop(recordingSession, stopGeneration)) {
         stopTimer();
         audioChunksRef.current = [];
-        audioDiscardedForSizeRef.current = false;
-        audioDiscardPromiseRef.current = null;
         audioStartedAtRef.current = null;
-        setAudioLimitReached(false);
         setRealtimeWarning(null);
         setWakeLockWarning(null);
         resetLiveDraftRefs();
         mediaRecorderRef.current = null;
+        if (safetyAudioSessionRef.current === safetySession) {
+          safetyAudioSessionRef.current = null;
+        }
         liveRecordingDraftRef.current = null;
         if (sonioxRecordingRef.current === recordingSession) {
           sonioxRecordingRef.current = null;
         }
 
-        cleanupStream();
+        cleanupAudioSession(audioSession);
         void releaseWakeLock();
         recorderStopOwnerRef.current = null;
         setRecorderPhase("idle");
       }
     }
   }
+
+  const audioHealthNotice = getLiveAudioHealthNotice(audioHealth);
+  const displayedAudioQuality = status === "idle"
+    ? liveAudioQuality
+    : sessionLiveAudioQualityRef.current;
+  const displayedProviderHealth = status === "idle"
+    ? liveModeUsesRealtime(saveMode) ? "ready" : "disabled"
+    : providerHealth;
+  const audioCaptureHealthMessage = liveModeStoresAudio(saveMode)
+    ? status === "recording"
+      ? "Audio se nahrává."
+      : status === "saving"
+        ? "Audio se finalizuje a ukládá."
+        : status === "starting"
+          ? "Audio se připravuje."
+          : "Audio je připravené k nahrávání."
+    : "Audio se v režimu Jen live přepis neukládá.";
 
   return (
     <div
@@ -1733,7 +2555,20 @@ export function BrowserRecorder({
           <Link data-touch-target="action" href="/recordings/new">Otevřít nahrávání</Link>
         </div>
       ) : null}
-      {!compact && status === "idle" ? (
+      {!compact && liveModeStoresAudio(saveMode) ? (
+        <p aria-label="Kvalita live audia" className="live-audio-quality-summary">
+          <strong>Kvalita audia:</strong> {getLiveAudioQualitySummary(displayedAudioQuality)}
+        </p>
+      ) : null}
+      {status !== "idle" || !compact ? (
+        <div aria-label="Stav živého nahrávání" className="live-recorder-health" role="status">
+          <p data-recorder-health="audio">{audioCaptureHealthMessage}</p>
+          <p data-recorder-health="provider">
+            {getLiveProviderHealthMessage(saveMode, displayedProviderHealth)}
+          </p>
+        </div>
+      ) : null}
+      {!compact && status === "idle" && liveModeUsesRealtime(saveMode) ? (
         <label className="live-language-select">
           <span>Jazyk live přepisu</span>
           <select
@@ -1750,11 +2585,11 @@ export function BrowserRecorder({
       {allowTranscriptOnly && !compact ? (
         <fieldset className="live-save-mode" disabled={status !== "idle"}>
           <legend>Ukládání</legend>
-          {(["audio_and_transcript", "transcript_only"] as const).map((mode) => (
+          {(["audio_and_live_transcript", "audio_only", "live_transcript_only"] as const).map((mode) => (
             <label key={mode}>
               <input
                 checked={saveMode === mode}
-                disabled={mode === "audio_and_transcript" && maxAudioFileSizeBytes === null}
+                disabled={liveModeStoresAudio(mode) && maxAudioFileSizeBytes === null}
                 name="liveSaveMode"
                 onChange={() => setSaveMode(mode)}
                 type="radio"
@@ -1770,9 +2605,9 @@ export function BrowserRecorder({
         disabled={
           status === "starting" ||
           status === "saving" ||
-          (saveMode === "audio_and_transcript" && maxAudioFileSizeBytes === null)
+          (liveModeStoresAudio(saveMode) && maxAudioFileSizeBytes === null)
         }
-        onClick={status === "recording" ? stopRecording : startRecording}
+        onClick={status === "recording" ? () => void stopRecording() : startRecording}
         type="button"
       >
         {status === "recording" ? <Square size={18} /> : <Mic size={18} />}
@@ -1836,11 +2671,6 @@ export function BrowserRecorder({
       ) : !compact && liveTranscript ? (
         <p className="live-recording-text">{liveTranscript}</p>
       ) : null}
-      {status === "recording" && audioLimitReached && maxAudioFileSizeBytes !== null ? (
-        <p className="recording-state">
-          Ukládání audia bylo zastaveno s rezervou před limitem {formatFileSize(maxAudioFileSizeBytes)}. Přepis pokračuje a uloží se bez audia.
-        </p>
-      ) : null}
       {maxAudioFileSizeBytes === null && !feedback ? (
         <p className="recording-state">
           Audio není dostupné. Live přepis bez audia můžete používat dál.
@@ -1852,6 +2682,9 @@ export function BrowserRecorder({
       {status !== "idle" && realtimeWarning ? (
         <p className="recording-state" role="alert">{realtimeWarning}</p>
       ) : null}
+      {durabilityWarning ? (
+        <p className="recording-state" role="alert">{durabilityWarning}</p>
+      ) : null}
       {feedback ? (
         <p
           aria-live={getRecorderFeedbackAnnouncement(feedback.tone).ariaLive}
@@ -1859,6 +2692,15 @@ export function BrowserRecorder({
           role={getRecorderFeedbackAnnouncement(feedback.tone).role}
         >
           {feedback.message}
+        </p>
+      ) : null}
+      {status !== "idle" && audioHealthNotice ? (
+        <p
+          aria-live={audioHealthNotice.tone === "info" ? "polite" : "assertive"}
+          className="recording-state"
+          role={audioHealthNotice.tone === "info" ? "status" : "alert"}
+        >
+          {audioHealthNotice.message}
         </p>
       ) : null}
     </div>

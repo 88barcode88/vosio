@@ -25,6 +25,11 @@ import {
 import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
 import { getTranscriptSearchWarningPayload } from "@/lib/transcripts/search-warning";
 import { extractTranscriptSpeakerSummaries } from "@/lib/transcripts/speakers";
+import {
+  InvalidSafetyPartListingError,
+  validateSafetyPartListing
+} from "@/lib/live-recording/safety-parts";
+import { listStorageObjectsToExhaustion } from "@/lib/live-recording/recovery";
 
 const SEGMENTED_AUDIO_SOURCE = "supabase_recording_segment";
 
@@ -33,6 +38,7 @@ const routeParamsSchema = z.object({
 });
 
 type SegmentTranscriptionJob = {
+  error_message?: string | null;
   id: string;
   provider_config: unknown;
   provider_job_id: string | null;
@@ -45,13 +51,85 @@ type RouteContext = {
   }>;
 };
 
+const TRANSCRIPTION_PROVIDER_FAILURE_MESSAGE =
+  "Přepis u poskytovatele selhal. Zkuste jej spustit znovu.";
+
 // routeErrorResponse returns a safe API error without leaking provider or transcript details.
 function routeErrorResponse(error: unknown, fallbackMessage: string, status = 500) {
   if (error instanceof Error) {
-    console.error("[Vosio transcription]", error.message);
+    console.error("[Vosio transcription] Request failed.");
   }
 
   return NextResponse.json({ error: fallbackMessage }, { status });
+}
+
+// getSafeTranscriptionProviderDetail preserves bounded diagnostics while redacting common credentials.
+function getSafeTranscriptionProviderDetail(error: unknown) {
+  const detail = error instanceof Error
+    ? error.message
+    : typeof error === "string"
+      ? error
+      : "Soniox provider failure";
+  const sanitized = detail
+    .replace(
+      /([?&](?:access[_-]?token|api[_-]?key|apikey|auth(?:orization)?|awsaccesskeyid|client[_-]?secret|credential|googleaccessid|id[_-]?token|jwt|key|password|refresh[_-]?token|secret|session|sig(?:nature)?|token|x-amz-(?:credential|security-token|signature)|x-goog-(?:credential|signature))=)[^&#\s]*/gi,
+      "$1***"
+    )
+    .replace(
+      /\b((?:access[_-]?token|api[_-]?key|apikey|authorization|proxy-authorization|client[_-]?secret|credential|id[_-]?token|password|refresh[_-]?token|secret|session|signature|token|x-access-token|x-api-key|x-auth-token|x-amz-(?:credential|security-token|signature)|x-goog-(?:credential|signature))\s*[:=]\s*)(?:(?:basic|bearer|digest)\s+)?(?:"[^"]*"|'[^']*'|[^\s,;&#]+)/gi,
+      "$1***"
+    )
+    .replace(/\b((?:cookie|set-cookie)\s*:\s*)[^\r\n]*/gi, "$1***")
+    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-***")
+    .replace(/AIza[0-9A-Za-z_-]+/g, "AIza***")
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer ***")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+
+  return sanitized || "Soniox provider failure";
+}
+
+// settleTranscriptionProviderFailure fails one attempt while preserving the uploaded recording audio.
+export async function settleTranscriptionProviderFailure(input: {
+  admin: ReturnType<typeof createAdminClient>;
+  jobIds: string[];
+  providerError?: unknown;
+  recordingId: string;
+  userId: string;
+}) {
+  const completedAt = new Date().toISOString();
+  const uniqueJobIds = [...new Set(input.jobIds)];
+
+  if (uniqueJobIds.length > 0) {
+    const { error: jobError } = await input.admin
+      .from("transcription_jobs")
+      .update({
+        completed_at: completedAt,
+        error_message: getSafeTranscriptionProviderDetail(input.providerError),
+        status: "failed"
+      })
+      .eq("recording_id", input.recordingId)
+      .eq("user_id", input.userId)
+      .in("id", uniqueJobIds);
+
+    if (jobError) {
+      throw new Error(`Unable to settle failed transcription jobs: ${jobError.message}`);
+    }
+  }
+
+  const { error: recordingError } = await input.admin
+    .from("recordings")
+    .update({
+      error_message: TRANSCRIPTION_PROVIDER_FAILURE_MESSAGE,
+      status: "uploaded"
+    })
+    .eq("id", input.recordingId)
+    .eq("user_id", input.userId);
+
+  if (recordingError) {
+    throw new Error(`Unable to restore uploaded recording state: ${recordingError.message}`);
+  }
 }
 
 // getAuthenticatedRecording verifies that the current user owns the requested recording.
@@ -185,7 +263,7 @@ async function getLatestSegmentBatch(input: {
 }) {
   const { data, error } = await input.admin
     .from("transcription_jobs")
-    .select("id,provider_job_id,status,provider_config,created_at")
+    .select("id,provider_job_id,status,provider_config,error_message,created_at")
     .eq("recording_id", input.recordingId)
     .eq("user_id", input.userId)
     .order("created_at", { ascending: false });
@@ -211,21 +289,18 @@ async function getLatestSegmentBatch(input: {
 }
 
 // listSegmentStoragePaths returns live recording segment objects under a Storage prefix.
-async function listSegmentStoragePaths(
+export async function listSegmentStoragePaths(
   admin: ReturnType<typeof createAdminClient>,
   storagePrefix: string
 ) {
   const folder = storagePrefix.replace(/\/$/, "");
-  const { data, error } = await admin.storage.from(RECORDINGS_BUCKET).list(folder);
+  const bucket = admin.storage.from(RECORDINGS_BUCKET);
+  const data = await listStorageObjectsToExhaustion({
+    folder,
+    listPage: (path, options) => bucket.list(path, options)
+  });
 
-  if (error) {
-    throw new Error(`Unable to list live recording segments: ${error.message}`);
-  }
-
-  return (data ?? [])
-    .filter((item) => item.name && !item.name.endsWith("/"))
-    .map((item) => `${folder}/${item.name}`)
-    .sort((a, b) => a.localeCompare(b));
+  return validateSafetyPartListing(data).map((part) => `${folder}/${part.name}`);
 }
 
 // offsetSegmentTokenTimings shifts token timings by the cumulative duration of previous segments.
@@ -257,12 +332,19 @@ async function createSegmentedTranscriptionJobs(input: {
   const segmentPaths = await listSegmentStoragePaths(input.admin, input.recording.storage_path);
 
   if (segmentPaths.length === 0) {
-    return NextResponse.json({ error: "Segmentovaná nahrávka nemá uložené části audia." }, { status: 409 });
+    return {
+      response: NextResponse.json(
+        { error: "Segmentovaná nahrávka nemá uložené části audia." },
+        { status: 409 }
+      ),
+      status: "invalid"
+    };
   }
 
   const batchId = randomUUID();
   const providerConfig = getSonioxTranscriptionOptions();
   const createdJobs: SegmentTranscriptionJob[] = [];
+  let failedProviderDetail: unknown;
 
   for (const [index, segmentPath] of segmentPaths.entries()) {
     const { data: signedUrl, error: signedUrlError } = await input.admin.storage
@@ -304,43 +386,61 @@ async function createSegmentedTranscriptionJobs(input: {
       options: providerConfig,
       region: input.region
     }).catch(async (error: unknown) => {
-      const errorMessage = error instanceof Error ? error.message : "Soniox segment request failed";
-
-      await input.admin
-        .from("transcription_jobs")
-        .update({ error_message: errorMessage, status: "failed" })
-        .eq("id", initialJob.id);
-      await input.admin
-        .from("recordings")
-        .update({ error_message: "Soniox segment transcription request failed", status: "failed" })
-        .eq("id", input.recording.id)
-        .eq("user_id", input.userId);
-
+      await settleTranscriptionProviderFailure({
+        admin: input.admin,
+        jobIds: [...createdJobs.map((job) => job.id), initialJob.id],
+        providerError: error,
+        recordingId: input.recording.id,
+        userId: input.userId
+      });
       throw error;
     });
     const jobStatus = mapSonioxStatus(transcription.status);
     const { data: job, error: jobError } = await input.admin
       .from("transcription_jobs")
       .update({
+        error_message:
+          jobStatus === "failed"
+            ? getSafeTranscriptionProviderDetail(transcription.error_message ?? transcription.error_type)
+            : null,
         provider_job_id: transcription.id,
         started_at: jobStatus === "running" ? new Date().toISOString() : null,
         status: jobStatus
       })
       .eq("id", initialJob.id)
-      .select("id,provider_job_id,status,provider_config")
+      .select("id,provider_job_id,status,provider_config,error_message")
       .single();
 
     if (jobError || !job) {
       throw new Error("Nepodařilo se aktualizovat segmentový přepisovací job.");
     }
 
-    createdJobs.push(job as SegmentTranscriptionJob);
+    const persistedJob = job as SegmentTranscriptionJob;
+    if (jobStatus === "failed") {
+      failedProviderDetail = persistedJob.error_message ?? transcription.error_message ?? transcription.error_type;
+    }
+    createdJobs.push(persistedJob);
   }
 
-  return NextResponse.json({
-    job: { provider_job_id: null, status: getAggregateJobStatus(createdJobs) },
-    reused: false
-  });
+  const status = getAggregateJobStatus(createdJobs);
+
+  if (status === "failed") {
+    await settleTranscriptionProviderFailure({
+      admin: input.admin,
+      jobIds: createdJobs.map((job) => job.id),
+      providerError: failedProviderDetail,
+      recordingId: input.recording.id,
+      userId: input.userId
+    });
+  }
+
+  return {
+    response: NextResponse.json({
+      job: { provider_job_id: null, status: getAggregateJobStatus(createdJobs) },
+      reused: false
+    }),
+    status
+  };
 }
 
 // refreshSegmentBatchJobs polls Soniox and persists the latest status for each segment job.
@@ -349,35 +449,46 @@ async function refreshSegmentBatchJobs(input: {
   admin: ReturnType<typeof createAdminClient>;
   jobs: SegmentTranscriptionJob[];
 }) {
-  const refreshedJobs = await Promise.all(
-    input.jobs.map(async (job) => {
-      if (!job.provider_job_id || job.status === "done" || job.status === "failed") {
-        return job;
-      }
+  const refreshResults = await Promise.allSettled(input.jobs.map(async (job) => {
+    if (!job.provider_job_id || job.status === "done" || job.status === "failed") {
+      return job;
+    }
 
-      const transcription = await getSonioxTranscription(
-        getTranscriptionJobRegion(job.provider_config),
-        job.provider_job_id
-      );
-      const jobStatus = mapSonioxStatus(transcription.status);
-      const { data, error } = await input.admin
-        .from("transcription_jobs")
-        .update({
-          completed_at:
-            jobStatus === "done" || jobStatus === "failed" ? new Date().toISOString() : null,
-          error_message: transcription.error_message ?? null,
-          status: jobStatus
-        })
-        .eq("id", job.id)
-        .select("id,provider_job_id,status,provider_config")
-        .single();
+    const transcription = await getSonioxTranscription(
+      getTranscriptionJobRegion(job.provider_config),
+      job.provider_job_id
+    );
+    const jobStatus = mapSonioxStatus(transcription.status);
+    const safeProviderDetail = jobStatus === "failed"
+      ? getSafeTranscriptionProviderDetail(transcription.error_message ?? transcription.error_type)
+      : null;
+    const { data, error } = await input.admin
+      .from("transcription_jobs")
+      .update({
+        completed_at:
+          jobStatus === "done" || jobStatus === "failed" ? new Date().toISOString() : null,
+        error_message: safeProviderDetail,
+        status: jobStatus
+      })
+      .eq("id", job.id)
+      .select("id,provider_job_id,status,provider_config,error_message")
+      .single();
 
-      if (error || !data) {
-        throw new Error("Nepodařilo se aktualizovat stav segmentového přepisu.");
-      }
+    if (error || !data) {
+      throw new Error("Nepodařilo se aktualizovat stav segmentového přepisu.");
+    }
 
-      return data as SegmentTranscriptionJob;
-    })
+    return { ...(data as SegmentTranscriptionJob), error_message: safeProviderDetail };
+  }));
+  const rejected = refreshResults.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected"
+  );
+
+  if (rejected) {
+    throw rejected.reason;
+  }
+  const refreshedJobs = refreshResults.map(
+    (result) => (result as PromiseFulfilledResult<SegmentTranscriptionJob>).value
   );
 
   return sortSegmentJobs(refreshedJobs);
@@ -566,7 +677,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
       }
 
-      const response = await createSegmentedTranscriptionJobs({
+      const segmentedCreation = await createSegmentedTranscriptionJobs({
         admin,
         recording: {
           id: recording.id,
@@ -577,17 +688,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
         userId: user.id
       });
 
-      const { error: recordingStatusError } = await admin
-        .from("recordings")
-        .update({ status: "transcribing" })
-        .eq("id", recording.id)
-        .eq("user_id", user.id);
+      if (!["failed", "invalid"].includes(segmentedCreation.status)) {
+        const { error: recordingStatusError } = await admin
+          .from("recordings")
+          .update({ status: "transcribing" })
+          .eq("id", recording.id)
+          .eq("user_id", user.id);
 
-      if (recordingStatusError) {
-        throw new Error(`Unable to update recording status: ${recordingStatusError.message}`);
+        if (recordingStatusError) {
+          throw new Error(`Unable to update recording status: ${recordingStatusError.message}`);
+        }
       }
 
-      return response;
+      return segmentedCreation.response;
     }
 
     const existingJob = shouldRestart
@@ -634,18 +747,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
       options: providerConfig,
       region
     }).catch(async (error: unknown) => {
-      const errorMessage = error instanceof Error ? error.message : "Soniox request failed";
-
-      await admin
-        .from("transcription_jobs")
-        .update({ error_message: errorMessage, status: "failed" })
-        .eq("id", initialJob.id);
-      await admin
-        .from("recordings")
-        .update({ error_message: "Soniox transcription request failed", status: "failed" })
-        .eq("id", recording.id)
-        .eq("user_id", user.id);
-
+      await settleTranscriptionProviderFailure({
+        admin,
+        jobIds: [initialJob.id],
+        providerError: error,
+        recordingId: recording.id,
+        userId: user.id
+      });
       throw error;
     });
 
@@ -653,6 +761,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { data: job, error: jobError } = await admin
       .from("transcription_jobs")
       .update({
+        error_message:
+          jobStatus === "failed"
+            ? getSafeTranscriptionProviderDetail(transcription.error_message ?? transcription.error_type)
+            : null,
         provider_job_id: transcription.id,
         started_at: jobStatus === "running" ? new Date().toISOString() : null,
         status: jobStatus
@@ -663,6 +775,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (jobError || !job) {
       return NextResponse.json({ error: "Nepodařilo se aktualizovat přepisovací job." }, { status: 500 });
+    }
+
+    if (jobStatus === "failed") {
+      await settleTranscriptionProviderFailure({
+        admin,
+        jobIds: [initialJob.id],
+        providerError: transcription.error_message ?? transcription.error_type,
+        recordingId: recording.id,
+        userId: user.id
+      });
+
+      return NextResponse.json({ job: { ...job, status: "failed" }, reused: false });
     }
 
     const { error: recordingStatusError } = await admin
@@ -677,6 +801,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ job, reused: false });
   } catch (error) {
+    if (error instanceof InvalidSafetyPartListingError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+
     return routeErrorResponse(error, "Nepodařilo se založit přepis.");
   }
 }
@@ -710,22 +838,20 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         return NextResponse.json({ error: "Segmentové přepisovací joby nebyly nalezeny." }, { status: 404 });
       }
 
-      const refreshedJobs = await refreshSegmentBatchJobs({ admin, jobs: segmentJobs });
+      const refreshedJobs = await refreshSegmentBatchJobs({
+        admin,
+        jobs: segmentJobs
+      });
       const jobStatus = getAggregateJobStatus(refreshedJobs);
 
       if (jobStatus === "failed") {
-        const { error: recordingError } = await admin
-          .from("recordings")
-          .update({
-            error_message: "Segmentový Soniox přepis selhal",
-            status: "failed"
-          })
-          .eq("id", recording.id)
-          .eq("user_id", user.id);
-
-        if (recordingError) {
-          throw new Error(`Unable to update failed recording status: ${recordingError.message}`);
-        }
+        await settleTranscriptionProviderFailure({
+          admin,
+          jobIds: refreshedJobs.map((job) => job.id),
+          providerError: refreshedJobs.find((job) => job.status === "failed")?.error_message,
+          recordingId: recording.id,
+          userId: user.id
+        });
 
         return NextResponse.json({ job: { provider_job_id: null, status: jobStatus } });
       }
@@ -785,7 +911,10 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       .update({
         completed_at:
           jobStatus === "done" || jobStatus === "failed" ? new Date().toISOString() : null,
-        error_message: transcription.error_message ?? null,
+        error_message:
+          jobStatus === "failed"
+            ? getSafeTranscriptionProviderDetail(transcription.error_message ?? transcription.error_type)
+            : null,
         status: jobStatus
       })
       .eq("id", latestJob.id);
@@ -795,18 +924,13 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     if (jobStatus === "failed") {
-      const { error: recordingError } = await admin
-        .from("recordings")
-        .update({
-          error_message: transcription.error_message ?? "Soniox transcription failed",
-          status: "failed"
-        })
-        .eq("id", recording.id)
-        .eq("user_id", user.id);
-
-      if (recordingError) {
-        throw new Error(`Unable to update failed recording status: ${recordingError.message}`);
-      }
+      await settleTranscriptionProviderFailure({
+        admin,
+        jobIds: [latestJob.id],
+        providerError: transcription.error_message ?? transcription.error_type,
+        recordingId: recording.id,
+        userId: user.id
+      });
 
       return NextResponse.json({
         job: { ...getPublicTranscriptionJob(latestJob), status: jobStatus }

@@ -6,8 +6,6 @@ import {
   parseTranscriptTabCookieValue,
   VOSIO_ACTIVE_RECORDING_TAB_COOKIE
 } from "@/components/transcript-tabs/tab-state";
-import { listAiOutputsForTranscripts } from "@/lib/ai/queries";
-import { listStructuredAiItemsForTranscripts } from "@/lib/ai/structured-queries";
 import { getRecordingById } from "@/lib/recordings/queries";
 import { listRecordingMarkers } from "@/lib/recording-markers/queries";
 import {
@@ -71,7 +69,6 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
     notFound();
   }
 
-  const transcriptIds = transcripts.map((transcript) => transcript.id);
   const currentTranscript = transcripts[0] ?? null;
   const initialDeepLink = parsedDeepLink.request && currentTranscript
     ? resolveTranscriptDeepLink({
@@ -85,16 +82,12 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
         transcriptId: currentTranscript.id
       })
     : null;
-  const [aiOutputs, structuredItems, recordingOrganization] = await Promise.all([
-    listAiOutputsForTranscripts(supabase, transcriptIds),
-    listStructuredAiItemsForTranscripts(supabase, transcriptIds),
-    getRecordingOrganization(supabase, recording)
-  ]);
+  const recordingOrganization = await getRecordingOrganization(supabase, recording);
 
   return (
     <VosioWorkspace
       activeRecordingId={recordingId}
-      aiOutputs={aiOutputs}
+      aiOutputs={[]}
       initialTranscriptDeepLink={initialDeepLink}
       initialTranscriptTab={parsedDeepLink.explicitTranscriptTab
         ? "transcript"
@@ -107,7 +100,6 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
       recordingMarkers={recordingMarkers}
       recordingOrganization={recordingOrganization}
       recordingOrganizationOptions={organizationOptions}
-      structuredItems={structuredItems}
       transcripts={transcripts}
       transcriptSearchWarning={isTranscriptSearchIndexWarningCode(query.warning)}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}

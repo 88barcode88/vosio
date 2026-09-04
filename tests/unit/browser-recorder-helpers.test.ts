@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   getEstimatedLiveRecordingBytes,
-  getLiveAudioFallbackMessage,
+  getLiveAudioQualitySummary,
+  getLiveProviderHealthMessage,
+  getPersistedLiveTranscriptAudioStorage,
   getTokenKey,
   getRecorderFeedbackAnnouncement,
   getRecordingActiveMessage,
@@ -11,10 +13,12 @@ import {
   getRealtimeStateWarning,
   getSaveModeLabel,
   getWakeLockWarning,
+  liveModeStoresAudio,
+  liveModeUsesRealtime,
   mergeRealtimeResultTokens,
   normalizeRealtimeToken,
   promoteRealtimePartialTokens,
-  shouldDiscardLiveRecordingAudio,
+  shouldStopLiveRecordingAtAudioLimit,
   tokensToCaptionBlocks,
   type LiveCaptionToken
 } from "@/components/browser-recorder/helpers";
@@ -97,14 +101,14 @@ describe("browser recorder helpers", () => {
     ]);
   });
 
-  it("switches a long live recording to transcript-only at the audio limit", () => {
+  it("stops a long live recording at the reserved audio limit", () => {
     const maxAudioFileSizeBytes = 100 * 1024 * 1024;
     const cutoffSeconds = (maxAudioFileSizeBytes * 8) / 128_000;
 
     expect(
-      shouldDiscardLiveRecordingAudio(128_000, cutoffSeconds - 1, maxAudioFileSizeBytes)
+      shouldStopLiveRecordingAtAudioLimit(128_000, cutoffSeconds - 1, maxAudioFileSizeBytes)
     ).toBe(false);
-    expect(shouldDiscardLiveRecordingAudio(128_000, cutoffSeconds, maxAudioFileSizeBytes)).toBe(true);
+    expect(shouldStopLiveRecordingAtAudioLimit(128_000, cutoffSeconds, maxAudioFileSizeBytes)).toBe(true);
   });
 
   it("keeps a one-hour default recording below the 50 MiB Storage reserve", () => {
@@ -116,34 +120,45 @@ describe("browser recorder helpers", () => {
   });
 
   it("explains that live audio is saved only up to the Storage limit", () => {
-    expect(getSaveModeLabel("audio_and_transcript", 100 * 1024 * 1024)).toBe(
-      "Audio do 100 MB + přepis"
+    expect(getSaveModeLabel("audio_and_live_transcript", 100 * 1024 * 1024)).toBe(
+      "Audio do 100 MB + live přepis"
     );
-    expect(getSaveModeLabel("audio_and_transcript", null)).toBe("Audio není dostupné");
+    expect(getSaveModeLabel("audio_only", 100 * 1024 * 1024)).toBe("Jen audio do 100 MB");
+    expect(getSaveModeLabel("audio_and_live_transcript", null))
+      .toBe("Audio + live přepis není dostupné");
+    expect(getSaveModeLabel("live_transcript_only", 100 * 1024 * 1024)).toBe("Jen live přepis");
   });
 
-  it("explains whether audio was discarded early or the final Blob could not be saved", () => {
-    const maxAudioFileSizeBytes = 128 * 1024 * 1024;
-
-    expect(getLiveAudioFallbackMessage({
-      audioDiscardedForSize: true,
-      maxAudioFileSizeBytes
-    })).toContain("zastaveno s rezervou před limitem");
-    expect(getLiveAudioFallbackMessage({
-      audioDiscardedForSize: false,
-      maxAudioFileSizeBytes
-    })).toContain("prázdný, neplatný nebo překročil limit");
+  it("shows the selected live quality with a decimal hourly estimate", () => {
+    expect(getLiveAudioQualitySummary("economy")).toBe("Úsporná · 32 kbit/s · 14.4 MB/h");
+    expect(getLiveAudioQualitySummary("standard")).toBe("Standardní · 64 kbit/s · 28.8 MB/h");
+    expect(getLiveAudioQualitySummary("high")).toBe("Vysoká · 96 kbit/s · 43.2 MB/h");
   });
 
   it("keeps the active recording message independent from wake lock and realtime warnings", () => {
-    expect(getRecordingActiveMessage("audio_and_transcript", 128 * 1024 * 1024)).toContain(
-      "Audio se uloží do 128 MB"
+    expect(getRecordingActiveMessage("audio_and_live_transcript", 128 * 1024 * 1024)).toContain(
+      "Audio se nahrává."
     );
-    expect(getRecordingActiveMessage("transcript_only", null)).toBe(
+    expect(getRecordingActiveMessage("audio_only", 128 * 1024 * 1024)).toContain(
+      "Audio se nahrává."
+    );
+    expect(getRecordingActiveMessage("live_transcript_only", null)).toBe(
       "Přepisuji živě bez ukládání audio souboru."
     );
     expect(getWakeLockWarning(true)).toBeNull();
     expect(getWakeLockWarning(false)).toContain("telefon nezamykejte");
+  });
+
+  it("keeps provider health text separate from audio ownership", () => {
+    expect(getLiveProviderHealthMessage("audio_only", "disabled")).toBe(
+      "Live přepis: V režimu Jen audio je vypnutý."
+    );
+    expect(getLiveProviderHealthMessage("audio_and_live_transcript", "healthy")).toBe(
+      "Live přepis: Připojený."
+    );
+    expect(getLiveProviderHealthMessage("audio_and_live_transcript", "reconnecting")).toBe(
+      "Live přepis: Obnovuje spojení. Audio se dál nahrává."
+    );
   });
 
   it("announces capture errors assertively and progress politely", () => {
@@ -158,18 +173,33 @@ describe("browser recorder helpers", () => {
   });
 
   it("reports Soniox reconnecting, errors, and cancellation without claiming audio stopped", () => {
-    expect(getRealtimeStateWarning("reconnecting", "audio_and_transcript")).toContain(
+    expect(getRealtimeStateWarning("reconnecting", "audio_and_live_transcript")).toContain(
       "Nahrávání pokračuje"
     );
-    expect(getRealtimeStateWarning("error", "audio_and_transcript")).toContain(
+    expect(getRealtimeStateWarning("error", "audio_and_live_transcript")).toContain(
       "Lokální audio se může dál nahrávat"
     );
-    expect(getRealtimeStateWarning("canceled", "transcript_only")).toContain(
+    expect(getRealtimeStateWarning("canceled", "live_transcript_only")).toContain(
       "Textový režim nebude dostávat další přepis"
     );
-    expect(getRealtimeErrorMessage(new Error("síť"), "audio_and_transcript")).toContain(
+    expect(getRealtimeErrorMessage(new Error("síť"), "audio_and_live_transcript")).toContain(
       "Lokální audio může dál pokračovat"
     );
+  });
+
+  it("keeps product modes separate while mapping only persisted transcript metadata", () => {
+    expect(liveModeStoresAudio("audio_and_live_transcript")).toBe(true);
+    expect(liveModeStoresAudio("audio_only")).toBe(true);
+    expect(liveModeStoresAudio("live_transcript_only")).toBe(false);
+    expect(liveModeUsesRealtime("audio_and_live_transcript")).toBe(true);
+    expect(liveModeUsesRealtime("audio_only")).toBe(false);
+    expect(liveModeUsesRealtime("live_transcript_only")).toBe(true);
+    expect(getPersistedLiveTranscriptAudioStorage("audio_and_live_transcript", true))
+      .toBe("supabase_recording_upload");
+    expect(getPersistedLiveTranscriptAudioStorage("audio_and_live_transcript", true, true))
+      .toBe("supabase_recording_segments");
+    expect(getPersistedLiveTranscriptAudioStorage("live_transcript_only", false))
+      .toBe("transcript_only");
   });
 
   it("uses automatic language detection without language hints", () => {

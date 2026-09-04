@@ -1,6 +1,37 @@
 export const RECORDINGS_BUCKET = "recordings";
 
-export const LIVE_RECORDING_AUDIO_BITS_PER_SECOND = 64000;
+export const liveAudioQualityIds = ["economy", "standard", "high"] as const;
+
+export type LiveAudioQuality = (typeof liveAudioQualityIds)[number];
+
+// getLiveAudioQualityEstimatedMegabytesPerHour keeps the displayed decimal estimate aligned with the requested bitrate.
+function getLiveAudioQualityEstimatedMegabytesPerHour(audioBitsPerSecond: number) {
+  return audioBitsPerSecond * 3600 / 8 / 1_000_000;
+}
+
+export const liveAudioQualityOptions = {
+  economy: {
+    audioBitsPerSecond: 32_000,
+    estimatedMegabytesPerHour: getLiveAudioQualityEstimatedMegabytesPerHour(32_000),
+    label: "Úsporná"
+  },
+  standard: {
+    audioBitsPerSecond: 64_000,
+    estimatedMegabytesPerHour: getLiveAudioQualityEstimatedMegabytesPerHour(64_000),
+    label: "Standardní"
+  },
+  high: {
+    audioBitsPerSecond: 96_000,
+    estimatedMegabytesPerHour: getLiveAudioQualityEstimatedMegabytesPerHour(96_000),
+    label: "Vysoká"
+  }
+} satisfies Record<LiveAudioQuality, {
+  audioBitsPerSecond: number;
+  estimatedMegabytesPerHour: number;
+  label: string;
+}>;
+
+export const LIVE_RECORDING_AUDIO_BITS_PER_SECOND = liveAudioQualityOptions.standard.audioBitsPerSecond;
 export const SEGMENTED_RECORDING_STORAGE_FOLDER = "live";
 
 export const ACCEPTED_RECORDING_MIME_TYPES = [
@@ -29,6 +60,13 @@ const SUPPORTED_RECORDING_MIME_TYPES = [...new Set(
 )];
 
 export type AcceptedRecordingMimeType = (typeof ACCEPTED_RECORDING_MIME_TYPES)[number];
+
+// normalizeLiveAudioQuality keeps legacy and malformed preference metadata on the safe standard setting.
+export function normalizeLiveAudioQuality(value: unknown): LiveAudioQuality {
+  return typeof value === "string" && liveAudioQualityIds.includes(value as LiveAudioQuality)
+    ? value as LiveAudioQuality
+    : "standard";
+}
 
 export const activeRecordingStatuses = [
   "created",

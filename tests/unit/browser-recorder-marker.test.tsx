@@ -132,28 +132,90 @@ function createRealtimeRecordingMock() {
 // installMediaRecorderMock exposes the draft-to-local-recorder boundary without real media devices.
 function installMediaRecorderMock() {
   class MediaRecorderMock {
+    static instances: MediaRecorderMock[] = [];
     static isTypeSupported = vi.fn(() => true);
     audioBitsPerSecond = 128_000;
     ondataavailable: ((event: { data: Blob }) => void) | null = null;
     state: "inactive" | "recording" = "inactive";
-    private readonly listeners = new Map<string, Array<() => void>>();
+    private readonly listeners = new Map<string, EventListener[]>();
 
+    // constructor records the isolated stream assigned to this synthetic encoder.
+    constructor(public readonly stream: MediaStream) {
+      MediaRecorderMock.instances.push(this);
+    }
+
+    // start marks this synthetic encoder active.
     start() {
       this.state = "recording";
     }
 
+    // stop marks this encoder inactive and delivers its terminal event.
     stop() {
       this.state = "inactive";
-      this.listeners.get("stop")?.forEach((listener) => listener());
+      const event = new Event("stop");
+
+      this.listeners.get("stop")?.forEach((listener) => listener(event));
     }
 
-    addEventListener(eventName: string, listener: () => void) {
+    // addEventListener stores source listeners using the browser EventListener contract.
+    addEventListener(eventName: string, listener: EventListener) {
       this.listeners.set(eventName, [...(this.listeners.get(eventName) ?? []), listener]);
+    }
+
+    // removeEventListener detaches only the requested listener identity.
+    removeEventListener(eventName: string, listener: EventListener) {
+      this.listeners.set(
+        eventName,
+        (this.listeners.get(eventName) ?? []).filter((candidate) => candidate !== listener)
+      );
+    }
+
+    // emitData sends a Blob through property and event listeners like MediaRecorder.
+    emitData(data: Blob) {
+      const event = Object.assign(new Event("dataavailable"), { data });
+
+      this.ondataavailable?.({ data });
+      this.listeners.get("dataavailable")?.forEach((listener) => listener(event));
     }
   }
 
   vi.stubGlobal("MediaRecorder", MediaRecorderMock);
   return MediaRecorderMock;
+}
+
+class MediaStreamMock {
+  // constructor stores only the tracks owned by this synthetic stream.
+  constructor(private readonly tracks: MediaStreamTrack[] = []) {}
+
+  // clone gives the rotating safety recorder its own stream and tracks.
+  clone() {
+    return new MediaStreamMock(this.tracks.map((track) => track.clone()));
+  }
+
+  // getAudioTracks returns the audio tracks for master acquisition.
+  getAudioTracks() {
+    return this.tracks.filter((track) => track.kind === "audio");
+  }
+
+  // getTracks returns a defensive copy for cleanup assertions.
+  getTracks() {
+    return [...this.tracks];
+  }
+}
+
+// createSharedMediaStreamMock provides one master track with independently stoppable clones.
+function createSharedMediaStreamMock() {
+  const createTrack = () => Object.assign(new EventTarget(), {
+    clone: vi.fn(),
+    kind: "audio",
+    muted: false,
+    readyState: "live",
+    stop: vi.fn()
+  }) as unknown as MediaStreamTrack;
+  const masterTrack = createTrack();
+
+  vi.mocked(masterTrack.clone).mockImplementation(createTrack);
+  return new MediaStreamMock([masterTrack]) as unknown as MediaStream;
 }
 
 // createSavedMarkerResponse returns the exact successful route payload for one attempt.
@@ -201,6 +263,13 @@ async function renderRecorder(
   });
 }
 
+// flushRecorderStart crosses the shared microphone acquisition promise before provider events fire.
+async function flushRecorderStart() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 // startReadyRecorder crosses Soniox active state and the persisted live-draft boundary.
 async function startReadyRecorder(redirectAfterSave?: "detail" | "list") {
   const draft = createDeferred<{
@@ -216,7 +285,7 @@ async function startReadyRecorder(redirectAfterSave?: "detail" | "list") {
   await renderRecorder(false, redirectAfterSave);
   await act(async () => {
     findButton("Nahrávat live")?.click();
-    await Promise.resolve();
+    await flushRecorderStart();
   });
   await act(async () => {
     realtime.handlers.get("state_change")?.({ new_state: "recording" } as never);
@@ -247,9 +316,10 @@ beforeEach(() => {
   mocks.uploadLiveRecording.mockReset();
   vi.stubGlobal("fetch", mocks.fetch);
   vi.stubGlobal("crypto", { randomUUID: mocks.randomUUID });
+  vi.stubGlobal("MediaStream", MediaStreamMock);
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
-    value: { getUserMedia: vi.fn() }
+    value: { getUserMedia: vi.fn().mockResolvedValue(createSharedMediaStreamMock()) }
   });
   container = document.createElement("div");
   document.body.append(container);
@@ -535,8 +605,7 @@ describe("BrowserRecorder live markers", () => {
       userId: string;
     }>();
     const realtime = createRealtimeRecordingMock();
-    const track = { stop: vi.fn() };
-    const stream = { getTracks: vi.fn(() => [track]) };
+    const stream = createSharedMediaStreamMock();
     const MediaRecorderMock = installMediaRecorderMock();
     mocks.createLiveRecordingDraft.mockReturnValue(draft.promise);
     mocks.realtimeRecord.mockReturnValue(realtime.recording);
@@ -548,7 +617,7 @@ describe("BrowserRecorder live markers", () => {
     });
     await act(async () => {
       document.querySelector<HTMLButtonElement>(".record-button")?.click();
-      await Promise.resolve();
+      await flushRecorderStart();
       realtime.handlers.get("state_change")?.({ new_state: "recording" } as never);
     });
 
@@ -560,7 +629,114 @@ describe("BrowserRecorder live markers", () => {
     });
 
     expect(MediaRecorderMock.isTypeSupported).toHaveBeenCalled();
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
+    expect(mocks.realtimeRecord.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      source: expect.objectContaining({
+        restart: expect.any(Function),
+        start: expect.any(Function),
+        stop: expect.any(Function)
+      })
+    }));
     expect(document.querySelector<HTMLButtonElement>(".live-marker-button")?.disabled).toBe(false);
+  });
+
+  it("releases a stale microphone acquisition without starting Soniox", async () => {
+    const acquisition = createDeferred<MediaStream>();
+    const stream = createSharedMediaStreamMock();
+    const masterTrack = stream.getAudioTracks()[0]!;
+
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockReturnValue(acquisition.promise);
+    await renderRecorder();
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await Promise.resolve();
+    });
+    await act(async () => root?.unmount());
+    root = null;
+
+    await act(async () => {
+      acquisition.resolve(stream);
+      await flushRecorderStart();
+    });
+
+    expect(masterTrack.stop).toHaveBeenCalledOnce();
+    expect(mocks.realtimeRecord).not.toHaveBeenCalled();
+  });
+
+  it("keeps an isolated archive nonempty through Soniox restart and cancellation", async () => {
+    const realtime = createRealtimeRecordingMock();
+    const MediaRecorderMock = installMediaRecorderMock();
+
+    mocks.createLiveRecordingDraft.mockResolvedValue({
+      id: recordingId,
+      storagePrefix: "live",
+      userId: "user-1"
+    });
+    mocks.realtimeRecord.mockImplementation((options) => {
+      const source = options.source as {
+        restart: () => void;
+        start: (handlers: {
+          onData: (chunk: ArrayBuffer) => void;
+          onError: (error: Error) => void;
+        }) => Promise<void>;
+        stop: () => void;
+      };
+
+      void source.start({ onData: vi.fn(), onError: vi.fn() });
+      realtime.recording.reconnect.mockImplementation(() => source.restart());
+      realtime.recording.cancel.mockImplementation(() => source.stop());
+      realtime.recording.stop.mockImplementation(async () => source.stop());
+      return realtime.recording;
+    });
+    mocks.uploadLiveRecording.mockResolvedValue({ bytes: 24, storagePath: "live/archive.webm" });
+    mocks.completeLiveRecordingUpload.mockResolvedValue(undefined);
+
+    await act(async () => {
+      root?.render(<BrowserRecorder maxAudioFileSizeBytes={50_000_000} />);
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushRecorderStart();
+      realtime.handlers.get("state_change")?.({ new_state: "recording" } as never);
+      await Promise.resolve();
+    });
+
+    expect(MediaRecorderMock.instances).toHaveLength(3);
+    const archiveRecorder = MediaRecorderMock.instances[0]!;
+    const initialSonioxRecorder = MediaRecorderMock.instances[1]!;
+    const safetyRecorder = MediaRecorderMock.instances[2]!;
+
+    expect(initialSonioxRecorder.stream.getAudioTracks()[0])
+      .not.toBe(archiveRecorder.stream.getAudioTracks()[0]);
+    expect(safetyRecorder.stream.getAudioTracks()[0])
+      .not.toBe(archiveRecorder.stream.getAudioTracks()[0]);
+
+    realtime.recording.reconnect();
+    realtime.recording.reconnect();
+    realtime.recording.reconnect();
+    realtime.recording.cancel();
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
+    expect(archiveRecorder.state).toBe("recording");
+    expect(MediaRecorderMock.instances).toHaveLength(6);
+    expect(safetyRecorder.state).toBe("recording");
+    expect(MediaRecorderMock.instances
+      .filter((_, index) => [1, 3, 4, 5].includes(index))
+      .every((recorder) => recorder.state === "inactive"))
+      .toBe(true);
+
+    archiveRecorder.emitData(new Blob(["archive-still-recording"], { type: "audio/webm" }));
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const uploadedBlob = mocks.uploadLiveRecording.mock.calls[0]?.[0]?.blob as Blob;
+
+    expect(uploadedBlob.type).toBe("audio/webm");
+    expect(uploadedBlob.size).toBeGreaterThan(0);
   });
 
   it("ignores a marker response that settles after stop and a new session", async () => {
@@ -587,7 +763,7 @@ describe("BrowserRecorder live markers", () => {
 
     await act(async () => {
       document.querySelector<HTMLButtonElement>(".record-button")?.click();
-      await Promise.resolve();
+      await flushRecorderStart();
       nextRealtime.handlers.get("state_change")?.({ new_state: "recording" } as never);
       nextDraft.resolve({
         data: { id: "8cd31215-9b8f-4c68-9e2f-89f4d31f96b4" },
@@ -673,8 +849,9 @@ describe("BrowserRecorder live markers", () => {
     expect(mocks.fetch.mock.calls.some(([url]) =>
       String(url).endsWith(`/api/recordings/${recordingId}/live-transcript`)
     )).toBe(true);
-    expect(document.querySelector('[role="status"]')?.textContent)
-      .toBe(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
+    expect(Array.from(document.querySelectorAll('[role="status"]')).some((element) => (
+      element.textContent === TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
+    ))).toBe(true);
     expect(mocks.routerPush).toHaveBeenCalledWith(
       `/recordings/${recordingId}?warning=${TRANSCRIPT_SEARCH_INDEX_WARNING}`
     );
@@ -689,8 +866,7 @@ describe("BrowserRecorder live markers", () => {
     }>();
     const lateDraft = { id: recordingId, storagePrefix: "live", userId: "user-1" };
     const realtime = createRealtimeRecordingMock();
-    const track = { stop: vi.fn() };
-    const stream = { getTracks: vi.fn(() => [track]) };
+    const stream = createSharedMediaStreamMock();
     installMediaRecorderMock();
     mocks.createLiveRecordingDraft.mockReturnValue(draft.promise);
     mocks.realtimeRecord.mockReturnValue(realtime.recording);
@@ -722,13 +898,12 @@ describe("BrowserRecorder live markers", () => {
       await Promise.resolve();
     });
 
-    expect(mocks.completeLiveRecordingWithoutAudio).toHaveBeenCalledWith({
-      durationSeconds: 0,
+    expect(mocks.completeLiveRecordingWithoutAudio).not.toHaveBeenCalled();
+    expect(mocks.failLiveRecordingUpload).toHaveBeenCalledWith(expect.objectContaining({
       recording: lateDraft
-    });
-    expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
+    }));
     expect(mocks.fetch.mock.calls.some(([url]) =>
-      String(url).endsWith(`/api/recordings/${recordingId}/live-transcript`)
+      String(url).endsWith(`/api/recordings/${recordingId}/live-draft`)
     )).toBe(true);
   });
 
@@ -745,7 +920,7 @@ describe("BrowserRecorder live markers", () => {
     await renderRecorder();
     await act(async () => {
       document.querySelector<HTMLButtonElement>(".record-button")?.click();
-      await Promise.resolve();
+      await flushRecorderStart();
       realtime.handlers.get("state_change")?.({ new_state: "recording" } as never);
     });
     await act(async () => {
@@ -790,7 +965,7 @@ describe("BrowserRecorder live markers", () => {
     await renderRecorder();
     await act(async () => {
       document.querySelector<HTMLButtonElement>(".record-button")?.click();
-      await Promise.resolve();
+      await flushRecorderStart();
       realtime.handlers.get("state_change")?.({ new_state: "recording" } as never);
       realtime.handlers.get("result")?.({
         tokens: [{ end_ms: 800, speaker: 0, start_ms: 0, text: "Čekající přepis." }]
@@ -816,8 +991,7 @@ describe("BrowserRecorder live markers", () => {
 
     await act(async () => {
       document.querySelector<HTMLButtonElement>(".record-button")?.click();
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushRecorderStart();
       nextRealtime.handlers.get("state_change")?.({ new_state: "recording" } as never);
     });
     expect(document.querySelector<HTMLButtonElement>(".live-marker-button")?.disabled).toBe(false);
@@ -872,7 +1046,7 @@ describe("BrowserRecorder live markers", () => {
     await renderRecorder();
     await act(async () => {
       document.querySelector<HTMLButtonElement>(".record-button")?.click();
-      await Promise.resolve();
+      await flushRecorderStart();
       realtime.handlers.get("state_change")?.({ new_state: "recording" } as never);
     });
     await act(async () => {

@@ -15,6 +15,7 @@ import type { AiOutputView } from "@/lib/ai/types";
 import type { RecordingMarkerRow, RecordingMarkerType } from "@/lib/recording-markers/types";
 import { formatRecordingDate } from "@/lib/recordings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
+import type { ManualAiJobStatus } from "@/lib/ai/manual-job-state";
 
 const markerTypeLabels: Record<RecordingMarkerType, string> = {
   decision: "Rozhodnutí",
@@ -41,17 +42,23 @@ export function TimelineContent({
   aiOutputs,
   defaultAiModel,
   markers,
+  onJobAccepted,
+  onReload,
   onOpenMarker,
+  stateError,
   structuredItems
 }: {
   activeTranscript: TranscriptRow | null;
   aiOutputs: AiOutputView[];
   defaultAiModel: string;
   markers: RecordingMarkerRow[];
+  onJobAccepted?: (job: { id: string; status: ManualAiJobStatus }, processingType: string) => void;
+  onReload?: () => Promise<void>;
   onOpenMarker: (target: TranscriptTarget, recordingId: string) => void;
   structuredItems: StructuredAiItems;
+  stateError?: string | null;
 }) {
-  const processing = useAiProcessingRun(activeTranscript?.id ?? null);
+  const processing = useAiProcessingRun(activeTranscript?.id ?? null, onJobAccepted);
   const timelinePending = processing.isRunning("timeline_chapters");
   const timelineOutput = useMemo(() => getTimelineOutput(aiOutputs), [aiOutputs]);
   const chapters = useMemo(() => getPreferredTimelineChapters({
@@ -118,6 +125,15 @@ export function TimelineContent({
           <AudioLines size={22} />
           <strong>Časová osa zatím není dostupná</strong>
           <p>Nejdřív dokončete přepis nahrávky.</p>
+        </div>
+      ) : stateError ? (
+        <div className="transcript-empty" role="alert">
+          <AudioLines size={22} />
+          <strong>Časovou osu se nepodařilo načíst</strong>
+          <p>{stateError}</p>
+          <button className="secondary-inline-action" onClick={() => void onReload?.()} type="button">
+            Zkusit znovu
+          </button>
         </div>
       ) : chapters.length === 0 ? (
         <div className="transcript-empty">

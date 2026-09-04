@@ -132,6 +132,12 @@ Supabase provides `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Edge Fun
 
 ### App behavior constants
 
+`manual AI maxDuration`
+
+- Not a runtime environment variable.
+- The manual processing route declares 300 seconds for Next.js `after()` work; UI stalled state adds a fixed three-minute grace.
+- A hosting plan may enforce a lower ceiling. Source tests do not prove deployed post-response lifetime, so every target needs an isolated real-runtime acceptance proof before this path is called live-verified.
+
 `RECORDINGS_BUCKET`
 
 - Not a runtime environment variable.
@@ -147,12 +153,13 @@ Supabase provides `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Edge Fun
 - The baseline migration creates the bucket with `52428800` bytes (50 MiB). A paid project can change its global and per-bucket limits outside the application, but after refresh the app uses the bucket value only as one input to the effective minimum.
 - If the bucket or a positive explicit limit cannot be read, audio upload and audio-backed live mode are disabled. Live transcript-only and transcript import remain available.
 
-`LIVE_RECORDING_AUDIO_BITS_PER_SECOND`
+`liveAudioQuality`
 
-- Not a runtime environment variable.
-- The requested MediaRecorder bitrate is a code constant in `src/lib/recordings/types.ts`.
-- Current value: `128000` bits per second.
-- The hard live-audio limit is `min(effective manual upload limit, 128 MiB)`. The browser uses the actual recorder bitrate to estimate an earlier cutoff at `hard live limit - min(5% of hard live limit, 2 MiB)`; when that estimate reaches the cutoff, local audio capture is discarded while realtime transcription continues. After `stop()`, any finalized Blob is still validated against the full hard live limit before upload.
+- Auth user-metadata preference, not a deployment environment variable and not an authorization boundary.
+- Maps `low`, `balanced`, and `high` to requested archive/safety MediaRecorder bitrates 32, 64, and 96 kbit/s. Soniox source encoding remains independent.
+- The UI reports decimal estimates 14.4, 28.8, and 43.2 MB/hour and locks the selected quality after capture starts.
+- The hard live-audio limit remains `min(effective manual upload limit, 128 MiB)`. Reaching its conservative estimate stops and finalizes the whole audio generation; it does not discard capture while realtime continues. Transcript-only is unaffected.
+- Safety rotation is an internal 15-second constant. It is not a promise of background recording: browser, OS, permission, device, quota, or power loss can still prevent finalization.
 
 ## Rules
 

@@ -50,6 +50,11 @@ export function parseSettingsForm(formData: FormData): UserSettings {
       "defaultOpenaiModel",
       defaultUserSettings.defaultOpenaiModel
     ),
+    liveAudioQuality: getStringField(
+      formData,
+      "liveAudioQuality",
+      defaultUserSettings.liveAudioQuality
+    ),
     outputLanguage: getStringField(formData, "outputLanguage", "call_language"),
     sonioxRegion: getStringField(
       formData,

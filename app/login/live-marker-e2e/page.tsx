@@ -9,16 +9,27 @@ const fixtureScopePattern = /^[0-9a-f]{12}$/;
 export default async function LiveMarkerE2ePage({
   searchParams
 }: {
-  searchParams: Promise<{ scope?: string; view?: string }>;
+  searchParams: Promise<{ scenario?: string; scope?: string; view?: string }>;
 }) {
   if (process.env.NODE_ENV !== "development") {
     notFound();
   }
 
-  const { scope, view } = await searchParams;
-  if (!scope || !fixtureScopePattern.test(scope) || (view && view !== "away")) {
+  const { scenario, scope, view } = await searchParams;
+  if (
+    !scope
+    || !fixtureScopePattern.test(scope)
+    || (scenario && scenario !== "audio-limit")
+    || (view && view !== "away" && view !== "recovery")
+  ) {
     notFound();
   }
 
-  return <LiveMarkerE2eFixture scope={scope} view={view === "away" ? "away" : "record"} />;
+  return (
+    <LiveMarkerE2eFixture
+      scenario={scenario === "audio-limit" ? "audio-limit" : "normal"}
+      scope={scope}
+      view={view === "away" || view === "recovery" ? view : "record"}
+    />
+  );
 }

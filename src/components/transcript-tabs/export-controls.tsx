@@ -13,22 +13,26 @@ import type { AiOutputView } from "@/lib/ai/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { RecordingClientView } from "@/lib/recordings/client-view";
 import type { TranscriptRow } from "@/lib/transcripts/types";
+import { useOptionalTranscriptAiState } from "@/components/transcript-tabs/use-transcript-ai-state";
 
 // ExportControls lets users copy or download the recording, transcript, or selected AI output.
 export function ExportControls({
-  activeAiOutputs,
+  activeAiOutputs = [],
   activeRecording,
-  activeStructuredItems,
+  activeStructuredItems = { chapters: [], decisions: [], risks: [], tasks: [] },
   activeTranscript
 }: {
-  activeAiOutputs: AiOutputView[];
+  activeAiOutputs?: AiOutputView[];
   activeRecording: RecordingClientView | null;
-  activeStructuredItems: StructuredAiItems;
+  activeStructuredItems?: StructuredAiItems;
   activeTranscript: TranscriptRow | null;
 }) {
+  const lazyAiState = useOptionalTranscriptAiState();
+  const displayedOutputs = lazyAiState?.loadedOutputs ?? activeAiOutputs;
+  const displayedStructuredItems = lazyAiState?.structuredItems ?? activeStructuredItems;
   const targets = useMemo(
-    () => getExportTargets(activeTranscript, activeAiOutputs, activeStructuredItems),
-    [activeAiOutputs, activeStructuredItems, activeTranscript]
+    () => getExportTargets(activeTranscript, displayedOutputs, displayedStructuredItems, lazyAiState?.outputs),
+    [activeTranscript, displayedOutputs, displayedStructuredItems, lazyAiState?.outputs]
   );
   const [selectedTargetId, setSelectedTargetId] = useState(targets[0]?.id ?? "recording");
   const [message, setMessage] = useState<string | null>(null);
@@ -45,10 +49,28 @@ export function ExportControls({
   }, [selectedTargetId, targets]);
 
   // getSelectedMarkdown reads the currently selected export target.
-  function getSelectedMarkdown() {
+  function getSelectedMarkdown(
+    aiOutputs = displayedOutputs,
+    structuredItems = displayedStructuredItems,
+    target = selectedTarget
+  ) {
     return selectedTarget
-      ? getExportMarkdown(selectedTarget, activeRecording, activeTranscript, activeAiOutputs, activeStructuredItems)
+      ? getExportMarkdown(target!, activeRecording, activeTranscript, aiOutputs, structuredItems)
       : "";
+  }
+
+  // loadSelectedMarkdown hydrates AI bodies only when the selected export actually contains AI artifacts.
+  async function loadSelectedMarkdown() {
+    if (!selectedTarget || selectedTarget.type === "transcript") return getSelectedMarkdown();
+    if (!lazyAiState) return getSelectedMarkdown();
+    if (selectedTarget.type === "ai_output") {
+      const payload = await lazyAiState.loadOutput(selectedTarget.id);
+      if (!payload) throw new Error("output_load_failed");
+      return getSelectedMarkdown([payload.output], payload.structuredItems, { ...selectedTarget, output: payload.output });
+    }
+    const hydrated = await lazyAiState.loadAllOutputs();
+    if (!hydrated) throw new Error("output_load_failed");
+    return getSelectedMarkdown(hydrated.loadedOutputs, hydrated.structuredItems);
   }
 
   // copySelectedExport copies the selected export target into the clipboard.
@@ -58,7 +80,7 @@ export function ExportControls({
     }
 
     try {
-      await copyTextToClipboard(getSelectedMarkdown());
+      await copyTextToClipboard(await loadSelectedMarkdown());
       setMessage("Zkopírováno.");
     } catch {
       setMessage("Kopírování se nepovedlo.");
@@ -66,21 +88,30 @@ export function ExportControls({
   }
 
   // downloadSelectedExport saves the selected export target as a Markdown file.
-  function downloadSelectedExport() {
+  async function downloadSelectedExport() {
     if (!canExport) {
       return;
     }
 
     const baseName = selectedTarget.type === "ai_output"
-      ? `${activeRecording?.title ?? "vosio"}-${getAiOutputTitle(selectedTarget.output.processing_type)}`
+      ? `${activeRecording?.title ?? "vosio"}-${getAiOutputTitle(selectedTarget.output?.processing_type ?? null)}`
       : `${activeRecording?.title ?? "vosio"}-${selectedTarget.label}`;
 
-    downloadMarkdownFile(baseName, getSelectedMarkdown());
-    setMessage("Export stažen jako Markdown.");
+    try {
+      downloadMarkdownFile(baseName, await loadSelectedMarkdown());
+      setMessage("Export stažen jako Markdown.");
+    } catch {
+      setMessage("Export se nepovedl.");
+    }
   }
 
   return (
-    <details className="export-controls">
+    <details
+      className="export-controls"
+      onToggle={(event) => {
+        if (event.currentTarget.open) void lazyAiState?.loadForPurpose("metadata");
+      }}
+    >
       <summary>
         <Download size={16} />
         <span>Export</span>
@@ -100,7 +131,7 @@ export function ExportControls({
           </select>
         </label>
         <div className="export-controls-actions">
-          <button disabled={!canExport} onClick={downloadSelectedExport} type="button">
+          <button disabled={!canExport} onClick={() => void downloadSelectedExport()} type="button">
             <Download size={14} />
             <span>MD</span>
           </button>

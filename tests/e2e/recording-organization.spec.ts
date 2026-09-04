@@ -20,7 +20,8 @@ async function createManagerEntity(
   await form.getByLabel("Název").fill(name);
   await form.getByRole("button", { name: "Uložit" }).click();
   await expect(form).not.toBeVisible();
-  await expect(page.getByText(name).first()).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Správa organizace" })
+    .locator(".organization-manager-badge", { hasText: name })).toBeVisible();
 }
 
 // checkedTag returns one real filter checkbox by its visible tag label.

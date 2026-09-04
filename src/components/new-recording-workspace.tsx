@@ -68,7 +68,10 @@ export function NewRecordingWorkspace({
             <Mic aria-hidden="true" size={16} />
             <div>
               <strong>Nahrávat live</strong>
-              <span>Limit audia: {storageLimitSummary.liveAudioLimit}. Přepis se uloží vždy.</span>
+              <span>
+                Audio s live přepisem, jen audio s následným přepisem, nebo jen live text.
+                Limit audia: {storageLimitSummary.liveAudioLimit}.
+              </span>
             </div>
           </div>
           <div className="capture-card-body">
@@ -76,6 +79,7 @@ export function NewRecordingWorkspace({
               <PersistentRecorderSlot
                 allowTranscriptOnly
                 captionMode
+                liveAudioQuality={userSettings.liveAudioQuality}
                 maxAudioFileSizeBytes={liveAudioMaxFileSizeBytes}
                 realtimeLanguage={userSettings.sonioxRealtimeLanguage}
                 realtimeModel={userSettings.sonioxRealtimeModel}

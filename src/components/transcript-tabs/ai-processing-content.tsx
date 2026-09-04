@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Copy, Download, Mail, Settings2, Sparkles } from "lucide-react";
 import { AiProcessingControls } from "@/components/ai-processing-controls";
@@ -21,6 +21,12 @@ import { getAiOutputMarkdownLines } from "@/components/transcript-tabs/markdown-
 import { StructuredItemsContent } from "@/components/transcript-tabs/structured-items-content";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
+import {
+  getManualAiJobDisplayStatus,
+  type ManualAiJobStatus,
+  type ManualAiJobSummary,
+  type ManualAiOutputMetadata
+} from "@/lib/ai/manual-job-state";
 import { AI_MODEL_QUALITY_GUIDANCE } from "@/lib/model-options";
 import { formatRecordingDate } from "@/lib/recordings/types";
 import type { UserSettings } from "@/lib/settings/types";
@@ -34,54 +40,41 @@ import type {
 export function AiProcessingContent({
   activeTranscript,
   aiOutputs,
+  isLoading,
+  jobs,
+  loadOutput,
   onOpenEvidence,
+  onJobAccepted,
+  onReload,
+  outputMetadata,
   resolveEvidenceTarget,
   structuredItems,
+  stateError,
   userSettings
 }: {
   activeTranscript: TranscriptRow | null;
   aiOutputs: AiOutputView[];
+  isLoading?: boolean;
+  jobs?: ManualAiJobSummary[];
+  loadOutput?: (outputId: string) => Promise<unknown>;
   onOpenEvidence: (target: TranscriptTarget) => void;
+  onJobAccepted?: (job: { id: string; status: ManualAiJobStatus }, processingType: string) => void;
+  onReload?: () => Promise<void>;
+  outputMetadata?: ManualAiOutputMetadata[];
   resolveEvidenceTarget: (reference: TranscriptEvidenceReference) => TranscriptTarget | null;
   structuredItems: StructuredAiItems;
+  stateError?: string | null;
   userSettings: UserSettings;
 }) {
   const hasStructuredItems = hasAnyStructuredItems(structuredItems);
-
-  if (aiOutputs.length === 0) {
-    return (
-      <div className="ai-tab-layout">
-        <header className="ai-tab-header">
-          <div>
-            <Sparkles size={15} />
-            <strong>AI zpracování</strong>
-          </div>
-          <span>0 výstupů</span>
-        </header>
-        <section className="ai-tab-actions">
-          <div className="ai-tab-actions-title">
-            <strong>Co z nahrávky vytěžit</strong>
-            <span>Model s pevnou reasoning nebo thinking úrovní a typ výstupu pro tento přepis.</span>
-            <small>{AI_MODEL_QUALITY_GUIDANCE}</small>
-          </div>
-          <AiProcessingControls
-            settings={userSettings}
-            transcriptId={activeTranscript?.id ?? null}
-          />
-        </section>
-        <div className="ai-empty-card">
-          <Settings2 size={16} />
-          <strong>Zatím žádné AI výstupy</strong>
-          <p>Po dokončení přepisu spusťte shrnutí, úkoly, zápis ze schůzky, CRM poznámku, e-mail po hovoru nebo časovou osu.</p>
-        </div>
-        <StructuredItemsContent
-          items={structuredItems}
-          onOpenEvidence={onOpenEvidence}
-          resolveEvidenceTarget={resolveEvidenceTarget}
-        />
-      </div>
-    );
-  }
+  const artifacts = outputMetadata ?? aiOutputs.map((output) => ({
+    body_loaded: true,
+    created_at: output.created_at,
+    id: output.id,
+    processing_job_id: output.processing_job_id,
+    processing_type: output.processing_type,
+    transcript_id: output.transcript_id
+  }));
 
   return (
     <div className="ai-tab-layout">
@@ -90,7 +83,7 @@ export function AiProcessingContent({
           <Sparkles size={15} />
           <strong>AI zpracování</strong>
         </div>
-        <span>{aiOutputs.length} výstupů</span>
+        <span>{artifacts.length} výstupů</span>
       </header>
       <section className="ai-tab-actions">
         <div className="ai-tab-actions-title">
@@ -99,21 +92,67 @@ export function AiProcessingContent({
           <small>{AI_MODEL_QUALITY_GUIDANCE}</small>
         </div>
         <AiProcessingControls
+          onJobAccepted={onJobAccepted}
           settings={userSettings}
           transcriptId={activeTranscript?.id ?? null}
         />
       </section>
+      {jobs && jobs.length > 0 ? <ManualAiJobList jobs={jobs} /> : null}
+      {stateError ? (
+        <p className="ai-state" role="alert">
+          {stateError} <button onClick={() => void onReload?.()} type="button">Zkusit znovu</button>
+        </p>
+      ) : null}
+      {isLoading && artifacts.length === 0 ? <p className="ai-state">Načítám AI stav…</p> : null}
+      {!isLoading && !stateError && artifacts.length === 0 ? (
+        <div className="ai-empty-card">
+          <Settings2 size={16} />
+          <strong>Zatím žádné AI výstupy</strong>
+          <p>Po dokončení přepisu spusťte shrnutí, úkoly, zápis ze schůzky, CRM poznámku, e-mail po hovoru nebo časovou osu.</p>
+        </div>
+      ) : null}
       <section className="notes-list ai-output-list" aria-label="Uložené AI výstupy">
         <StructuredItemsContent
           items={structuredItems}
           onOpenEvidence={onOpenEvidence}
           resolveEvidenceTarget={resolveEvidenceTarget}
         />
-        {aiOutputs.map((output, index) => (
-          <AiOutputCard defaultOpen={index === 0 && !hasStructuredItems} key={output.id} output={output} />
+        {artifacts.map((metadata, index) => (
+          <AiOutputCard
+            defaultOpen={index === 0 && !hasStructuredItems}
+            key={metadata.id}
+            loadOutput={loadOutput}
+            metadata={metadata}
+            output={aiOutputs.find((output) => output.id === metadata.id) ?? null}
+          />
         ))}
       </section>
     </div>
+  );
+}
+
+const manualJobLabels = {
+  done: "Hotovo",
+  failed: "Selhalo",
+  queued: "Ve frontě",
+  running: "Probíhá",
+  stalled: "Trvá déle než obvykle"
+} as const;
+
+// ManualAiJobList keeps accepted, failed, and stalled generations visible after returning to detail.
+function ManualAiJobList({ jobs }: { jobs: ManualAiJobSummary[] }) {
+  return (
+    <section className="ai-running-state" aria-label="Stav AI požadavků">
+      {jobs.slice(0, 12).map((job) => {
+        const status = getManualAiJobDisplayStatus(job);
+        return (
+          <span key={job.id}>
+            <strong>{getAiOutputTitle(job.processing_type)}</strong>: {manualJobLabels[status]}
+            {job.error_message ? ` · ${job.error_message}` : ""}
+          </span>
+        );
+      })}
+    </section>
   );
 }
 
@@ -123,15 +162,56 @@ function hasAnyStructuredItems(items: StructuredAiItems) {
 }
 
 // AiOutputCard renders saved AI output as a readable collapsible artifact preview.
-function AiOutputCard({ defaultOpen, output }: { defaultOpen?: boolean; output: AiOutputView }) {
+function AiOutputCard({
+  defaultOpen,
+  loadOutput,
+  metadata,
+  output
+}: {
+  defaultOpen?: boolean;
+  loadOutput?: (outputId: string) => Promise<unknown>;
+  metadata: ManualAiOutputMetadata;
+  output: AiOutputView | null;
+}) {
   const pathname = usePathname();
-  const lines = useMemo(() => getAiOutputMarkdownLines(output), [output]);
-  const markdown = useMemo(() => getAiOutputMarkdownText(output), [output]);
+  const lines = useMemo(() => output ? getAiOutputMarkdownLines(output) : [], [output]);
+  const markdown = useMemo(() => output ? getAiOutputMarkdownText(output) : "", [output]);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
-  const isFollowUpEmail = output.processing_type === "follow_up_email";
+  const [isOpen, setIsOpen] = useState(Boolean(defaultOpen));
+  const [loadState, setLoadState] = useState<"error" | "idle" | "loading">("idle");
+  const loadAttemptedRef = useRef(false);
+  const loadRequestRef = useRef<Promise<void> | null>(null);
+  const isFollowUpEmail = metadata.processing_type === "follow_up_email";
+
+  // loadBody keeps one historical disclosure retryable without closing it during parent hydration.
+  const loadBody = useCallback(async (retry = false) => {
+    if (output) return;
+    if (loadRequestRef.current) return loadRequestRef.current;
+    if (loadAttemptedRef.current && !retry) return;
+
+    loadAttemptedRef.current = true;
+    setLoadState("loading");
+    const request = (async () => {
+      try {
+        const loaded = await loadOutput?.(metadata.id);
+        setLoadState(loaded ? "idle" : "error");
+      } catch {
+        setLoadState("error");
+      }
+    })().finally(() => {
+      loadRequestRef.current = null;
+    });
+    loadRequestRef.current = request;
+    return request;
+  }, [loadOutput, metadata.id, output]);
+
+  useEffect(() => {
+    if (defaultOpen && !output) void loadBody();
+  }, [defaultOpen, loadBody, output]);
 
   // copyAiOutput copies this generated artifact into the clipboard.
   async function copyAiOutput() {
+    if (!output) return;
     try {
       await copyTextToClipboard(markdown);
       setCopyMessage("Zkopírováno.");
@@ -142,20 +222,29 @@ function AiOutputCard({ defaultOpen, output }: { defaultOpen?: boolean; output: 
 
   // downloadAiOutput saves this generated artifact as a Markdown file.
   function downloadAiOutput() {
+    if (!output) return;
     downloadMarkdownFile(getAiOutputTitle(output.processing_type), markdown);
     setCopyMessage("Staženo jako MD.");
   }
 
   return (
-    <details className="note-card ai-output-detail" open={defaultOpen}>
+    <details
+      className="note-card ai-output-detail"
+      open={isOpen}
+      onToggle={(event) => {
+        const open = event.currentTarget.open;
+        setIsOpen(open);
+        if (open && !output) void loadBody();
+      }}
+    >
       <summary>
         <span className="ai-output-title">
-          <strong>{getAiOutputTitle(output.processing_type)}</strong>
-          <small>{formatRecordingDate(output.created_at)}</small>
+          <strong>{getAiOutputTitle(metadata.processing_type)}</strong>
+          <small>{formatRecordingDate(metadata.created_at)}</small>
         </span>
-        <em>{getAiOutputSummary(output)}</em>
+        <em>{output ? getAiOutputSummary(output) : "Detail se načte po otevření."}</em>
       </summary>
-      <div className="ai-output-actions">
+      {output ? <div className="ai-output-actions">
         <button onClick={copyAiOutput} type="button">
           <Copy size={14} />
           <span>Kopírovat</span>
@@ -175,8 +264,14 @@ function AiOutputCard({ defaultOpen, output }: { defaultOpen?: boolean; output: 
         ) : null}
         <DeleteAiOutputForm next={pathname} outputId={output.id} />
         {copyMessage ? <small>{copyMessage}</small> : null}
-      </div>
+      </div> : null}
       <div className="ai-markdown-preview">
+        {!output && loadState === "loading" ? <p>Načítám uložený AI výstup…</p> : null}
+        {!output && loadState === "error" ? (
+          <p role="alert">
+            AI výstup se nepodařilo načíst. <button onClick={() => void loadBody(true)} type="button">Zkusit znovu</button>
+          </p>
+        ) : null}
         {lines.map((line, index) => {
           if (line.kind === "heading") {
             return <strong className="ai-markdown-heading" key={`${line.text}-${index}`}>{line.text}</strong>;

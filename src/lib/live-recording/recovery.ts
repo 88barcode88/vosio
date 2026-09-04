@@ -1,3 +1,5 @@
+import { validateSafetyPartListing } from "@/lib/live-recording/safety-parts";
+
 export const LIVE_RECORDING_AUTOSAVE_INTERVAL_MS = 15 * 1000;
 
 type AutosaveInput = {
@@ -10,6 +12,88 @@ type RecoverableLiveRecordingInput = {
   source_type: string;
   status: string;
 };
+
+type SafetyPartStorageObject = {
+  created_at?: string | null;
+  metadata?: unknown;
+  name: string;
+  updated_at?: string | null;
+};
+
+type StorageListError = {
+  message: string;
+};
+
+type StorageListOptions = {
+  limit: number;
+  offset: number;
+  sortBy: {
+    column: "name";
+    order: "asc";
+  };
+};
+
+// getStorageObjectSize reads a finite non-negative byte count from Storage metadata.
+function getStorageObjectSize(item: SafetyPartStorageObject) {
+  if (typeof item.metadata !== "object" || item.metadata === null || !("size" in item.metadata)) {
+    return 0;
+  }
+
+  const size = (item.metadata as { size?: unknown }).size;
+
+  return typeof size === "number" && Number.isFinite(size) && size >= 0 ? size : 0;
+}
+
+// listStorageObjectsToExhaustion collects every stable page before callers validate the sequence.
+export async function listStorageObjectsToExhaustion<T extends { name: string }>(input: {
+  folder: string;
+  listPage: (
+    folder: string,
+    options: StorageListOptions
+  ) => PromiseLike<{ data: T[] | null; error: StorageListError | null }>;
+  pageSize?: number;
+}) {
+  const pageSize = Math.max(1, Math.min(1_000, Math.floor(input.pageSize ?? 100)));
+  const items: T[] = [];
+
+  while (true) {
+    const { data, error } = await input.listPage(input.folder, {
+      limit: pageSize,
+      offset: items.length,
+      sortBy: { column: "name", order: "asc" }
+    });
+
+    if (error) {
+      throw new Error(`Unable to list live recording parts: ${error.message}`);
+    }
+
+    const page = data ?? [];
+    items.push(...page);
+
+    if (page.length < pageSize) {
+      return items;
+    }
+  }
+}
+
+// summarizeSafetyPartStorageObjects validates canonical parts before exposing recovery metadata.
+export function summarizeSafetyPartStorageObjects(items: readonly SafetyPartStorageObject[]) {
+  return validateSafetyPartListing(items).reduce(
+    (summary, part) => {
+      const updatedAt = part.item.updated_at ?? part.item.created_at ?? null;
+
+      return {
+        count: summary.count + 1,
+        newestUpdatedAt:
+          updatedAt && (!summary.newestUpdatedAt || updatedAt > summary.newestUpdatedAt)
+            ? updatedAt
+            : summary.newestUpdatedAt,
+        totalBytes: summary.totalBytes + getStorageObjectSize(part.item)
+      };
+    },
+    { count: 0, newestUpdatedAt: null as string | null, totalBytes: 0 }
+  );
+}
 
 // getLiveDraftAutosavePayload normalizes partial live transcript data before persistence.
 export function getLiveDraftAutosavePayload(input: AutosaveInput) {

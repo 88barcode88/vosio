@@ -4,6 +4,26 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-04
+
+### Added
+
+- Live nahrávání má samostatné režimy audia, živého přepisu a automatického fallbacku nad jedním sdíleným mikrofonním streamem.
+- Lokální safety části se průběžně ukládají do IndexedDB a po pádu nebo zavření stránky je lze obnovit a znovu odeslat.
+- Nastavení nabízí kvalitu live audia včetně odhadu velikosti hodinové nahrávky.
+- Ručně spuštěné AI výstupy mají trvalý stav, automatickou obnovu na pozadí a dokončený výsledek se zobrazí i po návratu na stránku.
+
+### Changed
+
+- Archivní, Soniox a safety recorder sdílejí jednu capture větev, průběžně kontrolují zdraví audia a zachovávají bezpečné dokončení při dosažení limitu.
+- Recovery a přepis zpracovávají jen známé safety části v číselném pořadí.
+
+### Fixed
+
+- Selhání založení přepisu už nezneplatní úspěšně uložené audio; přepis zůstává ručně opakovatelný.
+- Chyba realtime přepisu v automatickém režimu nepřeruší archivní ani záložní audio.
+- Probíhající a dokončené AI generování se po navigaci neztratí a detail nahrávky nemusí čekat na načtení celého výstupu.
+
 ## [0.1.8] - 2026-08-28
 
 ### Changed

@@ -3,8 +3,18 @@ import {
   RECORDINGS_BUCKET,
   SEGMENTED_RECORDING_STORAGE_FOLDER,
   formatFileSize,
-  getRecordingContentType
+  getRecordingContentType,
+  normalizeAudioMimeType
 } from "@/lib/recordings/types";
+import {
+  formatSafetyPartName,
+  getSafetyPartExtension,
+  validateSafetyPartListing
+} from "@/lib/live-recording/safety-parts";
+import {
+  getDurableAudioPartKey,
+  type DurableSafetyManifest
+} from "@/lib/live-recording/durable-audio";
 import {
   createResumableRecordingUpload,
   RecordingUploadCancelledError,
@@ -44,6 +54,14 @@ export type LiveRecordingUploadInput = {
   recording: LiveRecordingDraft;
 };
 
+export type LiveRecordingPartUploadInput = {
+  blob: Blob;
+  contentType: string;
+  maxFileSizeBytes: number;
+  partIndex: number;
+  recording: LiveRecordingDraft;
+};
+
 // sanitizeFilename keeps uploaded storage object names stable and URL-safe.
 export function sanitizeFilename(filename: string) {
   const normalized = filename.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
@@ -65,6 +83,27 @@ export function getLiveRecordingStoragePath(input: {
   const safeExtension = sanitizeFilename(input.extension).replace(/^\./, "") || "webm";
 
   return `${input.storagePrefix}recording.${safeExtension}`;
+}
+
+// getLiveRecordingPartStoragePath creates the deterministic canonical path for one safety part.
+export function getLiveRecordingPartStoragePath(input: {
+  contentType: string;
+  partIndex: number;
+  recording: LiveRecordingDraft;
+}) {
+  const extension = getSafetyPartExtension(input.contentType);
+
+  if (!extension) {
+    throw new Error("Podporovaný bezpečnostní formát je pouze WebM nebo M4A.");
+  }
+
+  const expectedPrefix = getLiveRecordingStoragePrefix(input.recording.userId, input.recording.id);
+
+  if (input.recording.storagePrefix !== expectedPrefix) {
+    throw new Error("Cesta audio části neodpovídá vlastníkovi nahrávky.");
+  }
+
+  return `${expectedPrefix}${formatSafetyPartName(input.partIndex, extension)}`;
 }
 
 // getRecordingTitle derives a readable recording title from the selected file.
@@ -305,6 +344,150 @@ export async function uploadLiveRecording(input: LiveRecordingUploadInput) {
   return { bytes: input.blob.size, storagePath };
 }
 
+// getStoragePartMetadata reads the exact size and MIME needed for idempotent collision checks.
+function getStoragePartMetadata(item: { metadata?: unknown }) {
+  if (typeof item.metadata !== "object" || item.metadata === null) {
+    return null;
+  }
+
+  const metadata = item.metadata as { mimetype?: unknown; size?: unknown };
+
+  if (typeof metadata.size !== "number" || typeof metadata.mimetype !== "string") {
+    return null;
+  }
+
+  return { mimeType: normalizeAudioMimeType(metadata.mimetype), size: metadata.size };
+}
+
+// uploadLiveRecordingPart uploads one durable part idempotently without overwriting an existing object.
+export async function uploadLiveRecordingPart(input: LiveRecordingPartUploadInput) {
+  if (input.blob.size <= 0 || input.blob.size > input.maxFileSizeBytes) {
+    throw new Error(`Audio část je větší než ${formatFileSize(input.maxFileSizeBytes)} nebo je prázdná.`);
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser();
+
+  if (userError || !user || user.id !== input.recording.userId) {
+    throw new Error("Přihlášení vypršelo. Přihlaste se znovu.");
+  }
+
+  const storagePath = getLiveRecordingPartStoragePath(input);
+  const name = storagePath.slice(input.recording.storagePrefix.length);
+  const folder = input.recording.storagePrefix.replace(/\/$/, "");
+  const bucket = supabase.storage.from(RECORDINGS_BUCKET);
+
+  // findExistingPart verifies both bytes and MIME before treating a deterministic path as already uploaded.
+  async function findExistingPart() {
+    const { data, error } = await bucket.list(folder, { limit: 100, search: name });
+
+    if (error) {
+      throw new Error("Uloženou část audia se nepodařilo ověřit.");
+    }
+
+    const exact = (data ?? []).find((item) => item.name === name);
+
+    if (!exact) {
+      return false;
+    }
+
+    const metadata = getStoragePartMetadata(exact);
+    if (
+      !metadata ||
+      metadata.size !== input.blob.size ||
+      metadata.mimeType !== normalizeAudioMimeType(input.contentType)
+    ) {
+      throw new Error("Uložená část audia neodpovídá tomuto záznamu.");
+    }
+
+    return true;
+  }
+
+  if (await findExistingPart()) {
+    return { bytes: input.blob.size, reused: true, storagePath };
+  }
+
+  const { error: uploadError } = await bucket.upload(storagePath, input.blob, {
+    cacheControl: "3600",
+    contentType: input.contentType,
+    upsert: false
+  });
+
+  if (uploadError) {
+    if (await findExistingPart()) {
+      return { bytes: input.blob.size, reused: true, storagePath };
+    }
+
+    throw new Error(getUploadErrorMessage(uploadError.message, input.maxFileSizeBytes));
+  }
+
+  return { bytes: input.blob.size, reused: false, storagePath };
+}
+
+// normalizeRemovedStorageObjectPath converts Supabase remove names to canonical bucket-relative paths.
+function normalizeRemovedStorageObjectPath(name: unknown) {
+  if (typeof name !== "string") {
+    return null;
+  }
+
+  const normalized = name.replace(/^\/+/, "");
+  return normalized.length > 0 ? normalized : null;
+}
+
+// removeRemoteDurableSafetyGeneration removes only confirmed uploaded parts from one exact manifest.
+export async function removeRemoteDurableSafetyGeneration(input: {
+  manifest: DurableSafetyManifest;
+}) {
+  const manifest = input.manifest;
+  const validatedParts = validateSafetyPartListing(manifest.parts).map(({ item }) => item);
+
+  if (
+    !manifest.ownerId ||
+    !manifest.recordingId ||
+    !manifest.generationId ||
+    validatedParts.length !== manifest.partCount ||
+    validatedParts.some((part) => (
+      part.ownerId !== manifest.ownerId ||
+      part.recordingId !== manifest.recordingId ||
+      part.generationId !== manifest.generationId ||
+      part.uploadedAt === null ||
+      part.key !== getDurableAudioPartKey(part) ||
+      part.name !== formatSafetyPartName(part.index, part.extension)
+    ))
+  ) {
+    throw new Error("Bezpečnostní části nemají potvrzenou identitu pro odstranění.");
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser();
+
+  if (userError || !user || user.id !== manifest.ownerId) {
+    throw new Error("Přihlášení vypršelo. Přihlaste se znovu.");
+  }
+
+  const storagePrefix = getLiveRecordingStoragePrefix(manifest.ownerId, manifest.recordingId);
+  const paths = validatedParts.map((part) => `${storagePrefix}${part.name}`);
+  const { data, error } = await supabase.storage.from(RECORDINGS_BUCKET).remove(paths);
+  const removedPaths = (data ?? []).map((item) => normalizeRemovedStorageObjectPath(item.name));
+  const removedPathSet = new Set(removedPaths);
+  const confirmedExactPaths =
+    removedPaths.length === paths.length &&
+    removedPathSet.size === paths.length &&
+    paths.every((path) => removedPathSet.has(path));
+
+  if (error || !confirmedExactPaths) {
+    throw new Error("Úložiště nepotvrdilo odstranění všech bezpečnostních částí.");
+  }
+
+  return { removed: paths.length };
+}
+
 // completeLiveRecordingUpload marks one finalized live audio object as uploaded.
 export async function completeLiveRecordingUpload(input: {
   contentType: string;
@@ -314,7 +497,7 @@ export async function completeLiveRecordingUpload(input: {
   totalBytes: number;
 }) {
   const supabase = createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("recordings")
     .update({
       duration_seconds: input.durationSeconds,
@@ -324,11 +507,15 @@ export async function completeLiveRecordingUpload(input: {
       storage_path: input.storagePath
     })
     .eq("id", input.recording.id)
-    .eq("user_id", input.recording.userId);
+    .eq("user_id", input.recording.userId)
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
+  if (error || data?.id !== input.recording.id) {
     throw new Error("Audio je uložené, ale metadata nahrávky se neuložila.");
   }
+
+  return { id: data.id as string };
 }
 
 // completeLiveRecordingWithoutAudio converts an oversized live capture into a text-only recording.

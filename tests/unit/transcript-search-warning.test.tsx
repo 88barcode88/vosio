@@ -183,7 +183,10 @@ describe("transcript search warning contract", () => {
         ok: true
       })
       .mockResolvedValueOnce({
-        json: vi.fn().mockResolvedValue({ warnings: [TRANSCRIPT_SEARCH_INDEX_WARNING] }),
+        json: vi.fn().mockResolvedValue({
+          recording: { id: "recording-2" },
+          warnings: [TRANSCRIPT_SEARCH_INDEX_WARNING]
+        }),
         ok: true
       });
     vi.stubGlobal("fetch", fetchMock);

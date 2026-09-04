@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import type { RecordOptions, Recording } from "@soniox/client";
+import type { AudioSource, RecordOptions, Recording } from "@soniox/client";
+import { LiveRecordingRecoveryPanel } from "@/components/live-recording-recovery-panel";
 import { PersistentRecorderSlot } from "@/components/persistent-recording-session";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import { MobileNav } from "@/components/workspace-navigation";
@@ -61,10 +62,11 @@ function clearFixtureAuthCookies() {
   });
 }
 
-// createDevelopmentRecording exposes deterministic Soniox events while retaining BrowserRecorder lifecycle code.
-function createDevelopmentRecording(): Recording {
+// createDevelopmentRecording drives the real custom source while exposing deterministic provider events.
+function createDevelopmentRecording(options: RecordOptions): Recording {
   type FixtureHandler = (payload?: unknown) => void;
   const handlers = new Map<string, Set<FixtureHandler>>();
+  const source = options.source as AudioSource & { restart?: () => void };
   let resultScheduled = false;
   let stateScheduled = false;
 
@@ -73,9 +75,12 @@ function createDevelopmentRecording(): Recording {
   }
 
   const recording = {
+    // cancel reproduces provider cancellation without taking ownership of the archive recorder.
     cancel() {
+      source.stop();
       emit("state_change", { new_state: "canceled", old_state: "recording" });
     },
+    // on registers deterministic fixture lifecycle callbacks.
     on(eventName: string, handler: FixtureHandler) {
       const eventHandlers = handlers.get(eventName) ?? new Set<FixtureHandler>();
       eventHandlers.add(handler);
@@ -115,14 +120,23 @@ function createDevelopmentRecording(): Recording {
 
       return recording;
     },
+    // reconnect forces a fresh source encoder before reporting provider recovery.
     reconnect() {
+      source.restart?.();
       emit("reconnected", { attempt: 1 });
     },
     state: "recording",
+    // stop releases only the provider source before the archive completes independently.
     async stop() {
+      source.stop();
       emit("state_change", { new_state: "stopped", old_state: "recording" });
     }
   };
+
+  void source.start({
+    onData: () => undefined,
+    onError: (error) => emit("error", error)
+  });
 
   return recording as unknown as Recording;
 }
@@ -155,12 +169,15 @@ function FixtureShell({ children }: { children: ReactNode }) {
 }
 
 // LiveMarkerCaptureFixture prepares intercepted auth and mounts the actual persistent recorder slot.
-function LiveMarkerCaptureFixture({ scope }: { scope: string }) {
+function LiveMarkerCaptureFixture({ scenario, scope }: { scenario: "audio-limit" | "normal"; scope: string }) {
   const [authState, setAuthState] = useState<"error" | "loading" | "ready">("loading");
   const [capturedOptions, setCapturedOptions] = useState<RecordOptions | null>(null);
+  const [developmentRecording, setDevelopmentRecording] = useState<Recording | null>(null);
   const developmentRecordingFactory = useCallback((options: RecordOptions) => {
     setCapturedOptions(options);
-    return createDevelopmentRecording();
+    const recording = createDevelopmentRecording(options);
+    setDevelopmentRecording(recording);
+    return recording;
   }, []);
 
   useEffect(() => {
@@ -196,7 +213,8 @@ function LiveMarkerCaptureFixture({ scope }: { scope: string }) {
                 allowTranscriptOnly
                 captionMode
                 developmentRecordingFactory={developmentRecordingFactory}
-                maxAudioFileSizeBytes={50 * 1024 * 1024}
+                liveAudioQuality="high"
+                maxAudioFileSizeBytes={scenario === "audio-limit" ? 100 : 50 * 1024 * 1024}
               />
             ) : (
               <p aria-live="polite" data-e2e-auth-state={authState}>
@@ -209,6 +227,11 @@ function LiveMarkerCaptureFixture({ scope }: { scope: string }) {
           data-e2e-recording-options={capturedOptions ? JSON.stringify(capturedOptions) : ""}
           hidden
         />
+        {developmentRecording ? (
+          <button onClick={() => developmentRecording.cancel()} type="button">
+            Simulovat výpadek přepisu
+          </button>
+        ) : null}
         <Link
           href={`/login/live-marker-e2e?scope=${scope}&view=away`}
           onClick={clearFixtureAuthCookies}
@@ -216,6 +239,17 @@ function LiveMarkerCaptureFixture({ scope }: { scope: string }) {
         >
           Přejít na jinou stránku
         </Link>
+      </section>
+    </FixtureShell>
+  );
+}
+
+// LiveMarkerRecoveryFixture mounts the production recovery panel against intercepted owner boundaries.
+function LiveMarkerRecoveryFixture() {
+  return (
+    <FixtureShell>
+      <section data-e2e-live-marker-state="recovery">
+        <LiveRecordingRecoveryPanel />
       </section>
     </FixtureShell>
   );
@@ -266,17 +300,19 @@ function LiveMarkerTimelineFixture({ scope }: { scope: string }) {
 
 // LiveMarkerE2eFixture selects the real capture or post-navigation boundary surface.
 export function LiveMarkerE2eFixture({
+  scenario,
   scope,
   view
 }: {
+  scenario: "audio-limit" | "normal";
   scope: string;
-  view: "away" | "record";
+  view: "away" | "record" | "recovery";
 }) {
   if (process.env.NODE_ENV !== "development") {
     throw new Error("Live marker E2E fixture is development-only.");
   }
 
-  return view === "away"
-    ? <LiveMarkerTimelineFixture scope={scope} />
-    : <LiveMarkerCaptureFixture scope={scope} />;
+  if (view === "away") return <LiveMarkerTimelineFixture scope={scope} />;
+  if (view === "recovery") return <LiveMarkerRecoveryFixture />;
+  return <LiveMarkerCaptureFixture scenario={scenario} scope={scope} />;
 }

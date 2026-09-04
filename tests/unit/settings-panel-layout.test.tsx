@@ -118,6 +118,22 @@ describe("settings workspace layout", () => {
     expect(markup).toContain("Budoucí položky v Koši");
   });
 
+  it("offers the three accessible live audio quality choices with exact hourly estimates", () => {
+    const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
+    const container = document.createElement("div");
+    container.innerHTML = markup;
+    const options = Array.from(container.querySelectorAll<HTMLInputElement>('input[name="liveAudioQuality"]'));
+
+    expect(options.map((option) => [option.value, option.checked])).toEqual([
+      ["economy", false],
+      ["standard", true],
+      ["high", false]
+    ]);
+    expect(markup).toContain("32 kbit/s · 14.4 MB/h");
+    expect(markup).toContain("64 kbit/s · 28.8 MB/h");
+    expect(markup).toContain("96 kbit/s · 43.2 MB/h");
+  });
+
   it("orders the working settings as one document and keeps technical details closed by default", () => {
     const markup = renderSettings({
       error: null,
@@ -167,7 +183,7 @@ describe("settings workspace layout", () => {
   it("shows only runtime-effective preferences as controls and preserves stored-only values as hidden inputs", () => {
     const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
 
-    for (const name of ["autoTimelineAfterTranscription", "defaultOpenaiModel", "sonioxRegion", "sonioxRealtimeLanguage", "sonioxRealtimeModel", "supabaseStoragePlan"]) {
+    for (const name of ["autoTimelineAfterTranscription", "defaultOpenaiModel", "liveAudioQuality", "sonioxRegion", "sonioxRealtimeLanguage", "sonioxRealtimeModel", "supabaseStoragePlan"]) {
       expect(markup).toContain(`name="${name}"`);
     }
     for (const name of [
@@ -316,13 +332,19 @@ describe("settings workspace layout", () => {
         sonioxRealtimeLanguage: "de",
         sonioxRealtimeModel: "stt-rt-v5",
         sonioxRegion: "eu",
+        liveAudioQuality: "high",
         supabaseStoragePlan: "paid"
       };
       await act(async () => {
         for (const [name, value] of Object.entries(draft)) {
-          const select = container.querySelector<HTMLSelectElement>(`select[name="${name}"]`)!;
-          select.value = value;
-          select.dispatchEvent(new Event("change", { bubbles: true }));
+          const control = name === "liveAudioQuality"
+            ? container.querySelector<HTMLInputElement>(`input[name="${name}"][value="${value}"]`)!
+            : container.querySelector<HTMLSelectElement>(`select[name="${name}"]`)!;
+          if (control instanceof HTMLInputElement) control.click();
+          else {
+            control.value = value;
+            control.dispatchEvent(new Event("change", { bubbles: true }));
+          }
         }
       });
       const technicalDisclosure = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
@@ -337,7 +359,10 @@ describe("settings workspace layout", () => {
       expect(saveAction).toHaveBeenCalledOnce();
       for (const [name, value] of Object.entries(draft)) {
         expect(saveAction.mock.calls[0]?.[1].get(name)).toBe(value);
-        expect(container.querySelector<HTMLSelectElement>(`select[name="${name}"]`)?.value).toBe(value);
+        const valueAfterFailure = name === "liveAudioQuality"
+          ? container.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`)?.value
+          : container.querySelector<HTMLSelectElement>(`select[name="${name}"]`)?.value;
+        expect(valueAfterFailure).toBe(value);
       }
       expect(container.querySelector(".settings-alert-error")?.textContent)
         .toContain("Nastavení se nepodařilo uložit");
@@ -349,7 +374,10 @@ describe("settings workspace layout", () => {
 
       await act(async () => root.render(renderPanel({ ...persistedSettings })));
       for (const [name, value] of Object.entries(draft)) {
-        expect(container.querySelector<HTMLSelectElement>(`select[name="${name}"]`)?.value).toBe(value);
+        const valueAfterRerender = name === "liveAudioQuality"
+          ? container.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`)?.value
+          : container.querySelector<HTMLSelectElement>(`select[name="${name}"]`)?.value;
+        expect(valueAfterRerender).toBe(value);
       }
       expect(container.querySelector(".settings-alert-error")).not.toBeNull();
 
@@ -358,6 +386,7 @@ describe("settings workspace layout", () => {
         defaultOpenaiModel: "gpt-5.6-luna",
         sonioxRealtimeLanguage: "cs",
         sonioxRegion: "global",
+        liveAudioQuality: "economy",
         supabaseStoragePlan: "free"
       };
       await act(async () => root.render(renderPanel(serverSettings, "saved")));
@@ -367,6 +396,8 @@ describe("settings workspace layout", () => {
         .toBe("cs");
       expect(container.querySelector<HTMLSelectElement>('select[name="sonioxRegion"]')?.value)
         .toBe("global");
+      expect(container.querySelector<HTMLInputElement>('input[name="liveAudioQuality"]:checked')?.value)
+        .toBe("economy");
       expect(container.querySelector<HTMLSelectElement>('select[name="supabaseStoragePlan"]')?.value)
         .toBe("free");
     } finally {

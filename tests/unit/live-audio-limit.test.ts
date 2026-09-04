@@ -17,7 +17,7 @@ describe("live audio size limit", () => {
     expect(getLiveAudioMaxFileSizeBytes(512 * MEBIBYTE)).toBe(128 * MEBIBYTE);
   });
 
-  it("reserves five percent of the live limit, capped at 2 MiB, before discarding buffered audio", () => {
+  it("reserves five percent of the live limit, capped at 2 MiB, before owned stop", () => {
     expect(getLiveAudioDiscardEstimateBytes(20 * MEBIBYTE)).toBe(19 * MEBIBYTE);
     expect(getLiveAudioDiscardEstimateBytes(128 * MEBIBYTE)).toBe(126 * MEBIBYTE);
   });

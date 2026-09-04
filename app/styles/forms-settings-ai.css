@@ -444,6 +444,44 @@
 .settings-grid-single {
   max-width: 520px;
 }
+.settings-audio-quality-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+.settings-audio-quality-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  min-height: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 10px;
+}
+.settings-audio-quality-option:has(input:checked) {
+  border-color: var(--teal);
+  background: var(--panel-soft);
+}
+.settings-audio-quality-option input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--teal);
+}
+.settings-audio-quality-option span {
+  display: grid;
+  gap: 3px;
+}
+.settings-audio-quality-option strong,
+.settings-audio-quality-option small {
+  font-size: 13px;
+}
+.settings-audio-quality-option small {
+  color: var(--text-secondary);
+}
 .settings-model-row {
   grid-template-columns: minmax(0, 520px) minmax(0, 1fr);
 }

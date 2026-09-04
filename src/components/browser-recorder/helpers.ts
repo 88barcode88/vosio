@@ -1,13 +1,20 @@
 import {
   LIVE_RECORDING_AUDIO_BITS_PER_SECOND,
-  formatFileSize
+  formatFileSize,
+  liveAudioQualityOptions,
+  type LiveAudioQuality
 } from "@/lib/recordings/types";
 import {
   getSonioxRealtimeLanguageConfig,
   type SonioxRealtimeLanguageId
 } from "@/lib/soniox/languages";
 import type { Recording, RealtimeToken, RecordOptions } from "@soniox/client";
-import type { LiveCaptionBlock, LiveSaveMode, RealtimeConfigErrorCode } from "@/components/browser-recorder/types";
+import type {
+  LiveCaptionBlock,
+  LiveProviderHealth,
+  LiveSaveMode,
+  RealtimeConfigErrorCode
+} from "@/components/browser-recorder/types";
 
 export type RecorderFeedbackTone = "error" | "status" | "working";
 
@@ -33,6 +40,7 @@ export type StoredRealtimeToken = RealtimeToken & {
 export type LiveCaptionToken = StoredRealtimeToken & {
   received_at_ms?: number;
 };
+export type RealtimeStopOutcome = "failed" | "not_started" | "stopped" | "timed_out";
 const liveSpeakerClassNames = [
   "speaker-teal",
   "speaker-violet",
@@ -232,18 +240,18 @@ export function getStableLiveCaptionTokens(
 // stopRealtimeRecording waits briefly for final Soniox tokens without blocking audio saving.
 export async function stopRealtimeRecording(recording: Recording | null) {
   if (!recording) {
-    return;
+    return "not_started" as const;
   }
 
   let timeoutId: number | null = null;
-  let timedOut = false;
-
-  await Promise.race([
-    recording.stop().catch(() => undefined),
-    new Promise<void>((resolve) => {
+  const outcome = await Promise.race<Exclude<RealtimeStopOutcome, "not_started">>([
+    recording.stop().then(
+      () => "stopped" as const,
+      () => "failed" as const
+    ),
+    new Promise<"timed_out">((resolve) => {
       timeoutId = window.setTimeout(() => {
-        timedOut = true;
-        resolve();
+        resolve("timed_out");
       }, SONIOX_STOP_TIMEOUT_MS);
     })
   ]);
@@ -252,9 +260,11 @@ export async function stopRealtimeRecording(recording: Recording | null) {
     window.clearTimeout(timeoutId);
   }
 
-  if (timedOut) {
+  if (outcome === "timed_out") {
     recording.cancel();
   }
+
+  return outcome;
 }
 
 // getRecordedFileExtension maps MediaRecorder output MIME types to archive file extensions.
@@ -266,7 +276,7 @@ export function getRecordedFileExtension(mimeType: string) {
 export function getRealtimeErrorMessage(error: Error, saveMode: LiveSaveMode) {
   const baseMessage = error.message ? `Live přepis má chybu: ${error.message}.` : "Live přepis má chybu.";
 
-  return saveMode === "audio_and_transcript"
+  return saveMode !== "live_transcript_only"
     ? `${baseMessage} Lokální audio může dál pokračovat.`
     : `${baseMessage} Textový režim potřebuje funkční live přepis.`;
 }
@@ -328,8 +338,8 @@ export function getEstimatedLiveRecordingBytes(audioBitsPerSecond: number, elaps
   return Math.ceil((bitrate * Math.max(0, elapsedSeconds)) / 8);
 }
 
-// shouldDiscardLiveRecordingAudio switches long live sessions to transcript-only before Storage rejects them.
-export function shouldDiscardLiveRecordingAudio(
+// shouldStopLiveRecordingAtAudioLimit reserves encoder headroom before the owned final save begins.
+export function shouldStopLiveRecordingAtAudioLimit(
   audioBitsPerSecond: number,
   elapsedSeconds: number,
   maxBytes: number
@@ -344,22 +354,73 @@ export function getLiveRecordingTitle(prefix: string) {
 
 // getSaveModeLabel maps live save modes into short Czech UI labels.
 export function getSaveModeLabel(mode: LiveSaveMode, maxAudioFileSizeBytes: number | null) {
-  if (mode === "transcript_only") {
+  if (mode === "live_transcript_only") {
     return "Jen live přepis";
   }
 
-  return maxAudioFileSizeBytes === null
-    ? "Audio není dostupné"
-    : `Audio do ${formatFileSize(maxAudioFileSizeBytes)} + přepis`;
+  if (maxAudioFileSizeBytes === null) {
+    return mode === "audio_only"
+      ? "Jen audio není dostupné"
+      : "Audio + live přepis není dostupné";
+  }
+
+  return mode === "audio_only"
+    ? `Jen audio do ${formatFileSize(maxAudioFileSizeBytes)}`
+    : `Audio do ${formatFileSize(maxAudioFileSizeBytes)} + live přepis`;
+}
+
+// getLiveAudioQualitySummary renders the session quality with its decimal hourly size estimate.
+export function getLiveAudioQualitySummary(quality: LiveAudioQuality) {
+  const option = liveAudioQualityOptions[quality];
+  return `${option.label} · ${option.audioBitsPerSecond / 1_000} kbit/s · ${option.estimatedMegabytesPerHour.toFixed(1)} MB/h`;
 }
 
 // getRecordingActiveMessage keeps the active capture status separate from provider and Wake Lock warnings.
 export function getRecordingActiveMessage(mode: LiveSaveMode, maxAudioFileSizeBytes: number | null) {
-  if (mode === "audio_and_transcript" && maxAudioFileSizeBytes !== null) {
-    return `Nahrávání a přepis probíhají. Audio se uloží do ${formatFileSize(maxAudioFileSizeBytes)}.`;
+  if (mode === "audio_and_live_transcript" && maxAudioFileSizeBytes !== null) {
+    return `Audio se nahrává. Live přepis probíhá a audio se uloží do ${formatFileSize(maxAudioFileSizeBytes)}.`;
+  }
+
+  if (mode === "audio_only" && maxAudioFileSizeBytes !== null) {
+    return `Audio se nahrává. Uloží se do ${formatFileSize(maxAudioFileSizeBytes)} a potom se odešle k přepisu.`;
   }
 
   return "Přepisuji živě bez ukládání audio souboru.";
+}
+
+// getLiveProviderHealthMessage describes provider state without borrowing audio health semantics.
+export function getLiveProviderHealthMessage(mode: LiveSaveMode, health: LiveProviderHealth) {
+  if (mode === "audio_only" || health === "disabled") {
+    return "Live přepis: V režimu Jen audio je vypnutý.";
+  }
+
+  if (health === "ready") {
+    return "Live přepis: Připravený.";
+  }
+
+  if (health === "connecting") {
+    return "Live přepis: Připojuje se.";
+  }
+
+  if (health === "healthy") {
+    return "Live přepis: Připojený.";
+  }
+
+  if (health === "reconnecting") {
+    return mode === "live_transcript_only"
+      ? "Live přepis: Obnovuje spojení."
+      : "Live přepis: Obnovuje spojení. Audio se dál nahrává.";
+  }
+
+  if (health === "canceled") {
+    return mode === "live_transcript_only"
+      ? "Live přepis: Zrušený."
+      : "Live přepis: Zrušený. Audio se dál nahrává.";
+  }
+
+  return mode === "live_transcript_only"
+    ? "Live přepis: Chyba spojení."
+    : "Live přepis: Chyba spojení. Audio se dál nahrává.";
 }
 
 // getWakeLockWarning explains only the screen-awake capability, never the realtime recording state.
@@ -379,28 +440,35 @@ export function getRealtimeStateWarning(
   }
 
   if (state === "canceled") {
-    return saveMode === "audio_and_transcript"
+    return saveMode !== "live_transcript_only"
       ? "Live přepis byl zrušen. Lokální audio se může dál nahrávat."
       : "Live přepis byl zrušen. Textový režim nebude dostávat další přepis.";
   }
 
-  return saveMode === "audio_and_transcript"
+  return saveMode !== "live_transcript_only"
     ? "Live přepis narazil na chybu. Lokální audio se může dál nahrávat."
     : "Live přepis narazil na chybu. Textový režim nebude dostávat další přepis.";
 }
 
-// getLiveAudioFallbackMessage reports the precise reason a completed live transcript has no audio file.
-export function getLiveAudioFallbackMessage(input: {
-  audioDiscardedForSize: boolean;
-  maxAudioFileSizeBytes: number | null;
-}) {
-  if (input.maxAudioFileSizeBytes === null) {
-    return "Přepis je uložený bez audia, protože ukládání audia teď není dostupné.";
-  }
+// liveModeStoresAudio reports whether the selected mode owns an archive recorder.
+export function liveModeStoresAudio(mode: LiveSaveMode) {
+  return mode !== "live_transcript_only";
+}
 
-  if (input.audioDiscardedForSize) {
-    return `Přepis je uložený bez audia, protože ukládání audia bylo zastaveno s rezervou před limitem ${formatFileSize(input.maxAudioFileSizeBytes)}.`;
-  }
+// liveModeUsesRealtime reports whether the selected mode starts Soniox realtime transcription.
+export function liveModeUsesRealtime(mode: LiveSaveMode) {
+  return mode !== "audio_only";
+}
 
-  return `Přepis je uložený bez audia, protože výsledný audio soubor byl prázdný, neplatný nebo překročil limit ${formatFileSize(input.maxAudioFileSizeBytes)}.`;
+// getPersistedLiveTranscriptAudioStorage maps product modes onto existing provider metadata values.
+export function getPersistedLiveTranscriptAudioStorage(
+  mode: LiveSaveMode,
+  audioUploadCompleted: boolean,
+  audioStoredAsSegments = false
+): "supabase_recording_segments" | "supabase_recording_upload" | "transcript_only" {
+  return liveModeStoresAudio(mode) && audioUploadCompleted
+    ? audioStoredAsSegments
+      ? "supabase_recording_segments"
+      : "supabase_recording_upload"
+    : "transcript_only";
 }

@@ -143,6 +143,7 @@ function EffectivePromptForm({
   template: EffectivePromptTemplate;
 }) {
   const { refresh } = useRouter();
+  const [isHydrated, setIsHydrated] = useState(false);
   const [saveState, saveFormAction, isSavePending] = useActionState(
     saveAction,
     createInitialPromptTemplateActionState(),
@@ -154,6 +155,11 @@ function EffectivePromptForm({
   const [draft, setDraft] = useState(() => ({ promptText: template.promptText }));
   const isPending = isSavePending || isResetPending;
   const visibleState = resetState.status !== "idle" ? resetState : saveState;
+
+  // Keep the controlled prompt inert until React can preserve the first browser edit.
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   useEffect(() => {
     if (saveState.status === "success" || resetState.status === "success") {
@@ -175,7 +181,7 @@ function EffectivePromptForm({
         className="prompt-editor-form"
         onSubmit={() => onPendingChange(true)}
       >
-        <fieldset aria-busy={isPending ? "true" : undefined} data-prompt-editor-fields disabled={isPending}>
+        <fieldset aria-busy={isPending ? "true" : undefined} data-prompt-editor-fields disabled={!isHydrated || isPending}>
           <div className="prompt-editor-heading">
             <div>
               <span>{template.isModified ? "Upravený" : "Výchozí"}</span>
@@ -241,7 +247,7 @@ function EffectivePromptForm({
             onPendingChange(true);
           }}
         >
-          <fieldset disabled={isPending}>
+          <fieldset disabled={!isHydrated || isPending}>
             <input name="systemPromptId" type="hidden" value={template.systemPromptId} />
             <input name="revision" type="hidden" value={template.revision} />
             <ResetPromptButton />

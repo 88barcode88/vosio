@@ -1,6 +1,6 @@
 {
   "name": "vosio-app",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "license": "SEE LICENSE IN LICENSE.md",
   "private": true,
   "scripts": {
@@ -31,7 +31,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@next/eslint-plugin-next": "^16.2.4",
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "1.62.1",
     "@types/node": "24.10.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",

@@ -8,6 +8,8 @@ import {
   isSupportedRecordingMimeType,
   getStatusLabel,
   isSegmentedRecordingStoragePath,
+  liveAudioQualityOptions,
+  normalizeLiveAudioQuality,
   normalizeAudioMimeType
 } from "@/lib/recordings/types";
 
@@ -84,5 +86,19 @@ describe("recording type helpers", () => {
     expect(isSegmentedRecordingStoragePath("user-id/recording-id/live/")).toBe(true);
     expect(isSegmentedRecordingStoragePath("user-id/recording-id/file.webm")).toBe(false);
     expect(isSegmentedRecordingStoragePath(null)).toBe(false);
+  });
+
+  it("maps each live audio quality to its requested bitrate and decimal hourly estimate", () => {
+    expect(liveAudioQualityOptions).toEqual({
+      economy: { audioBitsPerSecond: 32_000, estimatedMegabytesPerHour: 14.4, label: "Úsporná" },
+      standard: { audioBitsPerSecond: 64_000, estimatedMegabytesPerHour: 28.8, label: "Standardní" },
+      high: { audioBitsPerSecond: 96_000, estimatedMegabytesPerHour: 43.2, label: "Vysoká" }
+    });
+  });
+
+  it("normalizes missing and invalid live audio quality to standard", () => {
+    expect(normalizeLiveAudioQuality(undefined)).toBe("standard");
+    expect(normalizeLiveAudioQuality("lossless")).toBe("standard");
+    expect(normalizeLiveAudioQuality("high")).toBe("high");
   });
 });

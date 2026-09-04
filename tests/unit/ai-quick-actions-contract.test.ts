@@ -21,7 +21,7 @@ describe("AI quick action contract", () => {
 
   it("keeps the browser request prompt-agnostic", () => {
     expect(controlsSource).toContain("processing.run({ model, processingType })");
-    expect(runHookSource).toContain("body: JSON.stringify(input)");
+    expect(runHookSource).toContain("body: JSON.stringify({ ...input, requestId })");
     expect(controlsSource).not.toContain("promptId");
     expect(controlsSource).not.toContain("overrideId");
     expect(runHookSource).not.toContain("promptId");

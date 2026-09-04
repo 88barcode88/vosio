@@ -9,8 +9,11 @@ import {
   getRecoveredLiveRecordingUpdate,
   getLiveStorageListPrefix,
   getRecoverableLiveStoragePrefix,
-  isRecoverableLiveRecording
+  isRecoverableLiveRecording,
+  listStorageObjectsToExhaustion,
+  summarizeSafetyPartStorageObjects
 } from "@/lib/live-recording/recovery";
+import { InvalidSafetyPartListingError } from "@/lib/live-recording/safety-parts";
 
 const routeParamsSchema = z.object({
   recordingId: z.uuid()
@@ -36,19 +39,8 @@ type SegmentSummary = {
   totalBytes: number;
 };
 
-// getStorageObjectSize safely reads Supabase object metadata size.
-function getStorageObjectSize(item: { metadata?: unknown }) {
-  if (typeof item.metadata !== "object" || item.metadata === null || !("size" in item.metadata)) {
-    return 0;
-  }
-
-  const size = (item.metadata as { size?: unknown }).size;
-
-  return typeof size === "number" && Number.isFinite(size) ? size : 0;
-}
-
 // summarizeSegments counts recoverable live audio parts under one Storage prefix.
-async function summarizeSegments(input: {
+export async function summarizeSegments(input: {
   admin: ReturnType<typeof createAdminClient>;
   storagePrefix: string | null;
 }) {
@@ -56,27 +48,16 @@ async function summarizeSegments(input: {
     return { count: 0, totalBytes: 0 } satisfies SegmentSummary;
   }
 
-  const { data, error } = await input.admin.storage
-    .from(RECORDINGS_BUCKET)
-    .list(getLiveStorageListPrefix(input.storagePrefix));
+  const folder = getLiveStorageListPrefix(input.storagePrefix);
+  const bucket = input.admin.storage.from(RECORDINGS_BUCKET);
+  const data = await listStorageObjectsToExhaustion({
+    folder,
+    listPage: (path, options) => bucket.list(path, options)
+  });
 
-  if (error) {
-    throw new Error("Nepodařilo se načíst části live nahrávky.");
-  }
+  const summary = summarizeSafetyPartStorageObjects(data);
 
-  return (data ?? []).reduce<SegmentSummary>(
-    (summary, item) => {
-      if (!item.name || item.name.endsWith("/")) {
-        return summary;
-      }
-
-      return {
-        count: summary.count + 1,
-        totalBytes: summary.totalBytes + getStorageObjectSize(item)
-      };
-    },
-    { count: 0, totalBytes: 0 }
-  );
+  return { count: summary.count, totalBytes: summary.totalBytes } satisfies SegmentSummary;
 }
 
 // getTranscriptSummary checks whether a recoverable recording has a saved transcript draft.
@@ -188,7 +169,11 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       },
       ...(indexResult ? getTranscriptSearchWarningPayload(indexResult) : {})
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof InvalidSafetyPartListingError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+
     return NextResponse.json({ error: "Obnova nahrávky selhala." }, { status: 500 });
   }
 }

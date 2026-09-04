@@ -4,6 +4,15 @@ import { useEffect, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatDuration } from "@/components/workspace/utils";
+import {
+  cleanupDurableSafetyGeneration,
+  resumeDurableSafetyPartsForOwner,
+  type DurableSafetyManifest
+} from "@/lib/live-recording/durable-audio";
+import {
+  getLiveRecordingStoragePrefix,
+  uploadLiveRecordingPart
+} from "@/lib/recordings/upload";
 import { formatFileSize } from "@/lib/recordings/types";
 import {
   TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE,
@@ -15,34 +24,138 @@ type RecoverableRecording = {
   created_at: string;
   duration_seconds: number | null;
   id: string;
+  localManifest?: DurableSafetyManifest;
   segment_count: number;
   storage_bytes: number;
   title: string;
   transcript_chars: number;
 };
 
+type RecoverableStatePayload = {
+  error?: string;
+  ownerId?: string;
+  recordings?: RecoverableRecording[];
+};
+
+// getLocalRecoverableRecording keeps a durable browser manifest visible until remote recovery converges.
+function getLocalRecoverableRecording(manifest: DurableSafetyManifest): RecoverableRecording {
+  return {
+    created_at: manifest.createdAt,
+    duration_seconds: null,
+    id: manifest.recordingId,
+    localManifest: manifest,
+    segment_count: manifest.partCount,
+    storage_bytes: manifest.totalBytes,
+    title: "Lokálně uložená live nahrávka",
+    transcript_chars: 0
+  };
+}
+
+// mergeRecoverableRecordings prefers server metadata while retaining current local-only manifests.
+function mergeRecoverableRecordings(
+  serverRecordings: RecoverableRecording[],
+  manifests: DurableSafetyManifest[]
+) {
+  const merged = new Map<string, RecoverableRecording>();
+
+  for (const manifest of manifests) {
+    if (!merged.has(manifest.recordingId)) {
+      merged.set(manifest.recordingId, getLocalRecoverableRecording(manifest));
+    }
+  }
+
+  for (const recording of serverRecordings) {
+    const local = merged.get(recording.id);
+    merged.set(recording.id, local ? {
+      ...local,
+      ...recording,
+      segment_count: Math.max(local.segment_count, recording.segment_count),
+      storage_bytes: Math.max(local.storage_bytes, recording.storage_bytes)
+    } : recording);
+  }
+
+  return [...merged.values()].sort((left, right) => right.created_at.localeCompare(left.created_at));
+}
+
+// fetchRecoverableState loads the current owner identity and compact server recovery rows.
+async function fetchRecoverableState() {
+  const response = await fetch("/api/recordings/recoverable", { cache: "no-store" });
+  const payload = await response.json().catch(() => null) as RecoverableStatePayload | null;
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? "Nepodařilo se načíst nedokončené nahrávky.");
+  }
+
+  return {
+    ownerId: payload?.ownerId ?? null,
+    recordings: Array.isArray(payload?.recordings) ? payload.recordings : []
+  };
+}
+
 // LiveRecordingRecoveryPanel lists unfinished live recordings that can be completed from saved drafts.
 export function LiveRecordingRecoveryPanel() {
   const router = useRouter();
   const [recordings, setRecordings] = useState<RecoverableRecording[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [recoveredPath, setRecoveredPath] = useState<string | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/recordings/recoverable", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((payload) => {
-        if (!cancelled) {
-          setRecordings(Array.isArray(payload.recordings) ? payload.recordings : []);
+    // loadRecoveryState promotes durable browser parts before reconciling them with fresh server state.
+    async function loadRecoveryState() {
+      try {
+        const initial = await fetchRecoverableState();
+
+        if (cancelled) return;
+        setRecordings(initial.recordings);
+
+        if (!initial.ownerId) return;
+
+        const resumed = await resumeDurableSafetyPartsForOwner({
+          maxConcurrent: 2,
+          ownerId: initial.ownerId,
+          uploadPart: async (part) => {
+            await uploadLiveRecordingPart({
+              blob: part.blob,
+              contentType: part.mimeType,
+              maxFileSizeBytes: part.size,
+              partIndex: part.index,
+              recording: {
+                id: part.recordingId,
+                storagePrefix: getLiveRecordingStoragePrefix(part.ownerId, part.recordingId),
+                userId: part.ownerId
+              }
+            });
+          }
+        });
+
+        if (cancelled) return;
+        if (resumed.manifests.length === 0) return;
+        setRecordings(mergeRecoverableRecordings(initial.recordings, resumed.manifests));
+
+        if (resumed.failed.length > 0) {
+          setMessage(
+            "Některé části se nepodařilo nahrát; části zůstávají bezpečně uložené v tomto prohlížeči."
+          );
         }
-      })
-      .catch(() => {
+
+        const refreshed = await fetchRecoverableState();
+
         if (!cancelled) {
-          setMessage("Nepodařilo se načíst nedokončené nahrávky.");
+          setRecordings(mergeRecoverableRecordings(refreshed.recordings, resumed.manifests));
         }
-      });
+      } catch (error) {
+        if (!cancelled) {
+          setMessage(
+            error instanceof Error ? error.message : "Nepodařilo se načíst nedokončené nahrávky."
+          );
+        }
+      }
+    }
+
+    void loadRecoveryState();
 
     return () => {
       cancelled = true;
@@ -50,14 +163,15 @@ export function LiveRecordingRecoveryPanel() {
   }, []);
 
   // recoverRecording asks the server to finalize one unfinished live recording.
-  async function recoverRecording(recordingId: string) {
-    setRecoveringId(recordingId);
+  async function recoverRecording(recording: RecoverableRecording) {
+    setRecoveringId(recording.id);
     setMessage("Obnovuji nahrávku...");
+    setRecoveredPath(null);
 
     try {
-      const response = await fetch(`/api/recordings/${recordingId}/recover-live`, { method: "POST" });
+      const response = await fetch(`/api/recordings/${recording.id}/recover-live`, { method: "POST" });
       const payload = (await response.json().catch(() => null)) as
-        | { error?: string; warnings?: unknown }
+        | { error?: string; recording?: { id?: unknown }; warnings?: unknown }
         | null;
 
       if (!response.ok) {
@@ -65,20 +179,50 @@ export function LiveRecordingRecoveryPanel() {
         return;
       }
 
+      if (payload?.recording?.id !== recording.id) {
+        setMessage("Obnova nevrátila očekávanou nahrávku.");
+        return;
+      }
+
       const hasSearchWarning = hasTranscriptSearchIndexWarning(payload);
-      const path = `/recordings/${recordingId}`;
+      const path = `/recordings/${recording.id}`;
+      const targetPath = hasSearchWarning ? addTranscriptSearchIndexWarningToPath(path) : path;
+
+      if (recording.localManifest?.recordingId === recording.id) {
+        try {
+          await cleanupDurableSafetyGeneration({
+            generationId: recording.localManifest.generationId,
+            ownerId: recording.localManifest.ownerId,
+            recordingId: recording.localManifest.recordingId
+          });
+          setRecordings((current) => current.filter((item) => item.id !== recording.id));
+        } catch {
+          setMessage(
+            "Nahrávka je obnovená, ale lokální bezpečnostní kopii se nepodařilo odstranit."
+          );
+          setRecoveredPath(targetPath);
+          return;
+        }
+      }
 
       if (hasSearchWarning) {
         setMessage(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
       }
 
-      router.push(hasSearchWarning ? addTranscriptSearchIndexWarningToPath(path) : path);
+      router.push(targetPath);
       router.refresh();
     } catch {
       setMessage("Obnova nahrávky selhala. Zkontrolujte připojení a zkuste to znovu.");
     } finally {
       setRecoveringId(null);
     }
+  }
+
+  // openRecoveredRecording lets the user leave after acknowledging a retained local cleanup warning.
+  function openRecoveredRecording() {
+    if (!recoveredPath) return;
+    router.push(recoveredPath);
+    router.refresh();
   }
 
   if (recordings.length === 0 && !message) {
@@ -92,6 +236,11 @@ export function LiveRecordingRecoveryPanel() {
         <strong>Nedokončené live nahrávky</strong>
       </div>
       {message ? <p aria-live="polite" role="status">{message}</p> : null}
+      {recoveredPath ? (
+        <button onClick={openRecoveredRecording} type="button">
+          Otevřít obnovenou nahrávku
+        </button>
+      ) : null}
       {recordings.map((recording) => (
         <article key={recording.id}>
           <div>
@@ -106,7 +255,7 @@ export function LiveRecordingRecoveryPanel() {
           </div>
           <button
             disabled={recoveringId === recording.id}
-            onClick={() => recoverRecording(recording.id)}
+            onClick={() => recoverRecording(recording)}
             type="button"
           >
             {recoveringId === recording.id ? "Obnovuji..." : "Obnovit"}
