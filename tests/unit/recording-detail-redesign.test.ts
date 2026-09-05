@@ -17,8 +17,12 @@ const transcriptSource = readFileSync(
 const workspaceCss = readFileSync(join(process.cwd(), "app", "styles", "workspace.css"), "utf8");
 const transcriptCss = readFileSync(join(process.cwd(), "app", "styles", "transcript.css"), "utf8");
 const timelineCss = readFileSync(join(process.cwd(), "app", "styles", "timeline-ai-output.css"), "utf8");
+const appicaWorkflowCss = readFileSync(
+  join(process.cwd(), "app", "styles", "appica-workflow.css"),
+  "utf8"
+);
 
-describe("Notion Warm recording detail contract", () => {
+describe("Appica recording detail contract", () => {
   it("uses a full-width detail document with a back link and no dominant right rail", () => {
     expect(workbenchSource).toContain('href="/recordings"');
     expect(workbenchSource).toContain("Zpět na nahrávky");
@@ -40,8 +44,17 @@ describe("Notion Warm recording detail contract", () => {
     expect(transcriptSource.indexOf("<RecordingAudioPlayer"))
       .toBeLessThan(transcriptSource.indexOf('className="tabs-row"'));
     expect(transcriptSource).toContain('className="recording-detail-sticky"');
+    expect(transcriptSource).toContain('aria-label="Přehrávač a záložky detailu"');
     expect(transcriptCss).toMatch(/\.recording-detail-sticky\s*\{[\s\S]*?position:\s*sticky;/);
     expect(transcriptCss).toMatch(/\.transcript-table-scroll\s*\{[\s\S]*?overflow:\s*visible;/);
+  });
+
+  it("applies the neutral compact hierarchy without adding nested document scroll", () => {
+    expect(workbenchSource).toContain('aria-label="Informace a akce nahrávky"');
+    expect(appicaWorkflowCss).toMatch(/\.recording-object-header\s*\{[\s\S]*?border-radius:\s*6px;/);
+    expect(appicaWorkflowCss).toMatch(/\.recording-detail-sticky\s*\{[\s\S]*?position:\s*sticky;/);
+    expect(appicaWorkflowCss).toMatch(/\.tab-panel\s*\{[\s\S]*?overflow:\s*visible;/);
+    expect(appicaWorkflowCss).toMatch(/\.transcript-table-scroll\s*\{[\s\S]*?overflow:\s*visible;/);
   });
 
   it("keeps speaker autosave feedback inside the full-width one-scroll detail", () => {

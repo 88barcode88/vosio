@@ -74,12 +74,13 @@ describe("recording upload form UI", () => {
       />
     ));
 
-    const statusSurface = container.querySelector("[data-upload-status]");
+    const statusSurface = container.querySelector('[role="group"][aria-label="Stav nahrávání souboru"]');
     expect(statusSurface).not.toBeNull();
     expect(statusSurface?.textContent).toContain("Limit 50 MB");
     expect(statusSurface?.textContent).toContain("Zatím nebyl vybrán soubor");
     expect(container.textContent).toContain("M4A, MP3, WAV, WebM, OGG, FLAC a MP4");
     expect(container.querySelectorAll("input[type='file']")).toHaveLength(1);
+    expect(container.querySelector('[role="group"][aria-label="Výběr souboru pro nahrání"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Vybrat jiný typ");
 
     await chooseFiles(new File([new Uint8Array(33)], "lucern-update.m4a", { type: "audio/mp4" }));

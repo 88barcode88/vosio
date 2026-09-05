@@ -2,7 +2,7 @@
 
 ## Finální směr
 
-Vosio je skandinávsky střídmý pracovní audio workspace ve stylu moderního CRM, Linear a Notion. Nejde o landing page ani marketingovou prezentaci. Hlavní objekt aplikace je vždy nahrávka.
+Vosio je neutrální Appica-inspired pracovní audio workspace ve stylu moderního CRM. Nejde o landing page ani marketingovou prezentaci. Hlavní objekt aplikace je vždy nahrávka.
 
 Vybraný produktový hybrid:
 
@@ -35,7 +35,7 @@ Design systém musí od začátku počítat s tokeny pro:
 - border,
 - muted text,
 - primary text,
-- teal/cyan brand accent,
+- near-black primary action,
 - red recording/error,
 - green saved/success,
 - yellow/orange warning,
@@ -47,7 +47,7 @@ Design systém musí od začátku počítat s tokeny pro:
 - Produkt v UI se jmenuje Vosio.
 - Nepoužívat `Notewise AI`.
 - V samotné aplikaci nepoužívat spodní marketingový pás benefitů.
-- Teal/cyan je brand accent, ne jediná barva celé aplikace.
+- Primární akce jsou neutrální near-black ve světlém režimu a vysokokontrastní ve tmavém režimu; status barvy jsou vyhrazené pro význam stavu.
 - Recording/stop stavy používají červenou.
 - Saved/safe stavy používají tlumenou sage zelenou, ne ostrou produktovou zelenou.
 - Neutrální šedá a tmavé/světlé surface vrstvy nesou většinu UI.
@@ -219,14 +219,14 @@ Pokud kapitoly chybí, tab spustí `timeline_chapters` přímo s aktuálním vý
 
 Route: `/recordings`
 
-Stránka nahrávek je kompaktní Notion Warm inbox. Priorita je rychle najít správnou nahrávku, poznat její stav a otevřít ji přes název.
+Stránka nahrávek je kompaktní neutrální inbox. Priorita je rychle najít správnou nahrávku, poznat její stav a otevřít ji přes název.
 
 Požadavky:
 
 - nad obsahem je jeden kompaktní toolbar s pružným hledáním, tlačítkem pokročilých filtrů a `Spravovat`; při viewportu 900 px a méně se složí a `Spravovat` zabere celou šířku,
 - toolbar, stavové facety a informace o výsledku nejsou samostatné vnořené tabulky nebo karty,
 - běžný seznam je jednoúrovňový flat list s jedním vnějším rámečkem, jemnými skupinovými oddělovači a řádky dělenými pouze linkou,
-- hlavní pracovní plocha a seznam používají `surface-raised`, takže jsou ve světlém režimu bílé bez změny globální Notion Warm palety,
+- hlavní pracovní plocha a seznam používají `surface-raised`, takže jsou ve světlém režimu bílé v rámci neutrální palety,
 - seznam nahrávek bez tlačítka `Otevřít`,
 - název je hlavní Next odkaz na detail; editace a koš jsou jeho samostatní sourozenci,
 - název je pružný sloupec a akce mají pevný 128 px pruh, ve kterém zůstávají celé viditelné `Upravit` i Koš a oba cíle mají nejméně 44 px,

@@ -40,6 +40,20 @@ const organizationOptions = {
 const filters = { clientId: "client-1", folderId: null, projectId: null, tagIds: [] };
 
 describe("recordings indexed search UI", () => {
+  it("keeps the compact inbox hierarchy in the lane-local Appica stylesheet", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "appica-recordings.css"),
+      "utf8"
+    );
+
+    expect(styles).toMatch(/\.recordings-inbox\s*\{[\s\S]*?container-type:\s*inline-size;/u);
+    expect(styles).toMatch(/\.recordings-inbox\.ui-panel\s*\{[\s\S]*?background:\s*var\(--surface-raised\);/u);
+    expect(styles).toMatch(/\.recordings-toolbar\s*\{[\s\S]*?display:\s*grid;/u);
+    expect(styles).toMatch(/\.recordings-table\s*\{[\s\S]*?border:\s*1px solid\s+var\(--border\);/u);
+    expect(styles).toMatch(/\.recordings-inbox \.recordings-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) var\(--recordings-action-width\);/u);
+    expect(styles).toContain("@container recordings-inbox (max-width: 680px)");
+  });
+
   it("treats a status-only empty result as a filtered result with a clear link", () => {
     const markup = renderToStaticMarkup(createElement(RecordingsManager, {
       errorCode: null,

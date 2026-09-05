@@ -19,11 +19,13 @@ test("the new-recording fixture rejects missing or malformed access", async ({ r
 
 test("real primary capture cards stay equal on desktop and ordered when stacked", async ({ page }) => {
   await openFixture(page);
-  const widths = [1440, 1024, 768, 375];
+  const primaryMethods = page.getByRole("group", { name: "Hlavní způsoby pořízení" });
+  await expect(primaryMethods).toBeVisible();
+  const widths = [1440, 1024, 900, 768, 390, 375, 320];
 
   for (const width of widths) {
     await page.setViewportSize({ width, height: width <= 768 ? 900 : 860 });
-    const cards = page.locator("[data-primary-capture]");
+    const cards = primaryMethods.locator("[data-primary-capture]");
     await expect(cards).toHaveCount(2);
     const live = await cards.nth(0).boundingBox();
     const upload = await cards.nth(1).boundingBox();
@@ -51,6 +53,7 @@ test("real primary capture cards stay equal on desktop and ordered when stacked"
   await expect(page.locator("[data-primary-capture='live']")).toContainText("Nahrávat live");
   await expect(page.locator("[data-primary-capture='upload']")).toContainText("Nahrát soubor");
   await expect(page.locator("[data-secondary-capture='transcript']")).toContainText("Vložit přepis");
+  await expect(page.getByLabel("Import hotového přepisu")).toBeVisible();
   const storageInfo = page.getByLabel("Limity úložiště");
   await expect(storageInfo).toHaveClass(/recording-storage-info-row/u);
   await expect(storageInfo.locator("div")).toHaveCount(0);
@@ -62,7 +65,8 @@ test("real primary capture cards stay equal on desktop and ordered when stacked"
 
 test("a concrete-MIME 33 MiB M4A shows monotonic phases in one stable surface", async ({ page }) => {
   await openFixture(page);
-  const status = page.locator("[data-upload-status]");
+  await expect(page.getByRole("group", { name: "Výběr souboru pro nahrání" })).toBeVisible();
+  const status = page.getByRole("group", { name: "Stav nahrávání souboru" });
   const initialBox = await status.boundingBox();
   await expect(status).toContainText("Limit 50 MB");
   await expect(status).toContainText("Zatím nebyl vybrán soubor");
@@ -147,7 +151,10 @@ test("the workspace remains readable in both themes", async ({ page }) => {
   await openFixture(page);
   for (const theme of ["dark", "light"] as const) {
     await page.evaluate((nextTheme) => { document.documentElement.dataset.theme = nextTheme; }, theme);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("color", theme === "dark" ? "rgb(243, 240, 234)" : "rgb(37, 36, 33)");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCSS(
+      "color",
+      theme === "dark" ? "rgb(245, 245, 243)" : "rgb(23, 23, 23)"
+    );
     await expect(page.locator("[data-primary-capture='upload']")).toBeVisible();
   }
 });

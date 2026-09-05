@@ -112,7 +112,7 @@ export function UtilityWorkspaceView({
 
   if (view === "ai") {
     return (
-      <section className="utility-panel utility-panel-document" aria-label="AI archiv">
+      <section className="utility-panel utility-panel-document" data-utility-surface="ai-archive" aria-label="AI archiv">
         <div className="utility-header utility-header-actions">
           <Sparkles size={18} />
           <div>
@@ -134,7 +134,7 @@ export function UtilityWorkspaceView({
 
   if (view === "templates") {
     return (
-      <section className="utility-panel utility-panel-document" aria-label="AI prompty">
+      <section className="utility-panel utility-panel-document" data-utility-surface="prompt-templates" aria-label="AI prompty">
         <div className="utility-header utility-header-actions">
           <FileText size={18} />
           <div>
@@ -154,7 +154,7 @@ export function UtilityWorkspaceView({
   }
 
   return (
-    <section className="utility-panel utility-panel-trash" aria-label="Koš">
+    <section className="utility-panel utility-panel-trash" data-utility-surface="trash" aria-label="Koš">
       <div className="utility-header">
         <Trash2 size={18} />
         <div>

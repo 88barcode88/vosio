@@ -283,10 +283,16 @@ export function MobileNav({
   userEmail?: string;
 }) {
   const pathname = usePathname();
+  const [moreReady, setMoreReady] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [pendingHref, setPendingHref] = useState<WorkspaceNavigationHref | null>(null);
   const moreIsActive = activeView === "trash" || activeView === "documentation";
   const moreIsPending = pendingHref === "/trash" || pendingHref === "/documentation";
+
+  // Mark More interactive only after React owns its client event handler.
+  useEffect(() => {
+    setMoreReady(true);
+  }, []);
 
   useEffect(() => {
     setPendingHref(null);
@@ -329,6 +335,7 @@ export function MobileNav({
             moreIsActive ? "mobile-nav-item-active" : "",
             moreIsPending ? "mobile-nav-item-pending" : ""
           ].filter(Boolean).join(" ")}
+          disabled={!moreReady}
           onClick={() => setMoreOpen(true)}
           type="button"
         >

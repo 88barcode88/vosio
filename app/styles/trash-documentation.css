@@ -10,14 +10,14 @@
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 
 .trash-route-notice {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .trash-bulk-toolbar {
@@ -37,7 +37,7 @@
 .trash-bulk-toolbar > span {
   flex-basis: 100%;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .trash-selection-control {
@@ -94,14 +94,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .trash-recording-copy p,
 .trash-recording-row time {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -139,7 +139,7 @@
   background: var(--surface-muted);
   padding: 0 11px;
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   text-decoration: none;
 }
@@ -175,7 +175,7 @@
 
 .trash-purge-copy > span {
   color: var(--danger);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -187,7 +187,7 @@
 }
 
 .trash-purge-copy h2 {
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 
 .trash-purge-copy p {
@@ -257,7 +257,7 @@
 
 .not-found-card > span {
   color: var(--accent);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.08em;
 }
@@ -268,7 +268,7 @@
 }
 
 .not-found-card h1 {
-  font-size: 24px;
+  font-size: 1.5rem;
 }
 
 .not-found-card p {
@@ -293,7 +293,7 @@
   color: var(--text);
   background: var(--surface-muted);
   padding: 0 13px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   text-decoration: none;
 }

@@ -649,6 +649,18 @@ describe("OrganizationManager", () => {
 });
 
 describe("organization UI integration", () => {
+  it("keeps the organization drawer and editors in the recordings lane surface contract", () => {
+    const appicaStyles = readFileSync(
+      join(process.cwd(), "app", "styles", "appica-recordings.css"),
+      "utf8"
+    );
+
+    expect(appicaStyles).toMatch(/\.organization-manager-drawer\s*\{[\s\S]*?background:\s*var\(--surface-raised\);/u);
+    expect(appicaStyles).toMatch(/\.organization-manager-grid\s*\{[\s\S]*?display:\s*grid;/u);
+    expect(appicaStyles).toMatch(/\.organization-create-form,[\s\S]*?\.organization-rename-form\s*\{[\s\S]*?background:\s*var\(--surface-raised\);/u);
+    expect(appicaStyles).toMatch(/\.organization-save-editor > button,[\s\S]*?min-height:\s*44px;/u);
+  });
+
   it("keeps organization cards compact without overflowing the responsive layout", () => {
     const recordingStyles = readFileSync(
       join(process.cwd(), "app", "styles", "documentation-recordings.css"),

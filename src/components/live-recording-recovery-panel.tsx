@@ -230,38 +230,40 @@ export function LiveRecordingRecoveryPanel() {
   }
 
   return (
-    <section className="live-recovery-panel" aria-label="Nedokončené live nahrávky">
-      <div className="live-recovery-panel-header">
-        <RotateCcw size={16} />
-        <strong>Nedokončené live nahrávky</strong>
-      </div>
-      {message ? <p aria-live="polite" role="status">{message}</p> : null}
-      {recoveredPath ? (
-        <button onClick={openRecoveredRecording} type="button">
-          Otevřít obnovenou nahrávku
-        </button>
-      ) : null}
-      {recordings.map((recording) => (
-        <article key={recording.id}>
-          <div>
-            <span>{recording.title}</span>
-            <small>
-              {formatDuration(recording.duration_seconds)} |{" "}
-              {recording.segment_count > 0
-                ? `${recording.segment_count} částí | ${formatFileSize(recording.storage_bytes)} | `
-                : "bez uloženého audia | "}
-              {recording.transcript_chars} znaků přepisu
-            </small>
-          </div>
-          <button
-            disabled={recoveringId === recording.id}
-            onClick={() => recoverRecording(recording)}
-            type="button"
-          >
-            {recoveringId === recording.id ? "Obnovuji..." : "Obnovit"}
+    <section className="live-recovery-panel" aria-label="Nedokončené live nahrávky" role="group">
+      <div aria-label="Stav obnovy nahrávek" className="live-recovery-content" role="group">
+        <div className="live-recovery-panel-header">
+          <RotateCcw size={16} />
+          <h2>Nedokončené live nahrávky</h2>
+        </div>
+        {message ? <p aria-live="polite" role="status">{message}</p> : null}
+        {recoveredPath ? (
+          <button onClick={openRecoveredRecording} type="button">
+            Otevřít obnovenou nahrávku
           </button>
-        </article>
-      ))}
+        ) : null}
+        {recordings.map((recording) => (
+          <article key={recording.id}>
+            <div>
+              <span>{recording.title}</span>
+              <small>
+                {formatDuration(recording.duration_seconds)} |{" "}
+                {recording.segment_count > 0
+                  ? `${recording.segment_count} částí | ${formatFileSize(recording.storage_bytes)} | `
+                  : "bez uloženého audia | "}
+                {recording.transcript_chars} znaků přepisu
+              </small>
+            </div>
+            <button
+              disabled={recoveringId === recording.id}
+              onClick={() => recoverRecording(recording)}
+              type="button"
+            >
+              {recoveringId === recording.id ? "Obnovuji..." : "Obnovit"}
+            </button>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }

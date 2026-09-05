@@ -1,23 +1,23 @@
 :root {
   color-scheme: dark;
-  --bg: #191918;
-  --surface: #222220;
-  --surface-muted: #2a2927;
-  --surface-raised: #302f2c;
-  --border: #3d3a36;
-  --border-strong: #56514a;
-  --text: #f3f0ea;
-  --text-secondary: #c1bbb1;
-  --text-muted: #989188;
-  --accent: #5cc8bc;
-  --accent-hover: #79d6cc;
-  --accent-text: #10211f;
-  --focus-ring: var(--accent);
-  --success: #7fc7a4;
-  --recording: #ff8f8f;
-  --danger: #ff8f8f;
-  --warning: #e8b36a;
-  --info: #86b7e8;
+  --bg: #171717;
+  --surface: #202020;
+  --surface-muted: #282828;
+  --surface-raised: #242424;
+  --border: #3a3a3a;
+  --border-strong: #575757;
+  --text: #f5f5f3;
+  --text-secondary: #c5c5c1;
+  --text-muted: #969692;
+  --accent: #f5f5f3;
+  --accent-hover: #ffffff;
+  --accent-text: #171717;
+  --focus-ring: #74a7ff;
+  --success: #54b67a;
+  --recording: #ef6b6b;
+  --danger: #ef6b6b;
+  --warning: #e2a84d;
+  --info: #74a7ff;
   --panel: var(--surface);
   --panel-strong: var(--surface-raised);
   --panel-soft: var(--surface-muted);
@@ -28,35 +28,35 @@
   --green: var(--success);
   --red: var(--danger);
   --orange: var(--warning);
-  --violet: #7a70d6;
+  --violet: #a99cf2;
   --blue: var(--info);
   --accent-bg: var(--accent);
   --accent-bg-hover: var(--accent-hover);
   --control-hit-size: 44px;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
 }
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #f7f5f2;
-  --surface: #fffefa;
-  --surface-muted: #f0ede8;
+  --bg: #f4f4f2;
+  --surface: #ffffff;
+  --surface-muted: #ececea;
   --surface-raised: #ffffff;
-  --border: #ded9d1;
-  --border-strong: #c8c1b7;
-  --text: #252421;
-  --text-secondary: #625f59;
-  --text-muted: #817c74;
-  --accent: #0f766e;
-  --accent-hover: #0b5f59;
+  --border: #d8d8d4;
+  --border-strong: #aaa9a4;
+  --text: #171717;
+  --text-secondary: #575754;
+  --text-muted: #70706c;
+  --accent: #171717;
+  --accent-hover: #333330;
   --accent-text: #ffffff;
-  --focus-ring: var(--accent);
-  --success: #2f7d56;
-  --recording: #b83f3f;
-  --danger: #b83f3f;
-  --warning: #8a5a16;
-  --info: #2f67a5;
-  --violet: #6659c7;
-  --shadow: 0 1px 2px rgba(37, 36, 33, 0.08);
+  --focus-ring: #245bd7;
+  --success: #1e7a46;
+  --recording: #b53535;
+  --danger: #b53535;
+  --warning: #9a5d0a;
+  --info: #245bd7;
+  --violet: #6355bd;
+  --shadow: 0 1px 2px rgba(23, 23, 23, 0.08);
 }
 * {
   box-sizing: border-box;
@@ -71,14 +71,14 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui), "Segoe UI", system-ui, sans-serif;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.42;
   letter-spacing: 0;
 }
 h1,
 h2,
 h3 {
-  font-family: var(--font-heading), Georgia, serif;
+  font-family: var(--font-ui), "Segoe UI", system-ui, sans-serif;
 }
 button,
 a,
@@ -193,7 +193,7 @@ select:focus-visible {
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 20px;
-  font-size: 16px;
+  font-size: 1rem;
 }
 .brand-block > div {
   display: inline-flex;
@@ -259,7 +259,7 @@ select:focus-visible {
   min-height: 44px;
   border: 1px solid var(--accent);
   border-radius: 10px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
 }
 .new-recording-button-active {
@@ -294,7 +294,7 @@ select:focus-visible {
   border-radius: 9px;
   color: var(--muted);
   padding: 0 10px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .nav-item-active,
 .nav-item:hover {
@@ -317,7 +317,7 @@ select:focus-visible {
 .empty-nav,
 .task-empty {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .nav-item-active {
   border: 1px solid transparent;
@@ -338,7 +338,7 @@ select:focus-visible {
   color: var(--muted);
   background: transparent;
   padding: 0 10px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 400;
   transition-property: color, background-color, border-color, box-shadow;
   transition-duration: 150ms;
@@ -385,7 +385,7 @@ select:focus-visible {
 .mobile-more-account span {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -581,7 +581,7 @@ select:focus-visible {
   border-radius: 10px;
   background: var(--panel);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
 }
 .user-card div:nth-child(2) {
@@ -592,7 +592,7 @@ select:focus-visible {
 .user-card span {
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

@@ -122,6 +122,17 @@ afterEach(async () => {
 });
 
 describe("recordings inbox", () => {
+  it("exposes the compact toolbar and flat list as named workspace regions", async () => {
+    await renderInbox([createRecording("recording-1", "completed", clientA)]);
+
+    const toolbar = container.querySelector(".recordings-toolbar");
+    expect(toolbar?.getAttribute("role")).toBe("toolbar");
+    expect(toolbar?.getAttribute("aria-label")).toBe("Nástroje nahrávek");
+    expect(container.querySelector(".recordings-table")?.getAttribute("role")).toBe("region");
+    expect(container.querySelector(".recordings-table")?.getAttribute("aria-label"))
+      .toBe("Seznam nahrávek");
+  });
+
   it("groups recording filters and organization management in one toolbar", async () => {
     await renderInbox();
 

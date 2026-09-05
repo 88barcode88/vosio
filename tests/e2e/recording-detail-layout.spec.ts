@@ -252,6 +252,7 @@ test("the guarded fixture renders the real full-page recording detail", async ({
   await expect(page.locator(".recording-rail")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Přehrát nahrávku" })).toBeVisible();
   await expect(page.getByRole("slider", { name: "Pozice přehrávání" })).toBeEnabled();
+  await expect(page.getByRole("region", { name: "Přehrávač a záložky detailu" })).toBeVisible();
   await expect(page.getByRole("tab")).toHaveCount(5);
   await expect(page.getByRole("tab").allTextContents()).resolves.toEqual([
     "Přepis",
@@ -267,7 +268,29 @@ test("the guarded fixture renders the real full-page recording detail", async ({
   });
 });
 
-for (const width of [375, 768, 901, 1024, 1440]) {
+test("the mounted player survives all five persisted detail tab transitions", async ({ page }) => {
+  await openFixture(page);
+  await page.locator(".recording-audio-player").evaluate((element) => {
+    (element as HTMLElement & { appicaIdentity?: string }).appicaIdentity = "persistent-player";
+  });
+
+  for (const tabName of ["AI zpracování", "Časová osa", "Soubory", "Chat", "Přepis"]) {
+    await page.getByRole("tab", { name: tabName }).click();
+    await expect(page.getByRole("tab", { name: tabName })).toHaveAttribute("aria-selected", "true");
+    await expect.poll(() => page.locator(".recording-audio-player").evaluate((element) => (
+      (element as HTMLElement & { appicaIdentity?: string }).appicaIdentity
+    ))).toBe("persistent-player");
+    expect(await page.getByRole("tabpanel").evaluate((panel) => [panel, ...panel.children]
+      .filter((element) => {
+        const styles = getComputedStyle(element);
+        return ["auto", "scroll"].includes(styles.overflowY)
+          && element.scrollHeight > element.clientHeight + 1;
+      })
+      .map((element) => element.className))).toEqual([]);
+  }
+});
+
+for (const width of [320, 390, 768, 900, 1024, 1440]) {
   test(`header, player and tabs keep exact source order at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ height: 720, width });
     await openFixture(page, "ai");
@@ -558,8 +581,10 @@ for (const width of [375, 768]) {
 }
 
 for (const viewport of [
-  { height: 640, width: 375 },
+  { height: 640, width: 320 },
+  { height: 640, width: 390 },
   { height: 640, width: 768 },
+  { height: 720, width: 900 },
   { height: 640, width: 1024 },
   { height: 900, width: 1440 }
 ]) {

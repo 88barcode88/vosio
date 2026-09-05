@@ -502,7 +502,11 @@ export function TranscriptTabs({
 
   return (
     <>
-      <div className="recording-detail-sticky">
+      <div
+        aria-label="Přehrávač a záložky detailu"
+        className="recording-detail-sticky"
+        role="region"
+      >
         <RecordingAudioPlayer activeRecording={activeRecording} ref={playerRef} />
         <div className="tabs-row">
           <div className="tabs" role="tablist" aria-label="Detail nahrávky">
