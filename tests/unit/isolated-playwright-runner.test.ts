@@ -39,7 +39,7 @@ function startTestRunner({
   mode: "delay-zero" | "exit-one" | "exit-zero";
   port?: number;
   readinessDelayMs?: number;
-  serverMode?: "listen" | "spawn-child";
+  serverMode?: "exit-after-ready" | "listen" | "spawn-child";
   signalAfterSpawn?: boolean;
   signalBeforeSpawn?: boolean;
   signalDuringReadiness?: boolean;
@@ -196,8 +196,17 @@ describe("isolated Playwright outer runner", () => {
     await expect(findMarkedWorkspace(run.marker)).resolves.toBeNull();
   }, 5_000);
 
-  it("fails closed and retains its workspace when a descendant tree cannot be proven stopped", async () => {
+  it("cleans its workspace when the owned Windows server already stopped after readiness", async () => {
     const port = 3180;
+    const run = startTestRunner({ mode: "delay-zero", port, serverMode: "exit-after-ready" });
+
+    await expect(run.exit).resolves.toMatchObject({ code: 0 });
+    await expect(isPortClosed(port)).resolves.toBe(true);
+    await expect(findMarkedWorkspace(run.marker)).resolves.toBeNull();
+  });
+
+  it("fails closed and retains its workspace when a descendant tree cannot be proven stopped", async () => {
+    const port = 3181;
     const run = startTestRunner({ mode: "exit-zero", port, serverMode: "spawn-child" });
 
     await expect(run.exit).resolves.toMatchObject({ code: 1 });
