@@ -771,8 +771,8 @@
   padding: 0 11px;
 }
 .account-security-grid input:focus {
-  border-color: var(--border-strong);
-  box-shadow: 0 0 0 3px rgba(56, 217, 208, 0.12);
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .account-security-grid input[readonly] {
   color: var(--text-secondary);
@@ -1286,8 +1286,8 @@
   padding: 0 13px;
 }
 .auth-form input:focus {
-  border-color: var(--border-strong);
-  box-shadow: 0 0 0 3px rgba(56, 217, 208, 0.12);
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .auth-form button {
   display: inline-flex;

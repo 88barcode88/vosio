@@ -663,6 +663,44 @@ for (const width of [375, 1024, 1440]) {
   });
 }
 
+test("mobile active navigation and account focus use neutral semantic interaction styles", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 760 });
+  await page.goto(fixturePath("recordings"));
+
+  const activeNavigation = page.locator(".mobile-nav-item-active").first();
+  const activeStyles = await activeNavigation.evaluate((element) => {
+    const icon = element.querySelector<HTMLElement>("svg");
+    const style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      boxShadow: style.boxShadow,
+      iconColor: icon ? getComputedStyle(icon).color : null
+    };
+  });
+  expect(activeStyles).toEqual({
+    backgroundColor: "rgb(40, 40, 40)",
+    boxShadow: "rgb(87, 87, 87) 0px 0px 0px 1px inset",
+    iconColor: "rgb(245, 245, 243)"
+  });
+  expect(JSON.stringify(activeStyles)).not.toContain("56, 217, 208");
+
+  await page.goto(fixturePath("settings"));
+  await page.locator(".account-security-fields").evaluate((element) => {
+    (element as HTMLFieldSetElement).disabled = false;
+  });
+  const accountInput = page.locator('.account-security-grid input[name="currentPassword"]');
+  await accountInput.focus();
+  const accountFocus = await accountInput.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { borderColor: style.borderColor, boxShadow: style.boxShadow };
+  });
+  expect(accountFocus).toEqual({
+    borderColor: "rgb(116, 167, 255)",
+    boxShadow: "rgb(116, 167, 255) 0px 0px 0px 3px"
+  });
+  expect(JSON.stringify(accountFocus)).not.toContain("56, 217, 208");
+});
+
 for (const view of ["trash", "documentation"] as const) {
   test(`mobile More owns the active state for ${view}`, async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 760 });
