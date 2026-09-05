@@ -33,16 +33,18 @@ function startTestRunner({
   serverMode = "listen",
   signalAfterSpawn = false,
   signalBeforeSpawn = false,
-  signalDuringReadiness = false
+  signalDuringReadiness = false,
+  treeKillFailure = false
 }: {
   marker?: string;
   mode: "delay-zero" | "exit-one" | "exit-zero";
   port?: number;
   readinessDelayMs?: number;
-  serverMode?: "exit-after-ready" | "listen" | "spawn-child";
+  serverMode?: "exit-after-ready" | "listen" | "spawn-child" | "spawn-child-unforced";
   signalAfterSpawn?: boolean;
   signalBeforeSpawn?: boolean;
   signalDuringReadiness?: boolean;
+  treeKillFailure?: boolean;
 }) {
   ownedMarkers.add(marker);
   const child = spawn(process.execPath, ["scripts/run-isolated-playwright.mjs"], {
@@ -58,7 +60,8 @@ function startTestRunner({
       VOSIO_E2E_TEST_SIGNAL_AFTER_SPAWN: signalAfterSpawn ? "1" : "0",
       VOSIO_E2E_TEST_SIGNAL_BEFORE_SPAWN: signalBeforeSpawn ? "1" : "0",
       VOSIO_E2E_TEST_SIGNAL_DURING_READINESS: signalDuringReadiness ? "1" : "0",
-      VOSIO_E2E_TEST_SKIP_COPY: "1"
+      VOSIO_E2E_TEST_SKIP_COPY: "1",
+      VOSIO_E2E_TEST_TREE_KILL_FAILURE: treeKillFailure ? "1" : "0"
     },
     stdio: "ignore",
     windowsHide: true
@@ -207,6 +210,20 @@ describe("isolated Playwright outer runner", () => {
 
   it("fails closed and retains its workspace when a descendant tree cannot be proven stopped", async () => {
     const port = 3181;
+    const run = startTestRunner({
+      mode: "exit-zero",
+      port,
+      serverMode: "spawn-child-unforced",
+      treeKillFailure: true
+    });
+
+    await expect(run.exit).resolves.toMatchObject({ code: 1 });
+    await expect(isPortClosed(port)).resolves.toBe(true);
+    await expect(findMarkedWorkspace(run.marker)).resolves.not.toBeNull();
+  });
+
+  it("fails closed and retains its workspace when a descendant tree is explicitly unproven", async () => {
+    const port = 3182;
     const run = startTestRunner({ mode: "exit-zero", port, serverMode: "spawn-child" });
 
     await expect(run.exit).resolves.toMatchObject({ code: 1 });

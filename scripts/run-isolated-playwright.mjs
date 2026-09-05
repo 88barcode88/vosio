@@ -172,7 +172,7 @@ async function waitForProcessGroupStopped(processGroupId, timeoutMs) {
   return !isProcessGroupAlive(processGroupId);
 }
 
-// hasOwnedChildStopped proves the exact spawned child emitted a successful terminal result.
+// hasOwnedChildStopped proves the exact spawned child emitted a matching terminal result.
 async function hasOwnedChildStopped(child, resultPromise) {
   const result = await settleWithin(resultPromise, processStopTimeoutMs);
   return result.settled
@@ -182,7 +182,11 @@ async function hasOwnedChildStopped(child, resultPromise) {
 }
 
 // stopOwnedProcessTree proves complete teardown or fails closed while retaining the workspace.
-async function stopOwnedProcessTree(child, resultPromise, { forceUnproven = false, knownLeaf = false } = {}) {
+async function stopOwnedProcessTree(
+  child,
+  resultPromise,
+  { forceUnproven = false, knownLeaf = false, simulateTreeKillFailure = false } = {}
+) {
   if (!child?.pid || !resultPromise) return true;
   const processId = child.pid;
 
@@ -201,10 +205,15 @@ async function stopOwnedProcessTree(child, resultPromise, { forceUnproven = fals
     if (child.exitCode !== null || child.signalCode !== null) {
       return hasOwnedChildStopped(child, resultPromise);
     }
-    const taskkill = spawn("taskkill.exe", ["/PID", String(processId), "/T", "/F"], {
-      stdio: "ignore",
-      windowsHide: true
-    });
+    const taskkill = simulateTreeKillFailure
+      ? spawn(process.execPath, ["-e", "process.exit(1)"], {
+        stdio: "ignore",
+        windowsHide: true
+      })
+      : spawn("taskkill.exe", ["/PID", String(processId), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true
+      });
     const taskkillResult = await settleWithin(waitForChild(taskkill), processStopTimeoutMs);
     const treeStopSucceeded = taskkillResult.settled
       && !taskkillResult.value.error
@@ -212,7 +221,8 @@ async function stopOwnedProcessTree(child, resultPromise, { forceUnproven = fals
     if (!treeStopSucceeded) {
       if (taskkill.exitCode === null && taskkill.signalCode === null) taskkill.kill();
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-      return hasOwnedChildStopped(child, resultPromise);
+      await settleWithin(resultPromise, processStopTimeoutMs);
+      return false;
     }
     return (await settleWithin(resultPromise, processStopTimeoutMs)).settled;
   }
@@ -263,7 +273,7 @@ function startOwnedNextServer({ childEnvironment, port, readinessToken, testRunt
     "const port = Number(process.argv[1]);",
     "const token = process.argv[2];",
     "const delayMs = Number(process.argv[3]);",
-    "const spawnChild = process.argv[4] === 'spawn-child';",
+    "const spawnChild = process.argv[4] === 'spawn-child' || process.argv[4] === 'spawn-child-unforced';",
     "const exitAfterReady = process.argv[4] === 'exit-after-ready';",
     "if (spawnChild) spawn(process.execPath, ['-e', 'setTimeout(() => process.exit(0), 3000)'], { stdio: 'ignore', windowsHide: true });",
     `const server = http.createServer((request, response) => { if (request.url !== '${readinessPath}') { response.statusCode = 404; response.end(); return; } setTimeout(() => response.end(token, () => { if (exitAfterReady) server.close(() => process.exit(0)); }), delayMs); });`,
@@ -272,7 +282,8 @@ function startOwnedNextServer({ childEnvironment, port, readinessToken, testRunt
   const nextCli = path.join(sourceRoot, "node_modules", "next", "dist", "bin", "next");
   const isTestServer = testServerMode === "exit-after-ready"
     || testServerMode === "listen"
-    || testServerMode === "spawn-child";
+    || testServerMode === "spawn-child"
+    || testServerMode === "spawn-child-unforced";
   const args = isTestServer
     ? ["-e", testServerScript, String(port), readinessToken, String(readinessDelayMs), testServerMode]
     : [nextCli, "dev", childEnvironment.VOSIO_PLAYWRIGHT_PROJECT_ROOT, "--hostname", "127.0.0.1", "--port", String(port)];
@@ -287,7 +298,9 @@ function startOwnedNextServer({ childEnvironment, port, readinessToken, testRunt
   return {
     child,
     forceUnproven: testServerMode === "spawn-child",
-    knownLeaf: testServerMode === "listen"
+    knownLeaf: testServerMode === "listen",
+    simulateTreeKillFailure: testRuntime
+      && process.env.VOSIO_E2E_TEST_TREE_KILL_FAILURE === "1"
   };
 }
 
@@ -301,6 +314,7 @@ async function run() {
   let server = null;
   let serverForceUnproven = false;
   let serverKnownLeaf = false;
+  let serverSimulateTreeKillFailure = false;
   let serverOwnedReadiness = false;
   let serverResultPromise = null;
   let workspace = null;
@@ -372,6 +386,7 @@ async function run() {
     delete childEnvironment.VOSIO_E2E_TEST_SIGNAL_BEFORE_SPAWN;
     delete childEnvironment.VOSIO_E2E_TEST_SIGNAL_DURING_READINESS;
     delete childEnvironment.VOSIO_E2E_TEST_SKIP_COPY;
+    delete childEnvironment.VOSIO_E2E_TEST_TREE_KILL_FAILURE;
 
     if (!testRuntime || !process.env.VOSIO_E2E_TEST_SERVER_MODE) {
       await createOwnedReadinessRoute(workspace, readinessToken);
@@ -385,6 +400,7 @@ async function run() {
     server = serverHandle.child;
     serverForceUnproven = serverHandle.forceUnproven;
     serverKnownLeaf = serverHandle.knownLeaf;
+    serverSimulateTreeKillFailure = serverHandle.simulateTreeKillFailure;
     serverResultPromise = waitForChild(server);
     if (testRuntime && process.env.VOSIO_E2E_TEST_SIGNAL_DURING_READINESS === "1") {
       readinessSignalTimer = setTimeout(() => process.emit("SIGTERM"), 50);
@@ -453,7 +469,8 @@ async function run() {
     }
     const serverStopped = await stopOwnedProcessTree(server, serverResultPromise, {
       forceUnproven: serverForceUnproven,
-      knownLeaf: serverKnownLeaf
+      knownLeaf: serverKnownLeaf,
+      simulateTreeKillFailure: serverSimulateTreeKillFailure
     });
     const portClosed = serverOwnedReadiness ? await waitForPortClosed(getPlaywrightPort()) : true;
     if (workspace && playwrightStopProven && serverStopped && portClosed) {
