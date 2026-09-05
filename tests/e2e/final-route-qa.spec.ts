@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
+import { cleanupOrganizationFixture } from "./support/organization-fixture-cleanup";
 
 type QaSurface = {
   name: string;
@@ -246,6 +247,6 @@ test("recording, search, pagination, AI archive and mail action links keep 44px 
       expect(offenders, `${check.path}: ${JSON.stringify(offenders)}`).toEqual([]);
     }
   } finally {
-    await request.delete(`/login/recording-organization-e2e/fixture?scope=${organizationScope}`);
+    await cleanupOrganizationFixture(request, organizationScope);
   }
 });

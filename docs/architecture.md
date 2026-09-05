@@ -232,6 +232,13 @@ Forward migrace `20260804120000_add_recording_markers.sql` definuje marker s kli
 - `status text`
 - `input_token_count integer`
 - `output_token_count integer`
+- `execution_mode text` (`manual` nebo `automatic`)
+- `attempt_count integer`
+- `max_attempts integer`
+- `lease_token uuid nullable`
+- `lease_expires_at timestamptz nullable`
+- `failure_code text nullable`
+- `retry_after_at timestamptz nullable`
 - `created_at timestamptz`
 
 ### ai_outputs
@@ -294,9 +301,28 @@ transcript completed
 -> job přejde do done nebo failed
 ```
 
-Manuální quick action vytváří UUID už v browseru a při jednom transportním retry ho znovu použije. Authenticated `POST /api/transcripts/{id}/process` nejdřív vrátí existující shodný owner/transcript job, jinak snapshotne účinný prompt, vloží přesné `ai_processing_jobs.id` ve stavu `queued` se `started_at = null`, zaregistruje práci přes Next.js `after()` a vrátí `202` před provider dokončením. Serverový owner pak atomicky claimne pouze `execution_mode = manual` a `queued -> running`; callback bez claimu končí. Před placeným voláním navíc kontroluje existující raw output pro stejné job ID. Provider chyba uloží jen stabilní bezpečnou zprávu a raw output se nadále persistuje před projekcemi a stavem `done`.
+Manuální quick action vytváří UUID už v browseru a při jednom transportním retry ho znovu použije. Authenticated `POST /api/transcripts/{id}/process` nejdřív vrátí existující shodný owner/transcript job, jinak snapshotne účinný prompt, vloží přesné `ai_processing_jobs.id` ve stavu `queued` se `started_at = null`, zaregistruje práci přes Next.js `after()` a vrátí `202` před provider dokončením. Serverový owner pak atomicky claimne pouze nový tvar `execution_mode = manual`, `queued -> running`, `attempt_count = 0`, `max_attempts = 1` a bez lease; callback bez claimu končí. Před placeným voláním navíc kontroluje existující raw output pro stejné job ID. Nový manual tok persistuje pouze machine-readable `failure_code` a případné `retry_after_at`; raw provider message, prompt, transcript ani output obsah se do error metadata, API nebo logu nepřenášejí.
 
-Detail nahrávky nenačítá AI output bodies ani projekční tabulky v serverovém critical path. Sdílený transcript-scoped klient načte owner-scoped metadata až při otevření AI/časové osy nebo exportu. Stavový endpoint vrací nejvýše 50 manuálních job summaries a stránku nejvýše 50 output metadata bez promptu, provider configu, transcript textu a starých bodies. Nejnovější potřebné tělo se načte samostatně; starší těla až po rozbalení. AI-inclusive export projde všechny metadata stránky a poté těla načítá v omezených paralelních dávkách, takže historie nad 50 výstupů není zkrácena. Aktivní joby se ve viditelném dokumentu pollují po 2 sekundách prvních 30 sekund, potom po 5 sekundách, s jedním in-flight requestem, focus catch-up a desetiminutovým limitem watcheru. `stalled` je pouze UI derivace z configured 300sekundového route runtime a tříminutové grace, nikoli DB mutation.
+### Manuální AI joby: durable claim a bezpečná obnova
+
+Každý nový ruční požadavek zůstává v `ai_processing_jobs` jako auditovatelný řádek. Job má `execution_mode = 'manual'`, `attempt_count = 0`, `max_attempts = 1`, přesný prompt/model/provider snapshot a začíná jako `queued`. `POST /api/transcripts/{id}/process` používá request UUID jako idempotency identity: opakování stejného requestu pro stejného vlastníka a transcript vrátí existující stav a nespustí nové plánování ani provider call. Nový uživatelský retry vždy vytvoří nové UUID; starý job se nemaže.
+
+Provider volání je možné zahájit pouze po úspěšném service-role claimu `claim_manual_ai_job_v1`, který pod krátkým row lockem nastaví `running`, `attempt_count = 1` a přesný lease na 480 sekund. Runtime processing route i reconcile route mají `maxDuration = 300` sekund; lease proto obsahuje 180 sekund recovery grace. Lease se neprodlužuje a `running` práce se nikdy automaticky nereclaimuje. Settlement `settle_manual_ai_job_v1` přijímá pouze shodný `job_id`, `transcript_id`, `user_id` a přesný `lease_token`; zero-row nebo špatný token není úspěch.
+
+| Stav a podmínka | Reconcile výsledek | Provider |
+| --- | --- | --- |
+| nový `queued` job přesně odpovídá manual shape | `schedule`, poté vyhraje nejvýše jeden claim | nejvýše jeden call po claimu |
+| legacy/manual shape mimo nový protokol | `operator_required` | nikdy automaticky |
+| `running` s platným lease | `busy` | žádný nový call |
+| stale `running` s owner-consistentním `ai_outputs` | atomicky `done`, lease se vyčistí | žádný |
+| stale `running` bez outputu | atomicky `failed` s `execution_interrupted`, lease se vyčistí | žádný |
+| `done` nebo `failed` | terminální no-op | žádný |
+
+`POST /api/transcripts/{transcriptId}/manual-ai/reconcile` je owner-authenticated endpoint s body `{ jobId, action: "reconcile" | "interrupt" }`. Session a ownership se kontrolují request-scoped klientem; server-side reconcile pak používá service-role-only `SECURITY INVOKER` RPC. `interrupt` ukončí pouze nový `queued` nebo stale `running` job; čerstvý `running` vrátí konflikt a neslibuje zrušení provideru. Endpoint nic nemaže.
+
+Bezpečná chyba je pouze jeden z kódů `insufficient_credit_or_quota`, `rate_limited`, `invalid_model`, `provider_unavailable`, `provider_configuration`, `execution_interrupted`, `persistence_failed` nebo `unknown`. UI kódy převádí na pevné české zprávy a nikdy nezobrazuje raw provider detail. Stale rozhodnutí vychází z persistovaného `lease_expires_at`, nikoli z času mountu. Source kontrakt je v `supabase/migrations/20260904140126_harden_manual_ai_job_recovery.sql`; tento repozitář sám neprokazuje aplikaci na žádný vzdálený target.
+
+Detail nahrávky nenačítá AI output bodies ani projekční tabulky v serverovém critical path. Sdílený transcript-scoped klient načte owner-scoped metadata až při otevření AI/časové osy nebo exportu. Stavový endpoint vrací nejvýše 50 manuálních job summaries a stránku nejvýše 50 output metadata bez promptu, provider configu, transcript textu a starých bodies. Nejnovější potřebné tělo se načte samostatně; starší těla až po rozbalení. AI-inclusive export projde všechny metadata stránky a poté těla načítá v omezených paralelních dávkách, takže historie nad 50 výstupů není zkrácena. Aktivní joby se pollují pouze na aktivní viditelné a online ploše `AI zpracování` nebo `Časová osa`: prvních 30 sekund po 5 sekundách, od 30 do 120 sekund po 10 sekundách a potom po 30 sekundách. Hidden, offline nebo jiná záložka znamená nula polling requestů. Focus, visibility a online změna dělají jeden deduplikovaný catch-up; po transientní chybě je další pokus nejdříve za 30 sekund a vždy je nejvýše jeden request in flight. Polling končí bez aktivních jobů nebo po terminalním reconcile a metadata se obnovují klientským fetch, ne `router.refresh`. `stalled` je pouze UI derivace z configured 300sekundového route runtime a tříminutové grace, nikoli DB mutation.
 
 Workflow `custom_prompt` v této etapě není součástí runtime. Browser neposílá prompt ID ani vlastní prompt text; upravený text se automaticky použije pod původním quick-action tlačítkem.
 
@@ -431,3 +457,9 @@ Stránka `/templates` zobrazuje šest efektivních AI promptů pod jejich systé
 Koš uchovává původní stav nahrávky v `deleted_from_status` a neměnný čas přesunu v `deleted_at`. Při přechodu z aktivního stavu trigger atomicky snapshotne také validní `trash_retention_hours` a `purge_after`; další update již smazaného řádku snapshot nezmění, restore všechna retention i claim metadata vyčistí a nové smazání po restore vytvoří nový snapshot podle aktuální preference. Historické smazané řádky se backfillují na 720 hodin a `purge_after = deleted_at + 30 dní`, aniž by se měnil pravdivý `deleted_at`. Trvalé smazání je jediná cesta, která odstraní řádek i private Storage objekty; server před použitím service-role klienta ověřuje kanonickou cestu konkrétního uživatele a konkrétní nahrávky. Segmentovaná live cesta smí mít pouze tvar `{user_id}/{recording_id}/live/`. Ruční purge je povolený po 24 hodinách bez ohledu na automatický deadline, protože oficiální Supabase TUS upload URL může zůstat platná až 24 hodin.
 
 Source Edge Function `trash-retention` je oddělený service-role worker pro již splatné `purge_after`. Claimuje atomicky nejvýše 20 řádků, zpracovává přesně dva současně a každý claim váže na vlastní lease token s omezeným počtem pokusů. Před Storage mutací znovu ověří lease i kanonický `{user_id}/{recording_id}/` prefix, objekty odstraňuje pouze přes Supabase Storage API a DB řádek finalizeuje jen po potvrzení prázdného prefixu. Chyba před prvním Storage delete pokusem claim bezpečně releaseuje; po zahájení mutace zůstane claim držený, blokuje restore a je reclaimovatelný až po jednotné 15minutové stale hranici. Ztracený claim nikdy nedokončí cizí lease a summary/logy obsahují jen agregované počty a stabilní kódy. Funkce fail-closed vyžaduje vlastní scheduler token a přesnou enable hodnotu `true`. Repo neobsahuje schedule ani rollout; migrace, secrets, deploy i případný harmonogram vyžadují samostatný schválený apply/postflight.
+
+## CI a release boundary
+
+GitHub Actions workflow `check` má jediný automatický trigger `pull_request` s výchozími activity types `opened`, `synchronize` a `reopened`. `actions/checkout@v7` a `actions/setup-node@v7` používají runtime Node 24, zatímco setup aplikace zůstává na Node 22; checkout bez `ref` override testuje PR merge ref. Workflow nemá `push`, post-merge běh ani `workflow_dispatch`, takže přímý push do `main` není tímto workflow automaticky pokrytý. Před `npm run check` běží `npm ci` a produkční audit; job má `contents: read`, PR concurrency a timeout 20 minut.
+
+Manual AI recovery migration `20260904140126_harden_manual_ai_job_recovery.sql` je v tomto checkoutu source-only. Aplikaci na konkrétní databázi, postflight, deploy ani live verification tento veřejný zdroj netvrdí. Legacy nebo nekanonické joby vyžadují samostatný target-specific postup a runtime je automaticky nemaže ani znovu neposílá provideru.

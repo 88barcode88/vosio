@@ -31,6 +31,9 @@ type TranscriptSummary = {
   rawTextChars: number;
 };
 
+// TranscriptSummaryQueryError marks a failed metadata read so recovery cannot treat it as empty.
+class TranscriptSummaryQueryError extends Error {}
+
 // summarizeStorageObjects returns compact metadata for live audio parts without signed URLs.
 export async function summarizeStorageObjects(input: {
   admin: ReturnType<typeof createAdminClient>;
@@ -63,7 +66,7 @@ async function summarizeTranscript(input: {
     .eq("user_id", input.userId);
 
   if (error) {
-    return { count: 0, rawTextChars: 0 } satisfies TranscriptSummary;
+    throw new TranscriptSummaryQueryError("Transcript summary query failed.");
   }
 
   return (data ?? []).reduce<TranscriptSummary>(
@@ -127,6 +130,13 @@ export async function GET() {
       })
     );
   } catch (listingError) {
+    if (listingError instanceof TranscriptSummaryQueryError) {
+      return NextResponse.json(
+        { error: "Nepodařilo se načíst obnovitelnou nahrávku. Zkuste to znovu." },
+        { status: 503 }
+      );
+    }
+
     if (listingError instanceof InvalidSafetyPartListingError) {
       return NextResponse.json({ error: listingError.message }, { status: 409 });
     }

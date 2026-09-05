@@ -2,6 +2,7 @@ import { getGeminiEnv } from "@/lib/env.server";
 import type { AiProviderProcessingResult } from "@/lib/ai/common";
 import type { RecordingChatMessage, RecordingChatProviderResult } from "@/lib/ai/chat-types";
 import { getAiModelOption, supportsModelTemperature } from "@/lib/model-options";
+import { classifyGeminiProviderError, SafeAiProviderError } from "@/lib/ai/provider-errors";
 
 type GeminiResponse = {
   candidates?: Array<{
@@ -12,7 +13,10 @@ type GeminiResponse = {
     };
   }>;
   error?: {
+    code?: number;
+    details?: unknown[];
     message?: string;
+    status?: string;
   };
   responseId?: string;
   usageMetadata?: {
@@ -119,29 +123,37 @@ export function getGeminiOutputTokenCount(usage: GeminiResponse["usageMetadata"]
 export async function runGeminiProcessing(input: RunGeminiProcessingInput): Promise<AiProviderProcessingResult> {
   const env = getGeminiEnv();
   const modelPath = encodeURIComponent(input.model);
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${modelPath}:generateContent?key=${encodeURIComponent(env.geminiApiKey)}`,
-    {
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: input.prompt }],
-            role: "user"
-          }
-        ],
-        generationConfig: createGeminiGenerationConfig(input)
-      }),
-      headers: {
-        "Content-Type": "application/json"
-      },
-      method: "POST"
-    }
-  );
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelPath}:generateContent?key=${encodeURIComponent(env.geminiApiKey)}`,
+      {
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: input.prompt }],
+              role: "user"
+            }
+          ],
+          generationConfig: createGeminiGenerationConfig(input)
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      }
+    );
+  } catch {
+    throw new SafeAiProviderError(classifyGeminiProviderError({ payload: null, status: 0, transportFailure: true }));
+  }
 
   const payload = (await response.json().catch(() => null)) as GeminiResponse | null;
 
   if (!response.ok) {
-    throw new Error(payload?.error?.message ?? "Gemini request failed.");
+    throw new SafeAiProviderError(classifyGeminiProviderError({
+      payload,
+      status: response.status
+    }));
   }
 
   if (!payload) {
@@ -166,18 +178,23 @@ export async function runGeminiProcessing(input: RunGeminiProcessingInput): Prom
 export async function runGeminiChat(input: RunGeminiChatInput): Promise<RecordingChatProviderResult> {
   const env = getGeminiEnv();
   const modelPath = encodeURIComponent(input.model);
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${modelPath}:generateContent?key=${encodeURIComponent(env.geminiApiKey)}`,
-    {
-      body: JSON.stringify(createGeminiChatRequestBody(input)),
-      headers: { "Content-Type": "application/json" },
-      method: "POST"
-    }
-  );
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelPath}:generateContent?key=${encodeURIComponent(env.geminiApiKey)}`,
+      {
+        body: JSON.stringify(createGeminiChatRequestBody(input)),
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+      }
+    );
+  } catch {
+    throw new Error("Gemini chat request failed.");
+  }
   const payload = (await response.json().catch(() => null)) as GeminiResponse | null;
 
   if (!response.ok) {
-    throw new Error(payload?.error?.message ?? "Gemini request failed.");
+    throw new Error("Gemini chat request failed.");
   }
 
   if (!payload) {

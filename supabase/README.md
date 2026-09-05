@@ -17,8 +17,11 @@ A new empty project must apply every migration in timestamp order:
 9. `20260815073029_harden_prompt_override_privileges.sql`
 10. `20260827094435_add_automatic_timeline_idempotency.sql`
 11. `20260827100000_add_trash_retention_deadlines.sql`
+12. `20260828130631_add_transcript_chat.sql`
+13. `20260828131010_add_transcript_chat_schema.sql`
+14. `20260904140126_harden_manual_ai_job_recovery.sql`
 
-The baseline is not the complete current schema by itself. The complete source contract is the baseline plus all ten forward migrations.
+The baseline is not the complete current schema by itself. The complete source contract is the baseline plus all thirteen forward migrations.
 
 Apply the chain with the Supabase CLI:
 
@@ -46,6 +49,7 @@ Use `supabase db push` only for a fresh target or a target whose migration histo
 - status-aware V2 recording list/search RPCs and exact status facets,
 - per-user text overrides for the six system AI prompts with revision-safe save/reset RPCs and exact processing-job snapshots,
 - least-privilege prompt-override grants, a locked-down validator trigger function and a reverse-FK index for system prompt references,
+- persistent transcript chat plus durable manual AI failure metadata, exact-lease claim/settlement and provider-free reconciliation,
 - indexes used by recording detail, transcript processing and search screens.
 
 ## Deployment State
@@ -93,9 +97,9 @@ supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-For a disposable local database, use `supabase start` followed by `supabase db reset`. The CLI records the full eleven-file chain in timestamp order.
+For a disposable local database, use `supabase start` followed by `supabase db reset`. The CLI records the full fourteen-file chain in timestamp order.
 
-Do **not** copy the private Vosio manual procedure above as a normal workflow. Its legacy ledger is deliberately drifted, so `supabase db push` remains blocked there even though its schema is current. An existing target with unknown or non-canonical history must first be inspected; apply reviewed migrations manually one at a time only after target-specific preflight is green. Never delete history rows, run `db reset`, or mark versions as applied merely to silence the CLI.
+An existing target with unknown or non-canonical history must first be inspected; apply reviewed migrations one at a time only after target-specific preflight is green. Never delete history rows, run `db reset`, or mark versions as applied merely to silence the CLI.
 
 ### 2. Mandatory preflight for an existing target
 
@@ -132,6 +136,16 @@ Apply `20260827094435_add_automatic_timeline_idempotency.sql` first and `2026082
 ### 3. Mandatory database postflight
 
 On the same target, verify a valid `ai_outputs(processing_job_id)` unique index, `automatic_timeline_intents` forced RLS with no browser-role grants, all automatic-timeline and purge RPCs executable only by `service_role`, and `recordings_manage_trash_metadata()` revoked from `PUBLIC`, `anon` and `authenticated`. Confirm deleted rows have one of `24`, `168`, `720` retention hours and `purge_after = deleted_at + retention`; restored rows must have retention and claim metadata cleared. Store the target, timestamp and result with deployment evidence.
+
+## Manual AI recovery migration
+
+The source file is `supabase/migrations/20260904140126_harden_manual_ai_job_recovery.sql` with source SHA256 `048829215E3D80AA9AEAAA513FE39E5B1C2BCCD9CB4A42F934C9F2B611E3126D`. It is additive: it adds `failure_code`, `retry_after_at` and the service-role-only `claim_manual_ai_job_v1`, `settle_manual_ai_job_v1` and `reconcile_manual_ai_job_v1` RPCs. It does not rewrite or delete existing jobs. The presence of this source file is not evidence that any hosted target applied it.
+
+Before applying it to an existing target, use a read-only administrative connection to verify the current `ai_processing_jobs` columns and constraints, the unique `ai_outputs(processing_job_id)` index, absence of duplicate output lineage, forced RLS/owner policy, existing grants and the exact migration ledger. Any conflict, duplicate output, unexpected browser-role grant or ambiguous legacy row blocks the apply.
+
+Apply only the reviewed SQL file in one explicit transaction. Afterward, verify the new columns/checks and all three function signatures, `SECURITY INVOKER`, empty `search_path`, fully qualified object references, forced RLS preservation and `EXECUTE` revoked from `PUBLIC`, `anon` and `authenticated` and granted only to `service_role`. Do not change migration history merely to make a CLI command succeed.
+
+Legacy or non-canonical manual jobs are outside the migration. The runtime returns `operator_required` instead of deleting them or repeating a provider call. Any row-level resolution requires separate target-specific inventory, approval and rollback-safe handling. Database apply/postflight, application deployment and live verification remain separate states.
 
 ## Trash retention Edge Function deployment
 

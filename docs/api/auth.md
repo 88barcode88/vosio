@@ -44,6 +44,12 @@ Settings redirects to login only when the session is missing. An authenticated a
 - Password-change errors use fixed Czech copy and never expose provider details or submitted passwords.
 - The current password is reauthenticated before a new password can be written.
 
+## Same-origin callback redirect
+
+`app/auth/callback/route.ts` accepts the optional `next` query parameter only as an internal path. The value must begin with exactly one `/`, must not contain a backslash or C0/DEL control character, and must not contain an encoded separator or control character that becomes unsafe after decoding. Absolute URLs, protocol-relative paths, malformed percent escapes, ambiguous double-encoded separators and values such as `/\\evil.example` fall back to `/`.
+
+The callback resolves the accepted path against the trusted `requestUrl.origin` and performs a defense-in-depth check that `target.origin === requestUrl.origin` before redirecting. Ordinary paths, query strings and fragments remain supported, for example `/recordings/123?tab=ai`. A malformed or ambiguous value can therefore never turn `new URL()` into an external redirect.
+
 ## 2FA
 
 Two-factor authentication is planned as a later auth hardening step. It should be added through Supabase Auth MFA/TOTP on top of this session model, not as a custom password layer.

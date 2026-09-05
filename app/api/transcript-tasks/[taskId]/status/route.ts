@@ -42,17 +42,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Nejste prihlaseny." }, { status: 401 });
   }
 
-  const { error } = await supabase
+  const { data: updatedTask, error } = await supabase
     .from("transcript_tasks")
     .update({ status: body.data.status })
     .eq("id", params.data.taskId)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("id,status")
+    .maybeSingle<{ id: string; status: string }>();
 
   if (error) {
     return NextResponse.json({ error: "Stav ukolu se nepodarilo ulozit." }, { status: 500 });
   }
 
+  if (!updatedTask) {
+    return NextResponse.json({ error: "Úkol nebyl nalezen." }, { status: 404 });
+  }
+
   revalidatePath("/recordings");
 
-  return NextResponse.json({ ok: true, status: body.data.status });
+  return NextResponse.json({ ok: true, status: updatedTask.status });
 }

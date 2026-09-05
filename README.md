@@ -72,7 +72,7 @@ supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-The ordered migration chain creates the application schema, RLS policies, private `recordings` Storage bucket settings, indexes, system prompt templates, automatic-timeline idempotency, Trash-retention deadlines, and persistent recording chat. The chat source migrations must stay in this exact order: `20260828130631_add_transcript_chat.sql`, then `20260828131010_add_transcript_chat_schema.sql`. A tracked source migration is not proof that it was applied to any target, that an application was deployed, or that the feature is live. For a fresh project, `supabase db push` applies the complete chain. Existing projects require target-specific preflight, reviewed manual apply when their ledger is not canonical, and postflight; do not copy the private Vosio ledger workaround as a generic installation method.
+The ordered migration chain creates the application schema, RLS policies, private `recordings` Storage bucket settings, indexes, system prompt templates, automatic-timeline idempotency, Trash-retention deadlines, persistent recording chat and durable manual AI recovery metadata/RPC. The chat source migrations must stay in this exact order: `20260828130631_add_transcript_chat.sql`, then `20260828131010_add_transcript_chat_schema.sql`; the current final source migration is `20260904140126_harden_manual_ai_job_recovery.sql`. A tracked source migration is not proof that it was applied to any target, that an application was deployed, or that the feature is live. For a fresh project, `supabase db push` applies the complete chain. Existing projects require target-specific preflight, reviewed application of only missing migrations and postflight.
 
 The optional `trash-retention` Edge Function is a Supabase worker in that same project, not a Vercel worker. Its disabled-first secret, deploy, verification, Vault/Cron scheduling, emergency-stop and exhausted-claim recovery procedure is in [`supabase/README.md`](supabase/README.md#trash-retention-edge-function-deployment). It must not be enabled or scheduled until a separate backlog-deletion approval.
 
@@ -82,6 +82,10 @@ The app expects:
 - RLS enabled on user-owned tables
 - Supabase Auth email/password users
 - server-only service role usage for transcription, AI processing, signed Storage access, and recovery operations
+
+Manual AI requests remain visible after navigation because their exact request identity and lifecycle are stored durably. Provider failures use fixed safe messages, including missing credit or quota, and the recording detail polls only while the relevant AI or Timeline surface is active, visible and online. The cadence backs off from 5 to 10 to 30 seconds and updates local state without a full-page refresh.
+
+GitHub Actions runs `check` automatically only for Pull Requests. A push that updates an open PR therefore produces one PR synchronization run instead of separate `push` and `pull_request` runs.
 
 For multiple deployments, connect each Vercel project to its own Supabase project. The code stays identical; only Vercel environment variables and Supabase project refs differ.
 
@@ -163,6 +167,7 @@ Vosio is provided for free use under the repository license. The `Kup mi kafe` l
 - `docs/gotchas.md` lists important operational edge cases.
 - `docs/api/supabase-schema.md` documents the intended Supabase schema.
 - `docs/api/recording-chat.md` documents the persisted recording-chat API and operational boundary.
+- `docs/decisions/0005-manual-ai-job-recovery.md` records the durable manual AI recovery contract.
 
 ## License
 

@@ -184,6 +184,10 @@ Má obsahovat:
 
 AI výstupy mají být uložené a znovu otevřitelné. Nemají být jen dočasná odpověď v panelu.
 
+Ruční AI zpracování musí být odolné vůči navigaci a nejistému transportu. Po odeslání se nejprve zobrazí durable stav `queued` nebo `running`; stejný request UUID při transportním retry nesmí založit nový provider call. Explicitní uživatelský retry po terminálním selhání vždy vytvoří nové UUID a původní job zůstane v historii. UI nabízí bezpečné `Obnovit` nebo `Přerušit`: stale `running` s uloženým výstupem se uzavře jako hotový, stale `running` bez výstupu jako přerušený a čerstvý `running` se nesmí vydávat za zrušený. Provider chyby se zobrazují pouze přes pevné české kódy/zprávy, bez raw diagnostiky, transcriptu nebo outputu.
+
+Stavové metadata se načítají jen na aktivní viditelné online ploše `AI zpracování` nebo `Časová osa`. Tempo je 5 sekund prvních 30 sekund, 10 sekund mezi 30 a 120 sekundami a poté 30 sekund; při hidden, offline nebo přepnutí na jiný tab je polling zastaven. Focus, návrat viditelnosti a online změna dělají jeden deduplikovaný catch-up, při chybě nejdříve po 30 sekundách. Běží nejvýše jeden request a po změně se aktualizuje lokální state, ne celý App Router přes `router.refresh`.
+
 ## Chat nad přepisem
 
 `Chat` je pátý pracovní tab detailu nahrávky. Ukládá jedno vlákno pro aktuální přepis a po otevření načítá jen jeho historii. Výběr modelu ovlivní následující otázku; každý uložený tah ukazuje model, který odpověď skutečně vytvořil. Ověřená evidence z odpovědi vede přes současnou navigaci na přepis a dostupné audio. Browser do chat API neposílá audio, storage data ani vlastní transcript context.

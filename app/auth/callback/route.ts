@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSafeNextPath } from "@/lib/auth/redirects";
 import { createClient } from "@/lib/supabase/server";
 
-// GET exchanges Supabase auth callback codes for a cookie-backed session.
+// GET exchanges Supabase auth codes and redirects only within the request origin.
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
@@ -13,5 +13,17 @@ export async function GET(request: NextRequest) {
     await supabase.auth.exchangeCodeForSession(code);
   }
 
-  return NextResponse.redirect(new URL(nextPath, request.url));
+  const fallbackTarget = new URL("/", requestUrl.origin);
+  let target = fallbackTarget;
+
+  try {
+    const candidate = new URL(nextPath, requestUrl.origin);
+    if (candidate.origin === requestUrl.origin) {
+      target = candidate;
+    }
+  } catch {
+    target = fallbackTarget;
+  }
+
+  return NextResponse.redirect(target);
 }

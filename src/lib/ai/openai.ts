@@ -2,6 +2,7 @@ import { getOpenAIEnv } from "@/lib/env.server";
 import type { AiProviderProcessingResult } from "@/lib/ai/common";
 import type { RecordingChatMessage, RecordingChatProviderResult } from "@/lib/ai/chat-types";
 import { getAiModelOption, supportsModelTemperature } from "@/lib/model-options";
+import { classifyOpenAIProviderError, SafeAiProviderError } from "@/lib/ai/provider-errors";
 
 type OpenAIResponse = {
   id: string;
@@ -105,14 +106,19 @@ export function createOpenAIChatRequestBody(input: RunOpenAIChatInput) {
 // runOpenAIProcessing sends a transcript processing prompt to OpenAI server-side only.
 export async function runOpenAIProcessing(input: RunOpenAIProcessingInput): Promise<AiProviderProcessingResult> {
   const env = getOpenAIEnv();
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    body: JSON.stringify(createOpenAIRequestBody(input)),
-    headers: {
-      Authorization: `Bearer ${env.openaiApiKey}`,
-      "Content-Type": "application/json"
-    },
-    method: "POST"
-  });
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      body: JSON.stringify(createOpenAIRequestBody(input)),
+      headers: {
+        Authorization: `Bearer ${env.openaiApiKey}`,
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+  } catch {
+    throw new SafeAiProviderError(classifyOpenAIProviderError({ payload: null, status: 0, transportFailure: true }));
+  }
 
   const payload = (await response.json().catch(() => null)) as
     | OpenAIResponse
@@ -120,13 +126,11 @@ export async function runOpenAIProcessing(input: RunOpenAIProcessingInput): Prom
     | null;
 
   if (!response.ok) {
-    const message =
-      payload &&
-      "error" in payload &&
-      typeof payload.error?.message === "string"
-        ? payload.error.message
-        : "OpenAI request failed.";
-    throw new Error(message);
+    throw new SafeAiProviderError(classifyOpenAIProviderError({
+      payload,
+      retryAfter: response.headers.get("Retry-After"),
+      status: response.status
+    }));
   }
 
   const openaiResponse = payload as OpenAIResponse;
@@ -147,24 +151,26 @@ export async function runOpenAIProcessing(input: RunOpenAIProcessingInput): Prom
 // runOpenAIChat sends one bounded recording conversation through the server-only Responses API.
 export async function runOpenAIChat(input: RunOpenAIChatInput): Promise<RecordingChatProviderResult> {
   const env = getOpenAIEnv();
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    body: JSON.stringify(createOpenAIChatRequestBody(input)),
-    headers: {
-      Authorization: `Bearer ${env.openaiApiKey}`,
-      "Content-Type": "application/json"
-    },
-    method: "POST"
-  });
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      body: JSON.stringify(createOpenAIChatRequestBody(input)),
+      headers: {
+        Authorization: `Bearer ${env.openaiApiKey}`,
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+  } catch {
+    throw new Error("OpenAI chat request failed.");
+  }
   const payload = (await response.json().catch(() => null)) as
     | OpenAIResponse
     | { error?: { message?: string } }
     | null;
 
   if (!response.ok) {
-    const message = payload && "error" in payload && typeof payload.error?.message === "string"
-      ? payload.error.message
-      : "OpenAI request failed.";
-    throw new Error(message);
+    throw new Error("OpenAI chat request failed.");
   }
 
   const openaiResponse = payload as OpenAIResponse;

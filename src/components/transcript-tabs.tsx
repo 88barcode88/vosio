@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { AudioLines } from "lucide-react";
 import { AiProcessingContent } from "@/components/transcript-tabs/ai-processing-content";
@@ -90,6 +90,8 @@ export function TranscriptTabs({
   const playerRef = useRef<RecordingAudioPlayerHandle | null>(null);
   const lazyAiState = useOptionalTranscriptAiState();
   const loadAiForPurpose = lazyAiState?.loadForPurpose;
+  const setActiveAiPurpose = lazyAiState?.setActivePurpose;
+  const aiStateRevision = lazyAiState?.stateRevision;
   const displayedAiOutputs = lazyAiState?.loadedOutputs ?? activeAiOutputs;
   const displayedStructuredItems = lazyAiState?.structuredItems ?? activeStructuredItems;
   const tabStorageKey = getTranscriptTabStorageKey(activeRecording);
@@ -97,12 +99,35 @@ export function TranscriptTabs({
     () => deriveRuntimeEvidenceLocations(displayedStructuredItems, activeTranscript?.segments),
     [displayedStructuredItems, activeTranscript?.segments]
   );
+  const reloadTimelineAiState = useCallback(
+    () => loadAiForPurpose?.("timeline") ?? Promise.resolve(),
+    [loadAiForPurpose]
+  );
 
   useEffect(() => {
-    if (activeTab === "ai" || activeTab === "timeline") {
+    setActiveAiPurpose?.(activeTab === "ai" || activeTab === "timeline" ? activeTab : null);
+    let disposed = false;
+    let requested = false;
+
+    // loadActiveOnce rehydrates an invalidated surface once eligible; polling stays provider-owned.
+    const loadActiveOnce = () => {
+      if (disposed || requested || document.visibilityState === "hidden" || !navigator.onLine) return;
+      if (activeTab !== "ai" && activeTab !== "timeline") return;
+      requested = true;
       void loadAiForPurpose?.(activeTab);
-    }
-  }, [activeTab, loadAiForPurpose]);
+    };
+
+    // Defer until layout invalidation and StrictMode cleanup have settled before starting a request.
+    queueMicrotask(loadActiveOnce);
+    window.addEventListener("online", loadActiveOnce);
+    document.addEventListener("visibilitychange", loadActiveOnce);
+    return () => {
+      disposed = true;
+      window.removeEventListener("online", loadActiveOnce);
+      document.removeEventListener("visibilitychange", loadActiveOnce);
+      setActiveAiPurpose?.(null);
+    };
+  }, [activeTab, aiStateRevision, loadAiForPurpose, setActiveAiPurpose]);
 
   useEffect(() => {
     const activeIdentity = `${activeRecording?.id ?? "none"}:${activeTranscript?.id ?? "none"}`;
@@ -477,7 +502,6 @@ export function TranscriptTabs({
 
   return (
     <>
-      <AutomaticTimelineReconciler transcriptId={activeTranscript?.id ?? null} />
       <div className="recording-detail-sticky">
         <RecordingAudioPlayer activeRecording={activeRecording} ref={playerRef} />
         <div className="tabs-row">
@@ -542,17 +566,23 @@ export function TranscriptTabs({
           />
         ) : null}
         {activeTab === "timeline" ? (
-          <TimelineContent
-            activeTranscript={activeTranscript}
-            aiOutputs={displayedAiOutputs}
-            defaultAiModel={userSettings.defaultOpenaiModel}
-            onJobAccepted={lazyAiState?.acceptJob}
-            onReload={() => lazyAiState?.loadForPurpose("timeline") ?? Promise.resolve()}
-            markers={activeRecordingMarkers}
-            onOpenMarker={openRecordingMarker}
-            structuredItems={runtimeStructuredItems}
-            stateError={lazyAiState?.error ?? null}
-          />
+          <>
+            <AutomaticTimelineReconciler
+              onReconciled={reloadTimelineAiState}
+              transcriptId={activeTranscript?.id ?? null}
+            />
+            <TimelineContent
+              activeTranscript={activeTranscript}
+              aiOutputs={displayedAiOutputs}
+              defaultAiModel={userSettings.defaultOpenaiModel}
+              onJobAccepted={lazyAiState?.acceptJob}
+              onReload={reloadTimelineAiState}
+              markers={activeRecordingMarkers}
+              onOpenMarker={openRecordingMarker}
+              structuredItems={runtimeStructuredItems}
+              stateError={lazyAiState?.error ?? null}
+            />
+          </>
         ) : null}
         {activeTab === "files" ? <FilesContent activeRecording={activeRecording} /> : null}
         {activeTab === "chat" ? (

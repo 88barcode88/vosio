@@ -1,7 +1,6 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { runManualAiJob } from "@/lib/ai/manual-processing.server";
-import { getSafeProviderErrorDetail } from "@/lib/ai/processing-service.server";
 import { getAiProviderConfigurationError } from "@/lib/env.server";
 import { aiModelIds, DEFAULT_AI_MODEL_ID, getAiModelOption, type AiProviderId } from "@/lib/model-options";
 import {
@@ -14,6 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const routeParamsSchema = z.object({ transcriptId: z.uuid() });
+// Next requires a statically analyzable literal; the runtime contract test locks it to the shared budget.
 export const maxDuration = 300;
 const aiProcessingRateLimit = createRateLimiter({ limit: 10, windowMs: 60_000 });
 const requestBodySchema = z.object({
@@ -30,16 +30,18 @@ type ExistingJob = {
   id: string;
   model: string;
   processing_type: string;
+  prompt_output_schema_snapshot: unknown;
+  provider: AiProviderId;
+  provider_config: unknown;
   status: "queued" | "running" | "done" | "failed";
   transcript_id: string;
   user_id: string;
 };
 
 // routeErrorResponse returns safe AI processing errors without logging transcript content.
-function routeErrorResponse(error: unknown, fallbackMessage: string, status = 500) {
-  const detail = getSafeProviderErrorDetail(error);
-  if (error instanceof Error) console.error("[Vosio AI processing]", error.message);
-  return NextResponse.json({ detail, error: fallbackMessage }, { status });
+function routeErrorResponse(_error: unknown, fallbackMessage: string, status = 500) {
+  console.error("[Vosio AI processing] request_failed");
+  return NextResponse.json({ error: fallbackMessage }, { status });
 }
 
 // getAiProviderForModel resolves an allowed app model to its provider adapter.
@@ -77,7 +79,8 @@ async function resolveEffectivePrompt(processingType: QuickPromptProcessingType)
 async function findExistingJob(jobId: string) {
   const admin = createAdminClient();
   const { data } = await admin.from("ai_processing_jobs")
-    .select("id,status,transcript_id,user_id,execution_mode,processing_type,model").eq("id", jobId).maybeSingle<ExistingJob>();
+    .select("id,status,transcript_id,user_id,execution_mode,processing_type,model,prompt_output_schema_snapshot,provider,provider_config")
+    .eq("id", jobId).maybeSingle<ExistingJob>();
   return data;
 }
 
@@ -86,16 +89,57 @@ function acceptedJobResponse(job: Pick<ExistingJob, "id" | "status">) {
   return NextResponse.json({ job: { id: job.id, status: job.status } }, { status: 202 });
 }
 
+// canonicalizeJson sorts object keys recursively so JSONB identity is independent of key order.
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, child]) => [key, canonicalizeJson(child)]));
+}
+
+// hasSameJsonValue compares only normalized JSON values and never includes their contents in an error.
+function hasSameJsonValue(left: unknown, right: unknown) {
+  return JSON.stringify(canonicalizeJson(left)) === JSON.stringify(canonicalizeJson(right));
+}
+
+// createProviderConfigSnapshot normalizes every durable provider input supported by this route.
+function createProviderConfigSnapshot(input: {
+  metadata: Record<string, unknown>;
+  model: string;
+  outputSchema: unknown;
+  temperature: number;
+}) {
+  const modelOption = getAiModelOption(input.model);
+  const provider = getAiProviderForModel(input.model);
+  return {
+    metadata: input.metadata,
+    provider,
+    response_format: input.outputSchema ? "json_schema" : "text",
+    temperature: input.temperature,
+    ...(modelOption?.reasoningEffort ? { reasoning_effort: modelOption.reasoningEffort } : {}),
+    ...(modelOption?.geminiThinkingLevel ? { thinking_level: modelOption.geminiThinkingLevel } : {})
+  };
+}
+
 // isSameAcceptedRequest rejects UUID reuse for a different manual request identity.
 function isSameAcceptedRequest(
   job: ExistingJob,
-  input: { model: string; processingType: string; transcriptId: string; userId: string }
+  input: {
+    model: string;
+    processingType: string;
+    providerConfig: Record<string, unknown>;
+    transcriptId: string;
+    userId: string;
+  }
 ) {
   return job.execution_mode === "manual"
     && job.user_id === input.userId
     && job.transcript_id === input.transcriptId
     && job.model === input.model
-    && job.processing_type === input.processingType;
+    && job.processing_type === input.processingType
+    && job.provider === input.providerConfig.provider
+    && hasSameJsonValue(job.provider_config, input.providerConfig);
 }
 
 // POST durably accepts one idempotent manual AI job and releases provider work to Next after().
@@ -114,9 +158,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const requestedModel = body.data.model ?? DEFAULT_AI_MODEL_ID;
     const existingJob = await findExistingJob(body.data.requestId);
     if (existingJob) {
+      const providerConfig = createProviderConfigSnapshot({
+        metadata: body.data.metadata ?? {},
+        model: requestedModel,
+        outputSchema: existingJob.prompt_output_schema_snapshot,
+        temperature: body.data.temperature ?? 0.2
+      });
       return isSameAcceptedRequest(existingJob, {
         model: requestedModel,
         processingType: body.data.processingType,
+        providerConfig,
         transcriptId: transcript.id,
         userId: user.id
       })
@@ -132,7 +183,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const requestedModelOption = getAiModelOption(requestedModel);
     const requestedProvider = getAiProviderForModel(requestedModel);
     const providerConfigurationError = getAiProviderConfigurationError(requestedProvider);
     if (providerConfigurationError) {
@@ -140,16 +190,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const promptTemplate = await resolveEffectivePrompt(body.data.processingType);
-    const providerConfig = {
-      provider: requestedProvider,
-      response_format: promptTemplate.output_schema ? "json_schema" : "text",
-      ...(requestedModelOption?.reasoningEffort ? { reasoning_effort: requestedModelOption.reasoningEffort } : {}),
-      ...(requestedModelOption?.geminiThinkingLevel ? { thinking_level: requestedModelOption.geminiThinkingLevel } : {})
-    };
+    const providerConfig = createProviderConfigSnapshot({
+      metadata: body.data.metadata ?? {},
+      model: requestedModel,
+      outputSchema: promptTemplate.output_schema,
+      temperature: body.data.temperature ?? 0.2,
+    });
     const admin = createAdminClient();
     const { data: job, error: jobError } = await admin.from("ai_processing_jobs").insert({
+      attempt_count: 0,
       execution_mode: "manual",
+      failure_code: null,
       id: body.data.requestId,
+      lease_expires_at: null,
+      lease_token: null,
+      max_attempts: 1,
       model: requestedModel,
       processing_type: body.data.processingType,
       prompt_id: promptTemplate.system_prompt_id,
@@ -162,6 +217,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       prompt_snapshot_exact: true,
       provider: requestedProvider,
       provider_config: providerConfig,
+      retry_after_at: null,
       started_at: null,
       status: "queued",
       transcript_id: transcript.id,
@@ -170,13 +226,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (jobError || !job) {
       const racedJob = await findExistingJob(body.data.requestId);
-      if (racedJob && isSameAcceptedRequest(racedJob, {
-        model: requestedModel,
-        processingType: body.data.processingType,
-        transcriptId: transcript.id,
-        userId: user.id
-      })) {
-        return acceptedJobResponse(racedJob);
+      if (racedJob) {
+        const racedProviderConfig = createProviderConfigSnapshot({
+          metadata: body.data.metadata ?? {},
+          model: requestedModel,
+          outputSchema: racedJob.prompt_output_schema_snapshot,
+          temperature: body.data.temperature ?? 0.2
+        });
+        if (isSameAcceptedRequest(racedJob, {
+          model: requestedModel,
+          processingType: body.data.processingType,
+          providerConfig: racedProviderConfig,
+          transcriptId: transcript.id,
+          userId: user.id
+        })) {
+          return acceptedJobResponse(racedJob);
+        }
+        return NextResponse.json({ error: "Požadavek nelze přijmout." }, { status: 409 });
       }
       console.error("[Vosio AI processing] job_insert_failed");
       return NextResponse.json({ error: "Nepodařilo se založit AI zpracování." }, { status: 500 });
@@ -185,17 +251,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
     try {
       after(() => runManualAiJob({
         jobId: job.id,
-        metadata: body.data.metadata,
-        temperature: body.data.temperature ?? 0.2,
         transcriptId: transcript.id,
         userId: user.id
       }));
     } catch {
-      await admin.from("ai_processing_jobs").update({
+      const { data: terminalizedJob, error: terminalizeError } = await admin.from("ai_processing_jobs").update({
         completed_at: new Date().toISOString(),
-        error_message: "AI zpracování se nepodařilo naplánovat.",
+        error_message: null,
+        failure_code: "execution_interrupted",
         status: "failed"
-      }).eq("id", job.id).eq("user_id", user.id).eq("transcript_id", transcript.id).eq("status", "queued");
+      }).eq("id", job.id).eq("user_id", user.id).eq("transcript_id", transcript.id).eq("status", "queued")
+        .select("id").maybeSingle<{ id: string }>();
+      if (terminalizeError || !terminalizedJob) {
+        console.error("[Vosio AI processing] schedule_terminalization_failed");
+        return NextResponse.json(
+          { error: "AI zpracování se nepodařilo naplánovat ani bezpečně ukončit." },
+          { status: 503 }
+        );
+      }
       return NextResponse.json({ error: "AI zpracování se nepodařilo naplánovat." }, { status: 500 });
     }
 

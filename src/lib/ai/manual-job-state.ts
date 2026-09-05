@@ -1,20 +1,26 @@
 import type { AiOutputView } from "@/lib/ai/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import { dedupeStructuredAiItems } from "@/lib/ai/structured-dedupe";
+import { MANUAL_AI_LEASE_GRACE_SECONDS, MANUAL_AI_MAX_DURATION_SECONDS } from "@/lib/ai/manual-route-runtime";
+import type { AiFailureCode } from "@/lib/ai/provider-errors";
 
-export const MANUAL_AI_RUNTIME_MS = 5 * 60_000;
-export const MANUAL_AI_STALL_GRACE_MS = 3 * 60_000;
-export const MANUAL_AI_WATCHER_MAX_MS = 10 * 60_000;
+export const MANUAL_AI_RUNTIME_MS = MANUAL_AI_MAX_DURATION_SECONDS * 1_000;
+export const MANUAL_AI_STALL_GRACE_MS = MANUAL_AI_LEASE_GRACE_SECONDS * 1_000;
 
 export type ManualAiJobStatus = "queued" | "running" | "done" | "failed";
 export type ManualAiJobDisplayStatus = ManualAiJobStatus | "stalled";
 
 export type ManualAiJobSummary = {
+  attempt_count: number;
   completed_at: string | null;
   created_at: string;
-  error_message: string | null;
+  failure_code: AiFailureCode | null;
   id: string;
+  lease_expires_at: string | null;
+  max_attempts: number;
+  model: string;
   processing_type: string;
+  retry_after_at: string | null;
   started_at: string | null;
   status: ManualAiJobStatus;
 };

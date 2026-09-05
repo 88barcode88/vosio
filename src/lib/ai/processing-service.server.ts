@@ -12,6 +12,7 @@ import { getAiProviderConfigurationError } from "@/lib/env.server";
 import type { AiProviderId } from "@/lib/model-options";
 import { buildAiTranscriptPromptContext } from "@/lib/transcripts/ai-context";
 import { getTranscriptSpeakerContext } from "@/lib/transcripts/speakers";
+import { SafeAiProviderError } from "@/lib/ai/provider-errors";
 
 export type PersistedAiProcessingJob = {
   id: string;
@@ -95,7 +96,7 @@ async function runConfiguredProvider(input: Parameters<RunProvider>[0]) {
   const configurationError = getAiProviderConfigurationError(input.provider);
 
   if (configurationError) {
-    throw new Error(configurationError);
+    throw new SafeAiProviderError({ failureCode: "provider_configuration", retryAfterAt: null });
   }
 
   const reasoningEffort = input.providerConfig.reasoning_effort;

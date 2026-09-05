@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildRecordingChatContext } from "@/lib/ai/chat-context";
 import {
   createGeminiChatRequestBody,
   createGeminiGenerationConfig,
-  getGeminiOutputTokenCount
+  getGeminiOutputTokenCount,
+  runGeminiChat,
+  runGeminiProcessing
 } from "@/lib/ai/gemini";
+
+vi.mock("@/lib/env.server", () => ({ getGeminiEnv: () => ({ geminiApiKey: "test-key" }) }));
+afterEach(() => vi.unstubAllGlobals());
 
 const chatSystemPrompt = "Authoritative rules <transcript>{{raw_text}}</transcript>";
 
@@ -122,5 +127,29 @@ describe("Gemini client generation config", () => {
       temperature: 0.2,
       thinkingLevel: null
     })).not.toHaveProperty("thinkingConfig");
+  });
+
+  it("classifies processing errors without free text and keeps Chat generic", async () => {
+    const sentinel = "SECRET-SENTINEL-gemini";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: 429, message: sentinel, status: "RESOURCE_EXHAUSTED" }
+    }), { status: 429 })));
+    await expect(runGeminiProcessing({ model: "gemini-3.6-flash", outputSchema: null, prompt: "safe", temperature: 0.2 }))
+      .rejects.toMatchObject({ failureCode: "rate_limited" });
+    await expect(runGeminiProcessing({ model: "gemini-3.6-flash", outputSchema: null, prompt: "safe", temperature: 0.2 }))
+      .rejects.not.toThrow(sentinel);
+    await expect(runGeminiChat({ messages: [], model: "gemini-3.6-flash", outputSchema: null, systemInstruction: "safe" }))
+      .rejects.toThrow("Gemini chat request failed.");
+  });
+
+  it("wraps transport failures without exposing their text", async () => {
+    const sentinel = "SECRET-SENTINEL-gemini-transport";
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError(sentinel)));
+    await expect(runGeminiProcessing({ model: "gemini-3.6-flash", outputSchema: null, prompt: "safe", temperature: 0.2 }))
+      .rejects.toMatchObject({ failureCode: "provider_unavailable" });
+    await expect(runGeminiProcessing({ model: "gemini-3.6-flash", outputSchema: null, prompt: "safe", temperature: 0.2 }))
+      .rejects.not.toThrow(sentinel);
+    await expect(runGeminiChat({ messages: [], model: "gemini-3.6-flash", outputSchema: null, systemInstruction: "safe" }))
+      .rejects.toThrow("Gemini chat request failed.");
   });
 });

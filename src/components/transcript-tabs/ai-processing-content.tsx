@@ -35,6 +35,8 @@ import type {
   TranscriptEvidenceReference,
   TranscriptTarget
 } from "@/components/transcript-tabs/types";
+import { type AiProcessingType, useAiProcessingRun } from "@/components/transcript-tabs/use-ai-processing-run";
+import { getManualAiFailureMessage } from "@/lib/ai/provider-errors";
 
 // AiProcessingContent renders AI actions and saved outputs in the recording detail context.
 export function AiProcessingContent({
@@ -66,6 +68,7 @@ export function AiProcessingContent({
   stateError?: string | null;
   userSettings: UserSettings;
 }) {
+  const retryProcessing = useAiProcessingRun(activeTranscript?.id ?? null, onJobAccepted);
   const hasStructuredItems = hasAnyStructuredItems(structuredItems);
   const artifacts = outputMetadata ?? aiOutputs.map((output) => ({
     body_loaded: true,
@@ -97,7 +100,15 @@ export function AiProcessingContent({
           transcriptId={activeTranscript?.id ?? null}
         />
       </section>
-      {jobs && jobs.length > 0 ? <ManualAiJobList jobs={jobs} /> : null}
+      {jobs && jobs.length > 0 ? (
+        <ManualAiJobList
+          jobs={jobs}
+          onReconcile={onReload}
+          onRetry={(job) => retryProcessing.run({ model: job.model, processingType: job.processing_type as AiProcessingType })}
+          transcriptId={activeTranscript?.id ?? null}
+        />
+      ) : null}
+      {retryProcessing.message ? <p className="ai-state" role="status">{retryProcessing.message}</p> : null}
       {stateError ? (
         <p className="ai-state" role="alert">
           {stateError} <button onClick={() => void onReload?.()} type="button">Zkusit znovu</button>
@@ -140,18 +151,126 @@ const manualJobLabels = {
 } as const;
 
 // ManualAiJobList keeps accepted, failed, and stalled generations visible after returning to detail.
-function ManualAiJobList({ jobs }: { jobs: ManualAiJobSummary[] }) {
+function ManualAiJobList({
+  jobs,
+  onReconcile,
+  onRetry,
+  transcriptId
+}: {
+  jobs: ManualAiJobSummary[];
+  onReconcile?: () => Promise<void>;
+  onRetry: (job: ManualAiJobSummary) => Promise<boolean>;
+  transcriptId: string | null;
+}) {
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [clockMs, setClockMs] = useState<number | null>(null);
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let timer: number | null = null;
+
+    // updateRetryClock unlocks elapsed deadlines and schedules only the next remaining one.
+    const updateRetryClock = () => {
+      const now = Date.now();
+      setClockMs(now);
+      const nextRetryAt = jobs
+        .filter((job) => job.status === "failed" && job.failure_code === "rate_limited" && job.retry_after_at)
+        .map((job) => Date.parse(job.retry_after_at!))
+        .filter((retryAt) => Number.isFinite(retryAt) && retryAt > now)
+        .sort((left, right) => left - right)[0];
+      if (nextRetryAt) {
+        timer = window.setTimeout(updateRetryClock, Math.min(nextRetryAt - now + 50, 2_147_483_647));
+      }
+    };
+    updateRetryClock();
+    return () => { if (timer !== null) window.clearTimeout(timer); };
+  }, [jobs]);
+
+  // reconcileJob requests one safe recovery action, then refreshes only the shared local AI metadata.
+  async function reconcileJob(jobId: string, action: "interrupt" | "reconcile") {
+    if (!transcriptId || pendingJobId) return;
+    setPendingJobId(jobId);
+    setRecoveryMessage(null);
+    try {
+      const response = await fetch(`/api/transcripts/${transcriptId}/manual-ai/reconcile`, {
+        body: JSON.stringify({ action, jobId }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+      });
+      const payload = await response.json().catch(() => null) as { status?: string } | null;
+      const messages: Record<string, string> = {
+        busy: "Zpracování ještě běží.",
+        done: "Uložený AI výstup byl obnoven.",
+        interrupted: "Přerušené zpracování bylo bezpečně ukončeno.",
+        missing: "AI požadavek už není dostupný.",
+        operator_required: "Tento starší AI požadavek vyžaduje ruční kontrolu.",
+        schedule: "AI zpracování bylo znovu zařazeno.",
+        terminal: "AI požadavek už je ukončený."
+      };
+      setRecoveryMessage(response.status === 409
+        ? "AI požadavek se mezitím změnil. Obnovte jeho stav."
+        : response.ok && payload?.status && messages[payload.status]
+          ? messages[payload.status]
+          : "AI stav se nepodařilo obnovit.");
+      await onReconcile?.();
+    } catch {
+      setRecoveryMessage("AI stav se nepodařilo obnovit.");
+    } finally {
+      setPendingJobId(null);
+    }
+  }
+
   return (
     <section className="ai-running-state" aria-label="Stav AI požadavků">
       {jobs.slice(0, 12).map((job) => {
         const status = getManualAiJobDisplayStatus(job);
+        const retryAt = job.retry_after_at ? Date.parse(job.retry_after_at) : Number.NaN;
+        const retryBlocked = job.failure_code === "rate_limited"
+          && Number.isFinite(retryAt)
+          && (clockMs === null || retryAt > clockMs);
+        const leaseExpiresAt = job.lease_expires_at ? Date.parse(job.lease_expires_at) : Number.NaN;
+        const canInterruptQueued = job.status === "queued"
+          && job.attempt_count === 0
+          && job.max_attempts === 1
+          && job.lease_expires_at === null;
+        const canInterruptStaleRunning = status === "stalled"
+          && job.status === "running"
+          && job.attempt_count === 1
+          && job.max_attempts === 1
+          && Number.isFinite(leaseExpiresAt)
+          && clockMs !== null
+          && leaseExpiresAt <= clockMs;
         return (
           <span key={job.id}>
             <strong>{getAiOutputTitle(job.processing_type)}</strong>: {manualJobLabels[status]}
-            {job.error_message ? ` · ${job.error_message}` : ""}
+            {job.status === "failed" ? ` · ${getManualAiFailureMessage(job.failure_code)}` : ""}
+            {retryBlocked ? ` Další pokus bude dostupný ${new Intl.DateTimeFormat("cs-CZ", { dateStyle: "short", timeStyle: "short" }).format(retryAt)}.` : ""}
+            {status === "stalled" ? (
+              <button disabled={pendingJobId !== null} onClick={() => void reconcileJob(job.id, "reconcile")} type="button">
+                {pendingJobId === job.id ? "Obnovuji…" : "Obnovit stav"}
+              </button>
+            ) : null}
+            {canInterruptQueued || canInterruptStaleRunning ? (
+              <button disabled={pendingJobId !== null} onClick={() => void reconcileJob(job.id, "interrupt")} type="button">
+                {pendingJobId === job.id ? "Ukončuji…" : "Ukončit požadavek"}
+              </button>
+            ) : null}
+            {job.status === "failed" ? (
+              <button
+                disabled={pendingJobId !== null || retryBlocked}
+                onClick={() => {
+                  setPendingJobId(job.id);
+                  void onRetry(job).finally(() => setPendingJobId(null));
+                }}
+                type="button"
+              >
+                Zkusit znovu
+              </button>
+            ) : null}
           </span>
         );
       })}
+      {recoveryMessage ? <span role="status">{recoveryMessage}</span> : null}
     </section>
   );
 }

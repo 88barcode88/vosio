@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildStructuredAiItems } from "@/lib/ai/structured-items";
 import { persistStructuredAiItems } from "@/lib/ai/structured-persistence";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
+import { SafeAiProviderError } from "@/lib/ai/provider-errors";
 
 type PersistStructuredRows = (admin: SupabaseClient, items: StructuredAiItems) => Promise<void>;
 
@@ -51,7 +52,7 @@ export async function persistCompletedAiProcessing(
     .single();
 
   if (outputError || !output) {
-    throw new Error("Nepodařilo se uložit AI výstup.");
+    throw new SafeAiProviderError({ failureCode: "persistence_failed", retryAfterAt: null });
   }
 
   if (input.outputJson) {
@@ -65,10 +66,8 @@ export async function persistCompletedAiProcessing(
 
     try {
       await (dependencies.persistStructuredRows ?? persistStructuredAiItems)(input.admin, structuredItems);
-    } catch (error) {
-      if (error instanceof Error) {
-        console.error("[Vosio AI structured output]", error.message);
-      }
+    } catch {
+      console.error("[Vosio AI structured output] persistence_failed");
     }
   }
 

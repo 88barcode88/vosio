@@ -4,9 +4,6 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ refresh: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
-
 import { AutomaticTimelineReconciler } from "@/components/automatic-timeline-reconciler";
 
 beforeEach(() => {
@@ -21,19 +18,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("automatic timeline next-open reconciler", () => {
-  it("posts once whenever a completed transcript detail is mounted, independent of the active tab", async () => {
+  it("posts once when the active timeline mounts and reloads state locally without router refresh", async () => {
     const container = document.createElement("div");
     const root = createRoot(container);
+    const onReconciled = vi.fn();
 
     await act(async () => {
-      root.render(<AutomaticTimelineReconciler transcriptId="transcript-id" />);
+      root.render(<AutomaticTimelineReconciler onReconciled={onReconciled} transcriptId="transcript-id" />);
     });
 
     expect(fetch).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledWith("/api/transcripts/transcript-id/automatic-timeline", {
       method: "POST"
     });
-    expect(mocks.refresh).toHaveBeenCalledOnce();
+    expect(onReconciled).toHaveBeenCalledOnce();
 
     await act(async () => root.unmount());
   });
@@ -51,7 +49,6 @@ describe("automatic timeline next-open reconciler", () => {
     });
 
     expect(fetch).toHaveBeenCalledOnce();
-    expect(mocks.refresh).not.toHaveBeenCalled();
     await act(async () => root.unmount());
   });
 });
