@@ -15,6 +15,7 @@ import {
 const projectRoot = path.resolve(import.meta.dirname, "../..");
 const ownedMarkers = new Set<string>();
 const directlyOwnedWorkspaces = new Set<string>();
+const teardownReceiptName = ".vosio-teardown-receipt.json";
 
 // waitForExit captures the outer runner result without invoking a shell.
 function waitForExit(child: ChildProcess) {
@@ -24,12 +25,23 @@ function waitForExit(child: ChildProcess) {
   });
 }
 
+// collectChildStderr captures fixed runner diagnostics without exposing them through the test process.
+function collectChildStderr(child: ChildProcess) {
+  return new Promise<string>((resolve) => {
+    let output = "";
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => { output += chunk; });
+    child.stderr?.once("end", () => resolve(output));
+  });
+}
+
 // startTestRunner launches the production runner with a bounded fake Playwright child.
 function startTestRunner({
   marker = randomUUID(),
   mode,
   port = 3175,
   readinessDelayMs = 0,
+  receiptFailure,
   serverMode = "listen",
   signalAfterSpawn = false,
   signalBeforeSpawn = false,
@@ -40,6 +52,7 @@ function startTestRunner({
   mode: "delay-zero" | "exit-one" | "exit-zero";
   port?: number;
   readinessDelayMs?: number;
+  receiptFailure?: "rename" | "write";
   serverMode?: "exit-after-ready" | "exit-after-ready-with-child" | "listen" | "spawn-child" | "spawn-child-unforced";
   signalAfterSpawn?: boolean;
   signalBeforeSpawn?: boolean;
@@ -56,6 +69,7 @@ function startTestRunner({
       VOSIO_E2E_TEST_CHILD_MODE: mode,
       VOSIO_E2E_TEST_MARKER: marker,
       VOSIO_E2E_TEST_READINESS_DELAY_MS: String(readinessDelayMs),
+      VOSIO_E2E_TEST_RECEIPT_FAILURE: receiptFailure ?? "",
       VOSIO_E2E_TEST_SERVER_MODE: serverMode,
       VOSIO_E2E_TEST_SIGNAL_AFTER_SPAWN: signalAfterSpawn ? "1" : "0",
       VOSIO_E2E_TEST_SIGNAL_BEFORE_SPAWN: signalBeforeSpawn ? "1" : "0",
@@ -63,10 +77,10 @@ function startTestRunner({
       VOSIO_E2E_TEST_SKIP_COPY: "1",
       VOSIO_E2E_TEST_TREE_KILL_FAILURE: treeKillFailure ? "1" : "0"
     },
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     windowsHide: true
   });
-  return { child, exit: waitForExit(child), marker };
+  return { child, exit: waitForExit(child), marker, stderr: collectChildStderr(child) };
 }
 
 // isPortClosed verifies the runner released only the exact listener it started.
@@ -105,6 +119,13 @@ async function waitForMarkedWorkspace(marker: string) {
     await delay(25);
   }
   throw new Error("Timed out waiting for the isolated test workspace.");
+}
+
+// readTeardownReceipt loads only the bounded diagnostic receipt from one retained test workspace.
+async function readTeardownReceipt(workspace: string) {
+  const serialized = await readFile(path.join(workspace, teardownReceiptName), "utf8");
+  expect(serialized.length).toBeLessThanOrEqual(2_048);
+  return JSON.parse(serialized) as Record<string, unknown>;
 }
 
 afterEach(async () => {
@@ -220,7 +241,19 @@ describe("isolated Playwright outer runner", () => {
 
       await expect(run.exit).resolves.toMatchObject({ code: 1 });
       await expect(isPortClosed(port)).resolves.toBe(true);
-      await expect(findMarkedWorkspace(run.marker)).resolves.not.toBeNull();
+      const workspace = await findMarkedWorkspace(run.marker);
+      expect(workspace).not.toBeNull();
+      await expect(readTeardownReceipt(workspace!)).resolves.toEqual({
+        portProof: { closed: true, required: true },
+        server: {
+          leaderSettlement: { settled: true },
+          pid: expect.any(Number),
+          preState: { exitCode: 0, signalCode: null, terminal: true },
+          selectedBranch: "terminal-leader",
+          taskkill: null
+        },
+        version: 1
+      });
     }
   );
 
@@ -235,7 +268,24 @@ describe("isolated Playwright outer runner", () => {
 
     await expect(run.exit).resolves.toMatchObject({ code: 1 });
     await expect(isPortClosed(port)).resolves.toBe(true);
-    await expect(findMarkedWorkspace(run.marker)).resolves.not.toBeNull();
+    const workspace = await findMarkedWorkspace(run.marker);
+    expect(workspace).not.toBeNull();
+    await expect(readTeardownReceipt(workspace!)).resolves.toEqual({
+      portProof: { closed: true, required: true },
+      server: {
+        leaderSettlement: { settled: true },
+        pid: expect.any(Number),
+        preState: { exitCode: null, signalCode: null, terminal: false },
+        selectedBranch: "taskkill-failed",
+        taskkill: {
+          code: 1,
+          durationMs: expect.any(Number),
+          errorCategory: "nonzero-exit",
+          settled: true
+        }
+      },
+      version: 1
+    });
   });
 
   it("fails closed and retains its workspace when a descendant tree is explicitly unproven", async () => {
@@ -244,7 +294,42 @@ describe("isolated Playwright outer runner", () => {
 
     await expect(run.exit).resolves.toMatchObject({ code: 1 });
     await expect(isPortClosed(port)).resolves.toBe(true);
-    await expect(findMarkedWorkspace(run.marker)).resolves.not.toBeNull();
+    const workspace = await findMarkedWorkspace(run.marker);
+    expect(workspace).not.toBeNull();
+    await expect(readTeardownReceipt(workspace!)).resolves.toEqual({
+      portProof: { closed: true, required: true },
+      server: {
+        leaderSettlement: { settled: true },
+        pid: expect.any(Number),
+        preState: { exitCode: null, signalCode: null, terminal: false },
+        selectedBranch: "force-unproven",
+        taskkill: null
+      },
+      version: 1
+    });
+  });
+
+  it("preserves primary fail-closed diagnostics when atomic receipt persistence fails", async () => {
+    for (const [receiptFailure, port] of [["write", 3184], ["rename", 3185]] as const) {
+      const run = startTestRunner({
+        mode: "exit-zero",
+        port,
+        receiptFailure,
+        serverMode: "spawn-child"
+      });
+      const workspace = await waitForMarkedWorkspace(run.marker);
+
+      await expect(run.exit).resolves.toMatchObject({ code: 1 });
+      const stderr = await run.stderr;
+      expect(stderr).toContain(`Owned process-tree cleanup could not be proven; retained ${workspace}.`);
+      expect(stderr).toContain("Playwright teardown receipt could not be persisted.");
+      await expect(isPortClosed(port)).resolves.toBe(true);
+      await expect(pathExists(workspace)).resolves.toBe(true);
+      await expect(pathExists(path.join(workspace, teardownReceiptName))).resolves.toBe(false);
+      const receiptTemps = (await readdir(workspace))
+        .filter((entry) => entry.startsWith(`${teardownReceiptName}.`) && entry.endsWith(".tmp"));
+      expect(receiptTemps).toEqual([]);
+    }
   });
 
   it("rejects every cleanup path outside an exact mkdtemp workspace", () => {

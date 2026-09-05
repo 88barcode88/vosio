@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
+import { Buffer } from "node:buffer";
 import { randomBytes } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { request } from "node:http";
 import { createConnection } from "node:net";
 import path from "node:path";
@@ -18,6 +19,7 @@ const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const processStopTimeoutMs = 5_000;
 const serverReadyTimeoutMs = 120_000;
 const readinessPath = "/login/vosio-playwright-ready";
+const teardownReceiptName = ".vosio-teardown-receipt.json";
 
 // loadLocalEnvironment passes ignored local configuration to Playwright without copying or logging it.
 async function loadLocalEnvironment() {
@@ -172,28 +174,83 @@ async function waitForProcessGroupStopped(processGroupId, timeoutMs) {
   return !isProcessGroupAlive(processGroupId);
 }
 
+// createStopDiagnostics initializes the bounded process-tree evidence persisted only on cleanup failure.
+function createStopDiagnostics() {
+  return {
+    leaderSettlement: { settled: false },
+    pid: null,
+    preState: { exitCode: null, signalCode: null, terminal: false },
+    selectedBranch: "not-started",
+    taskkill: null
+  };
+}
+
+// writeTeardownReceipt atomically persists fixed, secret-free evidence inside an already retained workspace.
+async function writeTeardownReceipt(workspace, receipt, testFailureMode) {
+  const serialized = `${JSON.stringify(receipt)}\n`;
+  if (Buffer.byteLength(serialized, "utf8") > 2_048) {
+    throw new Error("Playwright teardown receipt exceeded its fixed diagnostic size limit.");
+  }
+  const receiptPath = path.join(workspace, teardownReceiptName);
+  const temporaryPath = `${receiptPath}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    if (testFailureMode === "write") throw new Error("Simulated receipt write failure.");
+    await writeFile(temporaryPath, serialized, { encoding: "utf8", flag: "wx" });
+    if (testFailureMode === "rename") throw new Error("Simulated receipt rename failure.");
+    await rename(temporaryPath, receiptPath);
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => {});
+  }
+}
+
 // stopOwnedProcessTree proves complete teardown or fails closed while retaining the workspace.
 async function stopOwnedProcessTree(
   child,
   resultPromise,
-  { forceUnproven = false, knownLeaf = false, simulateTreeKillFailure = false } = {}
+  {
+    diagnostics = null,
+    forceUnproven = false,
+    knownLeaf = false,
+    simulateTreeKillFailure = false
+  } = {}
 ) {
   if (!child?.pid || !resultPromise) return true;
   const processId = child.pid;
+  const terminal = child.exitCode !== null || child.signalCode !== null;
+  if (diagnostics) {
+    diagnostics.pid = processId;
+    diagnostics.preState = {
+      exitCode: child.exitCode,
+      signalCode: child.signalCode,
+      terminal
+    };
+  }
 
   if (forceUnproven) {
+    if (diagnostics) diagnostics.selectedBranch = "force-unproven";
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    await settleWithin(resultPromise, processStopTimeoutMs);
+    const leaderSettlement = await settleWithin(resultPromise, processStopTimeoutMs);
+    if (diagnostics) diagnostics.leaderSettlement = { settled: leaderSettlement.settled };
     return false;
   }
 
   if (knownLeaf) {
+    if (diagnostics) diagnostics.selectedBranch = "known-leaf";
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    return (await settleWithin(resultPromise, processStopTimeoutMs)).settled;
+    const leaderSettlement = await settleWithin(resultPromise, processStopTimeoutMs);
+    if (diagnostics) diagnostics.leaderSettlement = { settled: leaderSettlement.settled };
+    return leaderSettlement.settled;
   }
 
   if (process.platform === "win32") {
-    if (child.exitCode !== null || child.signalCode !== null) return false;
+    if (terminal) {
+      if (diagnostics) {
+        diagnostics.leaderSettlement = { settled: true };
+        diagnostics.selectedBranch = "terminal-leader";
+      }
+      return false;
+    }
+    const taskkillStartedAt = Date.now();
     const taskkill = simulateTreeKillFailure
       ? spawn(process.execPath, ["-e", "process.exit(1)"], {
         stdio: "ignore",
@@ -204,32 +261,76 @@ async function stopOwnedProcessTree(
         windowsHide: true
       });
     const taskkillResult = await settleWithin(waitForChild(taskkill), processStopTimeoutMs);
+    const taskkillErrorCategory = !taskkillResult.settled
+      ? "timeout"
+      : taskkillResult.value.error
+        ? "spawn-error"
+        : taskkillResult.value.code === 0
+          ? "none"
+          : "nonzero-exit";
+    if (diagnostics) {
+      diagnostics.taskkill = {
+        code: taskkillResult.settled ? taskkillResult.value.code : null,
+        durationMs: Date.now() - taskkillStartedAt,
+        errorCategory: taskkillErrorCategory,
+        settled: taskkillResult.settled
+      };
+    }
     const treeStopSucceeded = taskkillResult.settled
       && !taskkillResult.value.error
       && taskkillResult.value.code === 0;
     if (!treeStopSucceeded) {
+      if (diagnostics) diagnostics.selectedBranch = "taskkill-failed";
       if (taskkill.exitCode === null && taskkill.signalCode === null) taskkill.kill();
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-      await settleWithin(resultPromise, processStopTimeoutMs);
+      const leaderSettlement = await settleWithin(resultPromise, processStopTimeoutMs);
+      if (diagnostics) diagnostics.leaderSettlement = { settled: leaderSettlement.settled };
       return false;
     }
-    return (await settleWithin(resultPromise, processStopTimeoutMs)).settled;
+    const leaderSettlement = await settleWithin(resultPromise, processStopTimeoutMs);
+    if (diagnostics) {
+      diagnostics.leaderSettlement = { settled: leaderSettlement.settled };
+      diagnostics.selectedBranch = leaderSettlement.settled
+        ? "taskkill-success"
+        : "taskkill-success-leader-unsettled";
+    }
+    return leaderSettlement.settled;
   }
 
   if (isProcessGroupAlive(processId)) {
+    if (diagnostics) diagnostics.selectedBranch = "posix-sigterm";
     try {
       process.kill(-processId, "SIGTERM");
     } catch (error) {
-      if (error?.code !== "ESRCH") return false;
+      if (error?.code !== "ESRCH") {
+        if (diagnostics) diagnostics.selectedBranch = "posix-sigterm-failed";
+        return false;
+      }
     }
   }
-  if (await waitForProcessGroupStopped(processId, processStopTimeoutMs)) return true;
+  if (await waitForProcessGroupStopped(processId, processStopTimeoutMs)) {
+    if (diagnostics) {
+      diagnostics.leaderSettlement = { settled: true };
+      diagnostics.selectedBranch = "posix-sigterm-success";
+    }
+    return true;
+  }
   try {
     process.kill(-processId, "SIGKILL");
   } catch (error) {
-    if (error?.code !== "ESRCH") return false;
+    if (error?.code !== "ESRCH") {
+      if (diagnostics) diagnostics.selectedBranch = "posix-sigkill-failed";
+      return false;
+    }
   }
-  return waitForProcessGroupStopped(processId, processStopTimeoutMs);
+  const groupStopped = await waitForProcessGroupStopped(processId, processStopTimeoutMs);
+  if (diagnostics) {
+    diagnostics.leaderSettlement = { settled: groupStopped };
+    diagnostics.selectedBranch = groupStopped
+      ? "posix-sigkill-success"
+      : "posix-sigkill-unsettled";
+  }
+  return groupStopped;
 }
 
 // createOwnedReadinessRoute embeds a per-run token only in the isolated workspace copy.
@@ -307,9 +408,15 @@ async function run() {
   let serverSimulateTreeKillFailure = false;
   let serverOwnedReadiness = false;
   let serverResultPromise = null;
+  const serverStopDiagnostics = createStopDiagnostics();
   let workspace = null;
   let shutdownRequested = false;
   let requestedSignal = null;
+  const requestedReceiptFailure = process.env.VOSIO_E2E_TEST_RECEIPT_FAILURE;
+  const testReceiptFailure = process.env.NODE_ENV === "test"
+    && (requestedReceiptFailure === "write" || requestedReceiptFailure === "rename")
+    ? requestedReceiptFailure
+    : null;
   let resolveShutdown;
   const shutdownPromise = new Promise((resolve) => {
     resolveShutdown = resolve;
@@ -371,6 +478,7 @@ async function run() {
     delete childEnvironment.VOSIO_E2E_TEST_CHILD_MODE;
     delete childEnvironment.VOSIO_E2E_TEST_MARKER;
     delete childEnvironment.VOSIO_E2E_TEST_READINESS_DELAY_MS;
+    delete childEnvironment.VOSIO_E2E_TEST_RECEIPT_FAILURE;
     delete childEnvironment.VOSIO_E2E_TEST_SERVER_MODE;
     delete childEnvironment.VOSIO_E2E_TEST_SIGNAL_AFTER_SPAWN;
     delete childEnvironment.VOSIO_E2E_TEST_SIGNAL_BEFORE_SPAWN;
@@ -458,6 +566,7 @@ async function run() {
       });
     }
     const serverStopped = await stopOwnedProcessTree(server, serverResultPromise, {
+      diagnostics: serverStopDiagnostics,
       forceUnproven: serverForceUnproven,
       knownLeaf: serverKnownLeaf,
       simulateTreeKillFailure: serverSimulateTreeKillFailure
@@ -468,6 +577,15 @@ async function run() {
     } else if (workspace) {
       process.stderr.write(`Owned process-tree cleanup could not be proven; retained ${workspace}.\n`);
       process.exitCode = 1;
+      try {
+        await writeTeardownReceipt(workspace, {
+          portProof: { closed: portClosed, required: serverOwnedReadiness },
+          server: serverStopDiagnostics,
+          version: 1
+        }, testReceiptFailure);
+      } catch {
+        process.stderr.write("Playwright teardown receipt could not be persisted.\n");
+      }
     }
   }
 }

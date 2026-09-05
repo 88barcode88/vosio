@@ -379,6 +379,37 @@ for (const width of [375, 768, 1024, 1440]) {
   });
 }
 
+test("mobile More ignores clicks until client hydration owns its drawer", async ({ page }) => {
+  let delayedScripts = 0;
+  let releaseScripts!: () => void;
+  const scriptsReleased = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/static/chunks/**/*.js", async (route) => {
+    delayedScripts += 1;
+    await scriptsReleased;
+    await route.continue();
+  });
+  await page.setViewportSize({ width: 375, height: 760 });
+
+  await page.goto(fixturePath("settings"), { waitUntil: "commit" });
+  const more = page.getByRole("navigation", { name: "Mobilní navigace" }).getByRole("button", { name: "Více" });
+  await expect(more).toBeVisible();
+  await expect.poll(() => delayedScripts).toBeGreaterThan(0);
+  await expect(more).toBeDisabled();
+
+  const moreBox = await more.boundingBox();
+  expect(moreBox).not.toBeNull();
+  await page.mouse.click(moreBox!.x + moreBox!.width / 2, moreBox!.y + moreBox!.height / 2);
+  await expect(page.getByRole("dialog", { name: "Další možnosti" })).toHaveCount(0);
+
+  releaseScripts();
+  await page.waitForLoadState("load");
+  await expect(more).toBeEnabled();
+  await more.click();
+  await expect(page.getByRole("dialog", { name: "Další možnosti" })).toBeVisible();
+});
+
 test("mobile More traps focus, restores it on every close, toggles theme and completes fixture navigation", async ({ page }) => {
   const scope = createFixtureScope();
   await page.setViewportSize({ width: 375, height: 760 });
