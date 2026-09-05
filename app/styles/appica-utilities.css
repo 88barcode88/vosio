@@ -1670,3 +1670,10 @@
     animation: none;
   }
 }
+
+/* Keep the prompt detail escape visible when the responsive layout is active. */
+@media (max-width: 900px) {
+  [data-utility-surface="prompt-templates"] .prompt-mobile-back {
+    display: inline-flex;
+  }
+}
