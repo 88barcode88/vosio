@@ -108,6 +108,7 @@ export function AiProcessingContent({
           transcriptId={activeTranscript?.id ?? null}
         />
       ) : null}
+      {retryProcessing.message ? <p className="ai-state" role="status">{retryProcessing.message}</p> : null}
       {stateError ? (
         <p className="ai-state" role="alert">
           {stateError} <button onClick={() => void onReload?.()} type="button">Zkusit znovu</button>
@@ -166,16 +167,23 @@ function ManualAiJobList({
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const now = Date.now();
-    setClockMs(now);
-    const nextRetryAt = jobs
-      .filter((job) => job.failure_code === "rate_limited" && job.retry_after_at)
-      .map((job) => Date.parse(job.retry_after_at!))
-      .filter((retryAt) => Number.isFinite(retryAt) && retryAt > now)
-      .sort((left, right) => left - right)[0];
-    if (!nextRetryAt) return;
-    const timer = window.setTimeout(() => setClockMs(Date.now()), Math.min(nextRetryAt - now + 50, 2_147_483_647));
-    return () => window.clearTimeout(timer);
+    let timer: number | null = null;
+
+    // updateRetryClock unlocks elapsed deadlines and schedules only the next remaining one.
+    const updateRetryClock = () => {
+      const now = Date.now();
+      setClockMs(now);
+      const nextRetryAt = jobs
+        .filter((job) => job.status === "failed" && job.failure_code === "rate_limited" && job.retry_after_at)
+        .map((job) => Date.parse(job.retry_after_at!))
+        .filter((retryAt) => Number.isFinite(retryAt) && retryAt > now)
+        .sort((left, right) => left - right)[0];
+      if (nextRetryAt) {
+        timer = window.setTimeout(updateRetryClock, Math.min(nextRetryAt - now + 50, 2_147_483_647));
+      }
+    };
+    updateRetryClock();
+    return () => { if (timer !== null) window.clearTimeout(timer); };
   }, [jobs]);
 
   // reconcileJob requests one safe recovery action, then refreshes only the shared local AI metadata.

@@ -91,6 +91,7 @@ export function TranscriptTabs({
   const lazyAiState = useOptionalTranscriptAiState();
   const loadAiForPurpose = lazyAiState?.loadForPurpose;
   const setActiveAiPurpose = lazyAiState?.setActivePurpose;
+  const aiStateRevision = lazyAiState?.stateRevision;
   const displayedAiOutputs = lazyAiState?.loadedOutputs ?? activeAiOutputs;
   const displayedStructuredItems = lazyAiState?.structuredItems ?? activeStructuredItems;
   const tabStorageKey = getTranscriptTabStorageKey(activeRecording);
@@ -105,11 +106,28 @@ export function TranscriptTabs({
 
   useEffect(() => {
     setActiveAiPurpose?.(activeTab === "ai" || activeTab === "timeline" ? activeTab : null);
-    if (activeTab === "ai" || activeTab === "timeline") {
+    let disposed = false;
+    let requested = false;
+
+    // loadActiveOnce rehydrates an invalidated surface once eligible; polling stays provider-owned.
+    const loadActiveOnce = () => {
+      if (disposed || requested || document.visibilityState === "hidden" || !navigator.onLine) return;
+      if (activeTab !== "ai" && activeTab !== "timeline") return;
+      requested = true;
       void loadAiForPurpose?.(activeTab);
-    }
-    return () => setActiveAiPurpose?.(null);
-  }, [activeTab, loadAiForPurpose, setActiveAiPurpose]);
+    };
+
+    // Defer until layout invalidation and StrictMode cleanup have settled before starting a request.
+    queueMicrotask(loadActiveOnce);
+    window.addEventListener("online", loadActiveOnce);
+    document.addEventListener("visibilitychange", loadActiveOnce);
+    return () => {
+      disposed = true;
+      window.removeEventListener("online", loadActiveOnce);
+      document.removeEventListener("visibilitychange", loadActiveOnce);
+      setActiveAiPurpose?.(null);
+    };
+  }, [activeTab, aiStateRevision, loadAiForPurpose, setActiveAiPurpose]);
 
   useEffect(() => {
     const activeIdentity = `${activeRecording?.id ?? "none"}:${activeTranscript?.id ?? "none"}`;

@@ -37,6 +37,7 @@ export type TranscriptAiStateContextValue = LoadedManualAiState & {
   loadForPurpose: (purpose: AiStatePurpose) => Promise<void>;
   loadOutput: (outputId: string) => Promise<ExactOutputPayload | null>;
   setActivePurpose: (purpose: "ai" | "timeline" | null) => void;
+  stateRevision: number;
 };
 
 const TranscriptAiStateContext = createContext<TranscriptAiStateContextValue | null>(null);
@@ -64,6 +65,7 @@ export function TranscriptAiStateProvider({
   const stateRequestRef = useRef<Promise<ManualAiStateSnapshot | null> | null>(null);
   const outputRequestsRef = useRef(new Map<string, Promise<ExactOutputPayload | null>>());
   const [activePurpose, setActivePurpose] = useState<"ai" | "timeline" | null>(null);
+  const [stateRevision, setStateRevision] = useState(0);
 
   // replaceState keeps the synchronous ref and React snapshot consistent for chained lazy loads.
   const replaceState = useCallback((next: LoadedManualAiState) => {
@@ -71,6 +73,7 @@ export function TranscriptAiStateProvider({
     setState(next);
   }, []);
 
+  // invalidateState fences old responses and notifies active tabs when server props replace their cache.
   useLayoutEffect(() => {
     scopeRef.current = { generation: scopeRef.current.generation + 1, transcriptId };
     stateRequestRef.current = null;
@@ -82,6 +85,7 @@ export function TranscriptAiStateProvider({
     setIsLoaded(initialAiOutputs.length > 0);
     setIsLoading(false);
     setError(null);
+    setStateRevision((revision) => revision + 1);
 
     return () => {
       if (scopeRef.current.transcriptId === transcriptId) {
@@ -110,7 +114,7 @@ export function TranscriptAiStateProvider({
         replaceState(mergeLoadedManualAiOutput(stateRef.current, payload.output, payload.structuredItems));
         return payload;
       } finally {
-        outputRequestsRef.current.delete(outputId);
+        if (scopeRef.current.generation === scope.generation) outputRequestsRef.current.delete(outputId);
       }
     })();
     outputRequestsRef.current.set(outputId, request);
@@ -143,8 +147,10 @@ export function TranscriptAiStateProvider({
         if (scopeRef.current.generation === scope.generation) setError("AI stav se nepodařilo načíst.");
         return null;
       } finally {
-        if (scopeRef.current.generation === scope.generation) setIsLoading(false);
-        stateRequestRef.current = null;
+        if (scopeRef.current.generation === scope.generation) {
+          setIsLoading(false);
+          stateRequestRef.current = null;
+        }
       }
     })();
     stateRequestRef.current = request;
@@ -163,7 +169,9 @@ export function TranscriptAiStateProvider({
 
   // loadForPurpose marks a lazy consumer and hydrates only its default-open body.
   const loadForPurpose = useCallback(async (purpose: AiStatePurpose) => {
+    const scope = scopeRef.current;
     const metadata = await refreshMetadata();
+    if (scopeRef.current.generation !== scope.generation) return;
     await hydratePurpose(purpose, metadata);
   }, [hydratePurpose, refreshMetadata]);
 
@@ -345,8 +353,9 @@ export function TranscriptAiStateProvider({
     loadAllOutputs,
     loadForPurpose,
     loadOutput,
-    setActivePurpose
-  }), [acceptJob, error, isLoaded, isLoading, loadAllOutputs, loadForPurpose, loadOutput, state]);
+    setActivePurpose,
+    stateRevision
+  }), [acceptJob, error, isLoaded, isLoading, loadAllOutputs, loadForPurpose, loadOutput, state, stateRevision]);
 
   // The callbacks read refs only after user/effect invocation; createElement does not execute them during render.
   // eslint-disable-next-line react-hooks/refs
