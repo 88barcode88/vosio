@@ -14,7 +14,7 @@
 }
 .prompt-template-overview strong {
   color: var(--text);
-  font-size: 16px;
+  font-size: 1rem;
   font-variant-numeric: tabular-nums;
 }
 .prompt-template-overview span,
@@ -34,7 +34,7 @@
 }
 .prompt-template-section-header h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .prompt-template-section-header p {
   margin: 3px 0 0;
@@ -87,7 +87,7 @@
 }
 .prompt-template-card summary span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .prompt-template-card summary::after {
   content: "+";
@@ -121,7 +121,7 @@
   display: grid;
   gap: 7px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .prompt-template-form input,
 .prompt-template-form select,
@@ -147,7 +147,7 @@
 }
 .prompt-template-readonly-note {
   margin: 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 .prompt-template-form button {
@@ -208,7 +208,7 @@
 .prompt-editor-heading span,
 .prompt-master-empty {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .prompt-new-link,
 .prompt-mobile-back,
@@ -223,7 +223,7 @@
   color: var(--text);
   background: var(--surface);
   padding: 0 11px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 .prompt-master-group {
@@ -233,7 +233,7 @@
   margin: 4px 7px;
   color: var(--text-secondary);
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: .04em;
   text-transform: uppercase;
 }
@@ -259,7 +259,7 @@
 }
 .prompt-master-row span {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .prompt-editor-surface {
   align-content: start;
@@ -316,7 +316,7 @@
 .prompt-editor-heading h2 {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 .prompt-editor-heading span {
   display: inline-flex;
@@ -386,7 +386,7 @@
 }
 .settings-header h1 {
   font-family: var(--font-heading), Georgia, serif;
-  font-size: clamp(22px, 2vw, 26px);
+  font-size: clamp(1.375rem, 2vw, 1.625rem);
 }
 .settings-form,
 .settings-section,
@@ -420,7 +420,7 @@
 .settings-section h2 {
   margin: 0;
   font-family: var(--font-heading), Georgia, serif;
-  font-size: 18px;
+  font-size: 1.125rem;
   line-height: 1.2;
 }
 .settings-section-heading p,
@@ -431,7 +431,7 @@
 .settings-limit-warning {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.55;
 }
 .settings-grid {
@@ -477,7 +477,7 @@
 }
 .settings-audio-quality-option strong,
 .settings-audio-quality-option small {
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .settings-audio-quality-option small {
   color: var(--text-secondary);
@@ -496,12 +496,12 @@
   padding: 13px 14px;
 }
 .settings-model-guidance strong {
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .settings-model-guidance p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.55;
 }
 .settings-checkbox-row {
@@ -527,11 +527,11 @@
 }
 .settings-checkbox-row strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .settings-checkbox-row small {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 .settings-grid label {
@@ -540,12 +540,12 @@
 }
 .settings-grid span {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 .settings-grid small {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 .settings-grid select {
@@ -579,7 +579,7 @@
   color: var(--text-secondary);
   background: color-mix(in srgb, var(--warning) 9%, var(--surface));
   padding: 11px 12px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 .settings-section-transcription:has(select[name="sonioxRegion"] option[value="eu"]:checked) .settings-region-warning {
@@ -638,7 +638,7 @@
   color: var(--text-secondary);
   background: color-mix(in srgb, var(--warning) 8%, transparent);
   padding: 9px 11px;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 .settings-coverage-status strong {
@@ -650,7 +650,7 @@
   margin: 0;
   color: var(--text-secondary);
   padding-left: 18px;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 .settings-usage-summary dl,
@@ -673,14 +673,14 @@
 .settings-usage-summary dt,
 .settings-technical-list dt {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
 }
 .settings-usage-summary dd,
 .settings-technical-list dd {
   margin: 0;
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -702,7 +702,7 @@
   background: var(--surface-raised);
   padding: 3px 6px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 11px;
+  font-size: 0.6875rem;
   overflow-wrap: anywhere;
 }
 .settings-save-button {
@@ -757,7 +757,7 @@
 }
 .account-security-grid span {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 .account-security-grid input {
@@ -812,7 +812,7 @@
   width: 100%;
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .command-state-live {
   color: var(--teal);
@@ -831,7 +831,7 @@
 }
 .ai-panel-header div {
   gap: 10px;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 .ai-panel-header svg {
   color: var(--teal);
@@ -862,7 +862,7 @@
 .ai-results h2 {
   margin: 22px 0 12px;
   color: var(--text);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .ai-settings {
   display: grid;
@@ -893,12 +893,12 @@
 }
 .ai-settings-details summary span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .ai-settings-details summary strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -926,7 +926,7 @@
 }
 .model-picker > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .model-picker details {
   position: relative;
@@ -959,11 +959,11 @@
 }
 .model-picker summary strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .model-picker summary small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.3;
 }
 .model-picker summary::after {
@@ -1011,7 +1011,7 @@
 .model-picker-option span,
 .model-picker-option small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.25;
   overflow-wrap: anywhere;
   white-space: normal;
@@ -1026,7 +1026,7 @@
 }
 .ai-settings span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .ai-settings select {
   min-height: 34px;
@@ -1071,12 +1071,12 @@
   min-width: 0;
 }
 .quick-grid button strong {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .quick-grid button small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1110,7 +1110,7 @@
   border-radius: 999px;
   color: var(--teal);
   background: rgba(56, 217, 208, 0.12);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
 }
 .ai-output-card p {
@@ -1159,7 +1159,7 @@
   justify-content: center;
   gap: 10px 14px;
   margin-top: 14px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .trust-row span {
   display: inline-flex;
@@ -1187,16 +1187,16 @@
 }
 .ai-running-state strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .ai-running-state span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .ai-state {
   margin: 10px 0 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .auth-shell {
   display: grid;
@@ -1225,7 +1225,7 @@
 }
 .auth-brand strong {
   display: block;
-  font-size: 20px;
+  font-size: 1.25rem;
 }
 .auth-brand span,
 .auth-heading p,
@@ -1253,7 +1253,7 @@
 }
 .auth-heading h1 {
   margin: 0;
-  font-size: 30px;
+  font-size: 1.875rem;
   line-height: 1.1;
 }
 .auth-heading p {

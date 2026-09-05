@@ -1,9 +1,6 @@
 "use client";
 
 const screenStyle: React.CSSProperties = {
-  alignItems: "center",
-  display: "flex",
-  justifyContent: "center",
   minHeight: "60vh",
   padding: "2rem",
   textAlign: "center"
@@ -24,14 +21,14 @@ export default function AppError({
   reset: () => void;
 }) {
   return (
-    <main style={screenStyle}>
-      <div>
+    <main className="utility-route-state utility-route-state-error" data-utility-route-state="error" style={screenStyle}>
+      <section aria-label="Chyba aplikace" className="utility-route-state-content">
         <h1>Něco se pokazilo</h1>
         <p>Neočekávaná chyba přerušila načtení stránky. Vaše data zůstala uložená.</p>
         <button onClick={reset} style={buttonStyle} type="button">
           Zkusit znovu
         </button>
-      </div>
+      </section>
     </main>
   );
 }

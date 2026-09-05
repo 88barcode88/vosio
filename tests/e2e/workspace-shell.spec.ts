@@ -612,8 +612,8 @@ for (const width of [375, 1024, 1440]) {
     await page.goto(fixturePath("recordings"));
 
     const expectedBackgrounds = {
-      dark: "rgb(25, 25, 24)",
-      light: "rgb(247, 245, 242)"
+      dark: "rgb(23, 23, 23)",
+      light: "rgb(244, 244, 242)"
     } as const;
 
     const themeSequence = ["dark", "light", "dark"] as const;

@@ -633,6 +633,8 @@ describe("BrowserRecorder modes", () => {
 
     expect(container.querySelector('[aria-label="Kvalita live audia"]')?.textContent)
       .toContain("Vysoká · 96 kbit/s · 43.2 MB/h");
+    expect(container.querySelector('[role="group"][aria-label="Nastavení live nahrávání"]')).not.toBeNull();
+    expect(container.querySelector('[role="group"][aria-label="Ovládání live nahrávání"]')).not.toBeNull();
     expect(findMode("audio_and_live_transcript")?.checked).toBe(true);
     expect(container.querySelector<HTMLSelectElement>('[aria-label="Jazyk live přepisu"]')?.value).toBe("cs");
 

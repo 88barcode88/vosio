@@ -59,7 +59,7 @@
   color: var(--text);
   background: var(--panel-soft);
   padding: 0 12px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   transition:
     border-color 140ms ease-out,
@@ -89,7 +89,7 @@
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .safe-status svg {
   color: var(--green);
@@ -125,7 +125,7 @@
   min-height: 44px;
   border-radius: 8px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   padding: 0 8px;
 }
@@ -187,8 +187,8 @@
   max-width: 720px;
   margin: 0;
   overflow-wrap: anywhere;
-  font-family: var(--font-heading), Georgia, serif;
-  font-size: clamp(22px, 2.2vw, 28px);
+  font-family: var(--font-ui), "Segoe UI", system-ui, sans-serif;
+  font-size: 1.5625rem;
   font-weight: 650;
   line-height: 1.2;
 }
@@ -211,14 +211,14 @@
 }
 .recording-detail-meta dt {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 .recording-detail-meta dd {
   margin: 0;
   color: var(--text);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
 }
 .recording-detail-actions {
@@ -275,7 +275,7 @@
   color: var(--text);
   background: var(--panel-soft);
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 750;
 }
 .organization-chip-muted {
@@ -289,7 +289,7 @@
   color: var(--text);
   background: var(--panel-soft);
   padding: 0 10px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
 }
 .recording-organization-summary > button:disabled,
@@ -318,7 +318,7 @@
   gap: 5px;
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 750;
 }
 .recording-organization-fields select {
@@ -356,7 +356,7 @@
 .recording-organization-feedback p {
   margin: 0;
   color: var(--red);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .recording-organization-actions {
   display: flex;
@@ -375,7 +375,7 @@
 }
 .recording-meta {
   gap: 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .recording-dot {
   width: 9px;
@@ -435,18 +435,18 @@
 }
 .rail-card dt {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .rail-card dd {
   margin: 0;
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-align: right;
 }
 .rail-card-next-step p {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 .recording-body {
@@ -457,7 +457,7 @@
   margin: 14px 0 0;
 }
 .timer {
-  font-size: clamp(28px, 4.2vw, 42px);
+  font-size: 2.1875rem;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -465,7 +465,7 @@
 .quality-row {
   gap: 9px;
   margin-top: 16px;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .quality-row strong {
   color: var(--green);
@@ -531,11 +531,11 @@
 }
 .persistent-recorder-summary strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .persistent-recorder-summary a {
   color: var(--teal);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
 }
 .browser-recorder-compact .record-button {
@@ -554,7 +554,7 @@
   flex: 0 0 100%;
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .live-audio-quality-summary strong {
   color: var(--text);
@@ -571,7 +571,7 @@
   border-radius: 8px;
   background: var(--panel-soft);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
   padding: 7px 9px;
 }
@@ -580,7 +580,7 @@
   gap: 5px;
   max-width: 320px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .live-language-select span {
   font-weight: 700;
@@ -631,7 +631,7 @@
   min-height: 32px;
   border-radius: 7px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
   padding: 0 10px;
 }
@@ -661,7 +661,7 @@
   margin: 0 0 3px;
   clip: auto;
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
   overflow: visible;
   padding: 0 4px;
@@ -672,7 +672,7 @@
   max-width: 620px;
   margin: -2px 0 2px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 .record-button {
@@ -721,7 +721,7 @@
   border-radius: 8px;
   color: var(--text);
   background: color-mix(in srgb, var(--teal) 10%, var(--panel));
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
   padding: 0 11px;
 }
@@ -733,12 +733,12 @@
   flex: 1 1 180px;
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
 }
 .live-marker-count {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -757,7 +757,7 @@
   width: 100%;
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .live-recording-text {
   max-height: 66px;
@@ -783,7 +783,7 @@
   width: 100%;
   gap: 5px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-align: left;
 }
 .upload-progress progress {
@@ -826,7 +826,7 @@
 .upload-state {
   max-width: none;
   margin: 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
   text-align: left;
 }

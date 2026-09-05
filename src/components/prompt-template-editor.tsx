@@ -68,6 +68,7 @@ export function PromptTemplateEditor({
       aria-busy={isEditorPending ? "true" : undefined}
       className={`prompt-workspace ${navigationState.kind === "list" ? "prompt-workspace-list" : "prompt-workspace-editor"}`}
       data-prompt-surface={navigationState.kind}
+      data-utility-surface="prompt-templates"
     >
       <aside className="prompt-master" aria-label="Seznam AI promptů">
         <div className="prompt-master-toolbar">

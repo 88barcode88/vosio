@@ -11,14 +11,14 @@
 .documentation-header span,
 .documentation-topics span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .documentation-header h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 1.375rem;
   line-height: 1.15;
   text-wrap: balance;
 }
@@ -26,7 +26,7 @@
   max-width: 640px;
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .documentation-layout {
   display: grid;
@@ -46,7 +46,7 @@
   border-radius: 8px;
   color: var(--muted);
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   text-decoration: none;
   transition:
     background-color 140ms ease-out,
@@ -72,19 +72,19 @@
 }
 .documentation-section h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.125rem;
   line-height: 1.2;
 }
 .documentation-section div > p {
   margin: 4px 0 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .documentation-section > p {
   max-width: 720px;
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.65;
   text-wrap: pretty;
 }
@@ -129,13 +129,13 @@
 }
 .recordings-inbox-header span {
   color: var(--teal);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 .recordings-inbox-header h1 {
   margin: 3px 0 0;
-  font-size: 20px;
+  font-size: 1.25rem;
   line-height: 1.16;
 }
 .recordings-inbox-header p {
@@ -161,19 +161,19 @@
 }
 .organization-manager-header span {
   color: var(--teal);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 .organization-manager-header h2 {
   margin: 2px 0 0;
-  font-size: 15px;
+  font-size: 0.9375rem;
 }
 .organization-manager-header p,
 .organization-manager-empty {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .organization-manager-grid {
   display: grid;
@@ -205,7 +205,7 @@
 }
 .organization-manager-group h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .organization-manager-group ul {
   display: grid;
@@ -236,7 +236,7 @@
   background: var(--panel-soft);
   padding: 2px 8px;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .organization-manager-badge-colored,
 .organization-chip-colored {
@@ -266,7 +266,7 @@
   color: var(--text);
   background: var(--panel-soft);
   padding: 0 8px;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
 }
 .organization-save-editor > button:disabled,
@@ -306,7 +306,7 @@
   display: grid;
   gap: 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
 }
 .organization-create-form input,
@@ -325,7 +325,7 @@
   display: grid;
   gap: 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
 }
 .organization-color-picker {
@@ -339,7 +339,7 @@
   background: var(--panel-soft);
   padding: 0 10px;
   font: inherit;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 800;
 }
 .organization-color-picker-trigger {
@@ -407,7 +407,7 @@
 .organization-custom-color p {
   margin: 0;
   color: var(--danger);
-  font-size: 10px;
+  font-size: 0.625rem;
   line-height: 1.35;
 }
 .organization-color-picker button[aria-pressed="true"] {
@@ -425,7 +425,7 @@
 .organization-delete-action p {
   margin: 0;
   color: var(--red);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .recordings-alert,
 .recordings-search-status {
@@ -434,7 +434,7 @@
   border-radius: 8px;
   color: var(--muted);
   background: var(--panel-soft);
-  font-size: 12px;
+  font-size: 0.75rem;
   padding: 9px 10px;
 }
 .recordings-alert {
@@ -481,7 +481,7 @@
 .recording-search-result-meta,
 .recording-search-excerpt {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .recording-search-result-meta {
   display: flex;
@@ -503,7 +503,7 @@
   min-height: 42px;
   border-top: 1px solid var(--border);
   padding-top: 10px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .recording-search-pagination a,
 .recording-search-pagination > span:first-child,
@@ -540,7 +540,7 @@
 .live-recovery-panel p {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .live-recovery-panel article {
   display: grid;
@@ -562,7 +562,7 @@
 }
 .live-recovery-panel small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .live-recovery-panel button {
   min-height: 34px;
@@ -586,7 +586,7 @@
   display: grid;
   gap: 5px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 750;
   text-transform: uppercase;
 }
@@ -614,7 +614,7 @@
   border-radius: 9px;
   color: var(--text);
   background: var(--panel-soft);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
   padding: 0 12px;
 }
@@ -640,7 +640,7 @@
   gap: 5px;
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 750;
 }
 .recording-filter-grid label > span,
@@ -675,7 +675,7 @@
 .recording-filter-tags legend small {
   margin-left: 6px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 500;
   text-transform: none;
 }
@@ -721,7 +721,7 @@
   color: var(--text);
   background: var(--panel);
   padding: 0 11px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
 }
 .recording-filter-actions button:disabled {
@@ -747,7 +747,7 @@
 }
 .recordings-inbox-stats strong {
   color: var(--text);
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-variant-numeric: tabular-nums;
 }
 .recordings-header-new {
@@ -779,7 +779,7 @@
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   background: var(--panel-strong);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   text-transform: uppercase;
   padding: 0 12px;
@@ -822,7 +822,7 @@
 }
 .recordings-row-main span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .recording-title-edit {
   position: relative;
@@ -846,11 +846,11 @@
   color: var(--text);
   background: color-mix(in srgb, var(--panel-strong) 78%, var(--teal) 4%);
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .recording-client-group > h2 span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
 }
 .recording-organization-e2e-fixture {
@@ -875,7 +875,7 @@
 }
 .recording-organization-e2e-fixture h1 {
   margin: 0;
-  font-size: 16px;
+  font-size: 1rem;
 }
 .recording-title-edit-button {
   display: inline-flex;
@@ -887,7 +887,7 @@
   color: var(--muted);
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
 }
 .recording-title-edit-button[aria-expanded="true"] {
@@ -928,7 +928,7 @@
   cursor: pointer;
   list-style: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
 }
 .recording-title-edit summary::-webkit-details-marker {
@@ -958,7 +958,7 @@
   color: var(--muted);
   background: var(--panel-soft);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 750;
   list-style: none;
   padding: 0 12px;
@@ -1000,7 +1000,7 @@
   display: grid;
   gap: 5px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .recording-title-form input {
   width: 100%;
@@ -1035,7 +1035,7 @@
 .recording-title-save-error {
   margin: 0;
   color: var(--red);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
 }
 .recording-title-feedback {
@@ -1058,7 +1058,7 @@
   border-radius: 8px;
   color: var(--red);
   background: var(--panel);
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.4;
 }
 .delete-recording-form button {
@@ -1112,7 +1112,7 @@
 .new-recording-header h1 {
   margin: 0;
   font-family: var(--font-heading), Georgia, serif;
-  font-size: clamp(24px, 3vw, 28px);
+  font-size: clamp(1.5rem, 3vw, 1.75rem);
   line-height: 1.16;
 }
 .new-recording-header p {
@@ -1137,7 +1137,7 @@
   border-block: 1px solid var(--border);
   color: var(--text-secondary);
   padding: 7px 2px;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .capture-grid {
   display: grid;
@@ -1180,7 +1180,7 @@
 }
 .capture-card-heading span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.35;
 }
 .capture-card .real-upload {
@@ -1206,7 +1206,7 @@
   max-width: 460px;
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 .capture-primary-grid:has([data-primary-capture] .real-upload[aria-busy="true"])
@@ -1246,7 +1246,7 @@
 }
 .transcript-import-disclosure small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 400;
 }
 .transcript-import-chevron {
@@ -1284,7 +1284,7 @@
 }
 .upload-dropzone > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .upload-status-panel {
   display: grid;
@@ -1307,7 +1307,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 3px 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .upload-file-summary .upload-current-file {
   color: var(--text);
@@ -1332,7 +1332,7 @@
   display: grid;
   gap: 5px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 .fixture-live-capture select,
@@ -1390,7 +1390,7 @@
 }
 .transcript-import-form label span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 .transcript-import-form input,
@@ -1419,7 +1419,7 @@
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .transcript-import-form button {
   display: inline-flex;
@@ -1463,7 +1463,7 @@
 }
 .caption-surface > span {
   color: var(--teal);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -1549,7 +1549,7 @@
 }
 .recordings-inbox-header h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 1.375rem;
 }
 .recordings-inbox-header p {
   color: var(--text-secondary);
@@ -1568,7 +1568,7 @@
   color: var(--text);
   background: var(--surface-muted);
   padding: 0 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 750;
   transition:
     border-color 150ms ease-out,
@@ -1718,7 +1718,7 @@
   border-block: 1px solid var(--border);
   color: var(--text-secondary);
   padding: 7px 2px;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .recordings-status-summary a {
   display: inline-flex;
@@ -1812,7 +1812,7 @@
 .recordings-inbox .recordings-row-main span,
 .recordings-inbox .recordings-row-size {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .recordings-row-title > a {
   width: fit-content;
@@ -1874,10 +1874,10 @@
   justify-content: center;
   gap: 4px;
   padding: 0 4px;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .recordings-row-actions .recording-title-edit-button > span {
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .recordings-row-actions .delete-recording-compact button {
   width: auto;
@@ -1885,7 +1885,7 @@
   gap: 4px;
   padding: 0 4px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .recordings-search-error,
 .recordings-error-actions {
@@ -1909,7 +1909,7 @@
   color: var(--text);
   background: var(--surface);
   padding: 0 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 750;
 }
 .recording-search-result-list {
@@ -1955,7 +1955,7 @@
 }
 .recordings-route-state h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 1.25rem;
 }
 .recordings-route-state p {
   margin: 0;

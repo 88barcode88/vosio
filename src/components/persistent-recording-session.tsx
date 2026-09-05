@@ -111,6 +111,8 @@ export function PersistentRecordingSessionProvider({ children }: { children: Rea
       <aside
         aria-label="Probíhající nahrávání"
         className="persistent-recorder-dock"
+        data-recorder-placement="dock"
+        data-recording-status={status}
         hidden={status === "idle" || slotHost !== null}
         ref={dockRef}
       />

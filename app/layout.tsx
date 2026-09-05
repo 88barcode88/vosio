@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
-import { Inter, Newsreader } from "next/font/google";
+import { Inter } from "next/font/google";
 import { PwaRegistration } from "@/components/pwa-registration";
 import { ThemeStorageMigration } from "@/components/theme-storage-migration";
 import { PersistentRecordingSessionProvider } from "@/components/persistent-recording-session";
@@ -13,12 +13,6 @@ const inter = Inter({
   display: "swap",
   subsets: ["latin", "latin-ext"],
   variable: "--font-ui"
-});
-
-const newsreader = Newsreader({
-  display: "swap",
-  subsets: ["latin", "latin-ext"],
-  variable: "--font-heading"
 });
 
 export const metadata: Metadata = {
@@ -48,7 +42,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   initialScale: 1,
-  themeColor: "#061014",
+  themeColor: "#171717",
   width: "device-width"
 };
 
@@ -65,7 +59,7 @@ export default async function RootLayout({
 
   return (
     <html data-theme={initialTheme} data-theme-source={themeSource} lang="cs" suppressHydrationWarning>
-      <body className={`${inter.variable} ${newsreader.variable}`}>
+      <body className={inter.variable}>
         <ThemeStorageMigration />
         <RecordingNavigationGuardProvider>
           <PersistentRecordingSessionProvider>

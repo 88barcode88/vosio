@@ -173,7 +173,7 @@
     border-radius: 9px;
     color: var(--muted);
     background: transparent;
-    font-size: 10px;
+    font-size: 0.625rem;
     white-space: nowrap;
   }
   .mobile-nav-item svg {
@@ -489,7 +489,7 @@
   }
   .tabs button {
     flex: 0 0 auto;
-    font-size: 13px;
+    font-size: 0.8125rem;
     min-width: max-content;
   }
   .tabs-row {
@@ -572,10 +572,10 @@
     white-space: nowrap;
   }
   .documentation-header h1 {
-    font-size: 20px;
+    font-size: 1.25rem;
   }
   .documentation-section > p {
-    font-size: 13px;
+    font-size: 0.8125rem;
   }
   .transcript-line {
     grid-template-columns: 64px 60px;
@@ -608,7 +608,7 @@
     width: 100%;
   }
   .speaker-summary-state {
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .transcript-panel {
     height: auto;

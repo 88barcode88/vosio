@@ -202,7 +202,7 @@ export function TrashRecordingsManager({
   }
 
   return (
-    <>
+    <div className="trash-manager-surface" data-utility-surface="trash-recordings">
       {recordings.length > 0 ? (
         <>
           <p className="trash-retention-note">
@@ -275,6 +275,6 @@ export function TrashRecordingsManager({
           <button onClick={() => void runPurgeQueue(Array.from(selectedIds))} type="button">Smazat trvale</button>
         </div>
       </Modal>
-    </>
+    </div>
   );
 }

@@ -271,7 +271,7 @@ export function RecordingsManager({
       </div>
       {errorMessage ? <p className="recordings-alert" role="alert">{errorMessage}</p> : null}
       <LiveRecordingRecoveryPanel />
-      <div className="recordings-toolbar">
+      <div aria-label="Nástroje nahrávek" className="recordings-toolbar" role="toolbar">
         <RecordingFilters
           filters={filters}
           key={filterKey}
@@ -302,7 +302,7 @@ export function RecordingsManager({
           searchQuery={searchQuery}
         />
       ) : (
-        <div className="recordings-table">
+        <div aria-label="Seznam nahrávek" className="recordings-table" role="region">
           {recordings.length > 0 ? (
             <>
               <div className="recordings-table-head" aria-hidden="true">

@@ -7,4 +7,8 @@
 @import "./styles/forms-settings-ai.css";
 @import "./styles/responsive.css";
 @import "./styles/trash-documentation.css";
+@import "./styles/appica-foundation.css";
+@import "./styles/appica-recordings.css";
+@import "./styles/appica-workflow.css";
+@import "./styles/appica-utilities.css";
 @import "./styles/control-hit-targets.css";

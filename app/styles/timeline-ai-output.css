@@ -60,7 +60,7 @@
 .timeline-marker-copy small {
   overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
 }
 .timeline-list-header > svg {
@@ -91,12 +91,12 @@
 .timeline-list-header strong {
   margin: 0;
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .timeline-list-header span,
 .timeline-list-header time {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .timeline-row,
 .note-card,
@@ -115,7 +115,7 @@
 .file-details span,
 .note-card span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .timeline-row p,
 .note-card p {
@@ -136,7 +136,7 @@
 }
 .timeline-row strong {
   color: var(--text);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .timeline-row small {
   color: var(--muted);
@@ -164,7 +164,7 @@
   border-radius: 999px;
   color: var(--muted);
   background: var(--panel);
-  font-size: 11px;
+  font-size: 0.6875rem;
   padding: 3px 8px;
 }
 .note-card div {
@@ -214,14 +214,14 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-style: normal;
   line-height: 1.35;
 }
 .ai-output-detail summary small,
 .ai-output-detail summary em {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-style: normal;
 }
 .ai-output-detail summary::after {
@@ -233,7 +233,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .ai-output-detail[open] summary::after {
   content: "-";
@@ -252,7 +252,7 @@
 }
 .ai-output-actions > small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .ai-output-delete-form {
   margin: 0;
@@ -314,7 +314,7 @@
   display: block;
   margin-top: 8px;
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .ai-output-detail .ai-markdown-heading:first-child {
   margin-top: 0;
@@ -343,7 +343,7 @@
   width: 100%;
   min-width: 520px;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .ai-markdown-table-wrap th,
 .ai-markdown-table-wrap td {
@@ -357,7 +357,7 @@
 .ai-markdown-table-wrap th {
   color: var(--muted);
   background: var(--panel-soft);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -393,7 +393,7 @@
   color: var(--text);
 }
 .ai-tab-header span {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .ai-tab-actions,
 .ai-empty-card {
@@ -415,17 +415,17 @@
   gap: 12px;
 }
 .ai-tab-actions-title strong {
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .ai-tab-actions-title span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-align: right;
 }
 .ai-tab-actions-title small {
   flex-basis: 100%;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 .ai-tab-actions svg,
@@ -457,11 +457,11 @@
 }
 .structured-ai-block > header strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .structured-ai-block > header span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .structured-ai-block > header .ai-output-delete-form {
   margin-left: auto;
@@ -488,7 +488,7 @@
   border-radius: 8px;
   color: var(--text);
   background: var(--panel);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   padding: 0 9px;
 }
@@ -499,7 +499,7 @@
 .structured-checklist-message {
   margin: -3px 0 0;
   color: var(--teal);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .structured-task-groups {
   display: grid;
@@ -516,13 +516,13 @@
   min-height: 24px;
   border-bottom: 1px solid var(--border);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 .structured-task-group > header strong {
   color: var(--text);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .structured-task-group > header span {
   display: inline-flex;
@@ -534,7 +534,7 @@
   border-radius: 999px;
   color: var(--muted);
   background: var(--panel);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
 }
 .structured-task-list {
@@ -587,14 +587,14 @@
 .structured-task-row strong {
   display: block;
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.35;
 }
 .structured-task-row p {
   display: block;
   margin: 3px 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 .structured-task-meta {
@@ -611,7 +611,7 @@
   border-radius: 999px;
   color: var(--muted);
   background: var(--panel-soft);
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1;
   padding: 0 7px;
 }
@@ -636,7 +636,7 @@
   flex: 1 1 260px;
   max-width: 68ch;
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 .structured-evidence-action {
@@ -650,7 +650,7 @@
   background: transparent;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: 0.75rem;
   text-align: left;
   padding: 5px 8px;
 }
@@ -665,7 +665,7 @@
 .structured-task-status-message {
   margin-top: 5px;
   color: var(--danger);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .structured-ai-compact-block ul {
   display: grid;
@@ -683,7 +683,7 @@
   border-radius: 8px;
   background: var(--panel);
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
   padding: 8px 9px;
 }
@@ -706,12 +706,12 @@
 }
 .structured-ai-compact-block li strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .structured-ai-compact-block li small,
 .structured-ai-compact-block li em {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-style: normal;
   line-height: 1.4;
 }
@@ -731,11 +731,11 @@
 }
 .ai-empty-card strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .ai-empty-card p {
   margin: 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 .file-details article {
@@ -758,7 +758,7 @@
 }
 .file-details strong {
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.35;
 }
 .utility-panel {
@@ -787,7 +787,7 @@
 }
 .utility-header h1 {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.125rem;
   line-height: 1.15;
 }
 .utility-header p,
@@ -821,7 +821,7 @@
   background: color-mix(in srgb, var(--danger) 9%, transparent);
   color: var(--danger);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
 }
 .ai-archive-filters {
@@ -844,7 +844,7 @@
   gap: 5px;
   min-width: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .ai-archive-filters select,
 .ai-archive-filters button,
@@ -895,7 +895,7 @@
 .ai-archive-row-copy time {
   flex: 0 0 auto;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
 }
 .ai-archive-row-copy p {
@@ -914,7 +914,7 @@
   justify-self: start;
   min-height: 44px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 .ai-archive-recording-link small {
@@ -940,7 +940,7 @@
   grid-column: 1 / -1;
   margin: 0;
   color: var(--danger);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .utility-route-state {
   display: grid;
@@ -998,7 +998,7 @@
   border-radius: 999px;
   color: var(--teal);
   background: rgba(56, 217, 208, 0.08);
-  font-size: 12px;
+  font-size: 0.75rem;
   padding: 0 10px;
 }
 
@@ -1006,7 +1006,7 @@
   min-height: 18px;
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .timeline-list .transcript-empty > .secondary-inline-action,
