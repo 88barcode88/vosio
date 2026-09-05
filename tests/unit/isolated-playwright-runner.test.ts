@@ -40,7 +40,7 @@ function startTestRunner({
   mode: "delay-zero" | "exit-one" | "exit-zero";
   port?: number;
   readinessDelayMs?: number;
-  serverMode?: "exit-after-ready" | "listen" | "spawn-child" | "spawn-child-unforced";
+  serverMode?: "exit-after-ready" | "exit-after-ready-with-child" | "listen" | "spawn-child" | "spawn-child-unforced";
   signalAfterSpawn?: boolean;
   signalBeforeSpawn?: boolean;
   signalDuringReadiness?: boolean;
@@ -208,8 +208,24 @@ describe("isolated Playwright outer runner", () => {
     await expect(findMarkedWorkspace(run.marker)).resolves.toBeNull();
   });
 
+  it.runIf(process.platform === "win32")(
+    "fails closed when a terminal Windows leader leaves an unproven descendant",
+    async () => {
+      const port = 3181;
+      const run = startTestRunner({
+        mode: "delay-zero",
+        port,
+        serverMode: "exit-after-ready-with-child"
+      });
+
+      await expect(run.exit).resolves.toMatchObject({ code: 1 });
+      await expect(isPortClosed(port)).resolves.toBe(true);
+      await expect(findMarkedWorkspace(run.marker)).resolves.not.toBeNull();
+    }
+  );
+
   it("fails closed and retains its workspace when a descendant tree cannot be proven stopped", async () => {
-    const port = 3181;
+    const port = 3182;
     const run = startTestRunner({
       mode: "exit-zero",
       port,
@@ -223,7 +239,7 @@ describe("isolated Playwright outer runner", () => {
   });
 
   it("fails closed and retains its workspace when a descendant tree is explicitly unproven", async () => {
-    const port = 3182;
+    const port = 3183;
     const run = startTestRunner({ mode: "exit-zero", port, serverMode: "spawn-child" });
 
     await expect(run.exit).resolves.toMatchObject({ code: 1 });

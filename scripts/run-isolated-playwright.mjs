@@ -172,15 +172,6 @@ async function waitForProcessGroupStopped(processGroupId, timeoutMs) {
   return !isProcessGroupAlive(processGroupId);
 }
 
-// hasOwnedChildStopped proves the exact spawned child emitted a matching terminal result.
-async function hasOwnedChildStopped(child, resultPromise) {
-  const result = await settleWithin(resultPromise, processStopTimeoutMs);
-  return result.settled
-    && !result.value.error
-    && (child.exitCode !== null || child.signalCode !== null)
-    && (result.value.code !== null || result.value.signal !== null);
-}
-
 // stopOwnedProcessTree proves complete teardown or fails closed while retaining the workspace.
 async function stopOwnedProcessTree(
   child,
@@ -202,9 +193,7 @@ async function stopOwnedProcessTree(
   }
 
   if (process.platform === "win32") {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      return hasOwnedChildStopped(child, resultPromise);
-    }
+    if (child.exitCode !== null || child.signalCode !== null) return false;
     const taskkill = simulateTreeKillFailure
       ? spawn(process.execPath, ["-e", "process.exit(1)"], {
         stdio: "ignore",
@@ -273,14 +262,15 @@ function startOwnedNextServer({ childEnvironment, port, readinessToken, testRunt
     "const port = Number(process.argv[1]);",
     "const token = process.argv[2];",
     "const delayMs = Number(process.argv[3]);",
-    "const spawnChild = process.argv[4] === 'spawn-child' || process.argv[4] === 'spawn-child-unforced';",
-    "const exitAfterReady = process.argv[4] === 'exit-after-ready';",
+    "const spawnChild = process.argv[4] === 'exit-after-ready-with-child' || process.argv[4] === 'spawn-child' || process.argv[4] === 'spawn-child-unforced';",
+    "const exitAfterReady = process.argv[4] === 'exit-after-ready' || process.argv[4] === 'exit-after-ready-with-child';",
     "if (spawnChild) spawn(process.execPath, ['-e', 'setTimeout(() => process.exit(0), 3000)'], { stdio: 'ignore', windowsHide: true });",
     `const server = http.createServer((request, response) => { if (request.url !== '${readinessPath}') { response.statusCode = 404; response.end(); return; } setTimeout(() => response.end(token, () => { if (exitAfterReady) server.close(() => process.exit(0)); }), delayMs); });`,
     "server.listen(port, '127.0.0.1');"
   ].join(" ");
   const nextCli = path.join(sourceRoot, "node_modules", "next", "dist", "bin", "next");
   const isTestServer = testServerMode === "exit-after-ready"
+    || testServerMode === "exit-after-ready-with-child"
     || testServerMode === "listen"
     || testServerMode === "spawn-child"
     || testServerMode === "spawn-child-unforced";
@@ -298,7 +288,7 @@ function startOwnedNextServer({ childEnvironment, port, readinessToken, testRunt
   return {
     child,
     forceUnproven: testServerMode === "spawn-child",
-    knownLeaf: testServerMode === "listen",
+    knownLeaf: testServerMode === "exit-after-ready" || testServerMode === "listen",
     simulateTreeKillFailure: testRuntime
       && process.env.VOSIO_E2E_TEST_TREE_KILL_FAILURE === "1"
   };
