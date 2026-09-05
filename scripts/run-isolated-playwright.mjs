@@ -18,6 +18,7 @@ import {
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const processStopTimeoutMs = 5_000;
 const serverReadyTimeoutMs = 120_000;
+const taskkillOutputByteLimit = 16_384;
 const readinessPath = "/login/vosio-playwright-ready";
 const teardownReceiptName = ".vosio-teardown-receipt.json";
 
@@ -203,6 +204,84 @@ async function writeTeardownReceipt(workspace, receipt, testFailureMode) {
   }
 }
 
+// countBufferOccurrences counts exact localized byte sequences without retaining native output.
+function countBufferOccurrences(buffer, needle) {
+  let count = 0;
+  let offset = 0;
+  while (offset <= buffer.length - needle.length) {
+    const match = buffer.indexOf(needle, offset);
+    if (match === -1) break;
+    count += 1;
+    offset = match + needle.length;
+  }
+  return count;
+}
+
+// summarizeTaskkillOutput converts bounded native output into a fixed, secret-free diagnostic shape.
+function summarizeTaskkillOutput(stdout, stderr, leaderPid, exitCode, drainProven, truncated) {
+  const combined = Buffer.concat([stdout, Buffer.from("\n"), stderr]);
+  const latinText = combined.toString("latin1");
+  const utf8Text = combined.toString("utf8");
+  const successPids = new Set(
+    [...latinText.matchAll(/SUCCESS:[^\r\n]*PID\s+(\d+)/giu)].map((match) => Number(match[1]))
+  );
+  const failedPids = new Set(
+    [...latinText.matchAll(/ERROR:[^\r\n]*(?:PID\s+(\d+)|process\s+"(\d+)")/giu)]
+      .map((match) => Number(match[1] ?? match[2]))
+  );
+  const lowerUtf8Text = utf8Text.toLocaleLowerCase("en-US");
+  const noRunningInstance = (
+    (lowerUtf8Text.match(/no running instance of the task/gu) ?? []).length
+    + (lowerUtf8Text.match(/není spuštěna žádná instance úlohy/gu) ?? []).length
+    + countBufferOccurrences(
+      combined,
+      Buffer.from("4e656ea120737075e774d86e6120a7a0646ea020696e7374616e636520a36c6f6879", "hex")
+    )
+  );
+  const operationNotSupported = (
+    (lowerUtf8Text.match(/operation attempted is not supported/gu) ?? []).length
+    + (lowerUtf8Text.match(/operace, která se zkoušela, není podporována/gu) ?? []).length
+    + countBufferOccurrences(
+      combined,
+      Buffer.from("4f7065726163652c206b746572a0207365207a6b6f75e7656c612c206e656ea120706f64706f726f76a06e61", "hex")
+    )
+  );
+  const accessDenied = (
+    (lowerUtf8Text.match(/access is denied/gu) ?? []).length
+    + (lowerUtf8Text.match(/přístup byl odepřen/gu) ?? []).length
+    + countBufferOccurrences(combined, Buffer.from("50fda1737475702062796c206f646570fd656e", "hex"))
+  );
+  const knownReasonCount = noRunningInstance + operationNotSupported + accessDenied;
+  const otherReasonCount = Math.max(failedPids.size - knownReasonCount, 0);
+  const lines = latinText.split(/\r?\n/gu).map((line) => line.trim()).filter(Boolean);
+  const parsedLineCount = lines.filter((line) => (
+    /^SUCCESS:[^\r\n]*PID\s+\d+/iu.test(line)
+    || /^ERROR:[^\r\n]*(?:PID\s+\d+|process\s+"\d+")/iu.test(line)
+    || /^Reason:/iu.test(line)
+  )).length;
+  const parseComplete = drainProven
+    && !truncated
+    && lines.length > 0
+    && parsedLineCount === lines.length
+    && otherReasonCount === 0
+    && knownReasonCount === failedPids.size
+    && (exitCode === 0 || failedPids.size > 0);
+
+  return {
+    failedPidCount: failedPids.size,
+    leaderSuccess: successPids.has(leaderPid),
+    parseComplete,
+    reasonCategoryCounts: {
+      "access-denied": accessDenied,
+      "no-running-instance": noRunningInstance,
+      "operation-not-supported": operationNotSupported,
+      other: otherReasonCount
+    },
+    successPidCount: successPids.size,
+    truncated
+  };
+}
+
 // stopOwnedProcessTree proves complete teardown or fails closed while retaining the workspace.
 async function stopOwnedProcessTree(
   child,
@@ -211,7 +290,8 @@ async function stopOwnedProcessTree(
     diagnostics = null,
     forceUnproven = false,
     knownLeaf = false,
-    simulateTreeKillFailure = false
+    simulateTreeKillFailure = false,
+    taskkillDiagnosticFixture = null
   } = {}
 ) {
   if (!child?.pid || !resultPromise) return true;
@@ -251,16 +331,95 @@ async function stopOwnedProcessTree(
       return false;
     }
     const taskkillStartedAt = Date.now();
-    const taskkill = simulateTreeKillFailure
+    const partialSuccessStdout = [
+      "SUCCESS: The process with PID 42001 has been terminated.",
+      `SUCCESS: The process with PID ${processId} has been terminated.`,
+      ""
+    ].join("\n");
+    const partialSuccessStderr = [
+      "ERROR: The process with PID 43001 could not be terminated.",
+      "Reason: No running instance of the task.",
+      "ERROR: The process with PID 43002 could not be terminated.",
+      "Reason: The operation attempted is not supported.",
+      "ERROR: The process with PID 43003 could not be terminated.",
+      "Reason: Access is denied.",
+      ""
+    ].join("\n");
+    const fixtureOutput = taskkillDiagnosticFixture === "partial-success"
+      ? { stderr: partialSuccessStderr, stdout: partialSuccessStdout }
+      : taskkillDiagnosticFixture === "localized"
+        ? {
+          stderr: "ERROR: The process with PID 43001 could not be terminated.\nReason: Lokalizovaný důvod.\n",
+          stdout: `SUCCESS: The process with PID ${processId} has been terminated.\n`
+        }
+        : taskkillDiagnosticFixture === "truncated"
+          ? { stderr: "", stdout: `${partialSuccessStdout}${partialSuccessStderr}${"x".repeat(taskkillOutputByteLimit + 1)}` }
+          : { stderr: "", stdout: "" };
+    const fixtureScript = taskkillDiagnosticFixture === "delayed-drain"
+      ? [
+        `setTimeout(() => process.stdout.write(${JSON.stringify(partialSuccessStdout)}), 150);`,
+        `setTimeout(() => process.stderr.write(${JSON.stringify(partialSuccessStderr)}), 150);`,
+        "setTimeout(() => process.exit(1), 175);"
+      ].join("")
+      : taskkillDiagnosticFixture === "incomplete-drain"
+        ? [
+          `process.stdout.write(${JSON.stringify(partialSuccessStdout)});`,
+          `process.stderr.write(${JSON.stringify(partialSuccessStderr)});`,
+          `setTimeout(() => process.exit(1), ${processStopTimeoutMs + 500});`
+        ].join("")
+        : [
+          `process.stdout.write(${JSON.stringify(fixtureOutput.stdout)});`,
+          `process.stderr.write(${JSON.stringify(fixtureOutput.stderr)});`,
+          "process.exit(1);"
+        ].join("");
+    const taskkill = taskkillDiagnosticFixture
+      ? spawn(process.execPath, ["-e", fixtureScript], {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true
+      })
+      : simulateTreeKillFailure
       ? spawn(process.execPath, ["-e", "process.exit(1)"], {
-        stdio: "ignore",
+        stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true
       })
       : spawn("taskkill.exe", ["/PID", String(processId), "/T", "/F"], {
-        stdio: "ignore",
+        stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true
       });
-    const taskkillResult = await settleWithin(waitForChild(taskkill), processStopTimeoutMs);
+    let capturedBytes = 0;
+    let taskkillStdout = Buffer.alloc(0);
+    let taskkillStderr = Buffer.alloc(0);
+    let taskkillOutputTruncated = false;
+    taskkill.stdout?.on("data", (chunk) => {
+      const remaining = taskkillOutputByteLimit - capturedBytes;
+      if (remaining <= 0) {
+        taskkillOutputTruncated = true;
+        return;
+      }
+      const captured = chunk.subarray(0, remaining);
+      taskkillStdout = Buffer.concat([taskkillStdout, captured]);
+      capturedBytes += captured.length;
+      if (captured.length < chunk.length) taskkillOutputTruncated = true;
+    });
+    taskkill.stderr?.on("data", (chunk) => {
+      const remaining = taskkillOutputByteLimit - capturedBytes;
+      if (remaining <= 0) {
+        taskkillOutputTruncated = true;
+        return;
+      }
+      const captured = chunk.subarray(0, remaining);
+      taskkillStderr = Buffer.concat([taskkillStderr, captured]);
+      capturedBytes += captured.length;
+      if (captured.length < chunk.length) taskkillOutputTruncated = true;
+    });
+    const taskkillClosePromise = new Promise((resolve) => taskkill.once("close", resolve));
+    const taskkillResultPromise = waitForChild(taskkill);
+    const taskkillExitPromise = taskkillDiagnosticFixture === "delayed-drain"
+      || taskkillDiagnosticFixture === "incomplete-drain"
+      ? Promise.resolve({ code: 1, error: null, signal: null })
+      : taskkillResultPromise;
+    const taskkillResult = await settleWithin(taskkillExitPromise, processStopTimeoutMs);
+    const taskkillDurationMs = Date.now() - taskkillStartedAt;
     const taskkillErrorCategory = !taskkillResult.settled
       ? "timeout"
       : taskkillResult.value.error
@@ -268,11 +427,31 @@ async function stopOwnedProcessTree(
         : taskkillResult.value.code === 0
           ? "none"
           : "nonzero-exit";
+    const drainTimeoutMs = Math.max(
+      taskkillStartedAt + processStopTimeoutMs - Date.now(),
+      0
+    );
+    const taskkillDrain = drainTimeoutMs > 0
+      ? await settleWithin(taskkillClosePromise, drainTimeoutMs)
+      : { settled: false };
+    if (!taskkillDrain.settled) {
+      taskkill.stdout?.destroy();
+      taskkill.stderr?.destroy();
+    }
+    const taskkillOutputSummary = summarizeTaskkillOutput(
+      taskkillStdout,
+      taskkillStderr,
+      processId,
+      taskkillResult.settled ? taskkillResult.value.code : null,
+      taskkillDrain.settled,
+      taskkillOutputTruncated
+    );
     if (diagnostics) {
       diagnostics.taskkill = {
         code: taskkillResult.settled ? taskkillResult.value.code : null,
-        durationMs: Date.now() - taskkillStartedAt,
+        durationMs: taskkillDurationMs,
         errorCategory: taskkillErrorCategory,
+        outputSummary: taskkillOutputSummary,
         settled: taskkillResult.settled
       };
     }
@@ -280,6 +459,10 @@ async function stopOwnedProcessTree(
       && !taskkillResult.value.error
       && taskkillResult.value.code === 0;
     if (!treeStopSucceeded) {
+      process.stderr.write(`Playwright taskkill diagnostics: ${JSON.stringify({
+        code: taskkillResult.settled ? taskkillResult.value.code : null,
+        outputSummary: taskkillOutputSummary
+      })}\n`);
       if (diagnostics) diagnostics.selectedBranch = "taskkill-failed";
       if (taskkill.exitCode === null && taskkill.signalCode === null) taskkill.kill();
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
@@ -391,7 +574,13 @@ function startOwnedNextServer({ childEnvironment, port, readinessToken, testRunt
     forceUnproven: testServerMode === "spawn-child",
     knownLeaf: testServerMode === "exit-after-ready" || testServerMode === "listen",
     simulateTreeKillFailure: testRuntime
-      && process.env.VOSIO_E2E_TEST_TREE_KILL_FAILURE === "1"
+      && process.env.VOSIO_E2E_TEST_TREE_KILL_FAILURE === "1",
+    taskkillDiagnosticFixture: testRuntime
+      && ["delayed-drain", "empty", "incomplete-drain", "localized", "partial-success", "truncated"].includes(
+        process.env.VOSIO_E2E_TEST_TREE_KILL_OUTPUT
+      )
+      ? process.env.VOSIO_E2E_TEST_TREE_KILL_OUTPUT
+      : null
   };
 }
 
@@ -409,6 +598,7 @@ async function run() {
   let serverOwnedReadiness = false;
   let serverResultPromise = null;
   const serverStopDiagnostics = createStopDiagnostics();
+  let serverTaskkillDiagnosticFixture = null;
   let workspace = null;
   let shutdownRequested = false;
   let requestedSignal = null;
@@ -485,6 +675,7 @@ async function run() {
     delete childEnvironment.VOSIO_E2E_TEST_SIGNAL_DURING_READINESS;
     delete childEnvironment.VOSIO_E2E_TEST_SKIP_COPY;
     delete childEnvironment.VOSIO_E2E_TEST_TREE_KILL_FAILURE;
+    delete childEnvironment.VOSIO_E2E_TEST_TREE_KILL_OUTPUT;
 
     if (!testRuntime || !process.env.VOSIO_E2E_TEST_SERVER_MODE) {
       await createOwnedReadinessRoute(workspace, readinessToken);
@@ -499,6 +690,7 @@ async function run() {
     serverForceUnproven = serverHandle.forceUnproven;
     serverKnownLeaf = serverHandle.knownLeaf;
     serverSimulateTreeKillFailure = serverHandle.simulateTreeKillFailure;
+    serverTaskkillDiagnosticFixture = serverHandle.taskkillDiagnosticFixture;
     serverResultPromise = waitForChild(server);
     if (testRuntime && process.env.VOSIO_E2E_TEST_SIGNAL_DURING_READINESS === "1") {
       readinessSignalTimer = setTimeout(() => process.emit("SIGTERM"), 50);
@@ -569,7 +761,8 @@ async function run() {
       diagnostics: serverStopDiagnostics,
       forceUnproven: serverForceUnproven,
       knownLeaf: serverKnownLeaf,
-      simulateTreeKillFailure: serverSimulateTreeKillFailure
+      simulateTreeKillFailure: serverSimulateTreeKillFailure,
+      taskkillDiagnosticFixture: serverTaskkillDiagnosticFixture
     });
     const portClosed = serverOwnedReadiness ? await waitForPortClosed(getPlaywrightPort()) : true;
     if (workspace && playwrightStopProven && serverStopped && portClosed) {

@@ -46,7 +46,8 @@ function startTestRunner({
   signalAfterSpawn = false,
   signalBeforeSpawn = false,
   signalDuringReadiness = false,
-  treeKillFailure = false
+  treeKillFailure = false,
+  treeKillOutput
 }: {
   marker?: string;
   mode: "delay-zero" | "exit-one" | "exit-zero";
@@ -58,6 +59,7 @@ function startTestRunner({
   signalBeforeSpawn?: boolean;
   signalDuringReadiness?: boolean;
   treeKillFailure?: boolean;
+  treeKillOutput?: "delayed-drain" | "empty" | "incomplete-drain" | "localized" | "partial-success" | "truncated";
 }) {
   ownedMarkers.add(marker);
   const child = spawn(process.execPath, ["scripts/run-isolated-playwright.mjs"], {
@@ -75,7 +77,8 @@ function startTestRunner({
       VOSIO_E2E_TEST_SIGNAL_BEFORE_SPAWN: signalBeforeSpawn ? "1" : "0",
       VOSIO_E2E_TEST_SIGNAL_DURING_READINESS: signalDuringReadiness ? "1" : "0",
       VOSIO_E2E_TEST_SKIP_COPY: "1",
-      VOSIO_E2E_TEST_TREE_KILL_FAILURE: treeKillFailure ? "1" : "0"
+      VOSIO_E2E_TEST_TREE_KILL_FAILURE: treeKillFailure ? "1" : "0",
+      VOSIO_E2E_TEST_TREE_KILL_OUTPUT: treeKillOutput ?? ""
     },
     stdio: ["ignore", "ignore", "pipe"],
     windowsHide: true
@@ -281,12 +284,159 @@ describe("isolated Playwright outer runner", () => {
           code: 1,
           durationMs: expect.any(Number),
           errorCategory: "nonzero-exit",
+          outputSummary: {
+            failedPidCount: 0,
+            leaderSuccess: false,
+            parseComplete: false,
+            reasonCategoryCounts: {
+              "access-denied": 0,
+              "no-running-instance": 0,
+              "operation-not-supported": 0,
+              other: 0
+            },
+            successPidCount: 0,
+            truncated: false
+          },
           settled: true
         }
       },
       version: 1
     });
   });
+
+  it("persists only bounded taskkill output aggregates for every diagnostic shape", async () => {
+    const fixtures = [
+      {
+        name: "partial-success" as const,
+        port: 3186,
+        summary: {
+          failedPidCount: 3,
+          leaderSuccess: true,
+          parseComplete: true,
+          reasonCategoryCounts: {
+            "access-denied": 1,
+            "no-running-instance": 1,
+            "operation-not-supported": 1,
+            other: 0
+          },
+          successPidCount: 2,
+          truncated: false
+        }
+      },
+      {
+        name: "localized" as const,
+        port: 3187,
+        summary: {
+          failedPidCount: 1,
+          leaderSuccess: true,
+          parseComplete: false,
+          reasonCategoryCounts: {
+            "access-denied": 0,
+            "no-running-instance": 0,
+            "operation-not-supported": 0,
+            other: 1
+          },
+          successPidCount: 1,
+          truncated: false
+        }
+      },
+      {
+        name: "truncated" as const,
+        port: 3188,
+        summary: {
+          failedPidCount: 3,
+          leaderSuccess: true,
+          parseComplete: false,
+          reasonCategoryCounts: {
+            "access-denied": 1,
+            "no-running-instance": 1,
+            "operation-not-supported": 1,
+            other: 0
+          },
+          successPidCount: 2,
+          truncated: true
+        }
+      },
+      {
+        name: "empty" as const,
+        port: 3189,
+        summary: {
+          failedPidCount: 0,
+          leaderSuccess: false,
+          parseComplete: false,
+          reasonCategoryCounts: {
+            "access-denied": 0,
+            "no-running-instance": 0,
+            "operation-not-supported": 0,
+            other: 0
+          },
+          successPidCount: 0,
+          truncated: false
+        }
+      },
+      {
+        name: "delayed-drain" as const,
+        port: 3190,
+        summary: {
+          failedPidCount: 3,
+          leaderSuccess: true,
+          parseComplete: true,
+          reasonCategoryCounts: {
+            "access-denied": 1,
+            "no-running-instance": 1,
+            "operation-not-supported": 1,
+            other: 0
+          },
+          successPidCount: 2,
+          truncated: false
+        }
+      },
+      {
+        name: "incomplete-drain" as const,
+        port: 32191,
+        summary: {
+          failedPidCount: 3,
+          leaderSuccess: true,
+          parseComplete: false,
+          reasonCategoryCounts: {
+            "access-denied": 1,
+            "no-running-instance": 1,
+            "operation-not-supported": 1,
+            other: 0
+          },
+          successPidCount: 2,
+          truncated: false
+        }
+      }
+    ];
+
+    for (const fixture of fixtures) {
+      const run = startTestRunner({
+        mode: "exit-zero",
+        port: fixture.port,
+        serverMode: "spawn-child-unforced",
+        treeKillOutput: fixture.name
+      });
+
+      await expect(run.exit).resolves.toMatchObject({ code: 1 });
+      const workspace = await findMarkedWorkspace(run.marker);
+      const stderr = await run.stderr;
+      expect(workspace, `${fixture.name}: ${stderr}`).not.toBeNull();
+      const receipt = await readTeardownReceipt(workspace!);
+      expect(receipt, fixture.name).toMatchObject({
+        server: {
+          selectedBranch: "taskkill-failed",
+          taskkill: { code: 1, outputSummary: fixture.summary }
+        }
+      });
+      const serializedReceipt = JSON.stringify(receipt);
+      expect(serializedReceipt).not.toContain("No running instance");
+      expect(serializedReceipt).not.toContain("Lokalizovaný důvod");
+      expect(stderr).toContain(`"outputSummary":${JSON.stringify(fixture.summary)}`);
+      expect(stderr).not.toContain("No running instance");
+      expect(stderr).not.toContain("Lokalizovaný důvod");
+    }
+  }, 15_000);
 
   it("fails closed and retains its workspace when a descendant tree is explicitly unproven", async () => {
     const port = 3183;
@@ -315,7 +465,8 @@ describe("isolated Playwright outer runner", () => {
         mode: "exit-zero",
         port,
         receiptFailure,
-        serverMode: "spawn-child"
+        serverMode: "spawn-child-unforced",
+        treeKillOutput: "partial-success"
       });
       const workspace = await waitForMarkedWorkspace(run.marker);
 
@@ -323,6 +474,8 @@ describe("isolated Playwright outer runner", () => {
       const stderr = await run.stderr;
       expect(stderr).toContain(`Owned process-tree cleanup could not be proven; retained ${workspace}.`);
       expect(stderr).toContain("Playwright teardown receipt could not be persisted.");
+      expect(stderr).toContain('"leaderSuccess":true');
+      expect(stderr).not.toContain("No running instance");
       await expect(isPortClosed(port)).resolves.toBe(true);
       await expect(pathExists(workspace)).resolves.toBe(true);
       await expect(pathExists(path.join(workspace, teardownReceiptName))).resolves.toBe(false);
