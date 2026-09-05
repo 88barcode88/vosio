@@ -286,7 +286,13 @@ export function RecordingUploadForm({
         ref={filteredInputRef}
         type="file"
       />
-      <div className="upload-dropzone" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
+      <div
+        aria-label="Výběr souboru pro nahrání"
+        className="upload-dropzone"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={handleDrop}
+        role="group"
+      >
         <Upload aria-hidden="true" size={22} />
         <strong>Přetáhněte zvukový záznam nebo MP4 sem</strong>
         <span>{formatSummary}</span>
@@ -302,7 +308,13 @@ export function RecordingUploadForm({
         </div>
       </div>
 
-      <div className="upload-status-panel" data-phase={phase} data-upload-status="true">
+      <div
+        aria-label="Stav nahrávání souboru"
+        className="upload-status-panel"
+        data-phase={phase}
+        data-upload-status="true"
+        role="group"
+      >
         <div className="upload-file-summary">
           <span className="upload-current-file" title={selectedFiles?.name}>{fileLabel}</span>
           <span>

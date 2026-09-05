@@ -6,19 +6,19 @@ Vosio je pracovní audio workspace pro nahrávání, přepis a AI vytěžení ho
 
 UI je aplikace pro opakované denní používání, ne marketingová stránka. Hlavní objekt je nahrávka.
 
-Tento schválený dokument Notion Warm má přednost před konfliktními tvrzeními o paletě a typografii ve starším `docs/requirements/ui-redesign-plan.md`, dokud nebude tento dokument migrován během kompletního redesignu.
+Tento schválený dokument určuje neutrální Appica-inspired směr a má přednost před staršími konfliktními tvrzeními v požadavcích.
 
 ## Aesthetic Direction
 
-Direction: Notion Warm.
+Direction: neutral Appica-inspired workspace.
 
-Vosio má působit jako klidný, soustředěný pracovní nástroj s teplými neutrálními plochami. Pracovní hustota zůstává vysoká, ale formuláře dostávají více vzduchu pro bezpečné vyplnění. Rozhraní je čitelné, rychlé a nenápadné: bez hero bloků, přehnaných gradientů, dekorativních benefit sekcí, obřích ikon a velkého display písma uvnitř aplikace.
+Vosio má působit jako klidný, soustředěný pracovní nástroj s neutrálním světle šedým plátnem, bílými panely a grafitovým dark mode. Pracovní hustota zůstává vysoká, ale formuláře dostávají více vzduchu pro bezpečné vyplnění. Rozhraní je čitelné, rychlé a nenápadné: bez hero bloků, přehnaných gradientů, dekorativních benefit sekcí, obřích ikon a velkého display písma uvnitř aplikace.
 
 Designová reference:
 
-- pracovní pořádek a hierarchie jako Notion,
-- kompaktní seznamy a konkrétní pracovní kroky jako moderní CRM,
-- teplý papírový materiálový pocit: krémové světlé plochy, uhlově teplý dark mode, jemné vrstvy a důraz na obsah.
+- pracovní pořádek a hierarchie moderního CRM,
+- kompaktní seznamy a konkrétní pracovní kroky jako Appica-inspired workspace,
+- neutrální světlé plátno, bílé panely, jemné rámečky a důraz na obsah.
 
 Memorable detail:
 
@@ -62,49 +62,49 @@ Používej významové tokeny, ne barvy podle názvu odstínu.
 
 ### Dark Mode Palette
 
-Dark mode je teplý uhlový pracovní režim, ne modrozelené rozhraní. Teal je akcent pro aktivní akce, stav live přepisu a brand, ne dominantní barva celé obrazovky.
+Dark mode je grafitový pracovní režim. Primární akce používají vysokokontrastní neutrální barvu; red, green, amber a blue jsou vyhrazené pro sémantické stavy.
 
-- `--bg`: `#191918`
-- `--surface`: `#222220`
-- `--surface-muted`: `#2a2927`
-- `--surface-raised`: `#302f2c`
-- `--border`: `#3d3a36`
-- `--border-strong`: `#56514a`
-- `--text`: `#f3f0ea`
-- `--text-secondary`: `#c1bbb1`
-- `--text-muted`: `#989188`
-- `--accent`: `#5cc8bc`
-- `--accent-hover`: `#79d6cc`
-- `--accent-text`: `#10211f`
-- `--focus-ring`: `var(--accent)`
-- `--success`: `#7fc7a4`
-- `--recording`: `#ff8f8f`
-- `--danger`: `#ff8f8f`
-- `--warning`: `#e8b36a`
-- `--info`: `#86b7e8`
+- `--bg`: `#171717`
+- `--surface`: `#202020`
+- `--surface-muted`: `#282828`
+- `--surface-raised`: `#242424`
+- `--border`: `#3a3a3a`
+- `--border-strong`: `#575757`
+- `--text`: `#f5f5f3`
+- `--text-secondary`: `#c5c5c1`
+- `--text-muted`: `#969692`
+- `--accent`: `#f5f5f3`
+- `--accent-hover`: `#ffffff`
+- `--accent-text`: `#171717`
+- `--focus-ring`: `#74a7ff`
+- `--success`: `#54b67a`
+- `--recording`: `#ef6b6b`
+- `--danger`: `#ef6b6b`
+- `--warning`: `#e2a84d`
+- `--info`: `#74a7ff`
 
 ### Light Mode Palette
 
-Light mode je krémový a pracovní, ne čistě bílá marketingová stránka. Teal akcent používat stejně střídmě jako v dark mode.
+Light mode je neutrální světle šedé plátno s bílými pracovními panely, ne marketingová stránka.
 
-- `--bg`: `#f7f5f2`
-- `--surface`: `#fffefa`
-- `--surface-muted`: `#f0ede8`
+- `--bg`: `#f4f4f2`
+- `--surface`: `#ffffff`
+- `--surface-muted`: `#ececea`
 - `--surface-raised`: `#ffffff`
-- `--border`: `#ded9d1`
-- `--border-strong`: `#c8c1b7`
-- `--text`: `#252421`
-- `--text-secondary`: `#625f59`
-- `--text-muted`: `#817c74`
-- `--accent`: `#0f766e`
-- `--accent-hover`: `#0b5f59`
+- `--border`: `#d8d8d4`
+- `--border-strong`: `#aaa9a4`
+- `--text`: `#171717`
+- `--text-secondary`: `#575754`
+- `--text-muted`: `#70706c`
+- `--accent`: `#171717`
+- `--accent-hover`: `#333330`
 - `--accent-text`: `#ffffff`
-- `--focus-ring`: `var(--accent)`
-- `--success`: `#2f7d56`
-- `--recording`: `#b83f3f`
-- `--danger`: `#b83f3f`
-- `--warning`: `#8a5a16`
-- `--info`: `#2f67a5`
+- `--focus-ring`: `#245bd7`
+- `--success`: `#1e7a46`
+- `--recording`: `#b53535`
+- `--danger`: `#b53535`
+- `--warning`: `#9a5d0a`
+- `--info`: `#245bd7`
 
 ### Temporary Compatibility Aliases
 
@@ -112,11 +112,10 @@ Light mode je krémový a pracovní, ne čistě bílá marketingová stránka. T
 
 ## Speaker Colors
 
-Speaker colors musí být stabilní napříč jedním transcript view. Nepoužívat jen teal.
+Speaker colors musí být stabilní napříč jedním transcript view a nesmí nahrazovat stavové barvy.
 
 Recommended speaker set:
 
-- teal,
 - violet,
 - orange,
 - blue,
@@ -134,9 +133,9 @@ Primary UI font:
 
 Heading font:
 
-- `Newsreader` přes `next/font/google` a proměnnou `--font-heading`,
-- pouze pro nadpisy `h1` až `h3`, nikdy pro běžné UI, formuláře nebo metadata,
-- fallback: `Georgia`, `serif`.
+- `Inter` přes stejnou proměnnou `--font-ui`,
+- pro nadpisy `h1` až `h3` i běžné UI, formuláře a metadata,
+- fallback: `Segoe UI`, `system-ui`, `sans-serif`.
 
 Data/monospace font:
 
@@ -253,7 +252,7 @@ Nepatří sem:
 - Nad obsahem je jeden kompaktní toolbar: pružné hledání s vlastní ikonou, ovládání pokročilých filtrů a `Spravovat`.
 - Stavové facety a informace o výsledku zůstávají ploché; seznam má jeden vnější rámeček, jemné skupinové oddělovače a neobaluje jednotlivé desktopové řádky dalšími kartami.
 - Název je pružný sloupec. Akce mají pevný 128 px pruh, aby zůstaly současně celé viditelné text `Upravit` a 44px tlačítko koše.
-- Inbox používá `--surface-raised`; ve světlém režimu je proto pracovní plocha bílá, aniž by se měnila globální Notion Warm paleta nebo dark mode tokeny.
+- Inbox používá `--surface-raised`; ve světlém režimu je proto pracovní plocha bílá při zachování neutrální palety a dark mode tokenů.
 - Existující filtry `q`, `status`, `client`, `project`, `folder` a opakovatelný `tag` zůstávají URL-backed. Pokročilá organizační část zůstává keep-mounted, aby neztrácela draft ani stav při zavření.
 - Zdroj a datum nejsou nové filtry tohoto UI-only řezu.
 - Při viewportu 900 px a méně se toolbar složí a `Spravovat` zabere celou šířku. Samotný seznam přechází na karty podle skutečné šířky content containeru 680 px a méně, ne pouze podle viewportu.
@@ -300,7 +299,7 @@ Přepis musí být čitelný u krátkého i hodinového hovoru.
 
 Rules:
 
-- dlouhý obsah scrolluje uvnitř panelu,
+- dlouhý detail používá jediný dokumentový scroll celé stránky; player a taby mohou být sticky, ale panel nesmí vytvářet druhý vertikální scroll,
 - speaker blocks jsou rozbalovací,
 - prvních několik bloků může být otevřených,
 - fallback raw text nepředstírá mluvčí,
@@ -357,7 +356,7 @@ Recommended transition:
 
 Requirements:
 
-- tlačítka a ovládací prvky mají minimálně 40 px hit area,
+- tlačítka a ovládací prvky mají minimálně 44 px hit area,
 - icon-only akce mají `aria-label`,
 - taby používají `role="tablist"` / `role="tab"` / `role="tabpanel"`,
 - formuláře mají label nebo přístupný název,

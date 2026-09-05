@@ -147,7 +147,12 @@ export function TranscriptImportForm({ redirectAfterImport = "detail" }: Transcr
   }
 
   return (
-    <form aria-busy={isImporting} className="transcript-import-form" onSubmit={handleSubmit}>
+    <form
+      aria-busy={isImporting}
+      aria-label="Import hotového přepisu"
+      className="transcript-import-form"
+      onSubmit={handleSubmit}
+    >
       <label>
         <span>Název</span>
         <input disabled={isImporting} maxLength={160} name="title" placeholder="Volitelný název" />

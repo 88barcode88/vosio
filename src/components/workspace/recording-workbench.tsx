@@ -118,7 +118,7 @@ function RecordingCard({
   const activeRecording = activeRecordingRow ? toRecordingClientView(activeRecordingRow) : null;
 
   return (
-    <section className="recording-object-header">
+    <section aria-label="Informace a akce nahrávky" className="recording-object-header">
       <div className="recording-detail-main">
         <div className="recording-title-stack">
           <div className="recording-meta">

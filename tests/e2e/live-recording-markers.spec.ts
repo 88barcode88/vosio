@@ -313,6 +313,33 @@ async function installHttpBoundaries(page: Page, boundary: CapturedBoundary) {
   });
 }
 
+test("reduced motion removes recorder transitions and the pressed transform", async ({ page }) => {
+  const boundary: CapturedBoundary = {
+    liveTranscriptRequests: [], markerRequests: [], recordingUpdates: []
+  };
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await installBrowserMediaBoundaries(page);
+  await installHttpBoundaries(page, boundary);
+  await page.goto(`/login/live-marker-e2e?scope=${createFixtureScope()}`);
+  await expect(page.getByRole("group", { name: "Nastavení live nahrávání" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Ovládání live nahrávání" })).toBeVisible();
+  const recordButton = page.getByRole("button", { name: "Nahrávat live" });
+  await expect(recordButton).toBeVisible();
+  await expect.poll(() => recordButton.evaluate((element) => (
+    getComputedStyle(element).transitionDuration
+  ))).toBe("0s");
+
+  await recordButton.hover();
+  await page.mouse.down();
+  try {
+    expect(await recordButton.evaluate((element) => getComputedStyle(element).transform)).toBe("none");
+  } finally {
+    await page.mouse.move(0, 0);
+    await page.mouse.up();
+  }
+});
+
 test("provider loss keeps audio and markers alive before restart-safe fallback", async ({ page }) => {
   const boundary: CapturedBoundary = {
     liveTranscriptRequests: [], markerRequests: [], recordingUpdates: [],

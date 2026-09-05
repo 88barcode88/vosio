@@ -62,7 +62,11 @@ export function NewRecordingWorkspace({
         <span><strong>Preference:</strong> {storageLimitSummary.planLabel}</span>
       </p>
 
-      <div className="capture-grid capture-primary-grid">
+      <div
+        aria-label="Hlavní způsoby pořízení"
+        className="capture-grid capture-primary-grid"
+        role="group"
+      >
         <article className="capture-card capture-card-primary" data-primary-capture="live">
           <div className="capture-card-heading">
             <Mic aria-hidden="true" size={16} />
@@ -109,7 +113,7 @@ export function NewRecordingWorkspace({
       </div>
 
       <article className="capture-card transcript-import-card" data-secondary-capture="transcript">
-        <details className="transcript-import-disclosure">
+        <details aria-label="Import hotového přepisu" className="transcript-import-disclosure">
           <summary>
             <span className="capture-card-heading">
               <FileText aria-hidden="true" size={16} />

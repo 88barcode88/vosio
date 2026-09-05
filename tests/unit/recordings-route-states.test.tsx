@@ -3,6 +3,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import RecordingsError from "../../app/recordings/error";
 import RecordingsLoading from "../../app/recordings/loading";
 
@@ -24,6 +26,17 @@ afterEach(async () => {
 });
 
 describe("recordings route states", () => {
+  it("uses a restrained raised surface for loading and sanitized error recovery", () => {
+    const styles = readFileSync(
+      join(process.cwd(), "app", "styles", "appica-recordings.css"),
+      "utf8"
+    );
+
+    expect(styles).toMatch(/\.recordings-route-state\.ui-panel\s*\{[\s\S]*?background:\s*var\(--surface-raised\);/u);
+    expect(styles).toMatch(/\.recordings-route-state\s+\.recordings-loading-lines\s+span\s*\{[\s\S]*?background:\s*var\(--surface-muted\);/u);
+    expect(styles).toMatch(/\.recordings-route-state\s+\.recordings-error-actions\s*\{[\s\S]*?display:\s*flex;/u);
+  });
+
   it("keeps loading copy accessible without presenting inert controls", async () => {
     await act(async () => root.render(<RecordingsLoading />));
 

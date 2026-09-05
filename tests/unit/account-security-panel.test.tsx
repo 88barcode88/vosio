@@ -27,6 +27,7 @@ describe("AccountSecurityPanel", () => {
     expect(markup).toContain('value="user@example.test"');
     expect(markup).toContain('readOnly=""');
     expect(markup).toContain('noValidate=""');
+    expect(markup).toContain('data-utility-surface="account-security"');
     expect(markup).toMatch(/name="currentPassword"[^>]*autoComplete="current-password"|autoComplete="current-password"[^>]*name="currentPassword"/u);
     expect(markup.match(/autoComplete="new-password"/gu)).toHaveLength(2);
     expect(markup).not.toContain('name="email"');

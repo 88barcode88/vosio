@@ -20,7 +20,7 @@ export function ConfigurationDiagnostics({
   const ready = missingNames.length === 0;
 
   return (
-    <main className={styles.page}>
+    <main className={styles.page} data-utility-surface="configuration">
       <section aria-labelledby="configuration-title" className={styles.card}>
         <p className={styles.eyebrow}>Vosio · {environmentLabels[environment]}</p>
         <h1 id="configuration-title">Konfigurace aplikace</h1>

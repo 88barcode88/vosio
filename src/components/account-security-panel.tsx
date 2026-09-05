@@ -37,7 +37,7 @@ export function AccountSecurityPanel({
   }, [state]);
 
   return (
-    <section className="settings-section account-security-section" aria-labelledby="settings-account">
+    <section className="settings-section account-security-section" data-utility-surface="account-security" aria-labelledby="settings-account">
       <div className="settings-section-heading">
         <h2 id="settings-account">Účet</h2>
         <p>Přihlášený účet a bezpečná změna hesla.</p>

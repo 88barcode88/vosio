@@ -23,6 +23,8 @@ describe("documentation and not found surfaces", () => {
     const anchorTargets = Array.from(markup.matchAll(/href="#([^"]+)"/gu), (match) => match[1]);
     const sectionIds = Array.from(markup.matchAll(/<section[^>]+id="([^"]+)"/gu), (match) => match[1]);
 
+    expect(markup).toContain('data-utility-surface="documentation"');
+    expect(markup).toContain('aria-label="Témata dokumentace"');
     expect(anchorTargets.length).toBeGreaterThan(3);
     expect(new Set(anchorTargets).size).toBe(anchorTargets.length);
     expect(sectionIds).toEqual(expect.arrayContaining(anchorTargets));
@@ -48,6 +50,7 @@ describe("documentation and not found surfaces", () => {
     expect(markup).toContain("Stránka nebyla nalezena");
     expect(markup).toContain('href="/recordings"');
     expect(markup).toContain('href="/recordings/new"');
+    expect(markup).toContain('data-utility-surface="not-found"');
     expect(markup).not.toContain("error=");
   });
 

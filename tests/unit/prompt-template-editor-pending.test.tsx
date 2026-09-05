@@ -104,6 +104,7 @@ describe("effective prompt editor", () => {
     serverContainer.innerHTML = markup;
 
     expect(serverContainer.querySelector<HTMLFieldSetElement>("[data-prompt-editor-fields]")?.disabled).toBe(true);
+    expect(serverContainer.querySelector('[data-utility-surface="prompt-templates"]')).not.toBeNull();
   });
 
   it("shows default and modified states while keeping system fields read-only", async () => {

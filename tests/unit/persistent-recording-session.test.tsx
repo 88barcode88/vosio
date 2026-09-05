@@ -123,8 +123,11 @@ describe("persistent recording session", () => {
     await act(async () => root.render(renderSession(false)));
 
     const dockedRecorder = document.querySelector<HTMLElement>("[data-instance]");
+    const dock = document.querySelector<HTMLElement>('[aria-label="Probíhající nahrávání"]');
     expect(dockedRecorder?.dataset.instance).toBe(instance);
     expect(dockedRecorder?.dataset.compact).toBe("true");
+    expect(dock?.dataset.recorderPlacement).toBe("dock");
+    expect(dock?.dataset.recordingStatus).toBe("recording");
     expect(recorderLifecycle.mounts).toBe(1);
     expect(recorderLifecycle.unmounts).toBe(0);
 

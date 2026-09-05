@@ -11,7 +11,7 @@ type UtilityRouteErrorProps = {
 // UtilityRouteError reports a sanitized route failure and offers safe recovery actions.
 export function UtilityRouteError({ reset, title }: UtilityRouteErrorProps) {
   return (
-    <main className="utility-route-state">
+    <main className="utility-route-state" data-utility-route-state="error">
       <h1>{title}</h1>
       <p>Obsah se teď nepodařilo načíst. Vaše uložená data zůstala beze změny.</p>
       <div>

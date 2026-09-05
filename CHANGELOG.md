@@ -4,6 +4,17 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-05
+
+### Changed
+
+- Celé rozhraní Vosia má neutrální světlý a grafitový tmavý vzhled s jednotnou typografií, přehlednějšími panely a konzistentními ovládacími prvky.
+- Nahrávky, vytváření nahrávky, detail, AI pracovní plochy, nastavení, Koš a dokumentace používají jednotné responzivní uspořádání pro desktop i mobil.
+
+### Fixed
+
+- Ovládání má čitelnější fokus, minimální dotykové cíle a podporu omezeného pohybu i 200% zvětšení textu.
+
 ## [0.2.1] - 2026-09-04
 
 ### Added

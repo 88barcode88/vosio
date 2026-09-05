@@ -124,7 +124,7 @@ const documentationSections: DocumentationSection[] = [
 // DocumentationPanel renders the in-app manual for the current Vosio workflows.
 export function DocumentationPanel() {
   return (
-    <section className="documentation-panel" aria-label="Dokumentace">
+    <section className="documentation-panel" data-utility-surface="documentation" aria-label="Dokumentace">
       <header className="documentation-header">
         <span>Dokumentace</span>
         <h1>Jak Vosio funguje</h1>

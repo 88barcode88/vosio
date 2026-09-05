@@ -26,7 +26,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   }
 
   return (
-    <main className="auth-shell">
+    <main className="auth-shell" data-utility-surface="login">
       <section className="auth-card" aria-label="Přihlášení do Vosio">
         <div className="auth-brand">
           <div className="auth-mark" aria-hidden="true">

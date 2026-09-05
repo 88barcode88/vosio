@@ -267,7 +267,7 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
   }, [settings, visibleSettingsKey]);
 
   return (
-    <section className="utility-panel settings-panel" aria-label="Nastavení">
+    <section className="utility-panel settings-panel" data-utility-surface="settings" aria-label="Nastavení">
       <div className="utility-header settings-header">
         <Settings2 size={20} />
         <div>

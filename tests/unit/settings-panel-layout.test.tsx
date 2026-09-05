@@ -101,6 +101,7 @@ describe("settings workspace layout", () => {
     expect(settingsForm?.contains(accountForm)).toBe(false);
     expect(accountForm?.contains(settingsForm ?? null)).toBe(false);
     expect(markup).toContain("user@example.test");
+    expect(container.querySelector('[data-utility-surface="settings"]')).not.toBeNull();
   });
 
   it("offers only the three supported Trash retention periods and defaults to thirty days", () => {

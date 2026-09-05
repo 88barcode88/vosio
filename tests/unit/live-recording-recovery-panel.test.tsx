@@ -126,7 +126,10 @@ describe("live recording local recovery", () => {
     await flushRecoveryEffect();
 
     expect(fetchMock).toHaveBeenCalledOnce();
+    expect(container.querySelector("h2")?.textContent).toBe("Nedokončené live nahrávky");
+    expect(container.querySelector('[aria-label="Stav obnovy nahrávek"]')).not.toBeNull();
     expect(container.textContent).toContain("Pouze na serveru");
+    expect(container.querySelector('[role="group"][aria-label="Stav obnovy nahrávek"]')).not.toBeNull();
   });
 
   it("resumes current-owner IndexedDB parts before refreshing server recovery state", async () => {

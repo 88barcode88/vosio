@@ -51,7 +51,7 @@ export function AiArchive({
   }
 
   return (
-    <section className="ai-archive" aria-label="Archiv AI výstupů">
+    <section className="ai-archive" data-utility-surface="ai-archive-results" aria-label="Archiv AI výstupů">
       {actionAlert ? <p className="ai-archive-action-alert" role="alert">{actionAlert}</p> : null}
       <div className="ai-archive-filters" aria-label="Filtry AI archivu">
         <SlidersHorizontal aria-hidden="true" size={16} />

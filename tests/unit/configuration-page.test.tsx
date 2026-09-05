@@ -24,6 +24,7 @@ describe("configuration diagnostics page", () => {
     const markup = renderToStaticMarkup(createElement(ConfigurationPage));
 
     expect(markup).toContain("Konfigurace aplikace");
+    expect(markup).toContain('data-utility-surface="configuration"');
     expect(markup).toContain("Preview");
     expect(markup).toContain("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
     expect(markup).toContain("znovu nasaďte");

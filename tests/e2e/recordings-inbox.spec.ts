@@ -369,8 +369,8 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       }
       if (width === 375 || width === 901) {
         const rows = page.locator(".recordings-row");
-        expect(await getBorderRadii(rows.first())).toEqual(["10px", "10px", "10px", "10px"]);
-        expect(await getBorderRadii(rows.last())).toEqual(["10px", "10px", "10px", "10px"]);
+        expect(await getBorderRadii(rows.first())).toEqual(["6px", "6px", "6px", "6px"]);
+        expect(await getBorderRadii(rows.last())).toEqual(["6px", "6px", "6px", "6px"]);
       }
     } else {
       expect(actionsBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width - 0.5);
@@ -591,7 +591,7 @@ for (const width of [901, 1024]) {
       expect(geometry.listGap).toBe("10px");
       expect(geometry.resultBorders).toEqual(["1px", "1px", "1px", "1px"]);
       expect(geometry.lastResultBorders).toEqual(["1px", "1px", "1px", "1px"]);
-      expect(geometry.resultRadii).toEqual(["10px", "10px", "10px", "10px"]);
+      expect(geometry.resultRadii).toEqual(["6px", "6px", "6px", "6px"]);
       expect(geometry.actions.y)
         .toBeGreaterThanOrEqual(geometry.main.y + geometry.main.height - 0.5);
     }
@@ -655,7 +655,7 @@ for (const width of [901, 1024, 1440]) {
       );
       if (surface.fields) {
         expect(await getBorderRadii(target)).toEqual(width === 901
-          ? ["10px", "10px", "10px", "10px"]
+          ? ["6px", "6px", "6px", "6px"]
           : ["0px", "0px", "5px", "5px"]);
       }
       expect(normalMainBox.x).toBeGreaterThanOrEqual(normalTargetBox.x - 0.5);

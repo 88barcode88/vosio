@@ -122,6 +122,7 @@ describe("trash recording actions", () => {
       />
     ));
 
+    expect(container.querySelector('[data-utility-surface="trash-recordings"]')).not.toBeNull();
     expect(container.querySelector('input[aria-label="Vybrat všechny nahrávky v Koši"]')).not.toBeNull();
     for (const recording of recordings) {
       const checkbox = container.querySelector<HTMLInputElement>(`input[aria-label="Vybrat ${recording.title}"]`);

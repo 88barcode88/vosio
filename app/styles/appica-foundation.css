@@ -1,0 +1,58 @@
+/* Shared Appica-inspired shell foundation; feature lanes add screen rules in their own hooks. */
+:root {
+  --appica-canvas: var(--bg);
+  --appica-panel: var(--surface);
+  --appica-action: var(--accent);
+}
+
+.workspace-shell {
+  background: var(--appica-canvas);
+}
+
+.sidebar,
+.mobile-nav {
+  background: var(--appica-panel);
+}
+
+.sidebar {
+  padding: 14px 10px;
+}
+
+.brand-block {
+  margin-bottom: 14px;
+}
+
+.nav-item,
+.sidebar-support-link,
+.new-recording-button,
+.mobile-nav-item,
+.mobile-more-link {
+  border-radius: 8px;
+}
+
+.nav-item-active,
+.nav-item:hover,
+.mobile-nav-item-active,
+.mobile-more-link:hover,
+.mobile-more-link-active {
+  background: var(--surface-muted);
+}
+
+.new-recording-button,
+.process-button,
+.command-primary {
+  border-color: var(--appica-action);
+}
+
+.theme-toggle svg,
+.mobile-nav-create svg,
+.mobile-nav-item-active svg {
+  color: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle,
+  .sidebar-support-link {
+    transition-duration: 0ms;
+  }
+}

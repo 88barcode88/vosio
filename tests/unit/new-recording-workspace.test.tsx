@@ -60,12 +60,17 @@ describe("new recording workspace composition", () => {
   it("renders exactly two ordered primary capture cards and keeps transcript import secondary", async () => {
     await renderWorkspace();
 
-    const primaryCards = Array.from(container.querySelectorAll<HTMLElement>("[data-primary-capture]"));
+    const primaryMethods = container.querySelector('[aria-label="Hlavní způsoby pořízení"]');
+    const primaryCards = Array.from(
+      primaryMethods?.querySelectorAll<HTMLElement>("[data-primary-capture]") ?? []
+    );
+    expect(primaryMethods?.getAttribute("role")).toBe("group");
     expect(primaryCards).toHaveLength(2);
     expect(primaryCards[0]?.textContent).toContain("Nahrávat live");
     expect(primaryCards[1]?.textContent).toContain("Nahrát soubor");
     expect(container.querySelector("[data-secondary-capture]")?.textContent).toContain("Vložit přepis");
     expect(container.querySelector<HTMLDetailsElement>(".transcript-import-disclosure")?.open).toBe(false);
+    expect(container.querySelector('[aria-label="Import hotového přepisu"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Capture console");
   });
 

@@ -2658,35 +2658,33 @@ export function BrowserRecorder({
           <Link data-touch-target="action" href="/recordings/new">Otevřít nahrávání</Link>
         </div>
       ) : null}
-      {!compact && liveModeStoresAudio(saveMode) ? (
-        <p aria-label="Kvalita live audia" className="live-audio-quality-summary">
-          <strong>Kvalita audia:</strong> {getLiveAudioQualitySummary(displayedAudioQuality)}
-        </p>
-      ) : null}
-      {status !== "idle" || !compact ? (
-        <div aria-label="Stav živého nahrávání" className="live-recorder-health" role="status">
-          <p data-recorder-health="audio">{audioCaptureHealthMessage}</p>
-          <p data-recorder-health="provider">
-            {getLiveProviderHealthMessage(saveMode, displayedProviderHealth)}
-          </p>
-        </div>
-      ) : null}
-      {!compact && status === "idle" && liveModeUsesRealtime(saveMode) ? (
-        <label className="live-language-select">
-          <span>Jazyk live přepisu</span>
-          <select
-            aria-label="Jazyk live přepisu"
-            onChange={(event) => setSelectedRealtimeLanguage(event.target.value as SonioxRealtimeLanguageId)}
-            value={selectedRealtimeLanguage}
-          >
-            {sonioxRealtimeLanguageOptions.map((language) => (
-              <option key={language.id} value={language.id}>{language.label}</option>
-            ))}
-          </select>
-        </label>
-      ) : null}
       {!compact ? (
-        <>
+        <div aria-label="Nastavení live nahrávání" className="live-recorder-settings" role="group">
+          {liveModeStoresAudio(saveMode) ? (
+            <p aria-label="Kvalita live audia" className="live-audio-quality-summary">
+              <strong>Kvalita audia:</strong> {getLiveAudioQualitySummary(displayedAudioQuality)}
+            </p>
+          ) : null}
+          <div aria-label="Stav živého nahrávání" className="live-recorder-health" role="status">
+            <p data-recorder-health="audio">{audioCaptureHealthMessage}</p>
+            <p data-recorder-health="provider">
+              {getLiveProviderHealthMessage(saveMode, displayedProviderHealth)}
+            </p>
+          </div>
+          {status === "idle" && liveModeUsesRealtime(saveMode) ? (
+            <label className="live-language-select">
+              <span>Jazyk live přepisu</span>
+              <select
+                aria-label="Jazyk live přepisu"
+                onChange={(event) => setSelectedRealtimeLanguage(event.target.value as SonioxRealtimeLanguageId)}
+                value={selectedRealtimeLanguage}
+              >
+                {sonioxRealtimeLanguageOptions.map((language) => (
+                  <option key={language.id} value={language.id}>{language.label}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <fieldset className="live-save-mode live-audio-source" disabled={status !== "idle"}>
             <legend>Zdroj zvuku</legend>
             <label>
@@ -2715,79 +2713,88 @@ export function BrowserRecorder({
             V Chrome nebo Edge vyberte kartu Google Meet a nechte zapnuté Sdílet také zvuk karty.
             Bez toho se zvuk protistrany nenahraje.
           </p>
-        </>
-      ) : null}
-      {allowTranscriptOnly && !compact ? (
-        <fieldset className="live-save-mode" disabled={status !== "idle"}>
-          <legend>Ukládání</legend>
-          {(["audio_and_live_transcript", "audio_only", "live_transcript_only"] as const).map((mode) => (
-            <label key={mode}>
-              <input
-                checked={saveMode === mode}
-                disabled={liveModeStoresAudio(mode) && maxAudioFileSizeBytes === null}
-                name="liveSaveMode"
-                onChange={() => setSaveMode(mode)}
-                type="radio"
-                value={mode}
-              />
-              <span>{getSaveModeLabel(mode, maxAudioFileSizeBytes)}</span>
-            </label>
-          ))}
-        </fieldset>
-      ) : null}
-      <button
-        className={status === "recording" ? "record-button record-button-active" : "record-button"}
-        disabled={
-          !audioCaptureCapabilityResolved ||
-          status === "starting" ||
-          status === "saving" ||
-          (liveModeStoresAudio(saveMode) && maxAudioFileSizeBytes === null)
-        }
-        onClick={status === "recording" ? () => void stopRecording() : startRecording}
-        type="button"
-      >
-        {status === "recording" ? <Square size={18} /> : <Mic size={18} />}
-        {status === "recording"
-          ? "Zastavit"
-          : status === "starting"
-            ? "Spouštím..."
-            : "Nahrávat live"}
-      </button>
-      <span className="recording-timer">
-        {status === "recording" ? (
-          <span aria-label="Nahrávání probíhá" className="recording-indicator" role="img" />
-        ) : null}
-        {formatElapsedTime(elapsedSeconds)}
-      </span>
-      {status === "recording" ? (
-        <div className="live-marker-actions">
-          <button
-            className="live-marker-button"
-            disabled={!markerReady || liveMarkerPending}
-            onClick={markImportantMoment}
-            type="button"
-          >
-            <Flag size={16} />
-            {liveMarkerPending
-              ? "Ukládám moment..."
-              : liveMarkerFeedback?.tone === "error"
-                ? "Zkusit moment znovu"
-                : "Označit moment"}
-          </button>
-          <span aria-live="polite" className="live-marker-count">
-            Označené momenty: {savedLiveMarkerCount}
-          </span>
-          {liveMarkerFeedback ? (
-            <p
-              aria-live={liveMarkerFeedback.tone === "error" ? "assertive" : "polite"}
-              className="live-marker-feedback"
-              role={liveMarkerFeedback.tone === "error" ? "alert" : "status"}
-            >
-              {liveMarkerFeedback.message}
-            </p>
+          {allowTranscriptOnly ? (
+            <fieldset className="live-save-mode" disabled={status !== "idle"}>
+              <legend>Ukládání</legend>
+              {(["audio_and_live_transcript", "audio_only", "live_transcript_only"] as const).map((mode) => (
+                <label key={mode}>
+                  <input
+                    checked={saveMode === mode}
+                    disabled={liveModeStoresAudio(mode) && maxAudioFileSizeBytes === null}
+                    name="liveSaveMode"
+                    onChange={() => setSaveMode(mode)}
+                    type="radio"
+                    value={mode}
+                  />
+                  <span>{getSaveModeLabel(mode, maxAudioFileSizeBytes)}</span>
+                </label>
+              ))}
+            </fieldset>
           ) : null}
         </div>
+      ) : status !== "idle" ? (
+        <div aria-label="Stav živého nahrávání" className="live-recorder-health" role="status">
+          <p data-recorder-health="audio">{audioCaptureHealthMessage}</p>
+          <p data-recorder-health="provider">
+            {getLiveProviderHealthMessage(saveMode, displayedProviderHealth)}
+          </p>
+        </div>
       ) : null}
+      <div aria-label="Ovládání live nahrávání" className="live-recorder-console" role="group">
+        <button
+          className={status === "recording" ? "record-button record-button-active" : "record-button"}
+          disabled={
+            !audioCaptureCapabilityResolved ||
+            status === "starting" ||
+            status === "saving" ||
+            (liveModeStoresAudio(saveMode) && maxAudioFileSizeBytes === null)
+          }
+          onClick={status === "recording" ? () => void stopRecording() : startRecording}
+          type="button"
+        >
+          {status === "recording" ? <Square size={18} /> : <Mic size={18} />}
+          {status === "recording"
+            ? "Zastavit"
+            : status === "starting"
+              ? "Spouštím..."
+              : "Nahrávat live"}
+        </button>
+        <span className="recording-timer">
+          {status === "recording" ? (
+            <span aria-label="Nahrávání probíhá" className="recording-indicator" role="img" />
+          ) : null}
+          {formatElapsedTime(elapsedSeconds)}
+        </span>
+        {status === "recording" ? (
+          <div className="live-marker-actions">
+            <button
+              className="live-marker-button"
+              disabled={!markerReady || liveMarkerPending}
+              onClick={markImportantMoment}
+              type="button"
+            >
+              <Flag size={16} />
+              {liveMarkerPending
+                ? "Ukládám moment..."
+                : liveMarkerFeedback?.tone === "error"
+                  ? "Zkusit moment znovu"
+                  : "Označit moment"}
+            </button>
+            <span aria-live="polite" className="live-marker-count">
+              Označené momenty: {savedLiveMarkerCount}
+            </span>
+            {liveMarkerFeedback ? (
+              <p
+                aria-live={liveMarkerFeedback.tone === "error" ? "assertive" : "polite"}
+                className="live-marker-feedback"
+                role={liveMarkerFeedback.tone === "error" ? "alert" : "status"}
+              >
+                {liveMarkerFeedback.message}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       {!compact && captionMode ? (
         <div aria-live="polite" className="caption-surface">
           <span>Live titulky</span>

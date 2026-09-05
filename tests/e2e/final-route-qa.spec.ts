@@ -124,6 +124,19 @@ async function expectTouchSafeControls(page: Page) {
   expect(offenders).toEqual([]);
 }
 
+// readTypographySizes samples real page text so browser text scaling cannot be hidden by fixed CSS pixels.
+async function readTypographySizes(page: Page) {
+  return page.evaluate(() => {
+    const control = document.querySelector<HTMLElement>("button, input, select, textarea");
+    const heading = document.querySelector<HTMLElement>("h1");
+    return {
+      body: Number.parseFloat(getComputedStyle(document.body).fontSize),
+      control: control ? Number.parseFloat(getComputedStyle(control).fontSize) : null,
+      heading: heading ? Number.parseFloat(getComputedStyle(heading).fontSize) : null
+    };
+  });
+}
+
 test.describe.configure({ mode: "parallel", timeout: 60_000 });
 
 test("favicon is a real ICO asset with the expected MIME type", async ({ request }) => {
@@ -139,7 +152,7 @@ for (const surface of surfaces) {
     const scope = createFixtureScope();
     await page.emulateMedia({ reducedMotion: "reduce" });
 
-    for (const width of [375, 768, 1024, 1440]) {
+    for (const width of [320, 390, 768, 900, 1024, 1440]) {
       await page.setViewportSize({ height: width === 1024 ? 640 : 760, width });
       await page.goto(surface.path(scope));
       await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
@@ -195,16 +208,23 @@ test("settings and detail stay reachable in 375px landscape with enlarged root t
 
   for (const surface of surfaces.filter(({ name }) => name === "settings" || name === "detail")) {
     await page.goto(surface.path(scope));
-    await page.addStyleTag({ content: "html { font-size: 125% !important; }" });
+    const defaultTypography = await readTypographySizes(page);
+    await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
+    const scaledTypography = await readTypographySizes(page);
+    for (const key of ["body", "control", "heading"] as const) {
+      expect(scaledTypography[key]).not.toBeNull();
+      expect(scaledTypography[key]!).toBeGreaterThanOrEqual(defaultTypography[key]! * 1.9);
+      expect(scaledTypography[key]!).toBeLessThanOrEqual(defaultTypography[key]! * 2.1);
+    }
     await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
     await expectRouteGeometry(page);
     await expectTouchSafeControls(page);
+    await page.screenshot({
+      caret: "initial",
+      fullPage: true,
+      path: testInfo.outputPath(`${surface.name}-landscape-large-text.png`)
+    });
   }
-  await page.screenshot({
-    caret: "initial",
-    fullPage: true,
-    path: testInfo.outputPath("settings-landscape-large-text.png")
-  });
   expect(failures, JSON.stringify(failures)).toEqual([]);
 });
 
