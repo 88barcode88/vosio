@@ -51,6 +51,7 @@ Design systém musí od začátku počítat s tokeny pro:
 - Recording/stop stavy používají červenou.
 - Saved/safe stavy používají tlumenou sage zelenou, ne ostrou produktovou zelenou.
 - Neutrální šedá a tmavé/světlé surface vrstvy nesou většinu UI.
+- Značka Vosio používá bílou zvukovou vlnu na tmavém grafitovém podkladu; tyrkysová ani zelená nejsou brand barvou loga.
 - Fonty mají být menší a pracovní, bez hero-scale nadpisů uvnitř aplikace.
 - Běžné ikony mají být malé; velké dekorativní ikony se nepoužívají.
 - H1/H2/H3 jsou povolené, ale běžný obsah má zůstat menší a kompaktní.
@@ -73,6 +74,10 @@ Sidebar má zůstat čistý a kompaktní:
 Sidebar nemá obsahovat duplicitní seznam nahrávek ani storage kartu. Nahrávky patří na stránku `/recordings` a route `/templates` zůstává stabilní pro `AI prompty`. Na mobilu do 900 px má fixed spodní navigace přesně pět cílů `Nahrávky`, `Nová`, `AI prompty`, `Nastavení`, `Více`; Drawer `Více` zpřístupní `Koš`, `Dokumentaci`, motiv, support a účet s odhlášením.
 
 Desktopový sidebar má 248 px rozbalený a 64 px sbalený. Sbalení je pouze lokální vizuální preference; všechny ikony zůstávají dostupné jako nejméně 44px cíle s popisem.
+
+Pracovní obsah na desktopu využívá celou zbývající šířku viewportu. Globální max-width se nepoužívá; čitelnost delších textů se řídí pouze na úrovni konkrétních odstavců.
+
+`/settings` zobrazuje část Účet s přihlášeným e-mailem a změnou hesla hned pod hlavičkou, před nastavením AI, přepisu a nahrávání. `/login` používá stejnou neutrální typografii, bílé logo a na desktopu kompaktní dvousloupcovou plochu; na mobilu se skládá do jednoho sloupce.
 
 `AI zpracování` se nemá zobrazovat jako samostatná primární položka v sidebaru, pokud pouze pracuje s výstupy konkrétní nahrávky. AI patří do detailu nahrávky jako tab.
 

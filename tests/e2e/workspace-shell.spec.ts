@@ -755,6 +755,20 @@ for (const width of [375, 768, 1024, 1440]) {
   });
 }
 
+test("wide desktop surfaces use the available workspace width", async ({ page }) => {
+  await page.setViewportSize({ width: 1840, height: 960 });
+
+  await page.goto(fixturePath("recordings"));
+  const workspaceWidth = await page.locator(".workspace-content").evaluate((element) => element.getBoundingClientRect().width);
+  const inboxWidth = await page.locator(".recordings-inbox").evaluate((element) => element.getBoundingClientRect().width);
+  expect(workspaceWidth).toBeGreaterThan(1550);
+  expect(inboxWidth).toBeGreaterThan(1450);
+
+  await page.goto(fixturePath("settings"));
+  const settingsWidth = await page.locator(".settings-panel").evaluate((element) => element.getBoundingClientRect().width);
+  expect(settingsWidth).toBeGreaterThan(1450);
+});
+
 for (const width of [375, 768, 1024, 1440]) {
   test(`C8 real detail route contains its complete workbench at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 760 });

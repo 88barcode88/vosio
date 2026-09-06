@@ -6,6 +6,11 @@ const baseStyles = readFileSync(join(process.cwd(), "app", "styles", "base.css")
 const globalsStyles = readFileSync(join(process.cwd(), "app", "globals.css"), "utf8");
 const rootLayout = readFileSync(join(process.cwd(), "app", "layout.tsx"), "utf8");
 const uiPrimitives = readFileSync(join(process.cwd(), "app", "styles", "ui-primitives.css"), "utf8");
+const appicaFoundation = readFileSync(join(process.cwd(), "app", "styles", "appica-foundation.css"), "utf8");
+const appicaUtilities = readFileSync(join(process.cwd(), "app", "styles", "appica-utilities.css"), "utf8");
+const loginPage = readFileSync(join(process.cwd(), "app", "login", "page.tsx"), "utf8");
+const logoMark = readFileSync(join(process.cwd(), "public", "vosio-logo.svg"), "utf8");
+const settingsPanel = readFileSync(join(process.cwd(), "src", "components", "settings-panel.tsx"), "utf8");
 const manifest = readFileSync(join(process.cwd(), "public", "manifest.webmanifest"), "utf8");
 const designDirection = readFileSync(join(process.cwd(), "docs", "requirements", "ui-direction.md"), "utf8");
 
@@ -105,6 +110,21 @@ describe("Appica-inspired design contract", () => {
       expect(uiPrimitives).toContain(`.ui-status-${tone}`);
       expect(uiPrimitives).toContain(`var(--${tone === "danger" ? "danger" : tone})`);
     }
+  });
+
+  it("uses the full desktop workspace width without reviving the legacy settings cap", () => {
+    expect(appicaFoundation).toMatch(/\.workspace-content\s*\{[^}]*width:\s*100%;[^}]*margin:\s*0;/su);
+    expect(appicaFoundation).not.toContain("width: min(100%, 1420px);");
+    expect(appicaUtilities).toMatch(/\[data-utility-surface="settings"\]\.settings-panel\s*\{[^}]*max-width:\s*none;/su);
+  });
+
+  it("keeps account security prominent and gives login the same monochrome product identity", () => {
+    expect(settingsPanel.indexOf("<AccountSecurityPanel"))
+      .toBeLessThan(settingsPanel.indexOf("<form action={disableSave"));
+    expect(loginPage).toContain('className="auth-layout"');
+    expect(loginPage).toContain('className="auth-intro"');
+    expect(logoMark).toContain('fill="#F7F8FA"');
+    expect(logoMark).not.toMatch(/#38D9D0|#48D597/iu);
   });
 
   it("documents the approved direction and one document scroll for recording detail", () => {
