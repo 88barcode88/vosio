@@ -1592,6 +1592,7 @@
   .recording-detail-sticky {
     top: 0;
     box-shadow: 0 4px 14px color-mix(in srgb, #000 12%, transparent);
+    backdrop-filter: none;
   }
 
   .recording-detail-sticky .recording-audio-player {

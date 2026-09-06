@@ -1639,6 +1639,14 @@
     justify-self: start;
   }
 
+  [data-utility-surface="ai-archive-results"] .ai-archive-filters {
+    grid-template-columns: 1fr;
+  }
+
+  [data-utility-surface="ai-archive-results"] .ai-archive-filters > svg {
+    display: none;
+  }
+
   [data-utility-surface="settings"] .settings-grid-transcription,
   [data-utility-surface="settings"] .settings-grid,
   [data-utility-surface="settings"] .settings-model-row,
