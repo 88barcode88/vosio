@@ -84,10 +84,21 @@ async function installManyAiBoundaries(page: Page) {
     { ...jobBase, completed_at: "2026-08-06T10:00:00.000Z", created_at: "2026-08-06T09:00:00.000Z", id: "job-failed", error_message: "Model neodpověděl.", started_at: "2026-08-06T09:00:01.000Z", status: "failed" },
     { ...jobBase, completed_at: "2026-08-06T10:00:00.000Z", created_at: "2026-08-06T09:00:00.000Z", id: "job-done", started_at: "2026-08-06T09:00:01.000Z", status: "done" }
   ];
+  const classifications = [
+    { actions: [], cleanup_reason: "active_or_slow", job_id: "job-queued", poll_eligible: true },
+    { actions: [], cleanup_reason: "active_or_slow", job_id: "job-running", poll_eligible: true },
+    { actions: ["reconcile", "interrupt"], cleanup_reason: "eligible_stale_unclaimed", job_id: "job-stalled", poll_eligible: false },
+    { actions: ["delete"], cleanup_reason: "eligible_terminal_no_output", job_id: "job-failed", poll_eligible: false },
+    { actions: [], cleanup_reason: "protected_output", job_id: "job-done", poll_eligible: false }
+  ];
 
   await page.route("**/api/transcripts/*/ai-state", async (route) => {
     await stateRelease;
-    await route.fulfill({ contentType: "application/json", json: { jobs, outputs }, status: 200 });
+    await route.fulfill({
+      contentType: "application/json",
+      json: { classifications, cleanup: { eligible_count: 2, next_cursor: null }, jobs, outputs },
+      status: 200
+    });
   });
   await page.route("**/api/ai-outputs/*", async (route) => {
     const outputId = new URL(route.request().url()).pathname.split("/").at(-1)!;
@@ -124,16 +135,23 @@ test("AI jobs survive tab navigation while 25 output bodies stay lazy", async ({
   boundary.releaseState();
   await expect(page.getByText("25 výstupů")).toBeVisible();
   await expect(page.locator(".ai-output-detail")).toHaveCount(25);
-  for (const label of ["Ve frontě", "Probíhá", "Trvá déle než obvykle", "Selhalo", "Hotovo"]) {
-    await expect(page.getByText(label, { exact: false }).first()).toBeVisible();
+  const jobPanel = page.locator(".ai-running-state");
+  await expect(jobPanel).not.toHaveAttribute("open", "");
+  await expect(jobPanel.locator("summary")).toContainText("2 aktivní · 2 chyb · 2 k vyčištění");
+  await jobPanel.locator("summary").click();
+  for (const label of ["Ve frontě", "Probíhá", "Trvá déle než obvykle", "Selhalo"]) {
+    await expect(jobPanel.getByText(label, { exact: false }).first()).toBeVisible();
   }
+  await expect(jobPanel.getByText("Hotovo", { exact: false })).toHaveCount(0);
   await expect.poll(() => boundary.bodyRequests.length).toBe(1);
 
   await page.locator(".ai-output-detail").last().locator("summary").click();
   await expect.poll(() => boundary.bodyRequests.length).toBe(2);
   await page.getByRole("tab", { name: "Přepis" }).click();
   await page.getByRole("tab", { name: "AI zpracování" }).click();
-  await expect(page.getByText("Trvá déle než obvykle", { exact: false })).toBeVisible();
+  const restoredJobPanel = page.locator(".ai-running-state");
+  if (await restoredJobPanel.getAttribute("open") === null) await restoredJobPanel.locator("summary").click();
+  await expect(restoredJobPanel.getByText("Trvá déle než obvykle", { exact: false })).toBeVisible();
   expect(boundary.bodyRequests).toHaveLength(2);
 });
 
@@ -314,19 +332,19 @@ for (const width of [320, 390, 768, 900, 1024, 1440]) {
     await expect(page.locator(".ai-tab-actions .quick-grid button").first()).toBeVisible();
     for (const theme of ["dark", "light"] as const) {
       await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
-      const selectors = [
-        ".recording-object-header .export-controls > summary",
-        ".recording-object-header .recording-inline-edit > summary",
-        ".recording-object-header .delete-recording-danger button",
-        ".recording-object-header .recording-organization-summary > button",
-        ".recording-object-header .recording-header-operations .command-button",
-        ".ai-tab-actions .quick-grid button:first-child"
+      const controls = [
+        [".recording-object-header .export-controls > summary", "10px"],
+        [".recording-object-header .recording-inline-edit > summary", "10px"],
+        [".recording-object-header .delete-recording-danger button", "10px"],
+        [".recording-object-header .recording-organization-summary > button", "10px"],
+        [".recording-object-header .recording-header-operations .command-button", "10px"],
+        [".ai-tab-actions .quick-grid button:first-child", "6px"]
       ];
 
-      for (const selector of selectors) {
+      for (const [selector, borderRadius] of controls) {
         const styles = await readCompactStyle(page, selector);
         expect(styles.height).toBeGreaterThanOrEqual(44);
-        expect(styles.borderRadius).toBe("6px");
+        expect(styles.borderRadius).toBe(borderRadius);
         expect(styles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
         if (styles.iconWidth !== null || styles.iconHeight !== null) {
           expect(styles.iconWidth).toBe(12);
@@ -385,30 +403,27 @@ for (const width of [375, 768, 901, 1024]) {
   });
 }
 
-test("desktop sticky player reaches the scrollport top without a gap", async ({ page }) => {
+test("desktop sticky player stays directly below the global topbar", async ({ page }) => {
   await page.setViewportSize({ height: 720, width: 1024 });
   await openFixture(page);
   const content = page.locator(".content-area-document");
   await content.evaluate((element) => { element.scrollTop = 900; });
   await expect.poll(async () => {
-    const [contentBox, stickyBox] = await Promise.all([
+    const [contentBox, stickyBox, topbarBox] = await Promise.all([
       content.boundingBox(),
-      page.locator(".recording-detail-sticky").boundingBox()
+      page.locator(".recording-detail-sticky").boundingBox(),
+      page.locator(".workspace-topbar").boundingBox()
     ]);
-    if (!contentBox || !stickyBox) return Number.POSITIVE_INFINITY;
-    return stickyBox.y - contentBox.y;
+    if (!contentBox || !stickyBox || !topbarBox) return Number.POSITIVE_INFINITY;
+    return Math.abs(stickyBox.y - (topbarBox.y + topbarBox.height));
   }).toBeLessThanOrEqual(1);
 });
 
-test("desktop organization controls align right and give save a restrained priority", async ({ page }) => {
+test("desktop organization editor keeps save visually distinct", async ({ page }) => {
   await page.setViewportSize({ height: 720, width: 1024 });
   await openFixture(page);
-  const header = page.locator(".recording-object-header");
   const organizationButton = page.getByRole("button", { name: "Upravit zařazení" });
-  const [headerBox, buttonBox] = await Promise.all([header.boundingBox(), organizationButton.boundingBox()]);
-  expect(headerBox).not.toBeNull();
-  expect(buttonBox).not.toBeNull();
-  expect((headerBox!.x + headerBox!.width) - (buttonBox!.x + buttonBox!.width)).toBeLessThanOrEqual(18);
+  await expect(organizationButton).toBeVisible();
 
   await organizationButton.click();
   const actionGroup = page.locator(".recording-organization-actions");

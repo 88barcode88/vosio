@@ -73,7 +73,7 @@ Sidebar má zůstat čistý a kompaktní:
 
 Sidebar nemá obsahovat duplicitní seznam nahrávek ani storage kartu. Nahrávky patří na stránku `/recordings` a route `/templates` zůstává stabilní pro `AI prompty`. Na mobilu do 900 px má fixed spodní navigace přesně pět cílů `Nahrávky`, `Nová`, `AI prompty`, `Nastavení`, `Více`; Drawer `Více` zpřístupní `Koš`, `Dokumentaci`, motiv, support a účet s odhlášením.
 
-Desktopový sidebar má 248 px rozbalený a 64 px sbalený. Sbalení je pouze lokální vizuální preference; všechny ikony zůstávají dostupné jako nejméně 44px cíle s popisem.
+Desktopový sidebar má 224 px rozbalený a 64 px sbalený. Sbalení je pouze lokální vizuální preference; všechny ikony zůstávají dostupné jako nejméně 44px cíle s popisem. Vedle něj je 72px globální topbar s breadcrumbem aktuální pracovní plochy a přepínačem motivu.
 
 Pracovní obsah na desktopu využívá celou zbývající šířku viewportu. Globální max-width se nepoužívá; čitelnost delších textů se řídí pouze na úrovni konkrétních odstavců.
 
@@ -191,7 +191,9 @@ AI výstupy mají být uložené a znovu otevřitelné. Nemají být jen dočasn
 
 Ruční AI zpracování musí být odolné vůči navigaci a nejistému transportu. Po odeslání se nejprve zobrazí durable stav `queued` nebo `running`; stejný request UUID při transportním retry nesmí založit nový provider call. Explicitní uživatelský retry po terminálním selhání vždy vytvoří nové UUID a původní job zůstane v historii. UI nabízí bezpečné `Obnovit` nebo `Přerušit`: stale `running` s uloženým výstupem se uzavře jako hotový, stale `running` bez výstupu jako přerušený a čerstvý `running` se nesmí vydávat za zrušený. Provider chyby se zobrazují pouze přes pevné české kódy/zprávy, bez raw diagnostiky, transcriptu nebo outputu.
 
-Stavové metadata se načítají jen na aktivní viditelné online ploše `AI zpracování` nebo `Časová osa`. Tempo je 5 sekund prvních 30 sekund, 10 sekund mezi 30 a 120 sekundami a poté 30 sekund; při hidden, offline nebo přepnutí na jiný tab je polling zastaven. Focus, návrat viditelnosti a online změna dělají jeden deduplikovaný catch-up, při chybě nejdříve po 30 sekundách. Běží nejvýše jeden request a po změně se aktualizuje lokální state, ne celý App Router přes `router.refresh`.
+Stavová metadata používají serverové `poll_eligible` a jen aktivní viditelnou online AI/Timeline plochu: 10 s prvních 30 s, 30 s mezi 30 a 120 s a 60 s poté. Focus/visibility/online catch-up nastává pouze více než 30 s po poslední dokončené kontrole; běží jeden request in flight a po chybě je backoff nejméně 30 s. Žádný kompletní refresh ani viditelný reset výstupů, úkolů, focusu, scrollu, rozepsaných polí či otevřených karet.
+
+Přehled AI požadavků je výchozí zavřený Appica panel. Hotové řádky se nezobrazují. Akce obnovit, přerušit a smazat jsou pouze podle serverového seznamu actions; neznámý legacy stav má pravdivé upozornění bez falešné možnosti opravy. „Vyčistit staré požadavky“ stránkuje GET -> POST nejvýše 50 přesných ID -> další cursor, neprovádí neomezené načtení před mazáním. Výstupy a projekce jsou chráněné; klient odstraní pouze serverem potvrzená ID.
 
 ## Chat nad přepisem
 
@@ -229,12 +231,12 @@ Stránka nahrávek je kompaktní neutrální inbox. Priorita je rychle najít sp
 Požadavky:
 
 - nad obsahem je jeden kompaktní toolbar s pružným hledáním, tlačítkem pokročilých filtrů a `Spravovat`; při viewportu 900 px a méně se složí a `Spravovat` zabere celou šířku,
-- toolbar, stavové facety a informace o výsledku nejsou samostatné vnořené tabulky nebo karty,
-- běžný seznam je jednoúrovňový flat list s jedním vnějším rámečkem, jemnými skupinovými oddělovači a řádky dělenými pouze linkou,
-- hlavní pracovní plocha a seznam používají `surface-raised`, takže jsou ve světlém režimu bílé v rámci neutrální palety,
+- toolbar a informace o výsledku nejsou samostatné vnořené tabulky nebo karty; stavové facety tvoří jediný měkký segmentovaný řádek,
+- běžný seznam je jednoúrovňový flat list v jednom bílém 16px panelu s jemnými skupinovými oddělovači a řádky dělenými pouze linkou,
+- hlavní pracovní plocha používá studené `#f7f8fa` pozadí a seznam bílý `surface-raised`, bez původního teplého béžového tónu,
 - seznam nahrávek bez tlačítka `Otevřít`,
-- název je hlavní Next odkaz na detail; editace a koš jsou jeho samostatní sourozenci,
-- název je pružný sloupec a akce mají pevný 128 px pruh, ve kterém zůstávají celé viditelné `Upravit` i Koš a oba cíle mají nejméně 44 px,
+- název je hlavní Next odkaz na detail; editace a koš jsou jeho samostatní sourozenci uvnitř přístupného ellipsis menu,
+- název je pružný sloupec a řádek končí úzkou ellipsis akcí s nejméně 44px cílem,
 - editace názvu přes samostatný ovládací prvek,
 - editor názvu se po úspěšném uložení automaticky zavře; při chybě zůstane otevřený s rozepsanou hodnotou,
 - kompaktní stavové URL chips ukazují přesné facety všech aktivních persisted stavů; samostatné `Smazáno` vede na `/trash`,

@@ -18,7 +18,7 @@ Environment changes are read when the app is built or started. Redeploy or resta
 
 ## Vercel baseline
 
-Vosio expects the required variables below. `GEMINI_API_KEY` is optional unless Gemini models are enabled for real use.
+Vosio expects the required variables below. `GEMINI_API_KEY` and `MISTRAL_API_KEY` are optional unless their respective models are selected for real use.
 
 | Variable | Required for | Why it exists |
 | --- | --- | --- |
@@ -28,11 +28,12 @@ Vosio expects the required variables below. `GEMINI_API_KEY` is optional unless 
 | `SONIOX_API_KEY` | Server only | Creates async transcription jobs and mints temporary realtime keys. Never expose it to the browser. |
 | `OPENAI_API_KEY` | Server only | Runs OpenAI AI processing over completed transcripts. Models are selected in the app, not through Vercel. |
 | `GEMINI_API_KEY` | Server only, optional | Required only when the app user selects a Gemini model for AI processing. Never expose it to the browser. |
+| `MISTRAL_API_KEY` | Server only, optional | Required only when the app user selects a Mistral model for AI processing. Never expose it to the browser. |
 
 ## Safe configuration diagnostics
 
 - Before Supabase can initialize, `/configuration` shows only missing public Supabase variable names and the coarse environment label. It never imports a Supabase client or displays values.
-- After authentication, **Settings -> Technical information** shows readiness, the environment label, optional Gemini presence, and missing required names only. It never displays secret values, prefixes, lengths, or hashes.
+- After authentication, **Settings -> Technical information** shows readiness, the environment label, optional Gemini/Mistral key presence, and missing required names only. It never displays secret values, prefixes, lengths, or hashes.
 - Diagnostics do not apply environment changes. Redeploy or restart after fixing the hosting configuration.
 
 ## Variables
@@ -76,15 +77,21 @@ Vosio expects the required variables below. `GEMINI_API_KEY` is optional unless 
 - Required only for AI processing.
 - Server-only OpenAI API key.
 - Used for OpenAI AI processing.
-- App model options include `gpt-5.6-sol` with reasoning `xhigh`, `gpt-5.6-terra` with reasoning `high` and `gpt-5.6-luna` with reasoning `xhigh`; the selected model is stored as a safe user preference and sent only server-side. Indicative prices are $5/$30, $2/$12 and $0.20/$1.20 per 1M input/output tokens respectively; provider billing remains the source of truth. For complex calls prefer Sol or Terra and review generated tasks/evidence against the transcript because smaller, cheaper models can miss details even with the same prompt and schema.
+- OpenAI profiles include GPT-5.6 Sol (xhigh), Terra (high), Luna (xhigh), and Astra Low/Medium. Both Astra profiles dispatch `gpt-6-astra`; UI profile IDs are not provider API IDs. Prices are indicative in `src/lib/model-options.ts`; provider billing is authoritative.
 
 `GEMINI_API_KEY`
 
 - Optional.
 - Required only when users select Gemini models in `/settings` or the recording AI tab.
 - Server-only Google Gemini API key.
-- Current Gemini option is `gemini-3.6-flash` with thinking level `medium` and an indicative price of $1.50/$7.50 per 1M input/output tokens; provider billing remains the source of truth.
+- Gemini options are `gemini-3.6-flash` and `gemini-3.8-flash`, both with thinking level `medium`; provider billing remains the source of truth.
 - Paid Gemini API content is not used to improve Google's products according to the current Google AI pricing/data-use table; do not use Gemini Free tier for sensitive production call content.
+
+`MISTRAL_API_KEY`
+
+- Optional server-only paid API key for `mistral-small-2603` and `mistral-large-2512`.
+- Use the commercial API, not a consumer subscription or preview model, for sensitive transcripts. The operator must verify account terms, data-use opt-ins and any retention requirement; key presence does not prove these settings or funded model access.
+- Missing key maps to a safe configuration error. The app never falls back to another provider automatically.
 
 ### App-managed model preferences
 

@@ -161,7 +161,9 @@ function FixtureShell({ children }: { children: ReactNode }) {
         <strong>Vosio E2E</strong>
       </aside>
       <section className="content-area">
-        <div className="workspace-grid workspace-grid-wide">{children}</div>
+        <div className="workspace-content">
+          <div className="workspace-grid workspace-grid-wide">{children}</div>
+        </div>
       </section>
       <MobileNav activeView="recordings" />
     </main>

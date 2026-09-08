@@ -97,6 +97,7 @@ export function UtilityWorkspaceView({
         installationStatus={installationStatus ?? {
           environment: "unknown",
           geminiConfigured: false,
+          mistralConfigured: false,
           missingRequiredNames: [],
           ready: false
         }}

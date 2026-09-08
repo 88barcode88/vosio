@@ -17,6 +17,7 @@ describe("settings storage limit", () => {
         installationStatus={{
           environment: "development",
           geminiConfigured: false,
+          mistralConfigured: false,
           missingRequiredNames: [],
           ready: true
         }}

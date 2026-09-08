@@ -40,4 +40,12 @@ describe("recording detail AI loading", () => {
     expect(spec).toContain("25 výstupů");
     expect(spec).toContain("Trvá déle než obvykle");
   });
+
+  it("keeps the quiet-refresh fixture development-only and behind a scoped URL", () => {
+    const fixture = readFileSync("app/login/manual-ai-refresh-e2e/page.tsx", "utf8");
+
+    expect(fixture).toContain('process.env.NODE_ENV !== "development"');
+    expect(fixture).toContain("notFound()");
+    expect(fixture).toContain("fixtureScopePattern");
+  });
 });

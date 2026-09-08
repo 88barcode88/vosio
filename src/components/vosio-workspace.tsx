@@ -8,6 +8,7 @@ import { RecordingWorkbench } from "@/components/workspace/recording-workbench";
 import { RecordingsManager } from "@/components/workspace/recordings-manager";
 import { WorkspaceSidebar } from "@/components/workspace/sidebar";
 import { UtilityWorkspaceView } from "@/components/workspace/utility-workspace-view";
+import { WorkspaceTopbar } from "@/components/workspace/topbar";
 import { TranscriptSearchWarningNotice } from "@/components/transcript-search-warning-notice";
 import { getEmptyStructuredAiItems } from "@/lib/ai/structured-queries";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
@@ -222,78 +223,85 @@ export function VosioWorkspace({
           view
         })}
       >
-        {transcriptSearchWarning ? <TranscriptSearchWarningNotice /> : null}
-        <div className="workspace-grid workspace-grid-wide">
-          {isCreatingRecording ? (
-            <NewRecordingWorkspace
-              captureSlots={newRecordingCaptureSlots}
-              recordingStorageConfig={recordingStorageConfig}
-              uploadRedirectAfterSuccess={newRecordingUploadRedirectAfterSuccess}
-              uploadTransport={newRecordingUploadTransport}
-              userSettings={userSettings}
-            />
-          ) : view === "recordings" && !activeRecording ? (
-            <RecordingsManager
-              errorCode={recordingsError}
-              filters={recordingOrganizationFilters}
-              organizationOptions={recordingOrganizationOptions}
-              recordingStatus={recordingStatus}
-              recordingStatusCounts={recordingStatusCounts}
-              recordings={recordings}
-              recordingsSearchParams={recordingsSearchParams}
-              searchQuery={recordingsSearchQuery}
-              searchError={recordingSearchError}
-              searchNextHref={recordingSearchNextHref}
-              searchPage={recordingSearchPage}
-              searchPreviousHref={recordingSearchPreviousHref}
-            />
-          ) : view === "ai" || view === "templates" || view === "documentation" || view === "trash" || view === "settings" ? (
-            <UtilityWorkspaceView
-              aiArchiveActionAlert={aiArchiveActionAlert}
-              aiArchiveBaseHref={aiArchiveBaseHref}
-              aiArchiveDeleteAction={aiArchiveDeleteAction}
-              aiArchiveFilters={aiArchiveFilters}
-              aiArchiveItems={aiArchiveItems}
-              aiOutputs={aiOutputs}
-              deletedRecordings={deletedRecordingViews}
-              disableAccountSecurity={disableAccountSecurity}
-              installationStatus={installationStatus}
-              promptTemplates={promptTemplates}
-              promptTemplateActions={promptTemplateActions}
-              promptTemplateBaseHref={promptTemplateBaseHref}
-              promptTemplateNavigationState={promptTemplateNavigationState}
-              recordingStorageConfig={recordingStorageConfig}
-              settings={userSettings}
-              settingsFormDisabled={settingsFormDisabled}
-              settingsStatus={settingsStatus}
-              templateStatus={templateStatus}
-              trashActionAlert={trashActionAlert}
-              trashActionContext={trashActionContext}
-              trashNowMs={trashNowMs}
-              trashPurgeItemAction={trashPurgeItemAction}
-              trashPurgeAction={trashPurgeAction}
-              trashRestoreBulkAction={trashRestoreBulkAction}
-              trashRestoreAction={trashRestoreAction}
-              usageState={usageState}
-              userEmail={userEmail}
-              view={view}
-            />
-          ) : (
-            <RecordingWorkbench
-              activeAiOutputs={activeAiOutputs}
-              activeRecording={activeRecording}
-              activeRecordingMarkers={activeRecordingMarkers}
-              activeRecordingOrganization={recordingOrganization}
-              activeStructuredItems={activeStructuredItems}
-              activeTranscript={activeTranscript}
-              initialDeepLink={initialTranscriptDeepLink}
-              initialTab={initialTranscriptTab}
-              initialTabFromCookie={initialTranscriptTabFromCookie}
-              initialTabFromUrl={initialTranscriptTabFromUrl}
-              recordingOrganizationOptions={recordingOrganizationOptions}
-              userSettings={userSettings}
-            />
-          )}
+        <WorkspaceTopbar
+          activeRecordingTitle={activeRecording?.title}
+          isCreatingRecording={isCreatingRecording}
+          view={view}
+        />
+        <div className="workspace-content">
+          {transcriptSearchWarning ? <TranscriptSearchWarningNotice /> : null}
+          <div className="workspace-grid workspace-grid-wide">
+            {isCreatingRecording ? (
+              <NewRecordingWorkspace
+                captureSlots={newRecordingCaptureSlots}
+                recordingStorageConfig={recordingStorageConfig}
+                uploadRedirectAfterSuccess={newRecordingUploadRedirectAfterSuccess}
+                uploadTransport={newRecordingUploadTransport}
+                userSettings={userSettings}
+              />
+            ) : view === "recordings" && !activeRecording ? (
+              <RecordingsManager
+                errorCode={recordingsError}
+                filters={recordingOrganizationFilters}
+                organizationOptions={recordingOrganizationOptions}
+                recordingStatus={recordingStatus}
+                recordingStatusCounts={recordingStatusCounts}
+                recordings={recordings}
+                recordingsSearchParams={recordingsSearchParams}
+                searchQuery={recordingsSearchQuery}
+                searchError={recordingSearchError}
+                searchNextHref={recordingSearchNextHref}
+                searchPage={recordingSearchPage}
+                searchPreviousHref={recordingSearchPreviousHref}
+              />
+            ) : view === "ai" || view === "templates" || view === "documentation" || view === "trash" || view === "settings" ? (
+              <UtilityWorkspaceView
+                aiArchiveActionAlert={aiArchiveActionAlert}
+                aiArchiveBaseHref={aiArchiveBaseHref}
+                aiArchiveDeleteAction={aiArchiveDeleteAction}
+                aiArchiveFilters={aiArchiveFilters}
+                aiArchiveItems={aiArchiveItems}
+                aiOutputs={aiOutputs}
+                deletedRecordings={deletedRecordingViews}
+                disableAccountSecurity={disableAccountSecurity}
+                installationStatus={installationStatus}
+                promptTemplates={promptTemplates}
+                promptTemplateActions={promptTemplateActions}
+                promptTemplateBaseHref={promptTemplateBaseHref}
+                promptTemplateNavigationState={promptTemplateNavigationState}
+                recordingStorageConfig={recordingStorageConfig}
+                settings={userSettings}
+                settingsFormDisabled={settingsFormDisabled}
+                settingsStatus={settingsStatus}
+                templateStatus={templateStatus}
+                trashActionAlert={trashActionAlert}
+                trashActionContext={trashActionContext}
+                trashNowMs={trashNowMs}
+                trashPurgeItemAction={trashPurgeItemAction}
+                trashPurgeAction={trashPurgeAction}
+                trashRestoreBulkAction={trashRestoreBulkAction}
+                trashRestoreAction={trashRestoreAction}
+                usageState={usageState}
+                userEmail={userEmail}
+                view={view}
+              />
+            ) : (
+              <RecordingWorkbench
+                activeAiOutputs={activeAiOutputs}
+                activeRecording={activeRecording}
+                activeRecordingMarkers={activeRecordingMarkers}
+                activeRecordingOrganization={recordingOrganization}
+                activeStructuredItems={activeStructuredItems}
+                activeTranscript={activeTranscript}
+                initialDeepLink={initialTranscriptDeepLink}
+                initialTab={initialTranscriptTab}
+                initialTabFromCookie={initialTranscriptTabFromCookie}
+                initialTabFromUrl={initialTranscriptTabFromUrl}
+                recordingOrganizationOptions={recordingOrganizationOptions}
+                userSettings={userSettings}
+              />
+            )}
+          </div>
         </div>
       </section>
 

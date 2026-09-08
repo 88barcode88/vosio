@@ -23,7 +23,7 @@ describe("manual AI route runtime contract", () => {
     expect(readFileSync("src/lib/ai/manual-route-runtime.ts", "utf8").match(/\b300\b/g)).toHaveLength(1);
   });
 
-  it("uses persisted-age polling boundaries and a 30 second transient-error floor", () => {
+  it("uses the quiet 10/30/60 second cadence and a 30 second transient-error floor", () => {
     expect([
       getManualAiPollIntervalMs(0),
       getManualAiPollIntervalMs(29_999),
@@ -31,7 +31,7 @@ describe("manual AI route runtime contract", () => {
       getManualAiPollIntervalMs(119_999),
       getManualAiPollIntervalMs(120_000),
       getManualAiPollIntervalMs(300_000)
-    ]).toEqual([5_000, 5_000, 10_000, 10_000, 30_000, 30_000]);
+    ]).toEqual([10_000, 10_000, 30_000, 30_000, 60_000, 60_000]);
     expect(getManualAiPollIntervalMs(0, true)).toBe(30_000);
   });
 });

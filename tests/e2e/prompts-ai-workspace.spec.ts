@@ -163,7 +163,7 @@ test("prompt and archive content remains readable in dark and light themes", asy
     await expect(page.locator(".ai-archive-row").first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "AI archiv" })).toHaveCSS(
       "color",
-      theme === "dark" ? "rgb(245, 245, 243)" : "rgb(23, 23, 23)"
+      theme === "dark" ? "rgb(242, 243, 246)" : "rgb(23, 28, 39)"
     );
   }
 });

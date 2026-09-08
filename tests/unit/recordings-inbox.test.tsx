@@ -276,7 +276,8 @@ describe("recordings inbox", () => {
     expect(container.querySelector('a[aria-current="page"]')?.getAttribute("href"))
       .toBe("/recordings?status=failed");
     expect(container.querySelector('a[href="/trash"]')?.textContent).toContain("Smazáno 2");
-    expect(container.querySelector(".recordings-header-new")).toBeNull();
+    expect(container.querySelector('a.recordings-create-button[href="/recordings/new"]')?.textContent)
+      .toContain("Nová nahrávka");
     expect(container.querySelector('a[aria-label="Detail nahrávky Testovací hovor"]'))
       .not.toBeNull();
 
@@ -285,10 +286,10 @@ describe("recordings inbox", () => {
     expect(tableHead?.children).toHaveLength(2);
     expect(tableHeadMain?.classList.contains("recordings-table-head-main")).toBe(true);
     expect(Array.from(tableHeadMain?.children ?? []).map((cell) => cell.textContent))
-      .toEqual(["Název", "Stav", "Velikost"]);
+      .toEqual(["Název nahrávky", "Klient / projekt", "Stav", "Délka"]);
     expect(tableHead?.children.item(1)?.classList.contains("recordings-table-head-actions"))
       .toBe(true);
-    expect(tableHead?.children.item(1)?.textContent).toBe("Akce");
+    expect(tableHead?.children.item(1)?.textContent).toBe("");
 
     const firstRow = container.querySelector<HTMLElement>('[data-recording-id="recording-1"]');
     const titleLink = firstRow?.querySelector<HTMLAnchorElement>('a[href="/recordings/recording-1"]');
@@ -297,6 +298,8 @@ describe("recordings inbox", () => {
     expect(firstRow?.textContent).not.toContain("Otevřít");
     expect(firstRow?.querySelector('[aria-label="Upravit recording-1"]')?.closest("a")).toBeNull();
     expect(firstRow?.querySelector('[aria-label="Smazat recording-1"]')?.closest("a")).toBeNull();
+    expect(firstRow?.querySelector('summary[aria-label="Možnosti nahrávky Testovací hovor"]'))
+      .not.toBeNull();
     expect(firstRow?.querySelector(".recordings-row-actions")?.getAttribute("role"))
       .toBe("group");
 

@@ -5,7 +5,7 @@ export const MANUAL_AI_LEASE_SECONDS = MANUAL_AI_MAX_DURATION_SECONDS + MANUAL_A
 // getManualAiPollIntervalMs derives polling cadence from the youngest persisted active job.
 export function getManualAiPollIntervalMs(ageMs: number, transientError = false) {
   if (transientError) return 30_000;
-  if (ageMs < 30_000) return 5_000;
-  if (ageMs < 120_000) return 10_000;
-  return 30_000;
+  if (ageMs < 30_000) return 10_000;
+  if (ageMs < 120_000) return 30_000;
+  return 60_000;
 }

@@ -24,6 +24,20 @@ describe("OpenAI client request body", () => {
     expect(body).toHaveProperty("reasoning.effort", "high");
   });
 
+  it("uses the snapshotted profile reasoning with a shared exact API model id", () => {
+    const body = createOpenAIChatRequestBody({
+      messages: [],
+      model: "gpt-6-astra",
+      outputSchema: null,
+      reasoningEffort: "low",
+      systemInstruction: "safe"
+    });
+
+    expect(body.model).toBe("gpt-6-astra");
+    expect(body).toHaveProperty("reasoning.effort", "low");
+    expect(body).not.toHaveProperty("temperature");
+  });
+
   it("sends Terra with high reasoning and omits temperature", () => {
     const body = createOpenAIRequestBody({
       ...baseInput,
@@ -52,6 +66,18 @@ describe("OpenAI client request body", () => {
 
     expect(body).not.toHaveProperty("temperature");
     expect(body).toHaveProperty("reasoning.effort", "xhigh");
+  });
+
+  it("sends the exact Astra API id with snapshotted low reasoning and no temperature", () => {
+    const body = createOpenAIRequestBody({
+      ...baseInput,
+      model: "gpt-6-astra",
+      reasoningEffort: "low"
+    });
+
+    expect(body.model).toBe("gpt-6-astra");
+    expect(body).toHaveProperty("reasoning.effort", "low");
+    expect(body).not.toHaveProperty("temperature");
   });
 
   it("honors the persisted reasoning snapshot instead of current model metadata", () => {

@@ -116,12 +116,14 @@ describe("individual structured task delete", () => {
   it("keeps a successful delete hidden and restores the exact task after failure", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const onTaskDeleted = vi.fn();
     await act(async () => root.render(
-      <StructuredItemsContent items={items} onOpenEvidence={vi.fn()} />
+      <StructuredItemsContent items={items} onOpenEvidence={vi.fn()} onTaskDeleted={onTaskDeleted} />
     ));
     const firstRow = container.querySelector<HTMLElement>(".structured-task-row");
     await act(async () => firstRow?.querySelector<HTMLButtonElement>('.structured-task-delete')?.click());
     expect(firstRow?.hidden).toBe(true);
+    expect(onTaskDeleted).toHaveBeenCalledExactlyOnceWith(items.tasks[0]);
 
     fetchMock.mockRejectedValueOnce(new Error("network detail"));
     await act(async () => root.render(

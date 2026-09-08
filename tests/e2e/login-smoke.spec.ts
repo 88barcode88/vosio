@@ -20,8 +20,8 @@ test.describe("internal login smoke", () => {
       return { borderColor: style.borderColor, boxShadow: style.boxShadow };
     });
     expect(focus).toEqual({
-      borderColor: "rgb(116, 167, 255)",
-      boxShadow: "rgb(116, 167, 255) 0px 0px 0px 3px"
+      borderColor: "rgb(171, 194, 248)",
+      boxShadow: "rgb(171, 194, 248) 0px 0px 0px 3px"
     });
     expect(JSON.stringify(focus)).not.toContain("56, 217, 208");
   });

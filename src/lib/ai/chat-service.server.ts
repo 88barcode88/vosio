@@ -11,6 +11,7 @@ import {
 } from "@/lib/ai/chat-types";
 import { parsePossibleJson } from "@/lib/ai/common";
 import { runGeminiChat } from "@/lib/ai/gemini";
+import { runMistralChat } from "@/lib/ai/mistral";
 import { runOpenAIChat } from "@/lib/ai/openai";
 import {
   getAiProviderFailureMessage,
@@ -88,6 +89,7 @@ type SubmitDependencies = {
     model: string;
     outputSchema: unknown;
     provider: AiProviderId;
+    reasoningEffort?: "low" | "medium" | "high" | "xhigh";
     systemInstruction: string;
   }) => Promise<RecordingChatProviderResult>;
   store: RecordingChatStore;
@@ -314,9 +316,19 @@ async function runConfiguredChatProvider(input: Parameters<NonNullable<SubmitDep
     throw new Error(configurationError);
   }
 
-  return input.provider === "gemini"
-    ? runGeminiChat(input)
-    : runOpenAIChat(input);
+  if (input.provider === "gemini") {
+    return runGeminiChat(input);
+  }
+
+  if (input.provider === "mistral") {
+    return runMistralChat(input);
+  }
+
+  if (input.provider === "openai") {
+    return runOpenAIChat(input);
+  }
+
+  throw new Error("Unsupported AI provider.");
 }
 
 // normalizeEvidenceKey deduplicates cosmetically equivalent provider quotes before verification.
@@ -519,9 +531,10 @@ export async function submitRecordingChatTurn(
     });
     const result = await (dependencies.runProvider ?? runConfiguredChatProvider)({
       messages: context.messages,
-      model: input.model,
+      model: modelOption.providerModel,
       outputSchema: systemPrompt.outputSchema,
       provider: modelOption.provider,
+      reasoningEffort: modelOption.reasoningEffort,
       systemInstruction: context.systemInstruction
     });
     const parsed = parseAndVerifyProviderOutput(result.outputText, transcript.segments);

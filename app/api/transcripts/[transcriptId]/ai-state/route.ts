@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { ManualAiJobSummary, ManualAiOutputMetadata } from "@/lib/ai/manual-job-state";
 import { AI_FAILURE_CODES, type AiFailureCode } from "@/lib/ai/provider-errors";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getManualAiCleanupState } from "@/lib/ai/manual-job-cleanup.server";
 
 const routeParamsSchema = z.object({ transcriptId: z.uuid() });
 const MAX_MANUAL_AI_STATE_ROWS = 50;
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     supabase.from("ai_processing_jobs")
       .select("id,processing_type,model,status,created_at,started_at,completed_at,attempt_count,max_attempts,lease_expires_at,failure_code,retry_after_at")
       .eq("transcript_id", transcriptId).eq("user_id", user.id).eq("execution_mode", "manual")
-      .in("status", ["queued", "running", "done", "failed"])
+      .in("status", ["queued", "running", "done", "failed", "cancelled"])
       .order("created_at", { ascending: false }).order("id", { ascending: false })
       .limit(MAX_MANUAL_AI_STATE_ROWS).returns<ManualAiJobSummary[]>(),
     supabase.from("ai_outputs")
@@ -57,7 +59,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   ]);
 
   if (jobsResult.error || outputsResult.error) {
-    return NextResponse.json({ error: "AI stav se nepodařilo načíst." }, { status: 500 });
+    return NextResponse.json({ error: "AI stav se nepodařilo načíst." }, { status: 503 });
   }
 
   const jobs = (jobsResult.data ?? []).map((job) => ({
@@ -77,9 +79,20 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const nextOutputOffset = outputRows.length > MAX_MANUAL_AI_STATE_ROWS
     ? outputOffset + MAX_MANUAL_AI_STATE_ROWS
     : null;
+  let cleanupState;
+  try {
+    cleanupState = await getManualAiCleanupState({
+      admin: createAdminClient(),
+      jobIds: jobs.map((job) => job.id),
+      transcriptId,
+      userId: user.id
+    });
+  } catch {
+    return NextResponse.json({ error: "AI stav se nepodařilo načíst." }, { status: 503 });
+  }
 
   return NextResponse.json(
-    { jobs, nextOutputOffset, outputs },
+    { ...cleanupState, jobs, nextOutputOffset, outputs },
     { headers: { "Cache-Control": "private, no-store" } }
   );
 }

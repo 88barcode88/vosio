@@ -184,6 +184,84 @@ function Harness({ loadOutput }: { loadOutput: (outputId: string) => Promise<unk
 }
 
 describe("AI processing historical output details", () => {
+  it("keeps the job panel closed and streams bulk cleanup in bounded GET to POST pages", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const firstIds = Array.from({ length: 50 }, (_, index) => `job-${index}`);
+    const finalIds = ["job-50"];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        const ids = JSON.parse(String(init.body)).job_ids as string[];
+        return new Response(JSON.stringify({
+          changed_jobs: [], removed_job_ids: ids,
+          results: ids.map((jobId) => ({ job_id: jobId, result: "deleted" }))
+        }), { status: 200 });
+      }
+      const secondPage = String(url).includes("cursor-2");
+      const ids = secondPage ? finalIds : firstIds;
+      return new Response(JSON.stringify({
+        candidates: ids.map((jobId) => ({ cleanup_reason: "eligible_terminal_no_output", job_id: jobId })),
+        next_cursor: secondPage ? null : "cursor-2"
+      }), { status: 200 });
+    });
+    const onCleanupMutation = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await act(async () => root.render(createElement(AiProcessingContent, {
+        activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
+        aiOutputs: [], cleanup: { eligible_count: 51, next_cursor: "cursor-2" }, jobs: [],
+        onCleanupMutation, onOpenEvidence: () => undefined,
+        resolveEvidenceTarget: () => null, structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] },
+        userSettings: {} as never
+      })));
+      expect(container.querySelector<HTMLDetailsElement>(".ai-running-state")?.open).toBe(false);
+      const button = Array.from(container.querySelectorAll("button"))
+        .find((candidate) => candidate.textContent?.includes("Vyčistit způsobilé"))!;
+      await act(async () => {
+        button.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      const postedBatches = fetchMock.mock.calls
+        .filter((call) => call[1]?.method === "POST")
+        .map((call) => JSON.parse(String(call[1]?.body)).job_ids as string[]);
+      expect(postedBatches.map((ids) => ids.length)).toEqual([50, 1]);
+      expect(onCleanupMutation).toHaveBeenCalledTimes(2);
+      expect(container.textContent).toContain("Kontrola dokončena: 51 záznamů");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("posts exactly one id for an individually server-approved delete", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const job = retryJob("delete-one");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      changed_jobs: [], removed_job_ids: [job.id], results: [{ job_id: job.id, result: "deleted" }]
+    }), { status: 200 }));
+    const onCleanupMutation = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await act(async () => root.render(createElement(AiProcessingContent, {
+        activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
+        aiOutputs: [], classifications: [{
+          actions: ["delete"], cleanup_reason: "eligible_terminal_no_output", job_id: job.id, poll_eligible: false
+        }], jobs: [job], onCleanupMutation, onOpenEvidence: () => undefined,
+        resolveEvidenceTarget: () => null, structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] },
+        userSettings: {} as never
+      })));
+      const deleteButton = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === "Vyčistit záznam")!;
+      await act(async () => deleteButton.click());
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ job_ids: [job.id] });
+      expect(onCleanupMutation).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("does not automatically loop a failed default-open body request", async () => {
     const container = document.createElement("div");
     document.body.append(container);
@@ -328,6 +406,7 @@ describe("AI processing historical output details", () => {
     await act(async () => root.render(createElement(AiProcessingContent, {
       activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
       aiOutputs: [],
+      classifications: [{ actions: ["interrupt"], cleanup_reason: "eligible_stale_unclaimed", job_id: job.id, poll_eligible: false }],
       jobs: [job],
       onOpenEvidence: () => undefined,
       onReload,
@@ -338,9 +417,11 @@ describe("AI processing historical output details", () => {
 
     const interrupt = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Ukončit požadavek")!;
     expect(interrupt).toBeDefined();
+    expect(container.textContent).toContain("0 aktivní · 1 chyb · 0 k vyčištění");
     await act(async () => interrupt.click());
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/manual-ai/reconcile");
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ action: "interrupt", jobId: job.id });
     expect(onReload).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("Přerušené zpracování bylo bezpečně ukončeno.");
@@ -373,6 +454,12 @@ describe("AI processing historical output details", () => {
     await act(async () => root.render(createElement(AiProcessingContent, {
       activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
       aiOutputs: [],
+      classifications: [{
+        actions: [],
+        cleanup_reason: _label === "legacy queued" ? "unsupported_legacy" : "active_or_slow",
+        job_id: job.id,
+        poll_eligible: _label !== "legacy queued"
+      }],
       jobs: [job],
       onOpenEvidence: () => undefined,
       resolveEvidenceTarget: () => null,
@@ -381,6 +468,11 @@ describe("AI processing historical output details", () => {
     })));
 
     expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Ukončit požadavek")).toBe(false);
+    expect(container.querySelector<HTMLDetailsElement>(".ai-running-state")?.open).toBe(false);
+    if (_label === "legacy queued") {
+      expect(container.textContent).toContain("0 aktivní · 1 chyb · 0 k vyčištění");
+      expect(container.textContent).toContain("Starší protokol nelze bezpečně automaticky spravovat");
+    }
     await act(async () => { await Promise.resolve(); });
     expect(fetchMock).not.toHaveBeenCalled();
     await act(async () => root.unmount());
@@ -389,7 +481,7 @@ describe("AI processing historical output details", () => {
   it.each([
     [200, { status: "busy" }, "Zpracování ještě běží."],
     [409, { error: "SECRET-SENTINEL-conflict" }, "AI požadavek se mezitím změnil. Obnovte jeho stav."]
-  ])("shows a safe interrupt response for HTTP %s and refreshes local metadata", async (statusCode, responsePayload, expectedMessage) => {
+  ] as const)("shows a sanitized interrupt result for HTTP %s and refreshes local metadata", async (statusCode, responsePayload, expectedMessage) => {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -413,6 +505,7 @@ describe("AI processing historical output details", () => {
     await act(async () => root.render(createElement(AiProcessingContent, {
       activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
       aiOutputs: [],
+      classifications: [{ actions: ["interrupt"], cleanup_reason: "eligible_stale_unclaimed", job_id: job.id, poll_eligible: false }],
       jobs: [job],
       onOpenEvidence: () => undefined,
       onReload,

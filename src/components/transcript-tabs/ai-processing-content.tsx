@@ -27,6 +27,15 @@ import {
   type ManualAiJobSummary,
   type ManualAiOutputMetadata
 } from "@/lib/ai/manual-job-state";
+import {
+  MANUAL_AI_CLEANUP_BATCH_LIMIT,
+  type ManualAiCleanupAction,
+  type ManualAiCleanupClassification,
+  type ManualAiCleanupMetadata,
+  type ManualAiCleanupMutationResponse,
+  type ManualAiCleanupPage,
+  type ManualAiCleanupResultStatus
+} from "@/lib/ai/manual-job-cleanup-contract";
 import { AI_MODEL_QUALITY_GUIDANCE } from "@/lib/model-options";
 import { formatRecordingDate } from "@/lib/recordings/types";
 import type { UserSettings } from "@/lib/settings/types";
@@ -42,29 +51,41 @@ import { getManualAiFailureMessage } from "@/lib/ai/provider-errors";
 export function AiProcessingContent({
   activeTranscript,
   aiOutputs,
+  classifications = [],
+  cleanup = { eligible_count: 0, next_cursor: null },
   isLoading,
   jobs,
   loadOutput,
   onOpenEvidence,
   onJobAccepted,
+  onCleanupMutation,
+  onOutputsRemoved,
   onReload,
   outputMetadata,
   resolveEvidenceTarget,
   structuredItems,
+  onTaskDeleted,
+  onTaskStatusConfirmed,
   stateError,
   userSettings
 }: {
   activeTranscript: TranscriptRow | null;
   aiOutputs: AiOutputView[];
+  classifications?: ManualAiCleanupClassification[];
+  cleanup?: ManualAiCleanupMetadata;
   isLoading?: boolean;
   jobs?: ManualAiJobSummary[];
   loadOutput?: (outputId: string) => Promise<unknown>;
   onOpenEvidence: (target: TranscriptTarget) => void;
   onJobAccepted?: (job: { id: string; status: ManualAiJobStatus }, processingType: string) => void;
+  onCleanupMutation?: (mutation: ManualAiCleanupMutationResponse) => void;
+  onOutputsRemoved?: (outputIds: string[]) => void;
   onReload?: () => Promise<void>;
   outputMetadata?: ManualAiOutputMetadata[];
   resolveEvidenceTarget: (reference: TranscriptEvidenceReference) => TranscriptTarget | null;
   structuredItems: StructuredAiItems;
+  onTaskDeleted?: Parameters<typeof StructuredItemsContent>[0]["onTaskDeleted"];
+  onTaskStatusConfirmed?: Parameters<typeof StructuredItemsContent>[0]["onTaskStatusConfirmed"];
   stateError?: string | null;
   userSettings: UserSettings;
 }) {
@@ -100,10 +121,13 @@ export function AiProcessingContent({
           transcriptId={activeTranscript?.id ?? null}
         />
       </section>
-      {jobs && jobs.length > 0 ? (
+      {(jobs && jobs.length > 0) || cleanup.eligible_count > 0 ? (
         <ManualAiJobList
-          jobs={jobs}
-          onReconcile={onReload}
+          classifications={classifications}
+          cleanup={cleanup}
+          jobs={jobs ?? []}
+          onCleanupMutation={onCleanupMutation}
+          onReload={onReload}
           onRetry={(job) => retryProcessing.run({ model: job.model, processingType: job.processing_type as AiProcessingType })}
           transcriptId={activeTranscript?.id ?? null}
         />
@@ -125,6 +149,8 @@ export function AiProcessingContent({
       <section className="notes-list ai-output-list" aria-label="Uložené AI výstupy">
         <StructuredItemsContent
           items={structuredItems}
+          onTaskDeleted={onTaskDeleted}
+          onTaskStatusConfirmed={onTaskStatusConfirmed}
           onOpenEvidence={onOpenEvidence}
           resolveEvidenceTarget={resolveEvidenceTarget}
         />
@@ -134,6 +160,7 @@ export function AiProcessingContent({
             key={metadata.id}
             loadOutput={loadOutput}
             metadata={metadata}
+            onOutputsRemoved={onOutputsRemoved}
             output={aiOutputs.find((output) => output.id === metadata.id) ?? null}
           />
         ))}
@@ -143,6 +170,7 @@ export function AiProcessingContent({
 }
 
 const manualJobLabels = {
+  cancelled: "Zrušeno",
   done: "Hotovo",
   failed: "Selhalo",
   queued: "Ve frontě",
@@ -150,26 +178,59 @@ const manualJobLabels = {
   stalled: "Trvá déle než obvykle"
 } as const;
 
-// ManualAiJobList keeps accepted, failed, and stalled generations visible after returning to detail.
+const cleanupActionLabels = {
+  delete: "Vyčistit záznam",
+  interrupt: "Ukončit požadavek",
+  reconcile: "Obnovit stav"
+} as const;
+
+const cleanupResultLabels: Record<ManualAiCleanupResultStatus, string> = {
+  busy: "stále běží",
+  conflict: "mezitím změněno",
+  deleted: "odstraněno",
+  missing: "už neexistuje",
+  protected: "chráněno výstupem",
+  reconciled: "opraveno"
+};
+
+// ManualAiJobList exposes only authoritative server actions in an initially closed operator panel.
 function ManualAiJobList({
+  classifications,
+  cleanup,
   jobs,
-  onReconcile,
+  onCleanupMutation,
+  onReload,
   onRetry,
   transcriptId
 }: {
+  classifications: ManualAiCleanupClassification[];
+  cleanup: ManualAiCleanupMetadata;
   jobs: ManualAiJobSummary[];
-  onReconcile?: () => Promise<void>;
+  onCleanupMutation?: (mutation: ManualAiCleanupMutationResponse) => void;
+  onReload?: () => Promise<void>;
   onRetry: (job: ManualAiJobSummary) => Promise<boolean>;
   transcriptId: string | null;
 }) {
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  const [isBulkPending, setIsBulkPending] = useState(false);
   const [clockMs, setClockMs] = useState<number | null>(null);
+  const [bulkResumeCursor, setBulkResumeCursor] = useState<string | null>(null);
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
+  const classificationById = useMemo(
+    () => new Map(classifications.map((classification) => [classification.job_id, classification])),
+    [classifications]
+  );
+  const visibleJobs = jobs.filter((job) => job.status !== "done");
+  const activeCount = classifications.filter((classification) => classification.poll_eligible).length;
+  const errorCount = visibleJobs.filter((job) => {
+    const reason = classificationById.get(job.id)?.cleanup_reason;
+    return job.status === "failed" || job.status === "cancelled"
+      || reason === "eligible_stale_unclaimed" || reason === "unsupported_legacy";
+  }).length;
 
   useEffect(() => {
     let timer: number | null = null;
-
-    // updateRetryClock unlocks elapsed deadlines and schedules only the next remaining one.
+    // updateRetryClock unlocks persisted rate-limit deadlines without any network polling.
     const updateRetryClock = () => {
       const now = Date.now();
       setClockMs(now);
@@ -178,41 +239,62 @@ function ManualAiJobList({
         .map((job) => Date.parse(job.retry_after_at!))
         .filter((retryAt) => Number.isFinite(retryAt) && retryAt > now)
         .sort((left, right) => left - right)[0];
-      if (nextRetryAt) {
-        timer = window.setTimeout(updateRetryClock, Math.min(nextRetryAt - now + 50, 2_147_483_647));
-      }
+      if (nextRetryAt) timer = window.setTimeout(updateRetryClock, Math.min(nextRetryAt - now + 50, 2_147_483_647));
     };
     updateRetryClock();
     return () => { if (timer !== null) window.clearTimeout(timer); };
   }, [jobs]);
 
-  // reconcileJob requests one safe recovery action, then refreshes only the shared local AI metadata.
-  async function reconcileJob(jobId: string, action: "interrupt" | "reconcile") {
-    if (!transcriptId || pendingJobId) return;
+  // cleanupJobs posts one exact bounded batch and applies only the server's explicit mutation fields.
+  async function cleanupJobs(jobIds: string[]) {
+    if (!transcriptId || jobIds.length === 0 || jobIds.length > MANUAL_AI_CLEANUP_BATCH_LIMIT) return null;
+    const response = await fetch(`/api/transcripts/${transcriptId}/manual-ai/cleanup`, {
+      body: JSON.stringify({ job_ids: jobIds }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST"
+    });
+    const payload = await response.json().catch(() => null) as ManualAiCleanupMutationResponse | null;
+    if (!response.ok || !payload || !Array.isArray(payload.results)
+      || !Array.isArray(payload.removed_job_ids) || !Array.isArray(payload.changed_jobs)) {
+      throw new Error("cleanup_failed");
+    }
+    onCleanupMutation?.(payload);
+    return payload;
+  }
+
+  // runJobAction executes only the exact action advertised by the authoritative classifier.
+  async function runJobAction(jobId: string, action: ManualAiCleanupAction) {
+    if (pendingJobId || isBulkPending) return;
     setPendingJobId(jobId);
     setRecoveryMessage(null);
     try {
-      const response = await fetch(`/api/transcripts/${transcriptId}/manual-ai/reconcile`, {
-        body: JSON.stringify({ action, jobId }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST"
-      });
-      const payload = await response.json().catch(() => null) as { status?: string } | null;
-      const messages: Record<string, string> = {
-        busy: "Zpracování ještě běží.",
-        done: "Uložený AI výstup byl obnoven.",
-        interrupted: "Přerušené zpracování bylo bezpečně ukončeno.",
-        missing: "AI požadavek už není dostupný.",
-        operator_required: "Tento starší AI požadavek vyžaduje ruční kontrolu.",
-        schedule: "AI zpracování bylo znovu zařazeno.",
-        terminal: "AI požadavek už je ukončený."
-      };
-      setRecoveryMessage(response.status === 409
-        ? "AI požadavek se mezitím změnil. Obnovte jeho stav."
-        : response.ok && payload?.status && messages[payload.status]
-          ? messages[payload.status]
-          : "AI stav se nepodařilo obnovit.");
-      await onReconcile?.();
+      if (action === "delete") {
+        const payload = await cleanupJobs([jobId]);
+        const result = payload?.results[0]?.result;
+        setRecoveryMessage(result ? `Výsledek: ${cleanupResultLabels[result]}.` : "AI stav se nepodařilo obnovit.");
+      } else {
+        const response = await fetch(`/api/transcripts/${transcriptId}/manual-ai/reconcile`, {
+          body: JSON.stringify({ action, jobId }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST"
+        });
+        const payload = await response.json().catch(() => null) as { status?: string } | null;
+        const messages: Record<string, string> = {
+          busy: "Zpracování ještě běží.",
+          done: "Uložený AI výstup byl obnoven.",
+          interrupted: "Přerušené zpracování bylo bezpečně ukončeno.",
+          missing: "AI požadavek už není dostupný.",
+          operator_required: "Tento starší AI požadavek vyžaduje ruční kontrolu.",
+          schedule: "AI zpracování bylo znovu zařazeno.",
+          terminal: "AI požadavek už je ukončený."
+        };
+        setRecoveryMessage(response.status === 409
+          ? "AI požadavek se mezitím změnil. Obnovte jeho stav."
+          : response.ok && payload?.status && messages[payload.status]
+            ? messages[payload.status]
+            : "AI stav se nepodařilo obnovit.");
+      }
+      await onReload?.();
     } catch {
       setRecoveryMessage("AI stav se nepodařilo obnovit.");
     } finally {
@@ -220,44 +302,79 @@ function ManualAiJobList({
     }
   }
 
+  // cleanupAll streams GET page to POST batch so candidate ids and aggregation remain bounded.
+  async function cleanupAll() {
+    if (!transcriptId || isBulkPending || pendingJobId) return;
+    setIsBulkPending(true);
+    setRecoveryMessage(null);
+    let cursor = bulkResumeCursor;
+    let processed = 0;
+    const resultCounts = new Map<ManualAiCleanupResultStatus, number>();
+    try {
+      do {
+        const pageResponse = await fetch(
+          `/api/transcripts/${transcriptId}/manual-ai/cleanup${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+          { cache: "no-store" }
+        );
+        const page = await pageResponse.json().catch(() => null) as ManualAiCleanupPage | null;
+        if (!pageResponse.ok || !page || !Array.isArray(page.candidates)
+          || page.candidates.length > MANUAL_AI_CLEANUP_BATCH_LIMIT
+          || new Set(page.candidates.map((candidate) => candidate.job_id)).size !== page.candidates.length) {
+          throw new Error("cleanup_page_failed");
+        }
+        if (page.candidates.length > 0) {
+          const mutation = await cleanupJobs(page.candidates.map((candidate) => candidate.job_id));
+          mutation?.results.forEach((result) => {
+            resultCounts.set(result.result, (resultCounts.get(result.result) ?? 0) + 1);
+          });
+          processed += page.candidates.length;
+        }
+        if (page.next_cursor && page.next_cursor === cursor) throw new Error("cleanup_cursor_stalled");
+        cursor = page.next_cursor;
+        setBulkResumeCursor(cursor);
+      } while (cursor);
+      const summary = Array.from(resultCounts.entries())
+        .map(([result, count]) => `${cleanupResultLabels[result]} ${count}`)
+        .join(", ");
+      setRecoveryMessage(`Kontrola dokončena: ${processed} záznamů${summary ? ` (${summary})` : ""}.`);
+      await onReload?.();
+    } catch {
+      setBulkResumeCursor(cursor);
+      setRecoveryMessage("Čištění se přerušilo. Zkuste pokračovat znovu.");
+    } finally {
+      setIsBulkPending(false);
+    }
+  }
+
   return (
-    <section className="ai-running-state" aria-label="Stav AI požadavků">
-      {jobs.slice(0, 12).map((job) => {
+    <details className="ai-running-state">
+      <summary>
+        <strong>Stav AI požadavků</strong>
+        <span>{activeCount} aktivní · {errorCount} chyb · {cleanup.eligible_count} k vyčištění</span>
+      </summary>
+      <div className="ai-job-panel" aria-live="polite">
+      {visibleJobs.slice(0, 12).map((job) => {
         const status = getManualAiJobDisplayStatus(job);
+        const classification = classificationById.get(job.id);
         const retryAt = job.retry_after_at ? Date.parse(job.retry_after_at) : Number.NaN;
         const retryBlocked = job.failure_code === "rate_limited"
           && Number.isFinite(retryAt)
           && (clockMs === null || retryAt > clockMs);
-        const leaseExpiresAt = job.lease_expires_at ? Date.parse(job.lease_expires_at) : Number.NaN;
-        const canInterruptQueued = job.status === "queued"
-          && job.attempt_count === 0
-          && job.max_attempts === 1
-          && job.lease_expires_at === null;
-        const canInterruptStaleRunning = status === "stalled"
-          && job.status === "running"
-          && job.attempt_count === 1
-          && job.max_attempts === 1
-          && Number.isFinite(leaseExpiresAt)
-          && clockMs !== null
-          && leaseExpiresAt <= clockMs;
         return (
-          <span key={job.id}>
-            <strong>{getAiOutputTitle(job.processing_type)}</strong>: {manualJobLabels[status]}
-            {job.status === "failed" ? ` · ${getManualAiFailureMessage(job.failure_code)}` : ""}
-            {retryBlocked ? ` Další pokus bude dostupný ${new Intl.DateTimeFormat("cs-CZ", { dateStyle: "short", timeStyle: "short" }).format(retryAt)}.` : ""}
-            {status === "stalled" ? (
-              <button disabled={pendingJobId !== null} onClick={() => void reconcileJob(job.id, "reconcile")} type="button">
-                {pendingJobId === job.id ? "Obnovuji…" : "Obnovit stav"}
-              </button>
+          <div className="ai-job-row" key={job.id}>
+            <span><strong>{getAiOutputTitle(job.processing_type)}</strong>: {manualJobLabels[status]}</span>
+            {job.status === "failed" ? <small>{getManualAiFailureMessage(job.failure_code)}</small> : null}
+            {classification?.cleanup_reason === "unsupported_legacy" ? (
+              <small>Starší protokol nelze bezpečně automaticky spravovat. Je nutná ruční kontrola.</small>
             ) : null}
-            {canInterruptQueued || canInterruptStaleRunning ? (
-              <button disabled={pendingJobId !== null} onClick={() => void reconcileJob(job.id, "interrupt")} type="button">
-                {pendingJobId === job.id ? "Ukončuji…" : "Ukončit požadavek"}
+            {classification?.actions.map((action) => (
+              <button disabled={pendingJobId !== null || isBulkPending} key={action} onClick={() => void runJobAction(job.id, action)} type="button">
+                {pendingJobId === job.id ? "Pracuji…" : cleanupActionLabels[action]}
               </button>
-            ) : null}
+            ))}
             {job.status === "failed" ? (
               <button
-                disabled={pendingJobId !== null || retryBlocked}
+                disabled={pendingJobId !== null || isBulkPending || retryBlocked}
                 onClick={() => {
                   setPendingJobId(job.id);
                   void onRetry(job).finally(() => setPendingJobId(null));
@@ -267,11 +384,17 @@ function ManualAiJobList({
                 Zkusit znovu
               </button>
             ) : null}
-          </span>
+          </div>
         );
       })}
-      {recoveryMessage ? <span role="status">{recoveryMessage}</span> : null}
-    </section>
+      {cleanup.eligible_count > 0 ? (
+        <button className="ai-job-cleanup-all" disabled={isBulkPending || pendingJobId !== null} onClick={() => void cleanupAll()} type="button">
+          {isBulkPending ? "Čistím…" : bulkResumeCursor ? "Pokračovat v čištění" : `Vyčistit způsobilé (${cleanup.eligible_count})`}
+        </button>
+      ) : null}
+      {recoveryMessage ? <p role="status">{recoveryMessage}</p> : null}
+      </div>
+    </details>
   );
 }
 
@@ -285,11 +408,13 @@ function AiOutputCard({
   defaultOpen,
   loadOutput,
   metadata,
+  onOutputsRemoved,
   output
 }: {
   defaultOpen?: boolean;
   loadOutput?: (outputId: string) => Promise<unknown>;
   metadata: ManualAiOutputMetadata;
+  onOutputsRemoved?: (outputIds: string[]) => void;
   output: AiOutputView | null;
 }) {
   const pathname = usePathname();
@@ -381,7 +506,7 @@ function AiOutputCard({
             <span>Otevřít e-mail</span>
           </a>
         ) : null}
-        <DeleteAiOutputForm next={pathname} outputId={output.id} />
+        <DeleteAiOutputForm next={pathname} onDeleted={onOutputsRemoved} outputId={output.id} />
         {copyMessage ? <small>{copyMessage}</small> : null}
       </div> : null}
       <div className="ai-markdown-preview">

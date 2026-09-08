@@ -13,6 +13,7 @@ export type InstallationEnvironment = "production" | "preview" | "development" |
 export type InstallationStatus = {
   environment: InstallationEnvironment;
   geminiConfigured: boolean;
+  mistralConfigured: boolean;
   missingRequiredNames: string[];
   ready: boolean;
 };
@@ -44,6 +45,7 @@ export function getInstallationStatus(): InstallationStatus {
   return {
     environment: getInstallationEnvironment(),
     geminiConfigured: isConfiguredValue(process.env.GEMINI_API_KEY),
+    mistralConfigured: isConfiguredValue(process.env.MISTRAL_API_KEY),
     missingRequiredNames,
     ready: missingRequiredNames.length === 0
   };

@@ -22,6 +22,7 @@ const supabaseAdminEnvSchema = z.object({
 
 const providerEnvSchema = supabaseAdminEnvSchema.extend({
   GEMINI_API_KEY: optionalEnvString,
+  MISTRAL_API_KEY: optionalEnvString,
   OPENAI_API_KEY: optionalEnvString,
   SONIOX_API_KEY: z.string().min(1),
   SONIOX_ASYNC_MODEL: optionalEnvString
@@ -29,6 +30,7 @@ const providerEnvSchema = supabaseAdminEnvSchema.extend({
 
 export type ServerEnv = {
   geminiApiKey: string | null;
+  mistralApiKey: string | null;
   openaiApiKey: string | null;
   sonioxApiKey: string;
   sonioxAsyncModel: string;
@@ -36,7 +38,7 @@ export type ServerEnv = {
   supabaseUrl: string;
 };
 
-type AiProviderName = "openai" | "gemini";
+type AiProviderName = "openai" | "gemini" | "mistral";
 
 // parseServerEnv validates shared server-side configuration once per caller.
 function parseServerEnv(): ServerEnv {
@@ -48,6 +50,7 @@ function parseServerEnv(): ServerEnv {
 
   return {
     geminiApiKey: parsed.data.GEMINI_API_KEY ?? null,
+    mistralApiKey: parsed.data.MISTRAL_API_KEY ?? null,
     openaiApiKey: parsed.data.OPENAI_API_KEY ?? null,
     sonioxApiKey: parsed.data.SONIOX_API_KEY,
     sonioxAsyncModel: parsed.data.SONIOX_ASYNC_MODEL ?? "stt-async-v5",
@@ -105,6 +108,21 @@ export function getGeminiEnv() {
   };
 }
 
+// getMistralEnv returns required paid Mistral API configuration for server-side AI processing.
+export function getMistralEnv() {
+  const parsed = supabaseAdminEnvSchema.extend({
+    MISTRAL_API_KEY: requiredEnvString
+  }).safeParse(process.env);
+
+  if (!parsed.success) {
+    throw new Error("Missing MISTRAL_API_KEY.");
+  }
+
+  return {
+    mistralApiKey: parsed.data.MISTRAL_API_KEY
+  };
+}
+
 // getAiProviderConfigurationError returns a user-facing setup issue before an AI job is created.
 export function getAiProviderConfigurationError(provider: AiProviderName) {
   if (provider === "gemini") {
@@ -113,6 +131,14 @@ export function getAiProviderConfigurationError(provider: AiProviderName) {
     return parsed.success
       ? null
       : "Gemini není nakonfigurované. Přidejte GEMINI_API_KEY ve Vercelu, nebo zvolte OpenAI model.";
+  }
+
+  if (provider === "mistral") {
+    const parsed = z.object({ MISTRAL_API_KEY: requiredEnvString }).safeParse(process.env);
+
+    return parsed.success
+      ? null
+      : "Mistral není nakonfigurovaný. Přidejte MISTRAL_API_KEY ve Vercelu, nebo zvolte jiný dostupný model.";
   }
 
   const parsed = z.object({ OPENAI_API_KEY: requiredEnvString }).safeParse(process.env);

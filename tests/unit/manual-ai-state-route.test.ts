@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
-import { act, createElement, StrictMode } from "react";
+import { act, createElement, StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  applyManualAiCleanupMutation,
   getManualAiJobDisplayStatus,
-  mergeManualAiState
+  mergeManualAiState,
+  removeManualAiOutputs
 } from "@/lib/ai/manual-job-state";
 import { GET as getOutput } from "../../app/api/ai-outputs/[outputId]/route";
 import { GET as getAiState } from "../../app/api/transcripts/[transcriptId]/ai-state/route";
@@ -18,22 +20,45 @@ import { TranscriptTabs } from "@/components/transcript-tabs";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 
-const routeMocks = vi.hoisted(() => ({ createClient: vi.fn() }));
+const routeMocks = vi.hoisted(() => ({
+  createAdminClient: vi.fn(() => ({})),
+  createClient: vi.fn(),
+  getManualAiCleanupState: vi.fn()
+}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: routeMocks.createClient }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: routeMocks.createAdminClient }));
+vi.mock("@/lib/ai/manual-job-cleanup.server", () => ({ getManualAiCleanupState: routeMocks.getManualAiCleanupState }));
 vi.mock("@/components/transcript-tabs/recording-audio-player", () => ({ RecordingAudioPlayer: () => null }));
 vi.mock("@/components/transcript-tabs/chat-content", () => ({ ChatContent: () => null }));
 vi.mock("@/components/transcript-tabs/files-content", () => ({ FilesContent: () => null }));
 vi.mock("@/components/transcript-tabs/transcript-content", () => ({ TranscriptContent: () => null }));
-vi.mock("@/components/transcript-tabs/ai-processing-content", () => ({ AiProcessingContent: renderAiSnapshot }));
-vi.mock("@/components/transcript-tabs/timeline-content", () => ({ TimelineContent: renderAiSnapshot }));
+vi.mock("@/components/transcript-tabs/ai-processing-content", () => ({ AiProcessingContent: RenderAiSnapshot }));
+vi.mock("@/components/transcript-tabs/timeline-content", () => ({ TimelineContent: RenderAiSnapshot }));
 
-// renderAiSnapshot observes the real tabs' hydrated props without unrelated artifact presentation.
-function renderAiSnapshot({ aiOutputs, structuredItems }: { aiOutputs: AiOutputView[]; structuredItems: StructuredAiItems }) {
-  return createElement("output", null, JSON.stringify({ aiOutputs, structuredItems }));
+let snapshotMounts = 0;
+let snapshotUnmounts = 0;
+
+// renderAiSnapshot observes the real tabs' hydration while retaining browser-owned interaction state.
+function RenderAiSnapshot({ aiOutputs, structuredItems }: { aiOutputs: AiOutputView[]; structuredItems: StructuredAiItems }) {
+  useEffect(() => {
+    snapshotMounts += 1;
+    return () => { snapshotUnmounts += 1; };
+  }, []);
+  return createElement("div", null,
+    createElement("output", null, JSON.stringify({ aiOutputs, structuredItems })),
+    createElement("details", { "data-local-details": true }, createElement("summary", null, "Lokální detail"),
+      createElement("input", { "aria-label": "Lokální koncept", defaultValue: "" }))
+  );
 }
 
 beforeEach(() => {
   vi.resetAllMocks();
+  snapshotMounts = 0;
+  snapshotUnmounts = 0;
+  routeMocks.getManualAiCleanupState.mockResolvedValue({
+    classifications: [],
+    cleanup: { eligible_count: 0, next_cursor: null }
+  });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 });
 afterEach(() => {
@@ -43,6 +68,17 @@ afterEach(() => {
 });
 
 const emptyStructuredItems = { chapters: [], decisions: [], risks: [], tasks: [] };
+
+// withCleanupState decorates test jobs with the authoritative polling contract returned by ai-state.
+function withCleanupState<T extends { jobs: Array<{ id: string }>; outputs: unknown[] }>(payload: T) {
+  return {
+    ...payload,
+    classifications: payload.jobs.map((job) => ({
+      actions: [], cleanup_reason: "active_or_slow", job_id: job.id, poll_eligible: true
+    })),
+    cleanup: { eligible_count: 0, next_cursor: null }
+  };
+}
 
 // AiStateHarness exposes lazy metadata and body loads through observable controls.
 function AiStateHarness() {
@@ -56,6 +92,7 @@ function AiStateHarness() {
       void state.loadForPurpose("ai");
     } }, "AI"),
     createElement("button", { "data-purpose": "all", onClick: () => void state.loadAllOutputs() }, "All"),
+    createElement("button", { "data-purpose": "accept", onClick: () => state.acceptJob({ id: "accepted-job", status: "queued" }, "summary") }, "Accept"),
     createElement("button", { "data-purpose": "inactive", onClick: () => state.setActivePurpose(null) }, "Inactive"),
     createElement("output", null, state.loadedOutputs.map((output) => output.id).join(","))
   );
@@ -118,7 +155,36 @@ describe("real detail tabs after server revalidation", () => {
     window.localStorage.clear();
   });
 
-  it.each(["ai", "timeline"] as const)("reloads %s after revalidation and removes deleted projections without generating again", async (tab) => {
+  it("preserves mounted children, disclosure, draft and focus across equivalent props", async () => {
+    const saved = outputPayload();
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
+      url.includes("/ai-state") ? { jobs: [], outputs: [{ ...saved.output, body_loaded: false }] } : saved
+    ))));
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(detailTree("ai")));
+      const details = container.querySelector<HTMLDetailsElement>("[data-local-details]")!;
+      const draft = details.querySelector<HTMLInputElement>("input")!;
+      details.open = true;
+      draft.value = "Rozepsaný koncept";
+      draft.focus();
+
+      await act(async () => root.render(detailTree("ai")));
+
+      expect(container.querySelector("[data-local-details]")).toBe(details);
+      expect(details.open).toBe(true);
+      expect(draft.value).toBe("Rozepsaný koncept");
+      expect(document.activeElement).toBe(draft);
+      expect(snapshotMounts).toBe(1);
+      expect(snapshotUnmounts).toBe(0);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it.each(["ai", "timeline"] as const)("keeps %s content mounted across same-transcript revalidation until an explicit deletion", async (tab) => {
     let saved = outputPayload();
     const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(
       url.includes("automatic-timeline") ? { status: "not_scheduled" }
@@ -135,11 +201,12 @@ describe("real detail tabs after server revalidation", () => {
       const postsBefore = fetchMock.mock.calls.filter(([url]) => url.includes("automatic-timeline")).length;
       await act(async () => root.render(detailTree(tab)));
       expect(container.textContent).toContain("Body saved-output");
-      // Simulate the authoritative post-delete response after an explicit mutation revalidates detail.
+      // A bounded same-transcript snapshot may add rows, but absence never proves deletion.
       saved = outputPayload("remaining-output");
+      saved.output.created_at = "2026-09-05T10:01:00Z";
       const sameTree = detailTree(tab);
       await act(async () => root.render(sameTree));
-      expect(container.textContent).not.toContain("saved-output");
+      expect(container.textContent).toContain("saved-output");
       expect(container.textContent).toContain("Body remaining-output");
       const afterReload = fetchMock.mock.calls.length;
       await act(async () => root.render(sameTree));
@@ -174,16 +241,16 @@ describe("real detail tabs after server revalidation", () => {
         document.dispatchEvent(new Event("visibilitychange"));
         window.dispatchEvent(new Event("focus"));
       });
-      expect(fetchMock).toHaveBeenCalledTimes(baseline + 2);
+      expect(fetchMock).toHaveBeenCalledTimes(baseline + 1);
     } finally {
       await act(async () => root.unmount());
     }
   });
 
   it("keeps active jobs polling after revalidation and does not load an inactive tab", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(withCleanupState({
       jobs: [{ id: "active-job", status: "queued", created_at: new Date().toISOString() }], outputs: []
-    })));
+    }))));
     vi.stubGlobal("fetch", fetchMock);
     const root = createRoot(document.createElement("div"));
     try {
@@ -192,7 +259,7 @@ describe("real detail tabs after server revalidation", () => {
       await act(async () => root.render(detailTree()));
       await act(async () => root.render(detailTree()));
       const afterRefresh = fetchMock.mock.calls.length;
-      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
       expect(fetchMock).toHaveBeenCalledTimes(afterRefresh + 1);
     } finally {
       await act(async () => root.unmount());
@@ -258,6 +325,38 @@ function createStateQuery(result: { data: unknown; error: unknown }) {
 }
 
 describe("manual AI state contract", () => {
+  it("removes only explicitly confirmed cleanup and output ids", () => {
+    const current = {
+      classifications: [
+        { actions: ["delete" as const], cleanup_reason: "eligible_terminal_no_output" as const, job_id: "job-1", poll_eligible: false },
+        { actions: [], cleanup_reason: "active_or_slow" as const, job_id: "job-2", poll_eligible: true }
+      ],
+      cleanup: { eligible_count: 1, next_cursor: null },
+      jobs: [
+        { attempt_count: 1, completed_at: null, created_at: "2026-09-05T10:00:00Z", failure_code: null, id: "job-1", lease_expires_at: null, max_attempts: 1, model: "gpt", processing_type: "summary", retry_after_at: null, started_at: null, status: "failed" as const },
+        { attempt_count: 1, completed_at: null, created_at: "2026-09-05T10:01:00Z", failure_code: null, id: "job-2", lease_expires_at: null, max_attempts: 1, model: "gpt", processing_type: "summary", retry_after_at: null, started_at: null, status: "running" as const }
+      ],
+      loadedOutputs: [outputPayload("output-1").output, outputPayload("output-2").output],
+      outputs: ["output-1", "output-2"].map((id) => ({ ...outputPayload(id).output, body_loaded: true })),
+      structuredItems: {
+        ...emptyStructuredItems,
+        chapters: [outputPayload("output-1").structuredItems.chapters[0]!, outputPayload("output-2").structuredItems.chapters[0]!]
+      }
+    };
+
+    const afterCleanup = applyManualAiCleanupMutation(current, {
+      changed_jobs: [],
+      removed_job_ids: ["job-1"],
+      results: [{ job_id: "job-1", result: "deleted" }]
+    });
+    const afterOutputDelete = removeManualAiOutputs(afterCleanup, ["output-1"]);
+
+    expect(afterOutputDelete.jobs.map((job) => job.id)).toEqual(["job-2"]);
+    expect(afterOutputDelete.outputs.map((output) => output.id)).toEqual(["output-2"]);
+    expect(afterOutputDelete.loadedOutputs.map((output) => output.id)).toEqual(["output-2"]);
+    expect(afterOutputDelete.structuredItems.chapters.map((chapter) => chapter.ai_output_id)).toEqual(["output-2"]);
+  });
+
   it("derives stalled queued and running jobs without mutating persisted status", () => {
     const queued = {
       attempt_count: 0,
@@ -404,12 +503,33 @@ describe("manual AI state contract", () => {
     await act(async () => root.unmount());
   });
 
-  it("does not let old invalidated metadata clear the current request deduplication", async () => {
+  it("checks an accepted job again after an older metadata request was already in flight", async () => {
     let resolveOld!: (response: Response) => void;
-    let resolveCurrent!: (response: Response) => void;
     const fetchMock = vi.fn()
       .mockReturnValueOnce(new Promise<Response>((resolve) => { resolveOld = resolve; }))
-      .mockReturnValueOnce(new Promise<Response>((resolve) => { resolveCurrent = resolve; }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        classifications: [{ actions: [], cleanup_reason: "active_or_slow", job_id: "accepted-job", poll_eligible: true }],
+        cleanup: { eligible_count: 0, next_cursor: null },
+        jobs: [], outputs: []
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="accept"]')?.click());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveOld(new Response(JSON.stringify({ jobs: [], outputs: [] }), { status: 200 }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => root.unmount());
+  });
+
+  it("keeps one same-transcript metadata request deduplicated across equivalent server props", async () => {
+    let resolveOld!: (response: Response) => void;
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(new Promise<Response>((resolve) => { resolveOld = resolve; }));
     vi.stubGlobal("fetch", fetchMock);
     const { container, root } = await renderAiStateHarness();
     try {
@@ -418,11 +538,10 @@ describe("manual AI state contract", () => {
         transcriptId: "00000000-0000-4000-8000-000000000921", initialAiOutputs: [], initialStructuredItems: emptyStructuredItems
       }, createElement(AiStateHarness))));
       await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
       await act(async () => resolveOld(new Response(JSON.stringify({ jobs: [], outputs: [] }))));
       await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
       expect(fetchMock).toHaveBeenCalledTimes(2);
-      await act(async () => resolveCurrent(new Response(JSON.stringify({ jobs: [], outputs: [] }))));
     } finally {
       await act(async () => root.unmount());
     }
@@ -473,24 +592,24 @@ describe("manual AI state contract", () => {
     await act(async () => root.unmount());
   });
 
-  it("polls at five seconds only for active visible online AI and deduplicates focus catch-up", async () => {
+  it("polls at ten seconds only for server-eligible visible online AI and deduplicates focus catch-up", async () => {
     vi.useFakeTimers();
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
-    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(withCleanupState({
       jobs: [{ completed_at: null, created_at: new Date().toISOString(), error_message: null, id: "job-running", processing_type: "summary", started_at: new Date().toISOString(), status: "running" }],
       outputs: []
-    }), { status: 200 }));
+    })), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const { container, root } = await renderAiStateHarness();
     await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
     document.dispatchEvent(new Event("visibilitychange"));
-    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    await act(async () => vi.advanceTimersByTimeAsync(30_001));
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
@@ -505,14 +624,43 @@ describe("manual AI state contract", () => {
     await act(async () => root.unmount());
   });
 
+  it("does not postpone an existing poll when lifecycle events arrive before catch-up is due", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    const startedAt = new Date().toISOString();
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(withCleanupState({
+      jobs: [{ attempt_count: 1, completed_at: null, created_at: startedAt, failure_code: null, id: "job-running", lease_expires_at: new Date(Date.now() + 480_000).toISOString(), max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: startedAt, status: "running" }],
+      outputs: []
+    })), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
+
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("online"));
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.runAllTicks();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => vi.advanceTimersByTimeAsync(4_999));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => root.unmount());
+  });
+
   it("does not poll for metadata-only or inactive tabs", async () => {
     vi.useFakeTimers();
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
     Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
-    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(withCleanupState({
       jobs: [{ attempt_count: 0, completed_at: null, created_at: new Date().toISOString(), failure_code: null, id: "job-queued", lease_expires_at: null, max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: null, status: "queued" }],
       outputs: []
-    }), { status: 200 }));
+    })), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const { container, root } = await renderAiStateHarness();
     await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
@@ -529,14 +677,35 @@ describe("manual AI state contract", () => {
     await act(async () => root.unmount());
   });
 
+  it("does not poll an active-looking legacy row when the server marks it unsupported", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    const job = {
+      attempt_count: 0, completed_at: null, created_at: new Date().toISOString(), failure_code: null,
+      id: "legacy-job", lease_expires_at: null, max_attempts: 3, model: "legacy",
+      processing_type: "summary", retry_after_at: null, started_at: null, status: "queued"
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      classifications: [{ actions: [], cleanup_reason: "unsupported_legacy", job_id: job.id, poll_eligible: false }],
+      cleanup: { eligible_count: 0, next_cursor: null }, jobs: [job], outputs: []
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
+    await act(async () => vi.advanceTimersByTimeAsync(180_000));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => root.unmount());
+  });
+
   it("pauses offline, deduplicates online/focus/visibility burst, and uses old persisted age", async () => {
     vi.useFakeTimers();
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
     Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
-    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(withCleanupState({
       jobs: [{ attempt_count: 1, completed_at: null, created_at: new Date(Date.now() - 300_000).toISOString(), failure_code: null, id: "job-running", lease_expires_at: new Date(Date.now() + 180_000).toISOString(), max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: new Date(Date.now() - 300_000).toISOString(), status: "running" }],
       outputs: []
-    }), { status: 200 }));
+    })), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const { container, root } = await renderAiStateHarness();
     await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
@@ -553,7 +722,7 @@ describe("manual AI state contract", () => {
       await Promise.resolve();
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    await act(async () => vi.advanceTimersByTimeAsync(29_999));
+    await act(async () => vi.advanceTimersByTimeAsync(59_999));
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -565,10 +734,10 @@ describe("manual AI state contract", () => {
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
     Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
     const startedAt = new Date().toISOString();
-    const activePayload = {
+    const activePayload = withCleanupState({
       jobs: [{ attempt_count: 1, completed_at: null, created_at: startedAt, failure_code: null, id: "job-running", lease_expires_at: new Date(Date.now() + 480_000).toISOString(), max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: startedAt, status: "running" }],
       outputs: []
-    };
+    });
     let resolveScheduledPoll!: (response: Response) => void;
     const scheduledPoll = new Promise<Response>((resolve) => { resolveScheduledPoll = resolve; });
     const fetchMock = vi.fn()
@@ -579,7 +748,7 @@ describe("manual AI state contract", () => {
     const { container, root } = await renderAiStateHarness();
     await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
 
-    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
@@ -596,11 +765,11 @@ describe("manual AI state contract", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    await act(async () => vi.advanceTimersByTimeAsync(4_999));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(9_999));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => vi.advanceTimersByTimeAsync(1));
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     await act(async () => root.unmount());
   });
 
@@ -609,10 +778,10 @@ describe("manual AI state contract", () => {
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
     Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
     const startedAt = new Date().toISOString();
-    const activePayload = {
+    const activePayload = withCleanupState({
       jobs: [{ attempt_count: 1, completed_at: null, created_at: startedAt, failure_code: null, id: "job-running", lease_expires_at: new Date(Date.now() + 480_000).toISOString(), max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: startedAt, status: "running" }],
       outputs: []
-    };
+    });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(activePayload), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: "temporary" }), { status: 503 }))
@@ -621,7 +790,7 @@ describe("manual AI state contract", () => {
     const { container, root } = await renderAiStateHarness();
     await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
 
-    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
@@ -644,10 +813,10 @@ describe("manual AI state contract", () => {
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
     Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
     const startedAt = new Date().toISOString();
-    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(withCleanupState({
       jobs: [{ attempt_count: 1, completed_at: null, created_at: startedAt, failure_code: null, id: "job-running", lease_expires_at: new Date(Date.now() + 480_000).toISOString(), max_attempts: 1, model: "gpt-5.6-terra", processing_type: "summary", retry_after_at: null, started_at: startedAt, status: "running" }],
       outputs: []
-    }), { status: 200 }));
+    })), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const { container, root } = await renderAiStateHarness();
     await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());

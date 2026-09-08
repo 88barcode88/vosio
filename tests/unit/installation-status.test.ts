@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getInstallationStatus } from "@/lib/installation-status.server";
+import { getAiProviderConfigurationError } from "@/lib/env.server";
 
 const REQUIRED_NAMES = [
   "NEXT_PUBLIC_SUPABASE_URL",
@@ -21,14 +22,26 @@ function configureRequiredEnvironment() {
 }
 
 describe("installation status", () => {
+  it("keeps Mistral optional while returning fixed setup guidance when its key is missing", () => {
+    configureRequiredEnvironment();
+    vi.stubEnv("MISTRAL_API_KEY", "");
+
+    expect(getInstallationStatus()).toMatchObject({ mistralConfigured: false, ready: true });
+    expect(getAiProviderConfigurationError("mistral")).toBe(
+      "Mistral není nakonfigurovaný. Přidejte MISTRAL_API_KEY ve Vercelu, nebo zvolte jiný dostupný model."
+    );
+  });
+
   it("returns a ready Preview status without making optional Gemini required", () => {
     configureRequiredEnvironment();
     vi.stubEnv("VERCEL_ENV", "preview");
     vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("MISTRAL_API_KEY", "");
 
     expect(getInstallationStatus()).toEqual({
       environment: "preview",
       geminiConfigured: false,
+      mistralConfigured: false,
       missingRequiredNames: [],
       ready: true
     });
@@ -39,11 +52,13 @@ describe("installation status", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "  ");
     vi.stubEnv("OPENAI_API_KEY", "");
     vi.stubEnv("GEMINI_API_KEY", "optional-test-secret");
+    vi.stubEnv("MISTRAL_API_KEY", "optional-mistral-secret");
     vi.stubEnv("VERCEL_ENV", "development");
 
     expect(getInstallationStatus()).toEqual({
       environment: "development",
       geminiConfigured: true,
+      mistralConfigured: true,
       missingRequiredNames: ["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "OPENAI_API_KEY"],
       ready: false
     });
@@ -54,6 +69,7 @@ describe("installation status", () => {
     vi.stubEnv("VERCEL_ENV", "unexpected-environment");
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("GEMINI_API_KEY", "gemini-secret-that-must-not-leak");
+    vi.stubEnv("MISTRAL_API_KEY", "mistral-secret-that-must-not-leak");
 
     const status = getInstallationStatus();
     const serialized = JSON.stringify(status);
@@ -63,10 +79,12 @@ describe("installation status", () => {
       "environment",
       "geminiConfigured",
       "missingRequiredNames",
+      "mistralConfigured",
       "ready"
     ]);
     expect(serialized).not.toContain("test-secret");
     expect(serialized).not.toContain("gemini-secret-that-must-not-leak");
+    expect(serialized).not.toContain("mistral-secret-that-must-not-leak");
   });
 
   it("uses unknown for unsupported runtime environment values", () => {

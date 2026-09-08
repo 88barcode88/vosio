@@ -3,11 +3,16 @@ import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import { dedupeStructuredAiItems } from "@/lib/ai/structured-dedupe";
 import { MANUAL_AI_LEASE_GRACE_SECONDS, MANUAL_AI_MAX_DURATION_SECONDS } from "@/lib/ai/manual-route-runtime";
 import type { AiFailureCode } from "@/lib/ai/provider-errors";
+import type {
+  ManualAiCleanupClassification,
+  ManualAiCleanupMetadata,
+  ManualAiCleanupMutationResponse
+} from "@/lib/ai/manual-job-cleanup-contract";
 
 export const MANUAL_AI_RUNTIME_MS = MANUAL_AI_MAX_DURATION_SECONDS * 1_000;
 export const MANUAL_AI_STALL_GRACE_MS = MANUAL_AI_LEASE_GRACE_SECONDS * 1_000;
 
-export type ManualAiJobStatus = "queued" | "running" | "done" | "failed";
+export type ManualAiJobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 export type ManualAiJobDisplayStatus = ManualAiJobStatus | "stalled";
 
 export type ManualAiJobSummary = {
@@ -35,12 +40,16 @@ export type ManualAiOutputMetadata = {
 };
 
 export type ManualAiStateSnapshot = {
+  classifications?: ManualAiCleanupClassification[];
+  cleanup?: ManualAiCleanupMetadata;
   jobs: ManualAiJobSummary[];
   nextOutputOffset?: number | null;
   outputs: ManualAiOutputMetadata[];
 };
 
 export type LoadedManualAiState = ManualAiStateSnapshot & {
+  classifications: ManualAiCleanupClassification[];
+  cleanup: ManualAiCleanupMetadata;
   loadedOutputs: AiOutputView[];
   structuredItems: StructuredAiItems;
 };
@@ -48,6 +57,8 @@ export type LoadedManualAiState = ManualAiStateSnapshot & {
 // getEmptyLoadedManualAiState creates a fresh unloaded client state without shared mutable arrays.
 export function getEmptyLoadedManualAiState(): LoadedManualAiState {
   return {
+    classifications: [],
+    cleanup: { eligible_count: 0, next_cursor: null },
     jobs: [],
     loadedOutputs: [],
     outputs: [],
@@ -81,6 +92,7 @@ export function mergeManualAiState(
 ): ManualAiStateSnapshot {
   const jobs = new Map((current?.jobs ?? []).map((job) => [job.id, job]));
   const outputs = new Map((current?.outputs ?? []).map((output) => [output.id, output]));
+  const classifications = new Map((current?.classifications ?? []).map((item) => [item.job_id, item]));
 
   incoming.jobs.forEach((job) => jobs.set(job.id, { ...jobs.get(job.id), ...job }));
   incoming.outputs.forEach((output) => outputs.set(output.id, {
@@ -88,10 +100,55 @@ export function mergeManualAiState(
     ...output,
     body_loaded: output.body_loaded || outputs.get(output.id)?.body_loaded === true
   }));
+  incoming.classifications?.forEach((item) => classifications.set(item.job_id, item));
 
   return {
+    classifications: Array.from(classifications.values()),
+    cleanup: incoming.cleanup ?? current?.cleanup ?? { eligible_count: 0, next_cursor: null },
     jobs: Array.from(jobs.values()).sort(compareCreatedRows),
     outputs: Array.from(outputs.values()).sort(compareCreatedRows)
+  };
+}
+
+// applyManualAiCleanupMutation applies only explicit removals and merges server-returned changed rows.
+export function applyManualAiCleanupMutation(
+  current: LoadedManualAiState,
+  mutation: ManualAiCleanupMutationResponse
+): LoadedManualAiState {
+  const removedIds = new Set(mutation.removed_job_ids);
+  const changedSnapshot: ManualAiStateSnapshot = {
+    classifications: mutation.changed_jobs.map(({ actions, cleanup_reason, job_id, poll_eligible }) => ({
+      actions, cleanup_reason, job_id, poll_eligible
+    })),
+    jobs: mutation.changed_jobs.map(({ job_id, actions: _actions, cleanup_reason: _reason, poll_eligible: _poll, ...job }) => ({
+      ...job,
+      id: job_id
+    })),
+    outputs: []
+  };
+  const merged = mergeManualAiState(current, changedSnapshot);
+
+  return {
+    ...current,
+    ...merged,
+    classifications: (merged.classifications ?? []).filter((item) => !removedIds.has(item.job_id)),
+    jobs: merged.jobs.filter((job) => !removedIds.has(job.id))
+  };
+}
+
+// removeManualAiOutputs removes only confirmed artifacts and their normalized projections.
+export function removeManualAiOutputs(current: LoadedManualAiState, outputIds: string[]): LoadedManualAiState {
+  const removedIds = new Set(outputIds);
+  return {
+    ...current,
+    loadedOutputs: current.loadedOutputs.filter((output) => !removedIds.has(output.id)),
+    outputs: current.outputs.filter((output) => !removedIds.has(output.id)),
+    structuredItems: {
+      chapters: current.structuredItems.chapters.filter((row) => !removedIds.has(row.ai_output_id)),
+      decisions: current.structuredItems.decisions.filter((row) => !removedIds.has(row.ai_output_id)),
+      risks: current.structuredItems.risks.filter((row) => !removedIds.has(row.ai_output_id)),
+      tasks: current.structuredItems.tasks.filter((row) => !removedIds.has(row.ai_output_id))
+    }
   };
 }
 

@@ -28,6 +28,7 @@ const storageConfig = {
 const installationStatus = {
   environment: "preview",
   geminiConfigured: false,
+  mistralConfigured: false,
   missingRequiredNames: ["OPENAI_API_KEY"],
   ready: false
 } satisfies InstallationStatus;
@@ -210,6 +211,7 @@ describe("settings workspace layout", () => {
     expect(markup).toContain("Chybí konfigurace");
     expect(markup).toContain("OPENAI_API_KEY");
     expect(markup).toContain("GEMINI_API_KEY (volitelné)");
+    expect(markup).toContain("MISTRAL_API_KEY (volitelné)");
     expect(markup).not.toContain("test-secret");
   });
 

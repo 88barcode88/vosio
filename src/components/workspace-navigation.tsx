@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Coffee, FileAudio, FileText, LogOut, Menu, Plus, Settings2, X } from "lucide-react";
@@ -110,21 +110,25 @@ export function WorkspaceNavigation({
         ].filter(Boolean).join(" ");
 
         return (
-          <Link
-            aria-label={compact ? item.label : undefined}
-            aria-current={isActive ? "page" : undefined}
-            className={className}
-            href={resolveNavigationHref(item.href, hrefOverrides)}
-            key={item.label}
-            onClick={(event) => {
-              if (event.defaultPrevented) return;
-              setPendingHref(item.href);
-            }}
-            title={compact ? item.label : undefined}
-          >
-            <item.icon size={16} />
-            <span className="navigation-label">{item.label}</span>
-          </Link>
+          <Fragment key={item.label}>
+            <Link
+              aria-label={compact ? item.label : undefined}
+              aria-current={isActive ? "page" : undefined}
+              className={className}
+              href={resolveNavigationHref(item.href, hrefOverrides)}
+              onClick={(event) => {
+                if (event.defaultPrevented) return;
+                setPendingHref(item.href);
+              }}
+              title={compact ? item.label : undefined}
+            >
+              <item.icon size={16} />
+              <span className="navigation-label">{item.label}</span>
+            </Link>
+            {item.href === "/recordings" ? (
+              <NewRecordingNavigationLink compact={compact} hrefOverrides={hrefOverrides} />
+            ) : null}
+          </Fragment>
         );
       })}
     </nav>

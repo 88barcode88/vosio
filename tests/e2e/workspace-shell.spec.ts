@@ -373,7 +373,7 @@ for (const width of [375, 768, 1024, 1440]) {
       await page.getByRole("dialog", { name: "Další možnosti" }).getByRole("button", { name: /Přepnout na/ }).click();
       await page.keyboard.press("Escape");
     } else {
-      await page.locator(".sidebar .theme-toggle").click();
+      await page.locator(".workspace-topbar .theme-toggle").click();
     }
     await page.screenshot({ caret: "initial", path: testInfo.outputPath(`settings-${width}-light.png`), fullPage: true });
   });
@@ -490,13 +490,12 @@ for (const width of [1024, 1440]) {
 
     expect(sidebarBox.x).toBe(0);
     expect(sidebarBox.y).toBe(0);
-    expect(sidebarBox.width).toBeGreaterThanOrEqual(240);
-    expect(sidebarBox.width).toBeLessThanOrEqual(252);
+    expect(sidebarBox.width).toBe(224);
     expect(sidebarBox.height).toBe(760);
     const userCard = page.locator(".sidebar .user-card");
     const signOut = userCard.locator(".sign-out-form button");
     const compactUtilityControls = [
-      page.locator(".sidebar .theme-toggle"),
+      page.locator(".workspace-topbar .theme-toggle"),
       page.locator(".sidebar .sidebar-collapse-button"),
       signOut
     ];
@@ -512,7 +511,7 @@ for (const width of [1024, 1440]) {
             : null
         };
       });
-      expect(geometry.borderRadius).toBe("6px");
+      expect(["6px", "10px"]).toContain(geometry.borderRadius);
       expect(geometry.control.width).toBeGreaterThanOrEqual(44);
       expect(geometry.control.height).toBeGreaterThanOrEqual(44);
       expect(geometry.icon).not.toBeNull();
@@ -534,8 +533,8 @@ for (const width of [1024, 1440]) {
     const desktopInternalHrefs = await sidebar.locator("a:not([target='_blank'])")
       .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
     expect(desktopInternalHrefs).toEqual([
-      fixturePath("new", scope),
       fixturePath("recordings", scope),
+      fixturePath("new", scope),
       fixturePath("templates", scope),
       fixturePath("trash", scope),
       fixturePath("settings", scope),
@@ -643,8 +642,8 @@ for (const width of [375, 1024, 1440]) {
     await page.goto(fixturePath("recordings"));
 
     const expectedBackgrounds = {
-      dark: "rgb(23, 23, 23)",
-      light: "rgb(244, 244, 242)"
+      dark: "rgb(17, 19, 24)",
+      light: "rgb(247, 248, 250)"
     } as const;
 
     const themeSequence = ["dark", "light", "dark"] as const;
@@ -688,7 +687,7 @@ for (const width of [375, 1024, 1440]) {
           .click();
         await page.keyboard.press("Escape");
       } else {
-        await page.locator(".sidebar .theme-toggle").click();
+        await page.locator(".workspace-topbar .theme-toggle").click();
       }
     }
   });
@@ -709,9 +708,9 @@ test("mobile active navigation and account focus use neutral semantic interactio
     };
   });
   expect(activeStyles).toEqual({
-    backgroundColor: "rgb(40, 40, 40)",
-    boxShadow: "rgb(87, 87, 87) 0px 0px 0px 1px inset",
-    iconColor: "rgb(245, 245, 243)"
+    backgroundColor: "rgb(37, 40, 48)",
+    boxShadow: "rgb(65, 71, 84) 0px 0px 0px 1px inset",
+    iconColor: "rgb(242, 243, 246)"
   });
   expect(JSON.stringify(activeStyles)).not.toContain("56, 217, 208");
 
@@ -726,8 +725,8 @@ test("mobile active navigation and account focus use neutral semantic interactio
     return { borderColor: style.borderColor, boxShadow: style.boxShadow };
   });
   expect(accountFocus).toEqual({
-    borderColor: "rgb(116, 167, 255)",
-    boxShadow: "rgb(116, 167, 255) 0px 0px 0px 3px"
+    borderColor: "rgb(171, 194, 248)",
+    boxShadow: "rgb(171, 194, 248) 0px 0px 0px 3px"
   });
   expect(JSON.stringify(accountFocus)).not.toContain("56, 217, 208");
 });

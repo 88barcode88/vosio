@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyGeminiProviderError,
+  classifyMistralProviderError,
   classifyOpenAIProviderError,
   getManualAiFailureMessage,
   SafeAiProviderError
@@ -68,6 +69,22 @@ describe("safe provider error classification", () => {
       .toBe("provider_unavailable");
     expect(classifyGeminiProviderError({ payload: null, status: 0, transportFailure: true }).failureCode)
       .toBe("provider_unavailable");
+    expect(classifyMistralProviderError({ payload: null, status: 0, transportFailure: true }).failureCode)
+      .toBe("provider_unavailable");
+  });
+
+  it.each([
+    [402, null, "insufficient_credit_or_quota"],
+    [429, null, "rate_limited"],
+    [404, "model_not_found", "invalid_model"],
+    [401, null, "provider_configuration"],
+    [503, null, "provider_unavailable"],
+    [400, null, "unknown"]
+  ])("classifies Mistral status=%s code=%s", (status, code, expected) => {
+    expect(classifyMistralProviderError({
+      payload: { code, message: secret },
+      status: status as number
+    }).failureCode).toBe(expected);
   });
 
   it.each([

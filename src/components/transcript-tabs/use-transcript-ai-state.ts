@@ -14,14 +14,18 @@ import {
 } from "react";
 import {
   getEmptyLoadedManualAiState,
+  applyManualAiCleanupMutation,
   mergeLoadedManualAiOutput,
   mergeManualAiState,
+  removeManualAiOutputs,
   type LoadedManualAiState,
   type ManualAiJobStatus,
   type ManualAiStateSnapshot
 } from "@/lib/ai/manual-job-state";
+import type { ManualAiCleanupMutationResponse } from "@/lib/ai/manual-job-cleanup-contract";
+import { dedupeStructuredAiItems, getTaskDedupeKey } from "@/lib/ai/structured-dedupe";
 import { getManualAiPollIntervalMs } from "@/lib/ai/manual-route-runtime";
-import type { StructuredAiItems } from "@/lib/ai/structured-types";
+import type { StructuredAiItems, StructuredTaskRow } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 
 export type AiStatePurpose = "ai" | "metadata" | "timeline";
@@ -30,12 +34,17 @@ const OUTPUT_BODY_LOAD_CONCURRENCY = 8;
 
 export type TranscriptAiStateContextValue = LoadedManualAiState & {
   acceptJob: (job: { id: string; status: ManualAiJobStatus }, processingType: string) => void;
+  applyCleanupMutation: (mutation: ManualAiCleanupMutationResponse) => void;
+  confirmTaskDeletion: (task: StructuredTaskRow) => void;
+  confirmTaskStatus: (task: StructuredTaskRow, status: StructuredTaskRow["status"]) => void;
   error: string | null;
   isLoaded: boolean;
   isLoading: boolean;
+  isRefreshing: boolean;
   loadAllOutputs: () => Promise<Pick<LoadedManualAiState, "loadedOutputs" | "structuredItems"> | null>;
   loadForPurpose: (purpose: AiStatePurpose) => Promise<void>;
   loadOutput: (outputId: string) => Promise<ExactOutputPayload | null>;
+  removeOutputs: (outputIds: string[]) => void;
   setActivePurpose: (purpose: "ai" | "timeline" | null) => void;
   stateRevision: number;
 };
@@ -59,11 +68,19 @@ export function TranscriptAiStateProvider({
   const [state, setState] = useState<LoadedManualAiState>(initialState);
   const [isLoaded, setIsLoaded] = useState(initialAiOutputs.length > 0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const stateRef = useRef(state);
   const scopeRef = useRef({ generation: 0, transcriptId: null as string | null });
   const stateRequestRef = useRef<Promise<ManualAiStateSnapshot | null> | null>(null);
   const outputRequestsRef = useRef(new Map<string, Promise<ExactOutputPayload | null>>());
+  const outputTombstonesRef = useRef(new Set<string>());
+  const jobTombstonesRef = useRef(new Set<string>());
+  const taskDeletionTombstonesRef = useRef(new Set<string>());
+  const taskStatusOverridesRef = useRef(new Map<string, StructuredTaskRow["status"]>());
+  const isLoadedRef = useRef(initialAiOutputs.length > 0);
+  const lastCompletedCheckRef = useRef(0);
+  const serverPropsRef = useRef({ initialAiOutputs, initialStructuredItems });
   const [activePurpose, setActivePurpose] = useState<"ai" | "timeline" | null>(null);
   const [stateRevision, setStateRevision] = useState(0);
 
@@ -73,31 +90,58 @@ export function TranscriptAiStateProvider({
     setState(next);
   }, []);
 
-  // invalidateState fences old responses and notifies active tabs when server props replace their cache.
+  // resetTranscriptScope fences old responses only when the durable transcript identity changes.
   useLayoutEffect(() => {
-    scopeRef.current = { generation: scopeRef.current.generation + 1, transcriptId };
+    const generation = scopeRef.current.generation + 1;
+    scopeRef.current = { generation, transcriptId };
     stateRequestRef.current = null;
     outputRequestsRef.current.clear();
+    outputTombstonesRef.current.clear();
+    jobTombstonesRef.current.clear();
+    taskDeletionTombstonesRef.current.clear();
+    taskStatusOverridesRef.current.clear();
     setActivePurpose(null);
     const next = createInitialState(initialAiOutputs, initialStructuredItems);
     stateRef.current = next;
     setState(next);
-    setIsLoaded(initialAiOutputs.length > 0);
+    isLoadedRef.current = initialAiOutputs.length > 0;
+    setIsLoaded(isLoadedRef.current);
     setIsLoading(false);
+    setIsRefreshing(false);
     setError(null);
+    lastCompletedCheckRef.current = 0;
     setStateRevision((revision) => revision + 1);
 
     return () => {
-      if (scopeRef.current.transcriptId === transcriptId) {
+      if (scopeRef.current.generation === generation) {
         scopeRef.current = { generation: scopeRef.current.generation + 1, transcriptId: null };
       }
     };
-  }, [initialAiOutputs, initialStructuredItems, transcriptId]);
+    // Server props intentionally do not invalidate a same-transcript client cache.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transcriptId]);
+
+  // reconcileServerProps merges same-transcript RSC props without clearing mounted output or task UI.
+  useEffect(() => {
+    const previous = serverPropsRef.current;
+    serverPropsRef.current = { initialAiOutputs, initialStructuredItems };
+    if (previous.initialAiOutputs === initialAiOutputs && previous.initialStructuredItems === initialStructuredItems) return;
+    if (scopeRef.current.transcriptId !== transcriptId) return;
+    replaceState(applyClientGuards(
+      mergeInitialManualAiState(stateRef.current, createInitialState(initialAiOutputs, initialStructuredItems)),
+      outputTombstonesRef.current,
+      jobTombstonesRef.current,
+      taskDeletionTombstonesRef.current,
+      taskStatusOverridesRef.current
+    ));
+    setStateRevision((revision) => revision + 1);
+  }, [initialAiOutputs, initialStructuredItems, replaceState, transcriptId]);
 
   // loadOutput fetches one exact artifact body and only its normalized rows.
   const loadOutput = useCallback(async (outputId: string) => {
     const scope = scopeRef.current;
     if (!transcriptId || scope.transcriptId !== transcriptId) return null;
+    if (outputTombstonesRef.current.has(outputId)) return null;
     const existing = stateRef.current.loadedOutputs.find((output) => output.id === outputId);
     if (existing) return { output: existing, structuredItems: stateRef.current.structuredItems };
     const pending = outputRequestsRef.current.get(outputId);
@@ -111,7 +155,14 @@ export function TranscriptAiStateProvider({
         const payload = await response.json().catch(() => null) as ExactOutputPayload | null;
         if (!response.ok || !payload?.output || !payload.structuredItems) return null;
         if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId) return null;
-        replaceState(mergeLoadedManualAiOutput(stateRef.current, payload.output, payload.structuredItems));
+        if (outputTombstonesRef.current.has(outputId)) return null;
+        replaceState(applyClientGuards(
+          mergeLoadedManualAiOutput(stateRef.current, payload.output, payload.structuredItems),
+          outputTombstonesRef.current,
+          jobTombstonesRef.current,
+          taskDeletionTombstonesRef.current,
+          taskStatusOverridesRef.current
+        ));
         return payload;
       } finally {
         if (scopeRef.current.generation === scope.generation) outputRequestsRef.current.delete(outputId);
@@ -126,7 +177,9 @@ export function TranscriptAiStateProvider({
     const scope = scopeRef.current;
     if (!transcriptId || scope.transcriptId !== transcriptId) return null;
     if (stateRequestRef.current) return stateRequestRef.current;
-    setIsLoading(true);
+    const initialLoad = !isLoadedRef.current;
+    if (initialLoad) setIsLoading(true);
+    else setIsRefreshing(true);
     const request = (async () => {
       try {
         const response = await fetch(`/api/transcripts/${transcriptId}/ai-state`, { cache: "no-store" });
@@ -135,11 +188,22 @@ export function TranscriptAiStateProvider({
           throw new Error("invalid_state");
         }
         if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId) return null;
-        const metadata = {
-          ...mergeManualAiState(stateRef.current, payload),
+        const metadata = applyClientGuards({
+          ...mergeManualAiState(stateRef.current, {
+            ...payload,
+            classifications: payload.classifications ?? [],
+            cleanup: payload.cleanup ?? { eligible_count: 0, next_cursor: null }
+          }),
+          loadedOutputs: stateRef.current.loadedOutputs,
+          structuredItems: stateRef.current.structuredItems,
           nextOutputOffset: payload.nextOutputOffset ?? null
-        };
-        replaceState({ ...stateRef.current, ...metadata });
+        } as LoadedManualAiState,
+        outputTombstonesRef.current,
+        jobTombstonesRef.current,
+        taskDeletionTombstonesRef.current,
+        taskStatusOverridesRef.current);
+        replaceState(metadata);
+        isLoadedRef.current = true;
         setIsLoaded(true);
         setError(null);
         return metadata;
@@ -149,7 +213,9 @@ export function TranscriptAiStateProvider({
       } finally {
         if (scopeRef.current.generation === scope.generation) {
           setIsLoading(false);
+          setIsRefreshing(false);
           stateRequestRef.current = null;
+          lastCompletedCheckRef.current = Date.now();
         }
       }
     })();
@@ -190,8 +256,14 @@ export function TranscriptAiStateProvider({
       const payload = await response.json().catch(() => null) as ManualAiStateSnapshot | null;
       if (!response.ok || !payload || !Array.isArray(payload.jobs) || !Array.isArray(payload.outputs)) return null;
       if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId) return null;
-      const merged = mergeManualAiState(stateRef.current, payload);
-      replaceState({ ...stateRef.current, ...merged });
+      const merged = applyClientGuards(
+        { ...stateRef.current, ...mergeManualAiState(stateRef.current, payload) },
+        outputTombstonesRef.current,
+        jobTombstonesRef.current,
+        taskDeletionTombstonesRef.current,
+        taskStatusOverridesRef.current
+      );
+      replaceState(merged);
       const followingOffset = payload.nextOutputOffset ?? null;
       if (followingOffset !== null && followingOffset <= nextOutputOffset) return null;
       nextOutputOffset = followingOffset;
@@ -229,16 +301,64 @@ export function TranscriptAiStateProvider({
       outputs: []
     });
     replaceState({ ...stateRef.current, ...metadata });
+    isLoadedRef.current = true;
     setIsLoaded(true);
-  }, [replaceState, transcriptId]);
+    const requestWasAlreadyInFlight = stateRequestRef.current !== null;
+    void refreshMetadata().then(() => {
+      if (requestWasAlreadyInFlight && scopeRef.current.transcriptId === transcriptId) void refreshMetadata();
+    });
+  }, [refreshMetadata, replaceState, transcriptId]);
 
-  const hasActiveJobs = state.jobs.some((job) => job.status === "queued" || job.status === "running");
+  // applyCleanupMutation records server-confirmed removals before any later bounded snapshot can race them.
+  const applyCleanupMutation = useCallback((mutation: ManualAiCleanupMutationResponse) => {
+    mutation.removed_job_ids.forEach((jobId) => jobTombstonesRef.current.add(jobId));
+    replaceState(applyClientGuards(
+      applyManualAiCleanupMutation(stateRef.current, mutation),
+      outputTombstonesRef.current,
+      jobTombstonesRef.current,
+      taskDeletionTombstonesRef.current,
+      taskStatusOverridesRef.current
+    ));
+  }, [replaceState]);
+
+  // removeOutputs makes an explicit successful deletion authoritative across stale metadata and body requests.
+  const removeOutputs = useCallback((outputIds: string[]) => {
+    outputIds.forEach((outputId) => outputTombstonesRef.current.add(outputId));
+    replaceState(removeManualAiOutputs(stateRef.current, outputIds));
+  }, [replaceState]);
+
+  // confirmTaskStatus overlays a successful checklist mutation across older hydrated output bodies.
+  const confirmTaskStatus = useCallback((task: StructuredTaskRow, status: StructuredTaskRow["status"]) => {
+    const key = getTaskDedupeKey(task);
+    taskStatusOverridesRef.current.set(key, status);
+    replaceState(applyClientGuards(
+      stateRef.current,
+      outputTombstonesRef.current,
+      jobTombstonesRef.current,
+      taskDeletionTombstonesRef.current,
+      taskStatusOverridesRef.current
+    ));
+  }, [replaceState]);
+
+  // confirmTaskDeletion keeps a logical task absent after the owner-scoped delete endpoint confirms success.
+  const confirmTaskDeletion = useCallback((task: StructuredTaskRow) => {
+    taskDeletionTombstonesRef.current.add(getTaskDedupeKey(task));
+    replaceState(applyClientGuards(
+      stateRef.current,
+      outputTombstonesRef.current,
+      jobTombstonesRef.current,
+      taskDeletionTombstonesRef.current,
+      taskStatusOverridesRef.current
+    ));
+  }, [replaceState]);
+
+  const hasPollEligibleJobs = state.classifications.some((classification) => classification.poll_eligible);
 
   useEffect(() => {
-    if (!transcriptId || !isLoaded || !activePurpose || !hasActiveJobs) return;
+    if (!transcriptId || !isLoaded || !activePurpose || !hasPollEligibleJobs) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let cycleInFlight = false;
-    let catchupPending = false;
+    let catchupScheduled = false;
     let transientBackoffUntil = 0;
     let disposed = false;
 
@@ -248,7 +368,12 @@ export function TranscriptAiStateProvider({
     };
 
     const isEligible = () => document.visibilityState !== "hidden" && navigator.onLine;
-    const currentActiveJobs = () => stateRef.current.jobs.filter((job) => job.status === "queued" || job.status === "running");
+    const currentActiveJobs = () => {
+      const eligibleIds = new Set(stateRef.current.classifications
+        .filter((classification) => classification.poll_eligible)
+        .map((classification) => classification.job_id));
+      return stateRef.current.jobs.filter((job) => eligibleIds.has(job.id));
+    };
 
     // schedulePoll derives cadence from persisted age and pauses while hidden, offline or inactive.
     const schedulePoll = (transientError = false) => {
@@ -264,13 +389,10 @@ export function TranscriptAiStateProvider({
       }, getManualAiPollIntervalMs(ageMs, transientError));
     };
 
-    // runCycle is the sole continuation owner for an immediate catch-up or the next cadence timer.
+    // runCycle is the sole continuation owner for one metadata request and the next cadence timer.
     const runCycle = async () => {
       if (disposed || !isEligible()) return;
-      if (cycleInFlight) {
-        catchupPending = true;
-        return;
-      }
+      if (cycleInFlight) return;
       cycleInFlight = true;
       let metadata: ManualAiStateSnapshot | null = null;
       try {
@@ -283,37 +405,31 @@ export function TranscriptAiStateProvider({
       }
       if (disposed || !isEligible() || currentActiveJobs().length === 0) return;
       if (metadata === null) {
-        catchupPending = false;
         transientBackoffUntil = Date.now() + 30_000;
         schedulePoll(true);
         return;
       }
       transientBackoffUntil = 0;
-      if (catchupPending) {
-        catchupPending = false;
-        queueMicrotask(async () => runCycle());
-        return;
-      }
       schedulePoll();
     };
 
-    // catchUpOnce coalesces focus, visibility and online bursts, including while one poll is in flight.
+    // catchUpOnce coalesces lifecycle bursts and catches up only after thirty quiet seconds.
     const catchUpOnce = () => {
       if (disposed || !isEligible()) return;
       if (Date.now() < transientBackoffUntil) {
-        schedulePoll(true);
+        if (timer === null) schedulePoll(true);
+        return;
+      }
+      if (cycleInFlight || catchupScheduled) return;
+      if (Date.now() - lastCompletedCheckRef.current <= 30_000) {
+        if (timer === null) schedulePoll();
         return;
       }
       clearTimer();
-      if (cycleInFlight) {
-        catchupPending = true;
-        return;
-      }
-      if (catchupPending) return;
-      catchupPending = true;
+      catchupScheduled = true;
       queueMicrotask(async () => {
         if (disposed) return;
-        catchupPending = false;
+        catchupScheduled = false;
         await runCycle();
       });
     };
@@ -342,20 +458,25 @@ export function TranscriptAiStateProvider({
       window.removeEventListener("offline", handleOffline);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [activePurpose, hasActiveJobs, hydratePurpose, isLoaded, refreshMetadata, transcriptId]);
+  }, [activePurpose, hasPollEligibleJobs, hydratePurpose, isLoaded, refreshMetadata, transcriptId]);
 
   const value = useMemo<TranscriptAiStateContextValue>(() => ({
     ...state,
     acceptJob,
+    applyCleanupMutation,
+    confirmTaskDeletion,
+    confirmTaskStatus,
     error,
     isLoaded,
     isLoading,
+    isRefreshing,
     loadAllOutputs,
     loadForPurpose,
     loadOutput,
+    removeOutputs,
     setActivePurpose,
     stateRevision
-  }), [acceptJob, error, isLoaded, isLoading, loadAllOutputs, loadForPurpose, loadOutput, state, stateRevision]);
+  }), [acceptJob, applyCleanupMutation, confirmTaskDeletion, confirmTaskStatus, error, isLoaded, isLoading, isRefreshing, loadAllOutputs, loadForPurpose, loadOutput, removeOutputs, state, stateRevision]);
 
   // The callbacks read refs only after user/effect invocation; createElement does not execute them during render.
   // eslint-disable-next-line react-hooks/refs
@@ -389,5 +510,49 @@ function createInitialState(aiOutputs: AiOutputView[], structuredItems?: Structu
       transcript_id: output.transcript_id
     })),
     structuredItems: structuredItems ?? state.structuredItems
+  };
+}
+
+// mergeInitialManualAiState treats same-transcript server props as additive cache hints, never deletions.
+function mergeInitialManualAiState(current: LoadedManualAiState, incoming: LoadedManualAiState): LoadedManualAiState {
+  const loadedOutputs = new Map(current.loadedOutputs.map((output) => [output.id, output]));
+  incoming.loadedOutputs.forEach((output) => {
+    if (!loadedOutputs.has(output.id)) loadedOutputs.set(output.id, output);
+  });
+  return {
+    ...current,
+    ...mergeManualAiState(current, incoming),
+    loadedOutputs: Array.from(loadedOutputs.values()),
+    structuredItems: dedupeStructuredAiItems({
+      chapters: [...current.structuredItems.chapters, ...incoming.structuredItems.chapters],
+      decisions: [...current.structuredItems.decisions, ...incoming.structuredItems.decisions],
+      risks: [...current.structuredItems.risks, ...incoming.structuredItems.risks],
+      tasks: [...current.structuredItems.tasks, ...incoming.structuredItems.tasks]
+    })
+  };
+}
+
+// applyClientGuards reapplies confirmed client mutations after any older server response settles.
+function applyClientGuards(
+  state: LoadedManualAiState,
+  outputTombstones: Set<string>,
+  jobTombstones: Set<string>,
+  taskDeletionTombstones: Set<string>,
+  taskStatusOverrides: Map<string, StructuredTaskRow["status"]>
+): LoadedManualAiState {
+  const withoutOutputs = removeManualAiOutputs(state, Array.from(outputTombstones));
+  return {
+    ...withoutOutputs,
+    classifications: withoutOutputs.classifications.filter((item) => !jobTombstones.has(item.job_id)),
+    jobs: withoutOutputs.jobs.filter((job) => !jobTombstones.has(job.id)),
+    structuredItems: {
+      ...withoutOutputs.structuredItems,
+      tasks: withoutOutputs.structuredItems.tasks
+        .filter((task) => !taskDeletionTombstones.has(getTaskDedupeKey(task)))
+        .map((task) => {
+          const status = taskStatusOverrides.get(getTaskDedupeKey(task));
+          return status ? { ...task, status } : task;
+        })
+    }
   };
 }

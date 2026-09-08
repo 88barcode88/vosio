@@ -224,6 +224,7 @@ export function InstallationStatusDetails({ status }: { status: InstallationStat
       <div><dt>Prostředí</dt><dd>{installationEnvironmentLabels[status.environment]}</dd></div>
       <div><dt>Konfigurace instalace</dt><dd>{status.ready ? "Připraveno" : "Chybí konfigurace"}</dd></div>
       <div><dt>GEMINI_API_KEY (volitelné)</dt><dd>{status.geminiConfigured ? "Nastaveno" : "Nenastaveno"}</dd></div>
+      <div><dt>MISTRAL_API_KEY (volitelné)</dt><dd>{status.mistralConfigured ? "Nastaveno" : "Nenastaveno"}</dd></div>
       <div className="settings-technical-wide">
         <dt>Chybějící proměnné</dt>
         <dd>

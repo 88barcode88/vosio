@@ -1,4 +1,4 @@
-/* Shared Appica-inspired shell foundation; feature lanes add screen rules in their own hooks. */
+/* Shared Appica shell foundation; feature lanes add screen-specific rules. */
 :root {
   --appica-canvas: var(--bg);
   --appica-panel: var(--surface);
@@ -15,11 +15,11 @@
 }
 
 .sidebar {
-  padding: 14px 10px;
+  padding: 26px 17px;
 }
 
 .brand-block {
-  margin-bottom: 14px;
+  margin: 0 8px 28px;
 }
 
 .nav-item,
@@ -27,7 +27,7 @@
 .new-recording-button,
 .mobile-nav-item,
 .mobile-more-link {
-  border-radius: 8px;
+  border-radius: 9px;
 }
 
 .nav-item-active,
@@ -42,6 +42,52 @@
 .process-button,
 .command-primary {
   border-color: var(--appica-action);
+}
+
+.workspace-switcher {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 9px 10px;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.workspace-switcher .avatar {
+  width: 29px;
+  height: 29px;
+  border-radius: 8px;
+  font-size: 0.625rem;
+}
+
+.nav-list::before {
+  margin: 0 11px 6px;
+  color: var(--text-muted);
+  content: "PRACOVNÍ PROSTOR";
+  font-size: 0.625rem;
+  font-weight: 650;
+  letter-spacing: 0.15em;
+}
+
+.sidebar-utility-nav {
+  padding-top: 28px;
+}
+
+.sidebar[data-collapsed="true"] .workspace-switcher {
+  width: 44px;
+  min-width: 44px;
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar[data-collapsed="true"] .nav-list::before {
+  display: none;
 }
 
 .theme-toggle svg,
@@ -115,6 +161,12 @@
 }
 
 @media (max-width: 900px) {
+  .content-area {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
   .workspace-content {
     padding: 26px 24px 92px;
   }
@@ -125,12 +177,6 @@
 }
 
 @media (max-width: 720px) {
-  .content-area {
-    height: auto;
-    min-height: 100dvh;
-    overflow: visible;
-  }
-
   .workspace-topbar {
     min-height: 60px;
     padding: 0 18px;
@@ -144,6 +190,16 @@
   .workspace-breadcrumbs > svg:first-child,
   .workspace-breadcrumbs > svg:nth-of-type(2) {
     display: none;
+  }
+}
+
+/* Preserve the short-desktop document scroll contract after the foundation defaults. */
+@media (min-width: 901px) and (max-height: 640px) {
+  .content-area {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+    overscroll-behavior-y: auto;
   }
 }
 

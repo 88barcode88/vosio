@@ -245,11 +245,15 @@ export async function persistTranscriptCompletionTransition(
   const settings = getUserSettingsFromMetadata(input.user.user_metadata);
   const model = settings.defaultOpenaiModel;
   const modelOption = getAiModelOption(model);
-  const provider = modelOption?.provider ?? "openai";
+  if (!modelOption) {
+    throw new Error("Výchozí AI model není podporovaný.");
+  }
+  const provider = modelOption.provider;
   const providerConfig = {
     provider,
-    reasoning_effort: modelOption?.reasoningEffort ?? null,
-    thinking_level: modelOption?.geminiThinkingLevel ?? null
+    provider_model: modelOption.providerModel,
+    reasoning_effort: modelOption.reasoningEffort ?? null,
+    thinking_level: modelOption.geminiThinkingLevel ?? null
   };
 
   return (dependencies.completeGeneration ?? completeTranscriptGeneration)({

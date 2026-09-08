@@ -15,29 +15,29 @@ const manifest = readFileSync(join(process.cwd(), "public", "manifest.webmanifes
 const designDirection = readFileSync(join(process.cwd(), "docs", "requirements", "ui-direction.md"), "utf8");
 
 const darkTokens = {
-  "--bg": "#171717",
-  "--surface": "#202020",
-  "--surface-muted": "#282828",
-  "--surface-raised": "#242424",
-  "--border": "#3a3a3a",
-  "--border-strong": "#575757",
-  "--text": "#f5f5f3",
-  "--accent": "#f5f5f3",
-  "--accent-text": "#171717",
-  "--focus-ring": "#74a7ff"
+  "--bg": "#111318",
+  "--surface": "#1a1d24",
+  "--surface-muted": "#252830",
+  "--surface-raised": "#1a1d24",
+  "--border": "#2d313b",
+  "--border-strong": "#414754",
+  "--text": "#f2f3f6",
+  "--accent": "#edf0f6",
+  "--accent-text": "#171b23",
+  "--focus-ring": "#abc2f8"
 };
 
 const lightTokens = {
-  "--bg": "#f4f4f2",
+  "--bg": "#f7f8fa",
   "--surface": "#ffffff",
-  "--surface-muted": "#ececea",
+  "--surface-muted": "#f2f3f5",
   "--surface-raised": "#ffffff",
-  "--border": "#d8d8d4",
-  "--border-strong": "#aaa9a4",
-  "--text": "#171717",
-  "--accent": "#171717",
+  "--border": "#e9ebef",
+  "--border-strong": "#d8dce3",
+  "--text": "#171c27",
+  "--accent": "#191f2c",
   "--accent-text": "#ffffff",
-  "--focus-ring": "#245bd7"
+  "--focus-ring": "#4d6dba"
 };
 
 // Reads the source contract so the neutral Appica direction cannot regress into the replaced warm theme.

@@ -12,9 +12,14 @@ const createdAt = "2026-05-24T10:00:00.000Z";
 
 describe("usage summary calculations", () => {
   it.each([
-    ["gpt-5.6-sol", 35],
+    ["gpt-5.6-sol", 24],
     ["gpt-5.6-terra", 14],
-    ["gpt-5.6-luna", 1.4]
+    ["gpt-5.6-luna", 1.4],
+    ["gpt-6-astra-low", 60],
+    ["gpt-6-astra-medium", 60],
+    ["gemini-3.8-flash", 4.5],
+    ["mistral-small-2603", 0.75],
+    ["mistral-large-2512", 2]
   ])("prices %s from the current catalog", (model, expectedCost) => {
     const summary = summarizeAiUsageRows([{
       created_at: createdAt,

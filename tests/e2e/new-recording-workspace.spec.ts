@@ -130,6 +130,9 @@ test("the seven common recording format groups use the same upload flow", async 
 
 test("an upload failure stays local, safe and retryable", async ({ page }) => {
   await openFixture(page, "error");
+  // Pause after hydration so the test can observe the fixture's visible transfer phase first.
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1_000));
   await page.locator(".real-upload input[accept]").setInputFiles({
     buffer: Buffer.from("fixture-audio"),
     mimeType: "audio/mpeg",
@@ -137,6 +140,9 @@ test("an upload failure stays local, safe and retryable", async ({ page }) => {
   });
 
   const status = page.locator("[data-upload-status]");
+  await expect(status).toHaveAttribute("data-phase", "transferring");
+  await expect(status).toContainText("42 %");
+  await page.clock.runFor(1_000);
   await expect(status).toHaveAttribute("data-phase", "error");
   await expect(status).toContainText("Nahrání souboru se nepodařilo. Zkuste to znovu.");
   const retry = page.getByRole("button", { name: "Zkusit znovu" });
@@ -144,6 +150,8 @@ test("an upload failure stays local, safe and retryable", async ({ page }) => {
   expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44);
   await retry.click();
   await expect(status).toHaveAttribute("data-phase", "transferring");
+  await expect(status).toContainText("42 %");
+  await page.clock.runFor(1_000);
   await expect(status).toHaveAttribute("data-phase", "error");
 });
 
@@ -153,7 +161,7 @@ test("the workspace remains readable in both themes", async ({ page }) => {
     await page.evaluate((nextTheme) => { document.documentElement.dataset.theme = nextTheme; }, theme);
     await expect(page.getByRole("heading", { level: 1 })).toHaveCSS(
       "color",
-      theme === "dark" ? "rgb(245, 245, 243)" : "rgb(23, 23, 23)"
+      theme === "dark" ? "rgb(242, 243, 246)" : "rgb(23, 28, 39)"
     );
     await expect(page.locator("[data-primary-capture='upload']")).toBeVisible();
   }
@@ -186,7 +194,7 @@ for (const width of [1024, 1440]) {
       expect(before.documentExtra).toBe(0);
       expect(before.bodyExtra).toBe(0);
       expect(before.shellExtra).toBe(0);
-      expect(before.contentExtra).toBe(0);
+      expect(before.contentExtra).toBeGreaterThan(0);
       expect(before.contentOverflow).toBe("auto");
     }
 
