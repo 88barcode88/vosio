@@ -224,6 +224,7 @@ export function InstallationStatusDetails({ status }: { status: InstallationStat
       <div><dt>Prostředí</dt><dd>{installationEnvironmentLabels[status.environment]}</dd></div>
       <div><dt>Konfigurace instalace</dt><dd>{status.ready ? "Připraveno" : "Chybí konfigurace"}</dd></div>
       <div><dt>GEMINI_API_KEY (volitelné)</dt><dd>{status.geminiConfigured ? "Nastaveno" : "Nenastaveno"}</dd></div>
+      <div><dt>MISTRAL_API_KEY (volitelné)</dt><dd>{status.mistralConfigured ? "Nastaveno" : "Nenastaveno"}</dd></div>
       <div className="settings-technical-wide">
         <dt>Chybějící proměnné</dt>
         <dd>
@@ -272,7 +273,7 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         <Settings2 size={20} />
         <div>
           <h1>Nastavení</h1>
-          <p>Výchozí chování pro nové nahrávky a přepisy. Tajné klíče zůstávají pouze na serveru.</p>
+          <p>Účet a výchozí chování pro nové nahrávky a přepisy. Tajné klíče zůstávají pouze na serveru.</p>
         </div>
       </div>
 
@@ -288,6 +289,8 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
           {actionState.status === "saved" ? "Nastavení je uložené." : "Nastavení se nepodařilo uložit."}
         </div>
       ) : null}
+
+      <AccountSecurityPanel disabled={disableAccountSecurity} email={accountEmail} />
 
       <form action={disableSave ? undefined : formAction} autoComplete="off" className="settings-form">
         <fieldset
@@ -494,7 +497,6 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         <SettingsSaveButton disabled={disableSave} pending={pending} />
         </fieldset>
       </form>
-      <AccountSecurityPanel disabled={disableAccountSecurity} email={accountEmail} />
     </section>
   );
 }

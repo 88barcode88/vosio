@@ -24,7 +24,7 @@ type RunOpenAIProcessingInput = {
   model: string;
   outputSchema: unknown;
   prompt: string;
-  reasoningEffort?: "high" | "xhigh" | null;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | null;
   temperature: number;
 };
 
@@ -32,6 +32,7 @@ type RunOpenAIChatInput = {
   messages: RecordingChatMessage[];
   model: string;
   outputSchema: unknown;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | null;
   systemInstruction: string;
 };
 
@@ -89,13 +90,16 @@ export function createOpenAIRequestBody(input: RunOpenAIProcessingInput) {
 // createOpenAIChatRequestBody keeps system authority in Responses instructions and data in role-separated input.
 export function createOpenAIChatRequestBody(input: RunOpenAIChatInput) {
   const option = getAiModelOption(input.model);
+  const reasoningEffort = input.reasoningEffort === undefined
+    ? option?.reasoningEffort
+    : input.reasoningEffort;
 
   return {
     input: input.messages,
     instructions: input.systemInstruction,
     model: input.model,
-    ...(option?.reasoningEffort
-      ? { reasoning: { effort: option.reasoningEffort } }
+    ...(reasoningEffort
+      ? { reasoning: { effort: reasoningEffort } }
       : {}),
     text: {
       format: createTextFormat(input.outputSchema)

@@ -62,7 +62,7 @@ afterEach(async () => {
   window.localStorage.clear();
 });
 
-describe("Notion Warm application shell navigation", () => {
+describe("Appica-inspired application shell navigation", () => {
   it("keeps the documented desktop and mobile prompt label aligned with the stable route", () => {
     expect(uiDirectionSource).toContain("`AI prompty` (`/templates`)");
     expect(uiDirectionSource).toContain("`Nahrávky`, `Nová`, `AI prompty`, `Nastavení`, `Více`");
@@ -119,7 +119,7 @@ describe("Notion Warm application shell navigation", () => {
     const utility = container.querySelector("nav[aria-label='Nástroje workspace']");
 
     expect(Array.from(primary?.querySelectorAll("a") ?? [], (link) => link.textContent?.trim()))
-      .toEqual(["Nahrávky", "AI prompty"]);
+      .toEqual(["Nahrávky", "Nová nahrávka", "AI prompty"]);
     expect(Array.from(utility?.querySelectorAll("a") ?? [], (link) => link.textContent?.trim()))
       .toEqual(["Koš", "Nastavení", "Dokumentace"]);
     expect(container.textContent).not.toContain("AI zpracování");
@@ -254,7 +254,7 @@ describe("Notion Warm application shell navigation", () => {
     const baseStyles = readFileSync(resolve(process.cwd(), "app/styles/base.css"), "utf8");
     const responsiveStyles = readFileSync(resolve(process.cwd(), "app/styles/responsive.css"), "utf8");
 
-    expect(baseStyles).toMatch(/\.workspace-shell\s*\{[\s\S]*?grid-template-columns:\s*24[0-9]px minmax\(0, 1fr\);/u);
+    expect(baseStyles).toMatch(/\.workspace-shell\s*\{[\s\S]*?grid-template-columns:\s*224px minmax\(0, 1fr\);/u);
     expect(baseStyles).toMatch(/\.workspace-shell:has\(\.sidebar\[data-collapsed="true"\]\)\s*\{[\s\S]*?grid-template-columns:\s*64px minmax\(0, 1fr\);/u);
     expect(baseStyles).toMatch(/\.workspace-shell\s*\{[\s\S]*?overflow-x:\s*clip;/u);
     expect(responsiveStyles).toMatch(/@media \(max-width:\s*900px\)[\s\S]*?\.sidebar\s*\{[\s\S]*?display:\s*none;/u);
@@ -264,6 +264,10 @@ describe("Notion Warm application shell navigation", () => {
 
   it("switches the detail player at the 900px mobile boundary", () => {
     const responsiveStyles = readFileSync(resolve(process.cwd(), "app/styles/responsive.css"), "utf8");
+    const appicaWorkflowStyles = readFileSync(
+      resolve(process.cwd(), "app/styles/appica-workflow.css"),
+      "utf8"
+    );
     const intermediateStart = responsiveStyles.indexOf("@media (max-width: 1180px)");
     const mobileStart = responsiveStyles.indexOf("@media (max-width: 900px)");
     const intermediateStyles = responsiveStyles.slice(intermediateStart, mobileStart);
@@ -272,6 +276,9 @@ describe("Notion Warm application shell navigation", () => {
     expect(intermediateStyles).not.toMatch(/\.recording-workbench(?:-grid)?\s*\{/u);
     expect(intermediateStyles).not.toMatch(/\.recording-rail\s*\{/u);
     expect(mobileStyles).toMatch(/\.recording-workbench\s*\{[\s\S]*?padding-bottom:\s*104px;/u);
+    expect(appicaWorkflowStyles).toMatch(
+      /@media \(max-width:\s*900px\)[\s\S]*?\.recording-detail-sticky\s*\{[\s\S]*?backdrop-filter:\s*none;/u
+    );
     expect(mobileStyles).toMatch(/\.recording-detail-sticky \.recording-audio-player\s*\{[\s\S]*?position:\s*fixed;/u);
   });
 });

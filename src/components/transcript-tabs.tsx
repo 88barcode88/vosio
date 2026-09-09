@@ -556,15 +556,21 @@ export function TranscriptTabs({
           <AiProcessingContent
             activeTranscript={activeTranscript}
             aiOutputs={displayedAiOutputs}
+            classifications={lazyAiState?.classifications}
+            cleanup={lazyAiState?.cleanup}
             isLoading={lazyAiState?.isLoading ?? false}
             jobs={lazyAiState?.jobs ?? []}
             loadOutput={lazyAiState?.loadOutput}
             onOpenEvidence={openStructuredEvidence}
             onJobAccepted={lazyAiState?.acceptJob}
+            onCleanupMutation={lazyAiState?.applyCleanupMutation}
+            onOutputsRemoved={lazyAiState?.removeOutputs}
             onReload={() => lazyAiState?.loadForPurpose("ai") ?? Promise.resolve()}
             outputMetadata={lazyAiState?.outputs}
             resolveEvidenceTarget={resolveStructuredEvidenceTarget}
             structuredItems={runtimeStructuredItems}
+            onTaskDeleted={lazyAiState?.confirmTaskDeletion}
+            onTaskStatusConfirmed={lazyAiState?.confirmTaskStatus}
             stateError={lazyAiState?.error ?? null}
             userSettings={userSettings}
           />

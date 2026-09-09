@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -44,10 +43,14 @@ type EvidenceNavigationProps = {
 export function StructuredItemsContent({
   items,
   onOpenEvidence,
+  onTaskDeleted,
+  onTaskStatusConfirmed,
   resolveEvidenceTarget
 }: {
   items: StructuredAiItems;
   onOpenEvidence: (target: TranscriptTarget) => void;
+  onTaskDeleted?: (task: StructuredTaskRow) => void;
+  onTaskStatusConfirmed?: (task: StructuredTaskRow, status: StructuredTaskRow["status"]) => void;
   resolveEvidenceTarget?: EvidenceTargetResolver;
 }) {
   const [checklistMessage, setChecklistMessage] = useState<string | null>(null);
@@ -101,6 +104,8 @@ export function StructuredItemsContent({
                     <StructuredTaskRowView
                       key={task.id ?? `${task.ai_output_id}-${task.position}`}
                       onOpenEvidence={onOpenEvidence}
+                      onTaskDeleted={onTaskDeleted}
+                      onTaskStatusConfirmed={onTaskStatusConfirmed}
                       resolveEvidenceTarget={activeEvidenceTargetResolver}
                       task={task}
                     />
@@ -142,10 +147,14 @@ function groupTasksByOwner(tasks: StructuredTaskRow[]) {
 // StructuredTaskRowView renders one persisted task with an optimistic status toggle.
 function StructuredTaskRowView({
   onOpenEvidence,
+  onTaskDeleted,
+  onTaskStatusConfirmed,
   resolveEvidenceTarget,
   task
 }: {
   task: StructuredTaskRow;
+  onTaskDeleted?: (task: StructuredTaskRow) => void;
+  onTaskStatusConfirmed?: (task: StructuredTaskRow, status: StructuredTaskRow["status"]) => void;
 } & EvidenceNavigationProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -155,7 +164,6 @@ function StructuredTaskRowView({
   const [localStatus, setLocalStatus] = useState(task.status);
   const pendingStatusActionRef = useRef<number | null>(null);
   const statusActionIdRef = useRef(0);
-  const router = useRouter();
   const isDone = localStatus === "done";
   const meta = getTaskMeta(task);
 
@@ -208,6 +216,7 @@ function StructuredTaskRowView({
 
         setLocalStatus(nextStatus);
         setErrorMessage(null);
+        onTaskStatusConfirmed?.(task, nextStatus);
       } catch {
         if (pendingStatusActionRef.current !== actionId) {
           return;
@@ -245,7 +254,7 @@ function StructuredTaskRowView({
         throw new Error("Task delete failed.");
       }
 
-      router.refresh();
+      onTaskDeleted?.(task);
     } catch {
       setIsDeleted(false);
       setDeleteError("Úkol se nepodařilo smazat. Zkuste to znovu.");

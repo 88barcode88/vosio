@@ -64,47 +64,47 @@ Používej významové tokeny, ne barvy podle názvu odstínu.
 
 Dark mode je grafitový pracovní režim. Primární akce používají vysokokontrastní neutrální barvu; red, green, amber a blue jsou vyhrazené pro sémantické stavy.
 
-- `--bg`: `#171717`
-- `--surface`: `#202020`
-- `--surface-muted`: `#282828`
-- `--surface-raised`: `#242424`
-- `--border`: `#3a3a3a`
-- `--border-strong`: `#575757`
-- `--text`: `#f5f5f3`
-- `--text-secondary`: `#c5c5c1`
-- `--text-muted`: `#969692`
-- `--accent`: `#f5f5f3`
+- `--bg`: `#111318`
+- `--surface`: `#1a1d24`
+- `--surface-muted`: `#252830`
+- `--surface-raised`: `#1a1d24`
+- `--border`: `#2d313b`
+- `--border-strong`: `#414754`
+- `--text`: `#f2f3f6`
+- `--text-secondary`: `#a2a9b7`
+- `--text-muted`: `#808898`
+- `--accent`: `#edf0f6`
 - `--accent-hover`: `#ffffff`
-- `--accent-text`: `#171717`
-- `--focus-ring`: `#74a7ff`
-- `--success`: `#54b67a`
-- `--recording`: `#ef6b6b`
-- `--danger`: `#ef6b6b`
-- `--warning`: `#e2a84d`
-- `--info`: `#74a7ff`
+- `--accent-text`: `#171b23`
+- `--focus-ring`: `#abc2f8`
+- `--success`: `#8ed5b0`
+- `--recording`: `#f79d9f`
+- `--danger`: `#f79d9f`
+- `--warning`: `#ecc18c`
+- `--info`: `#abc2f8`
 
 ### Light Mode Palette
 
 Light mode je neutrální světle šedé plátno s bílými pracovními panely, ne marketingová stránka.
 
-- `--bg`: `#f4f4f2`
+- `--bg`: `#f7f8fa`
 - `--surface`: `#ffffff`
-- `--surface-muted`: `#ececea`
+- `--surface-muted`: `#f2f3f5`
 - `--surface-raised`: `#ffffff`
-- `--border`: `#d8d8d4`
-- `--border-strong`: `#aaa9a4`
-- `--text`: `#171717`
-- `--text-secondary`: `#575754`
-- `--text-muted`: `#70706c`
-- `--accent`: `#171717`
-- `--accent-hover`: `#333330`
+- `--border`: `#e9ebef`
+- `--border-strong`: `#d8dce3`
+- `--text`: `#171c27`
+- `--text-secondary`: `#697180`
+- `--text-muted`: `#9096a2`
+- `--accent`: `#191f2c`
+- `--accent-hover`: `#252c3b`
 - `--accent-text`: `#ffffff`
-- `--focus-ring`: `#245bd7`
-- `--success`: `#1e7a46`
-- `--recording`: `#b53535`
-- `--danger`: `#b53535`
-- `--warning`: `#9a5d0a`
-- `--info`: `#245bd7`
+- `--focus-ring`: `#4d6dba`
+- `--success`: `#25845b`
+- `--recording`: `#c94f53`
+- `--danger`: `#c94f53`
+- `--warning`: `#a46a18`
+- `--info`: `#4d6dba`
 
 ### Temporary Compatibility Aliases
 
@@ -250,9 +250,9 @@ Nepatří sem:
 `/recordings` je jeden kompaktní pracovní inbox, ne sestava panelů nebo tabulek vložených do sebe.
 
 - Nad obsahem je jeden kompaktní toolbar: pružné hledání s vlastní ikonou, ovládání pokročilých filtrů a `Spravovat`.
-- Stavové facety a informace o výsledku zůstávají ploché; seznam má jeden vnější rámeček, jemné skupinové oddělovače a neobaluje jednotlivé desktopové řádky dalšími kartami.
-- Název je pružný sloupec. Akce mají pevný 128 px pruh, aby zůstaly současně celé viditelné text `Upravit` a 44px tlačítko koše.
-- Inbox používá `--surface-raised`; ve světlém režimu je proto pracovní plocha bílá při zachování neutrální palety a dark mode tokenů.
+- Stavové facety tvoří měkký segmentovaný řádek; seznam je jeden bílý 16px panel s jemnými skupinovými oddělovači a neobaluje jednotlivé desktopové řádky dalšími kartami.
+- Název je pružný sloupec. Řádek končí úzkou ellipsis akcí a editace názvu s Košem jsou dostupné až v jejím přístupném menu.
+- Inbox používá studené `#f7f8fa` pozadí a bílý `--surface-raised`, bez původního teplého béžového tónu; dark mode zůstává plnohodnotný.
 - Existující filtry `q`, `status`, `client`, `project`, `folder` a opakovatelný `tag` zůstávají URL-backed. Pokročilá organizační část zůstává keep-mounted, aby neztrácela draft ani stav při zavření.
 - Zdroj a datum nejsou nové filtry tohoto UI-only řezu.
 - Při viewportu 900 px a méně se toolbar složí a `Spravovat` zabere celou šířku. Samotný seznam přechází na karty podle skutečné šířky content containeru 680 px a méně, ne pouze podle viewportu.

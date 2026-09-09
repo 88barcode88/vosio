@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MoreHorizontal, Plus } from "lucide-react";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { LiveRecordingRecoveryPanel } from "@/components/live-recording-recovery-panel";
 import { SearchResultExcerpt } from "@/components/search-result-excerpt";
@@ -84,6 +85,21 @@ function getRecordingOrganizationMeta(
     options.projects.find((item) => item.id === recording.project_id)?.name,
     options.folders.find((item) => item.id === recording.folder_id)?.name
   ].filter((value): value is string => Boolean(value)).join(" · ");
+}
+
+// RecordingActionsMenu keeps secondary row actions available without letting them dominate the inbox.
+function RecordingActionsMenu({ recordingId, title }: { recordingId: string; title: string }) {
+  return (
+    <details className="recordings-actions-menu">
+      <summary aria-label={`Možnosti nahrávky ${title}`} title="Možnosti nahrávky">
+        <MoreHorizontal aria-hidden="true" size={18} />
+      </summary>
+      <div className="recordings-actions-popover">
+        <RecordingTitleEditor recordingId={recordingId} title={title} />
+        <DeleteRecordingForm recordingId={recordingId} variant="compact" />
+      </div>
+    </details>
+  );
 }
 
 // toRecordingsHref serializes a canonical recordings filter URL without a trailing question mark.
@@ -196,8 +212,7 @@ function RecordingSearchResults({
                   aria-label={`Akce nahrávky ${result.title}`}
                   role="group"
                 >
-                  <RecordingTitleEditor recordingId={result.id} title={result.title} />
-                  <DeleteRecordingForm recordingId={result.id} variant="compact" />
+                  <RecordingActionsMenu recordingId={result.id} title={result.title} />
                 </div>
               </article>
             );
@@ -266,8 +281,12 @@ export function RecordingsManager({
       <div className="recordings-inbox-header">
         <div>
           <h1>Nahrávky</h1>
-          <p>Najděte uložený hovor, zkontrolujte jeho stav a pokračujte do přepisu.</p>
+          <p>Vaše hovory, přepisy a navazující výstupy.</p>
         </div>
+        <Link className="recordings-create-button" href="/recordings/new">
+          <Plus aria-hidden="true" size={17} />
+          Nová nahrávka
+        </Link>
       </div>
       {errorMessage ? <p className="recordings-alert" role="alert">{errorMessage}</p> : null}
       <LiveRecordingRecoveryPanel />
@@ -307,11 +326,12 @@ export function RecordingsManager({
             <>
               <div className="recordings-table-head" aria-hidden="true">
                 <div className="recordings-table-head-main">
-                  <span>Název</span>
+                  <span>Název nahrávky</span>
+                  <span>Klient / projekt</span>
                   <span>Stav</span>
-                  <span>Velikost</span>
+                  <span>Délka</span>
                 </div>
-                <span className="recordings-table-head-actions">Akce</span>
+                <span className="recordings-table-head-actions" />
               </div>
               {clientGroups.map((group) => (
                 <section className="recording-client-group" key={group.clientId ?? "unclassified"}>
@@ -336,19 +356,21 @@ export function RecordingsManager({
                             </Link>
                             <span>
                               {formatRecordingDate(recording.created_at)} · {getSourceTypeLabel(recording.source_type)}
-                              {organizationMeta ? ` · ${organizationMeta}` : ""}
+                              {recording.file_size_bytes ? ` · ${formatFileSize(recording.file_size_bytes)}` : ""}
                             </span>
                           </div>
+                          <span className="recordings-row-organization">
+                            {organizationMeta || "Bez zařazení"}
+                          </span>
                           <StatusBadge tone={getStatusTone(recording.status)}>{getStatusLabel(recording.status)}</StatusBadge>
-                          <span className="recordings-row-size">{formatFileSize(recording.file_size_bytes)}</span>
+                          <span className="recordings-row-duration">{formatDuration(recording.duration_seconds)}</span>
                         </div>
                         <div
                           className="recordings-row-actions"
                           aria-label={`Akce nahrávky ${recording.title}`}
                           role="group"
                         >
-                          <RecordingTitleEditor recordingId={recording.id} title={recording.title} />
-                          <DeleteRecordingForm recordingId={recording.id} variant="compact" />
+                          <RecordingActionsMenu recordingId={recording.id} title={recording.title} />
                         </div>
                       </article>
                     );

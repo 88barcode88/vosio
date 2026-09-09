@@ -6,33 +6,38 @@ const baseStyles = readFileSync(join(process.cwd(), "app", "styles", "base.css")
 const globalsStyles = readFileSync(join(process.cwd(), "app", "globals.css"), "utf8");
 const rootLayout = readFileSync(join(process.cwd(), "app", "layout.tsx"), "utf8");
 const uiPrimitives = readFileSync(join(process.cwd(), "app", "styles", "ui-primitives.css"), "utf8");
+const appicaFoundation = readFileSync(join(process.cwd(), "app", "styles", "appica-foundation.css"), "utf8");
+const appicaUtilities = readFileSync(join(process.cwd(), "app", "styles", "appica-utilities.css"), "utf8");
+const loginPage = readFileSync(join(process.cwd(), "app", "login", "page.tsx"), "utf8");
+const logoMark = readFileSync(join(process.cwd(), "public", "vosio-logo.svg"), "utf8");
+const settingsPanel = readFileSync(join(process.cwd(), "src", "components", "settings-panel.tsx"), "utf8");
 const manifest = readFileSync(join(process.cwd(), "public", "manifest.webmanifest"), "utf8");
 const designDirection = readFileSync(join(process.cwd(), "docs", "requirements", "ui-direction.md"), "utf8");
 
 const darkTokens = {
-  "--bg": "#171717",
-  "--surface": "#202020",
-  "--surface-muted": "#282828",
-  "--surface-raised": "#242424",
-  "--border": "#3a3a3a",
-  "--border-strong": "#575757",
-  "--text": "#f5f5f3",
-  "--accent": "#f5f5f3",
-  "--accent-text": "#171717",
-  "--focus-ring": "#74a7ff"
+  "--bg": "#111318",
+  "--surface": "#1a1d24",
+  "--surface-muted": "#252830",
+  "--surface-raised": "#1a1d24",
+  "--border": "#2d313b",
+  "--border-strong": "#414754",
+  "--text": "#f2f3f6",
+  "--accent": "#edf0f6",
+  "--accent-text": "#171b23",
+  "--focus-ring": "#abc2f8"
 };
 
 const lightTokens = {
-  "--bg": "#f4f4f2",
+  "--bg": "#f7f8fa",
   "--surface": "#ffffff",
-  "--surface-muted": "#ececea",
+  "--surface-muted": "#f2f3f5",
   "--surface-raised": "#ffffff",
-  "--border": "#d8d8d4",
-  "--border-strong": "#aaa9a4",
-  "--text": "#171717",
-  "--accent": "#171717",
+  "--border": "#e9ebef",
+  "--border-strong": "#d8dce3",
+  "--text": "#171c27",
+  "--accent": "#191f2c",
   "--accent-text": "#ffffff",
-  "--focus-ring": "#245bd7"
+  "--focus-ring": "#4d6dba"
 };
 
 // Reads the source contract so the neutral Appica direction cannot regress into the replaced warm theme.
@@ -105,6 +110,21 @@ describe("Appica-inspired design contract", () => {
       expect(uiPrimitives).toContain(`.ui-status-${tone}`);
       expect(uiPrimitives).toContain(`var(--${tone === "danger" ? "danger" : tone})`);
     }
+  });
+
+  it("uses the full desktop workspace width without reviving the legacy settings cap", () => {
+    expect(appicaFoundation).toMatch(/\.workspace-content\s*\{[^}]*width:\s*100%;[^}]*margin:\s*0;/su);
+    expect(appicaFoundation).not.toContain("width: min(100%, 1420px);");
+    expect(appicaUtilities).toMatch(/\[data-utility-surface="settings"\]\.settings-panel\s*\{[^}]*max-width:\s*none;/su);
+  });
+
+  it("keeps account security prominent and gives login the same monochrome product identity", () => {
+    expect(settingsPanel.indexOf("<AccountSecurityPanel"))
+      .toBeLessThan(settingsPanel.indexOf("<form action={disableSave"));
+    expect(loginPage).toContain('className="auth-layout"');
+    expect(loginPage).toContain('className="auth-intro"');
+    expect(logoMark).toContain('fill="#F7F8FA"');
+    expect(logoMark).not.toMatch(/#38D9D0|#48D597/iu);
   });
 
   it("documents the approved direction and one document scroll for recording detail", () => {

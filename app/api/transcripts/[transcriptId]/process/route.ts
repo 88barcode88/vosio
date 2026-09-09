@@ -2,7 +2,7 @@ import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { runManualAiJob } from "@/lib/ai/manual-processing.server";
 import { getAiProviderConfigurationError } from "@/lib/env.server";
-import { aiModelIds, DEFAULT_AI_MODEL_ID, getAiModelOption, type AiProviderId } from "@/lib/model-options";
+import { aiModelIds, DEFAULT_AI_MODEL_ID, getAiModelOption, resolveAiModelExecution, type AiProviderId } from "@/lib/model-options";
 import {
   quickPromptProcessingTypes,
   type EffectivePromptRpcRow,
@@ -42,11 +42,6 @@ type ExistingJob = {
 function routeErrorResponse(_error: unknown, fallbackMessage: string, status = 500) {
   console.error("[Vosio AI processing] request_failed");
   return NextResponse.json({ error: fallbackMessage }, { status });
-}
-
-// getAiProviderForModel resolves an allowed app model to its provider adapter.
-function getAiProviderForModel(modelId: string): AiProviderId {
-  return getAiModelOption(modelId)?.provider ?? "openai";
 }
 
 // getAuthenticatedTranscript verifies ownership through the request-scoped RLS client.
@@ -111,10 +106,14 @@ function createProviderConfigSnapshot(input: {
   temperature: number;
 }) {
   const modelOption = getAiModelOption(input.model);
-  const provider = getAiProviderForModel(input.model);
+  if (!modelOption) {
+    throw new Error("Invalid AI model profile.");
+  }
+  const provider = modelOption.provider;
   return {
     metadata: input.metadata,
     provider,
+    provider_model: modelOption.providerModel,
     response_format: input.outputSchema ? "json_schema" : "text",
     temperature: input.temperature,
     ...(modelOption?.reasoningEffort ? { reasoning_effort: modelOption.reasoningEffort } : {}),
@@ -133,13 +132,26 @@ function isSameAcceptedRequest(
     userId: string;
   }
 ) {
+  const execution = resolveAiModelExecution({
+    model: job.model,
+    provider: job.provider,
+    providerConfig: job.provider_config
+  });
+  const existingConfig = job.provider_config && typeof job.provider_config === "object" && !Array.isArray(job.provider_config)
+    ? job.provider_config as Record<string, unknown>
+    : null;
+  const normalizedExistingConfig = execution && existingConfig
+    ? { ...existingConfig, provider_model: existingConfig.provider_model ?? execution.providerModel }
+    : null;
+
   return job.execution_mode === "manual"
     && job.user_id === input.userId
     && job.transcript_id === input.transcriptId
     && job.model === input.model
     && job.processing_type === input.processingType
     && job.provider === input.providerConfig.provider
-    && hasSameJsonValue(job.provider_config, input.providerConfig);
+    && normalizedExistingConfig !== null
+    && hasSameJsonValue(normalizedExistingConfig, input.providerConfig);
 }
 
 // POST durably accepts one idempotent manual AI job and releases provider work to Next after().
@@ -183,7 +195,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const requestedProvider = getAiProviderForModel(requestedModel);
+    const requestedModelOption = getAiModelOption(requestedModel);
+    if (!requestedModelOption) {
+      return NextResponse.json({ error: "Vybraný AI model není podporovaný." }, { status: 400 });
+    }
+    const requestedProvider = requestedModelOption.provider;
     const providerConfigurationError = getAiProviderConfigurationError(requestedProvider);
     if (providerConfigurationError) {
       return NextResponse.json({ error: providerConfigurationError }, { status: 503 });

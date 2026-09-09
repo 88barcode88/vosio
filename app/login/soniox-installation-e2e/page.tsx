@@ -62,10 +62,11 @@ export default async function SonioxInstallationE2EPage({
   const sonioxRegion = query.region === "eu" ? "eu" : "global";
   const status = query.saved === "1" ? "saved" : null;
   const installationStatus = installation === "ready"
-    ? { environment: "preview" as const, geminiConfigured: gemini === "configured", missingRequiredNames: [], ready: true }
+    ? { environment: "preview" as const, geminiConfigured: gemini === "configured", mistralConfigured: false, missingRequiredNames: [], ready: true }
     : {
         environment: "preview" as const,
         geminiConfigured: gemini === "configured",
+        mistralConfigured: false,
         missingRequiredNames: ["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "OPENAI_API_KEY"],
         ready: false
       };

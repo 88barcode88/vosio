@@ -3,9 +3,7 @@
 import { useEffect, useState } from "react";
 import { Coffee, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { LogoMark } from "@/components/logo-mark";
-import { ThemeToggle } from "@/components/theme-toggle";
 import {
-  NewRecordingNavigationLink,
   SidebarUtilityNavigation,
   WorkspaceNavigation
 } from "@/components/workspace-navigation";
@@ -60,7 +58,10 @@ export function WorkspaceSidebar({
       >
         {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
       </button>
-      <NewRecordingNavigationLink compact={collapsed} hrefOverrides={navigationHrefOverrides} />
+      <div className="workspace-switcher" aria-hidden="true">
+        <span className="avatar">{getEmailInitials(userEmail)}</span>
+        <span className="navigation-label">Můj pracovní prostor</span>
+      </div>
       <WorkspaceNavigation
         activeView={activeView}
         compact={collapsed}
@@ -85,7 +86,6 @@ function BrandBlock() {
         <LogoMark className="brand-logo" size={34} />
         <strong>Vosio</strong>
       </div>
-      <ThemeToggle compact />
     </div>
   );
 }

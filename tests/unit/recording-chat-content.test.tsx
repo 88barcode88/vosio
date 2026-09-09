@@ -50,6 +50,41 @@ afterEach(async () => {
 });
 
 describe("recording chat content", () => {
+  it("sends with Enter once, but preserves Shift+Enter and composition", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ thread: null, turns: [] }) as never)
+      .mockImplementationOnce(() => new Promise(() => undefined));
+    await renderChat();
+    const textarea = container!.querySelector<HTMLTextAreaElement>("textarea")!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(textarea, "Dotaz\ns dalším řádkem");
+    await act(async () => textarea.dispatchEvent(new Event("input", { bubbles: true })));
+    for (const modifiers of [{ shiftKey: true }, { isComposing: true }, { keyCode: 229 }]) {
+      const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, ...modifiers });
+      await act(async () => textarea.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(false);
+    }
+    const heldEnter = new KeyboardEvent("keydown", { key: "Enter", repeat: true, bubbles: true, cancelable: true });
+    await act(async () => textarea.dispatchEvent(heldEnter));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({
+      method: "POST", body: expect.stringContaining("Dotaz\\ns dalším řádkem")
+    }));
+    expect(textarea.disabled).toBe(true);
+  });
+
+  it("does not send an empty draft with Enter", async () => {
+    vi.mocked(fetch).mockResolvedValue(response({ thread: null, turns: [] }) as never);
+    await renderChat();
+    const textarea = container!.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the server-rendered composer disabled until React owns its controls", () => {
     const host = document.createElement("div");
     host.innerHTML = renderToString(createElement(ChatContent, {

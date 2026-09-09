@@ -124,7 +124,7 @@ function createRouteFixture(effectivePrompt: {
 }
 
 // postActionItems invokes the route with the intentionally prompt-agnostic browser contract.
-function postActionItems(overrides: { metadata?: Record<string, unknown>; temperature?: number } = {}) {
+function postActionItems(overrides: { metadata?: Record<string, unknown>; model?: string; temperature?: number } = {}) {
   return POST(
     new NextRequest(`https://vosio.test/api/transcripts/${transcriptId}/process`, {
       body: JSON.stringify({
@@ -176,6 +176,7 @@ describe("process route prompt resolution", () => {
       prompt_snapshot_exact: true,
       provider_config: expect.objectContaining({
         metadata: { source: "manual-button", workspace: "sales" },
+        provider_model: "gpt-5.6-terra",
         temperature: 0.7
       })
     }));
@@ -188,6 +189,37 @@ describe("process route prompt resolution", () => {
       transcriptId,
       userId
     });
+  });
+
+  it.each([
+    ["gemini-3.8-flash", "gemini", "gemini-3.8-flash"],
+    ["gpt-6-astra-low", "openai", "gpt-6-astra"],
+    ["gpt-6-astra-medium", "openai", "gpt-6-astra"],
+    ["mistral-small-2603", "mistral", "mistral-small-2603"],
+    ["mistral-large-2512", "mistral", "mistral-large-2512"]
+  ])("snapshots profile %s with exact %s API model", async (model, provider, providerModel) => {
+    const fixture = createRouteFixture({
+      system_prompt_id: systemPromptId,
+      override_id: null,
+      name: "System action items",
+      processing_type: "action_items",
+      prompt_text: "Systémový prompt.",
+      output_schema: { type: "object" },
+      source: "system",
+      revision: null
+    });
+
+    const response = await postActionItems({ model });
+
+    expect(response.status).toBe(202);
+    expect(fixture.jobInsert).toHaveBeenCalledWith(expect.objectContaining({
+      model,
+      provider,
+      provider_config: expect.objectContaining({
+        provider,
+        provider_model: providerModel
+      })
+    }));
   });
 
   it("snapshots the authoritative system fallback without inventing an override revision", async () => {

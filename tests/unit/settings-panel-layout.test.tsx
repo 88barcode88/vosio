@@ -28,6 +28,7 @@ const storageConfig = {
 const installationStatus = {
   environment: "preview",
   geminiConfigured: false,
+  mistralConfigured: false,
   missingRequiredNames: ["OPENAI_API_KEY"],
   ready: false
 } satisfies InstallationStatus;
@@ -171,7 +172,7 @@ describe("settings workspace layout", () => {
       }
     });
 
-    const headings = ["AI a výstupy", "Jazyk a přepis", "Nahrávání", "Úložiště", "Vzhled", "Diagnostika a využití", "Účet"];
+    const headings = ["Účet", "AI a výstupy", "Jazyk a přepis", "Nahrávání", "Úložiště", "Vzhled", "Diagnostika a využití"];
     const headingPositions = headings.map((heading) => markup.search(new RegExp(`<h2[^>]*>${heading}</h2>`, "u")));
 
     expect(headingPositions.every((position) => position >= 0)).toBe(true);
@@ -210,6 +211,7 @@ describe("settings workspace layout", () => {
     expect(markup).toContain("Chybí konfigurace");
     expect(markup).toContain("OPENAI_API_KEY");
     expect(markup).toContain("GEMINI_API_KEY (volitelné)");
+    expect(markup).toContain("MISTRAL_API_KEY (volitelné)");
     expect(markup).not.toContain("test-secret");
   });
 
@@ -232,7 +234,7 @@ describe("settings workspace layout", () => {
 
       expect(Array.from(container.querySelectorAll<HTMLSelectElement>("select")).every((select) => select.disabled))
         .toBe(true);
-      expect(container.querySelector<HTMLButtonElement>(".settings-save-button")?.disabled).toBe(true);
+      expect(container.querySelector<HTMLButtonElement>(".settings-form .settings-save-button")?.disabled).toBe(true);
       const technicalDisclosure = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
         .find((button) => button.textContent === "Technické informace")!;
       const themeToggle = container.querySelector<HTMLButtonElement>(".theme-toggle")!;
@@ -354,8 +356,8 @@ describe("settings workspace layout", () => {
       expect(Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
         .find((button) => button.textContent === "Technické informace")
         ?.getAttribute("aria-expanded")).toBe("true");
-      container.querySelector<HTMLButtonElement>(".settings-save-button")!.focus();
-      await act(async () => container.querySelector<HTMLFormElement>("form")!.requestSubmit());
+      container.querySelector<HTMLButtonElement>(".settings-form .settings-save-button")!.focus();
+      await act(async () => container.querySelector<HTMLFormElement>(".settings-form")!.requestSubmit());
 
       expect(saveAction).toHaveBeenCalledOnce();
       for (const [name, value] of Object.entries(draft)) {
@@ -431,7 +433,7 @@ describe("settings workspace layout", () => {
         region.value = "eu";
         region.dispatchEvent(new Event("change", { bubbles: true }));
       });
-      act(() => container.querySelector<HTMLFormElement>("form")!.requestSubmit());
+      act(() => container.querySelector<HTMLFormElement>(".settings-form")!.requestSubmit());
 
       const fieldset = container.querySelector<HTMLFieldSetElement>("fieldset[data-settings-fields]");
       expect(fieldset?.disabled).toBe(true);
@@ -505,7 +507,7 @@ describe("settings workspace layout", () => {
 
     const container = document.createElement("div");
     container.innerHTML = markup;
-    const form = container.querySelector("form");
+    const form = container.querySelector<HTMLFormElement>(".settings-form");
 
     expect(form).not.toBeNull();
     expect(parseSettingsForm(new FormData(form!)).autoProcessingTypes).toEqual([]);

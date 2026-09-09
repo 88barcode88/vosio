@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parsePossibleJson, type AiProviderProcessingResult } from "@/lib/ai/common";
 import { runGeminiProcessing } from "@/lib/ai/gemini";
+import { runMistralProcessing } from "@/lib/ai/mistral";
 import { runOpenAIProcessing } from "@/lib/ai/openai";
 import {
   persistCompletedAiProcessing,
@@ -9,7 +10,7 @@ import {
   type ProcessingPersistenceDependencies
 } from "@/lib/ai/process-route-orchestration";
 import { getAiProviderConfigurationError } from "@/lib/env.server";
-import type { AiProviderId } from "@/lib/model-options";
+import { resolveAiModelExecution, type AiProviderId } from "@/lib/model-options";
 import { buildAiTranscriptPromptContext } from "@/lib/transcripts/ai-context";
 import { getTranscriptSpeakerContext } from "@/lib/transcripts/speakers";
 import { SafeAiProviderError } from "@/lib/ai/provider-errors";
@@ -36,6 +37,7 @@ type RunProvider = (input: {
   outputSchema: unknown;
   prompt: string;
   provider: AiProviderId;
+  profileId: string;
   providerConfig: Record<string, unknown>;
   temperature: number;
 }) => Promise<AiProviderProcessingResult>;
@@ -63,8 +65,12 @@ export function getSafeProviderErrorDetail(error: unknown) {
 
 // getAiProviderFailureMessage maps provider failures to stable Czech UI copy.
 export function getAiProviderFailureMessage(provider: AiProviderId) {
-  return provider === "gemini"
-    ? "Gemini zpracování selhalo. Zkontrolujte GEMINI_API_KEY, dostupnost modelu v Google AI účtu nebo zvolte OpenAI model."
+  if (provider === "gemini") {
+    return "Gemini zpracování selhalo. Zkontrolujte GEMINI_API_KEY, dostupnost modelu v Google AI účtu nebo zvolte jiný model.";
+  }
+
+  return provider === "mistral"
+    ? "Mistral zpracování selhalo. Zkontrolujte MISTRAL_API_KEY, dostupnost modelu v Mistral účtu nebo zvolte jiný model."
     : "OpenAI zpracování selhalo. Zkontrolujte OPENAI_API_KEY, dostupnost modelu nebo zkuste jiný model.";
 }
 
@@ -102,19 +108,25 @@ async function runConfiguredProvider(input: Parameters<RunProvider>[0]) {
   const reasoningEffort = input.providerConfig.reasoning_effort;
   const thinkingLevel = input.providerConfig.thinking_level;
 
-  return input.provider === "gemini"
-    ? runGeminiProcessing({
+  if (input.provider === "gemini") {
+    return runGeminiProcessing({
       ...input,
       thinkingLevel: thinkingLevel === "medium" || thinkingLevel === "high"
         ? thinkingLevel
         : thinkingLevel === null ? null : undefined
-    })
-    : runOpenAIProcessing({
+    });
+  }
+
+  if (input.provider === "mistral") {
+    return runMistralProcessing(input);
+  }
+
+  return runOpenAIProcessing({
       ...input,
-      reasoningEffort: reasoningEffort === "high" || reasoningEffort === "xhigh"
+      reasoningEffort: reasoningEffort === "low" || reasoningEffort === "medium" || reasoningEffort === "high" || reasoningEffort === "xhigh"
         ? reasoningEffort
         : reasoningEffort === null ? null : undefined
-    });
+  });
 }
 
 // executePersistedAiProcessing runs and persists one already-created immutable AI job snapshot.
@@ -151,11 +163,22 @@ export async function executePersistedAiProcessing(
     transcriptSegments: transcriptPromptContext.segments,
     transcriptText: input.transcript.rawText
   });
-  const result = await (dependencies.runProvider ?? runConfiguredProvider)({
+  const execution = resolveAiModelExecution({
     model: input.job.model,
+    provider: input.job.provider,
+    providerConfig: input.job.providerConfig
+  });
+
+  if (!execution) {
+    throw new SafeAiProviderError({ failureCode: "invalid_model", retryAfterAt: null });
+  }
+
+  const result = await (dependencies.runProvider ?? runConfiguredProvider)({
+    model: execution.providerModel,
     outputSchema: input.job.outputSchemaSnapshot,
     prompt,
     provider: input.job.provider,
+    profileId: execution.profileId,
     providerConfig: input.job.providerConfig,
     temperature: input.temperature ?? 0.2
   });

@@ -61,11 +61,11 @@ describe("recording status documentation contract", () => {
       ["docs/gotchas.md", gotchas],
       ["docs/requirements/ui-direction.md", uiDirection]
     ]) {
-      expect(source, path).toContain("128 px");
+      expect(source, path).toMatch(/ellipsis/iu);
       expect(source, path).toMatch(/680 px/u);
     }
 
-    expect(design).toContain("jeden vnější rámeček");
+    expect(design).toContain("jeden bílý 16px panel");
     expect(uiDirection).toContain("jeden kompaktní toolbar");
     expect(architecture).toContain("`q`, `status`, `client`, `project`, `folder` a opakovatelný `tag`");
     expect(gotchas).toContain("Zdroj a datum");

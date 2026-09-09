@@ -24,6 +24,8 @@ const GEMINI_QUOTA_REASONS = new Set([
   "QUOTA_EXCEEDED"
 ]);
 const GEMINI_MODEL_REASONS = new Set(["MODEL_NOT_FOUND", "MODEL_UNSUPPORTED"]);
+const MISTRAL_QUOTA_SIGNALS = new Set(["billing_hard_limit_reached", "insufficient_quota", "quota_exceeded"]);
+const MISTRAL_MODEL_SIGNALS = new Set(["invalid_model", "model_not_found", "unsupported_model"]);
 
 // SafeAiProviderError carries only allowlisted machine-readable metadata across server layers.
 export class SafeAiProviderError extends Error {
@@ -171,6 +173,42 @@ export function classifyGeminiProviderError(input: {
     failureCode,
     retryAfterAt: failureCode === "rate_limited"
       ? parseGeminiRetryInfo(details, input.nowMs ?? Date.now())
+      : null
+  };
+}
+
+// classifyMistralProviderError uses only HTTP status and allowlisted machine codes, never provider free text.
+export function classifyMistralProviderError(input: {
+  payload: unknown;
+  retryAfter?: string | null;
+  status: number;
+  transportFailure?: boolean;
+  nowMs?: number;
+}): SafeAiFailure {
+  const payload = readObject(input.payload);
+  const nestedError = readObject(payload?.error);
+  const codeValue = nestedError?.code ?? payload?.code;
+  const typeValue = nestedError?.type ?? payload?.type;
+  const code = typeof codeValue === "string" ? codeValue.toLowerCase() : null;
+  const type = typeof typeValue === "string" ? typeValue.toLowerCase() : null;
+  let failureCode: AiFailureCode = "unknown";
+
+  if ((code !== null && MISTRAL_QUOTA_SIGNALS.has(code)) || (type !== null && MISTRAL_QUOTA_SIGNALS.has(type)) || input.status === 402) {
+    failureCode = "insufficient_credit_or_quota";
+  } else if (code === "rate_limit_exceeded" || type === "rate_limit_error" || input.status === 429) {
+    failureCode = "rate_limited";
+  } else if ((code !== null && MISTRAL_MODEL_SIGNALS.has(code)) || input.status === 404) {
+    failureCode = "invalid_model";
+  } else if (input.status === 401 || input.status === 403) {
+    failureCode = "provider_configuration";
+  } else if (input.transportFailure || input.status === 408 || (input.status >= 500 && input.status <= 599)) {
+    failureCode = "provider_unavailable";
+  }
+
+  return {
+    failureCode,
+    retryAfterAt: failureCode === "rate_limited"
+      ? parseRetryAfter(input.retryAfter, input.nowMs ?? Date.now())
       : null
   };
 }

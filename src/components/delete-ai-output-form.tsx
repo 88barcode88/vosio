@@ -11,9 +11,10 @@ import {
 
 type DeleteAiOutputFormProps = {
   confirmationMessage?: string;
-  deleteAction?: (formData: FormData) => Promise<void>;
+  deleteAction?: (formData: FormData) => Promise<void | { removed_output_ids: string[] }>;
   label?: string;
   next: string;
+  onDeleted?: (outputIds: string[]) => void;
   outputId?: string;
   outputIds?: string[];
   targetSelector?: string;
@@ -25,6 +26,7 @@ export function DeleteAiOutputForm({
   deleteAction = deleteAiOutputAction,
   label = "Smazat",
   next,
+  onDeleted,
   outputId,
   outputIds,
   targetSelector = "[data-ai-output-delete-target], .ai-output-detail"
@@ -56,7 +58,9 @@ export function DeleteAiOutputForm({
   // runDelete restores the exact target when an unexpected action rejection settles.
   async function runDelete(formData: FormData) {
     try {
-      await deleteAction(formData);
+      const result = await deleteAction(formData);
+      const removedIds = result && "removed_output_ids" in result ? result.removed_output_ids : ids;
+      onDeleted?.(removedIds);
     } catch (error) {
       if (isRedirectSignal(error)) throw error;
       restoreOptimisticDeleteTarget(optimisticTargetRef.current);
@@ -73,6 +77,7 @@ export function DeleteAiOutputForm({
           <input defaultValue={id} key={id} name="outputIds" type="hidden" />
         ))}
         <input defaultValue={next} name="next" type="hidden" />
+        {onDeleted ? <input defaultValue="quiet" name="completion" type="hidden" /> : null}
         <button aria-label={label} disabled={isDeleting || ids.length === 0} title={label} type="submit">
           <Trash2 size={14} />
           <span>{isDeleting ? "Mažu..." : label}</span>

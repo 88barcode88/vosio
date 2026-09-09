@@ -329,7 +329,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
   async function submitQuestion(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const question = draft.trim();
-    if (!activeTranscriptId || !question || isComposerDisabled) return;
+    if (!activeTranscriptId || !question || isComposerDisabled || submitInFlightRef.current || pendingTurnRef.current) return;
     const submittedModel = new FormData(event.currentTarget).get("model");
 
     const pending = {
@@ -342,6 +342,14 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     };
     updatePendingSubmission(pending);
     await submitPendingTurn(pending);
+  }
+
+  // handleComposerKeyDown shares the button submission path while preserving multiline input and IME confirmation.
+  function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+    event.preventDefault();
+    if (event.repeat || isComposerDisabled || !draft.trim()) return;
+    event.currentTarget.form?.requestSubmit();
   }
 
   // retryPendingSubmission repeats only the immutable unresolved request after reconciliation has checked it.
@@ -385,9 +393,12 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
           disabled={isComposerDisabled}
           id="recording-chat-question"
           onChange={(event) => setDraft(event.currentTarget.value)}
+          onKeyDown={handleComposerKeyDown}
+          aria-describedby="recording-chat-keyboard-hint"
           placeholder="Na co se chcete ze záznamu zeptat?"
           value={draft}
         />
+        <small id="recording-chat-keyboard-hint">Enter odešle zprávu · Shift+Enter vloží nový řádek</small>
         <div className="recording-chat-composer-controls">
           <label>
             Model

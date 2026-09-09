@@ -8,6 +8,10 @@ const layoutStyles = readFileSync(join(process.cwd(), "app", "styles", "workspac
 const baseStyles = readFileSync(join(process.cwd(), "app", "styles", "base.css"), "utf8");
 const responsiveStyles = readFileSync(join(process.cwd(), "app", "styles", "responsive.css"), "utf8");
 const globalsStyles = readFileSync(join(process.cwd(), "app", "globals.css"), "utf8");
+const appicaUtilityStyles = readFileSync(
+  join(process.cwd(), "app", "styles", "appica-utilities.css"),
+  "utf8"
+);
 const controlHitTargetStyles = readFileSync(
   join(process.cwd(), "app", "styles", "control-hit-targets.css"),
   "utf8"
@@ -83,5 +87,14 @@ describe("Vosio workspace content area", () => {
     expect(controlHitTargetStyles).toContain('[data-touch-target="action"]');
     expect(controlHitTargetStyles).toContain("Inline prose links remain text-sized unless explicitly marked as actions");
     expect(controlHitTargetStyles).not.toContain("touch-target-exception");
+  });
+
+  it("stacks AI archive filters in the late Appica cascade on mobile", () => {
+    expect(appicaUtilityStyles).toMatch(
+      /@media \(max-width:\s*900px\)[\s\S]*?\[data-utility-surface="ai-archive-results"\] \.ai-archive-filters\s*\{[\s\S]*?grid-template-columns:\s*1fr;/u
+    );
+    expect(appicaUtilityStyles).toMatch(
+      /@media \(max-width:\s*900px\)[\s\S]*?\[data-utility-surface="ai-archive-results"\] \.ai-archive-filters > svg\s*\{[\s\S]*?display:\s*none;/u
+    );
   });
 });

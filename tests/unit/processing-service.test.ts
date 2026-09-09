@@ -7,7 +7,7 @@ describe("shared AI processing service", () => {
       model: string;
       outputSchema: unknown;
       prompt: string;
-      provider: "gemini" | "openai";
+      provider: "gemini" | "mistral" | "openai";
       providerConfig: Record<string, unknown>;
       temperature: number;
     }) => ({
@@ -47,6 +47,7 @@ describe("shared AI processing service", () => {
       outputSchema: { type: "object" },
       prompt: expect.stringContaining("TIMELINE Persisted transcript"),
       provider: "openai",
+      profileId: "gpt-5.6-terra",
       providerConfig: { reasoning_effort: "high" },
       temperature: 0.2
     });
@@ -60,5 +61,51 @@ describe("shared AI processing service", () => {
       userId: "user-id"
     }));
     expect(output).toEqual(expect.objectContaining({ id: "output-id" }));
+  });
+
+  it("resolves the exact API model from the immutable profile snapshot", async () => {
+    const runProvider = vi.fn(async () => ({
+      inputTokenCount: 1,
+      outputText: "ok",
+      outputTokenCount: 1,
+      providerResponseId: "response"
+    }));
+
+    await executePersistedAiProcessing({
+      admin: {} as never,
+      job: {
+        id: "job-id",
+        model: "gpt-6-astra-medium",
+        outputSchemaSnapshot: null,
+        promptTextSnapshot: "{{raw_text}}",
+        provider: "openai",
+        providerConfig: { provider: "openai", provider_model: "gpt-6-astra", reasoning_effort: "medium" }
+      },
+      transcript: { id: "transcript-id", rawText: "Text", segments: [], speakers: [], userId: "user-id" }
+    }, { persistCompleted: vi.fn(async () => ({})), runProvider });
+
+    expect(runProvider).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gpt-6-astra",
+      profileId: "gpt-6-astra-medium",
+      provider: "openai"
+    }));
+  });
+
+  it("fails closed before dispatch for mismatched provider model snapshots", async () => {
+    const runProvider = vi.fn();
+
+    await expect(executePersistedAiProcessing({
+      admin: {} as never,
+      job: {
+        id: "job-id",
+        model: "gpt-6-astra-low",
+        outputSchemaSnapshot: null,
+        promptTextSnapshot: "{{raw_text}}",
+        provider: "openai",
+        providerConfig: { provider_model: "gpt-6-astra-low" }
+      },
+      transcript: { id: "transcript-id", rawText: "Text", segments: [], speakers: [], userId: "user-id" }
+    }, { persistCompleted: vi.fn(), runProvider })).rejects.toMatchObject({ failureCode: "invalid_model" });
+    expect(runProvider).not.toHaveBeenCalled();
   });
 });

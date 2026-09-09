@@ -1,5 +1,7 @@
 # Supabase Schema
 
+AI cleanup and model rollout is source-only: `20260908101824_add_mistral_ai_provider.sql`, then `20260908103000_add_manual_ai_job_cleanup.sql`. Each target requires its own approved preflight, forward apply and postflight; source presence does not prove application, deployment or live behavior.
+
 ## Stav
 
 Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seřazený řetězec:
@@ -238,6 +240,12 @@ Claim přijme pouze nový manuální tvar jobu a nastaví přesný 480sekundový
 `GET /api/transcripts/{transcriptId}/ai-state` vrací pouze omezené owner-scoped job/output metadata a allowlistovaný `failure_code`; neposílá lease token, raw provider chybu, prompt, provider config, transcript ani output body. `POST /api/transcripts/{transcriptId}/manual-ai/reconcile` přijímá jen přesné job UUID a akci `reconcile` nebo `interrupt`, ověřuje session i ownership a nic nemaže.
 
 Soubor v tomto repozitáři je source kontrakt, nikoli doklad aplikace na libovolném vzdáleném targetu. Každý existující projekt vyžaduje vlastní preflight, apply pouze chybějící migrace a postflight; nekanonické starší joby se nesmějí automaticky mazat ani znovu posílat provideru.
+
+## Manual AI cleanup
+
+Po source migracích `20260908101824_add_mistral_ai_provider.sql` a `20260908103000_add_manual_ai_job_cleanup.sql` rozšiřuje enum provider o `mistral` a přidává service-role-only klasifikaci, keyset listing a bounded cleanup manuálních AI jobů. Cleanup přijímá nejvýše 50 přesných job ID pro jednoho vlastníka a transcript, zamyká rodiče i závislosti a maže jen serverem potvrzené terminalní nebo přesně rozpoznané stale joby bez outputu či projekce. Outputy, úkoly, kapitoly, rozhodnutí a rizika parent job chrání. Staré nebo nejednoznačné lifecycle tvary zůstávají `unsupported_legacy`; cleanup je nesmí automaticky mazat ani spouštět provider.
+
+Všechny nové funkce jsou `SECURITY INVOKER`, mají prázdný `search_path`, explicitně odebraný `EXECUTE` pro `PUBLIC`, `anon` a `authenticated` a execute pouze pro `service_role`. Každý target před apply samostatně ověří skutečné enumy, tabulky, RLS, grants, funkční signatury, cizí klíče a migration ledger. Přítomnost source souborů není důkazem aplikace ani concurrency ověření.
 
 RPC `complete_transcript_generation_v1`, `enqueue_automatic_timeline_job_v1`, `claim_automatic_timeline_job_v1` a `settle_automatic_timeline_job_v1` jsou `SECURITY INVOKER`, mají prázdný `search_path`, odebraný `EXECUTE` pro `PUBLIC`, `anon` i `authenticated` a explicitní grant pouze pro `service_role`. Completion RPC zamkne owner transcript `FOR UPDATE`, rozhodne same/new generation, vybere a `FOR SHARE` zamkne systémový prompt a aktivní override, uloží přesný intent, provede replacement cleanup právě jednou a teprve ve stejné transakci nastaví generation marker i recording `completed`. Jakákoli prompt/intent chyba rollbackne completion; ztracená odpověď po commitu je obnovitelná z intentu. Enqueue používá stejný unique digest; souběžné recovery proto vrátí jediný durable job. Claim přijme queued/failed job s remaining attempts nebo `running` job až po deterministické expiraci lease; každý claim zvýší attempt count. Settlement vyžaduje přesný aktuální lease token. Migrace neobsahuje cron ani plánovanou úlohu. Každý target stále potřebuje vlastní preflight, apply, postflight a rollback evidence.
 

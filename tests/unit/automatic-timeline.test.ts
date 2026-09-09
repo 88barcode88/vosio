@@ -22,6 +22,7 @@ const durableIntent = {
   provider: "openai" as const,
   provider_config: {
     provider: "openai",
+    provider_model: "gpt-5.6-terra",
     reasoning_effort: "high",
     response_format: "json_schema",
     thinking_level: null
@@ -128,6 +129,7 @@ describe("automatic timeline orchestration", () => {
         provider: "openai",
         providerConfig: {
           provider: "openai",
+          provider_model: "gpt-5.6-terra",
           reasoning_effort: "high",
           thinking_level: null
         },
@@ -137,6 +139,38 @@ describe("automatic timeline orchestration", () => {
       expect(result).toEqual(expect.objectContaining({ automatic_timeline_scheduled: true }));
     }
   );
+
+  it("does not schedule the default provider for an unknown saved model", async () => {
+    const completeGeneration = vi.fn(async (input: { automaticTimelineEnabled: boolean }) => ({
+      automatic_timeline_scheduled: input.automaticTimelineEnabled,
+      is_new_generation: true,
+      transcript_id: "transcript-id"
+    }));
+
+    const result = await persistTranscriptCompletionTransition({
+      admin: {} as never,
+      durationSeconds: 60,
+      generationIdentity: "async:unknown-model",
+      generationKind: "async",
+      transcriptId: "transcript-id",
+      transcriptionJobId: "job-id",
+      user: {
+        id: "user-id",
+        user_metadata: {
+          vosio_settings: {
+            autoTimelineAfterTranscription: true,
+            defaultOpenaiModel: "gpt-6-astra-typo"
+          }
+        }
+      } as never
+    }, { completeGeneration });
+
+    expect(completeGeneration).toHaveBeenCalledOnce();
+    expect(completeGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      automaticTimelineEnabled: false
+    }));
+    expect(result).toEqual(expect.objectContaining({ automatic_timeline_scheduled: false }));
+  });
 
   it.each(["prompt snapshot unavailable", "intent insert failed"])(
     "fails the sole completion transition when %s, instead of reporting a completed generation",

@@ -156,4 +156,16 @@ describe("settings metadata", () => {
       [USER_SETTINGS_METADATA_KEY]: { defaultOpenaiModel: "gemini-3.5-flash" }
     }).defaultOpenaiModel).toBe("gemini-3.6-flash");
   });
+
+  it("rejects an unknown saved AI model instead of treating it as a valid default alias", () => {
+    const settings = getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: {
+        autoTimelineAfterTranscription: true,
+        defaultOpenaiModel: "mistral-small-typo"
+      }
+    });
+
+    expect(settings.defaultOpenaiModel).toBe(DEFAULT_AI_MODEL_ID);
+    expect(settings.autoTimelineAfterTranscription).toBe(false);
+  });
 });

@@ -4,9 +4,11 @@
 
 `Chat` je uložený vícekolový rozhovor nad jedním hotovým a uloženým přepisem nahrávky. Není to live chat nad audiem ani náhrada přepisu: bez uloženého `transcripts` řádku tab zobrazí nedostupný stav. Pro jednoho vlastníka a konkrétní `transcript_id` existuje nejvýše jedno vlákno; historie se po refreshi a při návratu k nahrávce znovu načte.
 
-Každý tah ukládá otázku, vybraný model a provider, snapshot systémového promptu, usage, stav a bezpečnou chybu nebo odpověď. Chat používá stávající OpenAI/Gemini modelový katalog, serverové adaptéry a uložený speaker context. Browser neposílá audio, Storage URL, provider, prompt ani transcriptový kontext.
+Každý tah ukládá otázku, vybraný model a provider, snapshot systémového promptu, usage, stav a bezpečnou chybu nebo odpověď. Chat používá OpenAI/Gemini/Mistral modelový katalog s odděleným UI profilem a přesným API modelem, serverové adaptéry a uložený speaker context. Browser neposílá audio, Storage URL, provider, prompt ani transcriptový kontext.
 
 ## HTTP kontrakt
+
+Composer odesílá zprávu klávesou Enter. Shift+Enter zachová nový řádek na Windows i macOS. Potvrzení IME kompozice neodesílá zprávu; opakování držené klávesy, prázdný dotaz a probíhající odeslání jsou blokované. Klávesnice používá stejnou formulářovou a idempotentní cestu jako tlačítko Odeslat.
 
 Obě route vyžadují platnou Supabase session a vrací stejný `404` pro chybějící i cizí přepis.
 
@@ -49,7 +51,7 @@ Pro chat jsou nutné tyto source migrace ve zcela přesném pořadí:
 
 První přidává pouze `recording_chat` do enumu. Druhá seeduje systémový prompt a vytváří tabulky, constraints, indexy, forced RLS, úzké select-only granty a owner policies. Přítomnost těchto SQL souborů v Git repu znamená pouze **source migration**. **Applied** znamená, že byly ve stejném pořadí vykonány na konkrétním pojmenovaném Supabase targetu. **Deployed** znamená, že je nasazen build aplikace s route a UI. **Live** vyžaduje vlastní postflight na daném targetu a ověřený běh s reálnou session. Tyto stavy se z toho navzájem neodvozují.
 
-Self-host instalace používá stejný Supabase projekt jako nahrávky a přepisy, ne druhý projekt. Chat nepřidává žádnou environment proměnnou: server pro zvolený OpenAI model používá existující `OPENAI_API_KEY`, pro zvolený Gemini model `GEMINI_API_KEY`; serverová persistence vyžaduje existující `SUPABASE_SERVICE_ROLE_KEY` a připojení používá `NEXT_PUBLIC_SUPABASE_URL` a `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Všechny tajné hodnoty zůstávají pouze v deployment runtime nebo `.env.local`, nikdy v Git výstupu ani diagnostice.
+Self-host instalace používá stejný Supabase projekt jako nahrávky a přepisy, ne druhý projekt. Server pro zvolený OpenAI model používá `OPENAI_API_KEY`, pro Gemini `GEMINI_API_KEY` a pro Mistral volitelný serverový `MISTRAL_API_KEY`; serverová persistence vyžaduje existující `SUPABASE_SERVICE_ROLE_KEY` a připojení používá `NEXT_PUBLIC_SUPABASE_URL` a `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Všechny tajné hodnoty zůstávají pouze v deployment runtime nebo `.env.local`, nikdy v Git výstupu ani diagnostice.
 
 Bez vypsání tajných hodnot lze ověřit source instalaci takto:
 

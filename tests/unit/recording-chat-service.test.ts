@@ -133,6 +133,29 @@ const baseInput = {
 beforeEach(() => vi.restoreAllMocks());
 
 describe("recording chat service", () => {
+  it("persists the selected profile id but dispatches its exact provider API model", async () => {
+    const fixture = createStore();
+    const runProvider = vi.fn(async () => ({
+      inputTokenCount: 1,
+      outputText: '{"answer_markdown":"Ano","evidence":[]}',
+      outputTokenCount: 1,
+      providerResponseId: null
+    }));
+
+    await submitRecordingChatTurn({ ...baseInput, model: "gpt-6-astra-low" }, {
+      now: () => now,
+      rateLimit: () => ({ allowed: true, retryAfterSeconds: 0 }),
+      runProvider,
+      store: fixture.store
+    });
+
+    expect(fixture.turns[0]).toMatchObject({ model: "gpt-6-astra-low", provider: "openai" });
+    expect(runProvider).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gpt-6-astra",
+      provider: "openai"
+    }));
+  });
+
   it("persists one completed attributed turn with prompt snapshot, usage and verified evidence", async () => {
     const fixture = createStore();
     const runProvider = vi.fn(async () => ({

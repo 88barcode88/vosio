@@ -73,6 +73,9 @@ export async function deleteAiOutputAction(formData: FormData) {
   revalidatePath("/ai");
   revalidatePath("/recordings");
   revalidatePath(nextPath);
+  if (formData.get("completion") === "quiet") {
+    return { removed_output_ids: data.map((row) => row.id) };
+  }
   redirect(nextPath);
 }
 

@@ -34,6 +34,25 @@ afterEach(async () => {
 });
 
 describe("AI archive delete", () => {
+  it("reports confirmed ids to a quiet detail without navigation", async () => {
+    const action = vi.fn().mockResolvedValue({ removed_output_ids: [outputId] });
+    const onDeleted = vi.fn();
+    await act(async () => root.render(
+      <article data-ai-output-delete-target>
+        <DeleteAiOutputForm deleteAction={action} next="/recordings/test" onDeleted={onDeleted} outputId={outputId} />
+      </article>
+    ));
+    const form = container.querySelector<HTMLFormElement>("form")!;
+
+    await act(async () => {
+      form.requestSubmit();
+      await Promise.resolve();
+    });
+
+    expect(new FormData(form).get("completion")).toBe("quiet");
+    expect(onDeleted).toHaveBeenCalledExactlyOnceWith([outputId]);
+  });
+
   it("restores the exact target and shows a sanitized alert after unexpected rejection", async () => {
     const action = vi.fn().mockRejectedValue(new Error("private provider secret"));
     await renderTarget(action, <span>Archivní výstup</span>);

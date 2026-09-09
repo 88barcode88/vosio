@@ -141,6 +141,10 @@ On the same target, verify a valid `ai_outputs(processing_job_id)` unique index,
 
 The source file is `supabase/migrations/20260904140126_harden_manual_ai_job_recovery.sql` with source SHA256 `048829215E3D80AA9AEAAA513FE39E5B1C2BCCD9CB4A42F934C9F2B611E3126D`. It is additive: it adds `failure_code`, `retry_after_at` and the service-role-only `claim_manual_ai_job_v1`, `settle_manual_ai_job_v1` and `reconcile_manual_ai_job_v1` RPCs. It does not rewrite or delete existing jobs. The presence of this source file is not evidence that any hosted target applied it.
 
+## Manual AI cleanup source migrations
+
+After the existing ordered chain, `20260908101824_add_mistral_ai_provider.sql` adds the `mistral` enum value and `20260908103000_add_manual_ai_job_cleanup.sql` adds bounded manual-job classification and cleanup RPCs. They are additive source migrations, not a target ledger. For every installation, compare the actual schema and ledger first, apply only through an explicitly approved forward migration path, then independently verify forced RLS, service-role-only grants, function signatures and dependency protection. Do not replace the baseline, edit a migration ledger, or run `supabase db push` blindly.
+
 Before applying it to an existing target, use a read-only administrative connection to verify the current `ai_processing_jobs` columns and constraints, the unique `ai_outputs(processing_job_id)` index, absence of duplicate output lineage, forced RLS/owner policy, existing grants and the exact migration ledger. Any conflict, duplicate output, unexpected browser-role grant or ambiguous legacy row blocks the apply.
 
 Apply only the reviewed SQL file in one explicit transaction. Afterward, verify the new columns/checks and all three function signatures, `SECURITY INVOKER`, empty `search_path`, fully qualified object references, forced RLS preservation and `EXECUTE` revoked from `PUBLIC`, `anon` and `authenticated` and granted only to `service_role`. Do not change migration history merely to make a CLI command succeed.
