@@ -262,6 +262,9 @@ Nepatří sem:
 Detail nahrávky je pracovní objekt, ne hero.
 
 - Header drž kompaktní: název, stav, metadata a destruktivní akce.
+- Export, úprava názvu a organizace se rozbalují v toku hlavičky a odsouvají další obsah; přehrávač je nesmí zakrýt.
+- Přehrávač začíná jako sbalený řádek s play/pause, časem a rozbalením posuvníku. Rozbalení ani změna záložky nesmí zastavit nebo znovu načíst audio; sbalení se resetuje až při změně nahrávky.
+- Na mobilu je přehrávač součástí horní sticky plochy se záložkami, aby nepřekrýval obsah ani spodní navigaci.
 - Záložky musí fungovat jako rychlé pracovní režimy, ne jako nové stránky.
 - AI zpracování má být vertikální workflow: nastavení a quick actions nahoře, uložené výstupy pod tím.
 - AI output cards jsou rozbalovací artefakty s preview v zavřeném stavu, aby seznam zůstal skenovatelný.

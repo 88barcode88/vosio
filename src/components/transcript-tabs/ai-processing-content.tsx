@@ -372,7 +372,7 @@ function ManualAiJobList({
                 {pendingJobId === job.id ? "Pracuji…" : cleanupActionLabels[action]}
               </button>
             ))}
-            {job.status === "failed" ? (
+            {job.status === "failed" && job.execution_mode !== "automatic" ? (
               <button
                 disabled={pendingJobId !== null || isBulkPending || retryBlocked}
                 onClick={() => {

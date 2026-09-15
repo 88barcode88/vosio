@@ -18,6 +18,7 @@ const documentationSections: DocumentationSection[] = [
   {
     body: [
       "Na stránce Nová nahrávka jsou dvě hlavní cesty: Nahrávat live a Nahrát soubor. Live režim ukládá audio a přepis, nebo jen textový live přepis bez audio zálohy; pro live audio platí samostatná ochranná politika.",
+      "Pro videohovor vyberte v nabídce sdílení konkrétní kartu prohlížeče s hovorem a zapněte sdílení jejího zvuku. Sdílení celého okna nebo obrazovky pro tento režim nestačí. Vosio spojí zvuk karty s mikrofonem.",
       "Upload je určený pro existující audio a MP4 soubory podporované Sonioxem. Výsledný limit aplikace vychází z limitu připojeného Storage bucketu a z volby tarifu Supabase Auto, Free nebo Paid v Nastavení. Live audio může mít nižší zobrazený limit, například Audio do 128 MB + přepis. Globální projektový limit nelze bezpečně zjistit, proto se zobrazuje jako Nezjištěn."
     ],
     id: "nova-nahravka",
@@ -28,6 +29,7 @@ const documentationSections: DocumentationSection[] = [
     body: [
       "Nahrávky jsou inbox všech uložených callů. Řádek se otevírá kliknutím, název jde upravit samostatně a smazání nejdřív přesune položku do Koše.",
       "U každé položky je vidět stav, zdroj, velikost a datum. Cílem je rychle najít správný call a přejít do detailu bez zbytečných tlačítek navíc.",
+      "Export, úprava názvu a zařazení nahrávky se rozbalují přímo v detailu. Přehrávač začíná jako malý řádek s přehráváním a rozbalením. Rozbalení ukáže posun v audiu; sbalení ani přepnutí záložky přehrávání nepřeruší. Na mobilu zůstává přehrávač nahoře v detailu a nezakrývá spodní navigaci.",
       "Vyhledávání na stránce Nahrávky umí prohledat názvy i uložené přepisy. Fulltext vrátí konkrétní úryvek a po otevření přejde na odpovídající místo v přepisu."
     ],
     id: "nahravky",
@@ -47,6 +49,8 @@ const documentationSections: DocumentationSection[] = [
     body: [
       "AI zpracování patří do detailu konkrétní nahrávky. Nad hotovým transcriptem lze vytvořit shrnutí, úkoly, časovou osu, meeting notes, CRM poznámku nebo follow-up e-mail.",
       "Každé zpracování je samostatný job, takže můžete spustit více výstupů stejného typu. Výstupy se ukládají do Supabase jako rozbalovací karty s náhledem, kopírováním, Markdown exportem a samostatným smazáním."
+      ,"V Nastavení můžete každý ze šesti automatických výstupů zapnout samostatně. Výchozí stav je vypnuto; dříve výslovně zapnutá časová osa zůstává zapnutá. Volby platí při novém dokončení přepisu včetně importu textu a obnovy rozpracovaného záznamu. Starší přepisy se zpětně nezpracovávají."
+      ,"Vybrané výstupy vznikají nezávisle. Selhání jednoho nezastaví ostatní; stav a hotové výsledky se v otevřené AI nebo Časové ose aktualizují průběžně. Přerušené automatické zpracování lze obnovit jen omezeným počtem pokusů. Zavření prohlížeče ani ukončení serveru nezaručuje dokončení; další otevření AI nebo Časové osy zkontroluje uloženou práci. Smazání hotového výstupu automatické zpracování znovu nespustí."
     ],
     id: "ai-zpracovani",
     kicker: "Co z callu vytěžit",
@@ -55,7 +59,7 @@ const documentationSections: DocumentationSection[] = [
   {
     body: [
       "Časová osa není technický seznam po sekundách. Vytváří se jako AI výstup, který rozdělí dlouhý hovor na smysluplné kapitoly podle témat, rozhodnutí, úkolů, rizik a změn kontextu.",
-      "Když časová osa ještě neexistuje, karta nabízí přechod do AI zpracování. Automatická časová osa je ve výchozím stavu vypnutá: po jejím zapnutí vznikne nejvýše jedna časová osa pro nově uložený dokončený přepis s aktuálním výchozím modelem a účinným promptem. Pokud se přepis dokončí při zavřeném prohlížeči, kontrola pokračuje při dalším otevření detailu nahrávky. Technické segmenty ze Sonioxu zůstávají zdrojová data pro diarizaci a časování."
+      "Prázdná karta nabízí vytvoření časové osy přímo na místě. Časovou osu lze také zapnout mezi automatickými výstupy pro budoucí dokončené přepisy. Každé nové dokončení má nejvýše jeden automatický výstup daného typu a používá v tu chvíli uložený výchozí model a vlastní úpravu promptu."
     ],
     id: "casova-osa",
     kicker: "Obsahové kapitoly hovoru",
@@ -84,7 +88,8 @@ const documentationSections: DocumentationSection[] = [
     body: [
       "Nastavení obsahuje netajné uživatelské preference. U výchozího AI modelu je vždy viditelné vysvětlení Model a kvalita; pomáhá zvolit rychlost, cenu a míru kontroly výsledku.",
       "V části Účet je Změna hesla. Vyžaduje současné heslo, nové heslo a potvrzení; hesla se do nastavení neukládají.",
-      "Můžete zapnout automatickou časovou osu pro budoucí dokončené přepisy a zvolit automatický termín pro budoucí položky v Koši: 24 hodin, 7 dní nebo 30 dní. Výchozí volba je 30 dní a změna nemění termín položek, které už v Koši jsou. Usage část ukazuje orientační AI a Soniox náklady z uložených metadat; fakturační pravda zůstává u provider dashboardů."
+      "Automatické výstupy mají šest samostatných voleb: shrnutí, úkoly, zápis ze schůzky, CRM poznámka, navazující e-mail a časová osa. Když jsou všechny vypnuté, AI se samo nespustí. Vysvětlení live přepisu je viditelné přímo u nastavení. Technické informace mají vlastní sbalenou část; Diagnostika a využití zachovává podrobnosti pod Více informací."
+      ,"Pro budoucí položky v Koši můžete zvolit 24 hodin, 7 dní nebo 30 dní. Výchozí volba je 30 dní a změna nemění termín položek, které už v Koši jsou. Usage ukazuje orientační AI a Soniox náklady; skutečné vyúčtování najdete u poskytovatelů."
     ],
     id: "nastaveni",
     kicker: "Preference a usage",

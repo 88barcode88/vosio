@@ -27,6 +27,7 @@ type GeminiResponse = {
 };
 
 type RunGeminiProcessingInput = {
+  signal?: AbortSignal;
   model: string;
   outputSchema: unknown;
   prompt: string;
@@ -128,6 +129,7 @@ export async function runGeminiProcessing(input: RunGeminiProcessingInput): Prom
     response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${modelPath}:generateContent?key=${encodeURIComponent(env.geminiApiKey)}`,
       {
+        ...(input.signal ? { signal: input.signal } : {}),
         body: JSON.stringify({
           contents: [
             {

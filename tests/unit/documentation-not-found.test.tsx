@@ -32,13 +32,17 @@ describe("documentation and not found surfaces", () => {
     expect(markup).not.toContain("bude samostatný fulltextový krok");
   });
 
-  it("documents current settings, automatic timeline, and Trash behavior without the obsolete start card", () => {
+  it("documents current settings, independent automatic output consent, and Trash behavior without the obsolete start card", () => {
     const markup = renderToStaticMarkup(createElement(DocumentationPanel));
 
     expect(markup).not.toContain("Začít s prvním callem");
     expect(markup).toContain("Model a kvalita");
     expect(markup).toContain("Změna hesla");
-    expect(markup).toContain("Automatická časová osa je ve výchozím stavu vypnutá");
+    expect(markup).toContain("každý ze šesti automatických výstupů zapnout samostatně");
+    expect(markup).toContain("Výchozí stav je vypnuto; dříve výslovně zapnutá časová osa zůstává zapnutá");
+    expect(markup).toContain("šest samostatných voleb: shrnutí, úkoly, zápis ze schůzky, CRM poznámka, navazující e-mail a časová osa");
+    expect(markup).toContain("Když jsou všechny vypnuté, AI se samo nespustí");
+    expect(markup).toContain("Starší přepisy se zpětně nezpracovávají");
     expect(markup).toContain("24 hodin, 7 dní nebo 30 dní");
     expect(markup).toContain("Ruční trvalé smazání je dostupné po 24 hodinách");
     expect(markup).toContain("není nasazen ani aktivní");

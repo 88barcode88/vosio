@@ -93,12 +93,16 @@ describe('GitHub Actions CI workflow contract', () => {
   it('runs the production audit after npm ci and before the project checks/build', () => {
     const installIndex = workflow.indexOf('run: npm ci')
     const auditIndex = workflow.indexOf('run: npm audit --omit=dev --audit-level=high')
-    const checkIndex = workflow.indexOf('run: npm run check')
+    const checkIndex = workflow.indexOf('run: npm run typecheck && npm run lint')
     const buildIndex = workflow.indexOf('run: npm run build')
 
     expect(installIndex).toBeGreaterThanOrEqual(0)
     expect(auditIndex).toBeGreaterThan(installIndex)
     expect(auditIndex).toBeLessThan(checkIndex)
     expect(auditIndex).toBeLessThan(buildIndex)
+  })
+
+  it('keeps test execution local rather than running it on GitHub', () => {
+    expect(workflow).not.toMatch(/run:\s*.*\b(?:npm (?:run )?(?:check|test(?::[\w-]+)?)|npx (?:vitest|playwright))\b/)
   })
 })

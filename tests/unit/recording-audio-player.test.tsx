@@ -84,6 +84,37 @@ afterEach(async () => {
 });
 
 describe("recording audio player", () => {
+  it("starts compact and preserves the mounted audio through expansion and same-recording updates", async () => {
+    fetchMock.mockResolvedValue(createAudioResponse("https://signed.example/audio"));
+    await act(async () => root?.render(createElement(RecordingAudioPlayer, {
+      activeRecording: createRecordingView()
+    })));
+    const audio = container!.querySelector("audio")!;
+    audio.currentTime = 12;
+    const toggle = container!.querySelector<HTMLButtonElement>(".recording-audio-expand")!;
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(container!.querySelector<HTMLElement>(".recording-audio-progress")!.hidden).toBe(true);
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => root?.render(createElement(RecordingAudioPlayer, {
+      activeRecording: { ...createRecordingView(), title: "Nový název" }
+    })));
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => toggle.click());
+    expect(container!.querySelector("audio")).toBe(audio);
+    expect(audio.currentTime).toBe(12);
+    expect(audio.getAttribute("src")).toBe("https://signed.example/audio");
+    expect(pauseMock).not.toHaveBeenCalled();
+    expect(loadMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => toggle.click());
+    await act(async () => root?.render(createElement(RecordingAudioPlayer, {
+      activeRecording: createRecordingView("single", "22222222-2222-4222-8222-222222222222")
+    })));
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it.each(["none", "segmented"] as const)(
     "renders nothing and does not fetch for %s recordings",
     async (availability) => {

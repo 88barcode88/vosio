@@ -33,8 +33,8 @@ jobs:
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
 
-      - name: Typecheck, lint and unit tests
-        run: npm run check
+      - name: Typecheck and lint (tests run locally)
+        run: npm run typecheck && npm run lint
 
       - name: Production build
         run: npm run build

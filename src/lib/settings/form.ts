@@ -45,6 +45,7 @@ export function parseSettingsForm(formData: FormData): UserSettings {
     autoProcessAfterTranscription: formData.get("autoProcessAfterTranscription") === "on",
     autoProcessingTypes: getProcessingTypes(formData),
     autoTimelineAfterTranscription: formData.get("autoTimelineAfterTranscription") === "on",
+    automaticOutputTypes: [...new Set(formData.getAll("automaticOutputTypes"))],
     defaultOpenaiModel: getStringField(
       formData,
       "defaultOpenaiModel",

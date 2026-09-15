@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { reconcileAutomaticTimeline } from "@/lib/ai/automatic-timeline.server";
+import { scheduleAutomaticOutputs } from "@/lib/ai/automatic-timeline.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -46,7 +46,7 @@ export async function POST(_request: NextRequest, context: RouteContext) {
   }
 
   try {
-    const result = await reconcileAutomaticTimeline({
+    const result = await scheduleAutomaticOutputs({
       admin: createAdminClient(),
       transcriptId: transcript.id,
       userId: user.id

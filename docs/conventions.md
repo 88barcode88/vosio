@@ -29,6 +29,8 @@
 
 ## Databáze
 
+Automatické AI používá výhradně serverový šestitypový resolver čerstvého souhlasu a současný durable intent. `complete_transcript_generation_v2` musí snapshotovat všechny typy atomicky; `publish_automatic_ai_output_v2` musí ověřit generaci a lease před raw i projekčními zápisy. Metadata GET nesmí vytvořit intent ani volat providera. Manuální cleanup přijímá pouze manuální job IDs; automatické souhrny mají stav a `poll_eligible`, nikdy manuální akce. Rollout a syntetické DB ověření bez Dockeru: [automatic-ai-outputs](api/automatic-ai-outputs.md).
+
 - Každá uživatelská tabulka má mít `user_id`, pokud existuje vlastnictví uživatelem.
 - RLS policy musí být součástí migrace.
 - Stavové hodnoty drž konzistentní s `docs/architecture.md`.
@@ -100,4 +102,4 @@ Každá nová forward migrace je source-only změna, dokud neproběhne samostatn
 
 - GitHub Actions `check` má jediný automatický trigger `pull_request` s výchozími událostmi `opened`, `synchronize` a `reopened`; testuje PR merge ref a po merge se automaticky neopakuje. Nemá `push`, jiný trigger ani `workflow_dispatch`; přímý push do `main` tímto workflow není automaticky pokrytý.
 - `actions/checkout@v7` a `actions/setup-node@v7` běží na runtime Node 24. To není aplikační runtime: `setup-node` pro Vosio dál používá `node-version: 22`.
-- Před `check` workflow provede `npm ci` a `npm audit --omit=dev --audit-level=high`; job má read-only `contents` permissions, PR concurrency a timeout 20 minut.
+- Workflow provede `npm ci`, `npm audit --omit=dev --audit-level=high`, typecheck, lint a build. Testy se na GitHubu nespouštějí; `npm run check` a E2E se dál ověřují lokálně a testovací soubory zůstávají verzované. Job má read-only `contents` permissions, PR concurrency a timeout 20 minut.

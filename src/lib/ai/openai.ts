@@ -21,6 +21,7 @@ type OpenAIResponse = {
 };
 
 type RunOpenAIProcessingInput = {
+  signal?: AbortSignal;
   model: string;
   outputSchema: unknown;
   prompt: string;
@@ -113,6 +114,7 @@ export async function runOpenAIProcessing(input: RunOpenAIProcessingInput): Prom
   let response: Response;
   try {
     response = await fetch("https://api.openai.com/v1/responses", {
+      ...(input.signal ? { signal: input.signal } : {}),
       body: JSON.stringify(createOpenAIRequestBody(input)),
       headers: {
         Authorization: `Bearer ${env.openaiApiKey}`,

@@ -826,6 +826,7 @@
 .recording-detail-main {
   grid-column: 1 / -1;
   align-items: flex-start;
+  flex-wrap: wrap;
   gap: 14px;
 }
 
@@ -882,6 +883,40 @@
 
 .recording-detail-actions {
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Expanded detail actions reserve document space instead of covering the player. */
+.recording-detail-actions:has(details[open]) {
+  flex-basis: 100%;
+  justify-content: flex-start;
+}
+
+.recording-object-header .export-controls[open],
+.recording-object-header .recording-inline-edit-shell:has(details[open]) {
+  flex: 1 1 320px;
+  min-width: 0;
+  max-width: 100%;
+  width: auto;
+}
+
+.recording-object-header :is(.export-controls-menu, .recording-inline-edit .recording-title-form) {
+  position: static;
+  width: 100%;
+  margin-top: 8px;
+  box-shadow: none;
+}
+
+.recording-object-header .recording-organization-editor:has(.recording-organization-editor-panel) {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.recording-object-header .recording-organization-editor-panel {
+  position: static;
+  width: 100%;
+  box-shadow: none;
 }
 
 .recording-object-header .recording-detail-actions :is(
@@ -1059,10 +1094,34 @@
 }
 
 .recording-audio-player {
-  grid-template-columns: 44px minmax(180px, auto) minmax(240px, 1fr);
-  gap: 12px 20px;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 6px 12px;
   min-width: 0;
-  padding: 18px 23px;
+  padding: 8px 12px;
+}
+
+.recording-audio-expand {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
+.recording-audio-expand:hover {
+  background: var(--surface-raised);
+}
+
+.recording-audio-progress {
+  grid-column: 1 / -1;
+}
+
+.recording-audio-progress[hidden],
+.recording-audio-player-status:empty {
+  display: none;
 }
 
 .recording-audio-toggle {
@@ -1664,7 +1723,7 @@
 
 @media (max-width: 900px) {
   .recording-workbench {
-    padding-bottom: 116px;
+    padding-bottom: 16px;
   }
 
   .recording-detail-main {
@@ -1694,12 +1753,12 @@
   }
 
   .recording-detail-sticky .recording-audio-player {
-    right: 10px;
-    bottom: calc(68px + env(safe-area-inset-bottom));
-    left: 10px;
+    position: relative;
+    inset: auto;
+    z-index: auto;
     border-radius: 6px;
     background: var(--surface-raised);
-    box-shadow: 0 8px 28px color-mix(in srgb, #000 24%, transparent);
+    box-shadow: none;
   }
 
   .tabs-row {
@@ -1781,7 +1840,7 @@
   }
 
   .recording-audio-player {
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
     gap: 6px 10px;
   }
 

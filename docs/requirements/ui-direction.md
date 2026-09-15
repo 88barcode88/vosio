@@ -155,6 +155,10 @@ Tab `Přepis` má být čitelný i u dlouhých hovorů.
 Požadavky:
 
 - dlouhý přepis používá jediný dokumentový scroll celé detailové stránky; player a taby zůstávají sticky a nevzniká druhý vertikální scroll,
+- přehrávač je ve výchozím stavu sbalený na play/pause, název, čas a tlačítko rozbalení; posuvník se ukáže po rozbalení bez přerušení nebo opětovného načtení stejného audia,
+- přepínání záložek i změna názvu zachová rozbalení a přehrávání; nová nahrávka začíná sbalená,
+- export, název a organizace používají rozbalovací plochy v toku hlavičky; všechny ovládací prvky zůstávají dosažitelné myší i klávesnicí a sticky přehrávač je nezakrývá,
+- mobilní přehrávač zůstává v horní sticky ploše se záložkami a nezabírá místo nad spodní navigací,
 - mluvčí mají stabilní barevné odlišení,
 - pokud jsou dostupné Soniox speaker tokeny, zobrazit bloky podle mluvčích,
 - pokud speaker data nejsou dostupná, zobrazit souvislý text bez falešného rozdělení,

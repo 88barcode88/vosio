@@ -94,6 +94,7 @@ describe("settings form", () => {
           autoProcessAfterTranscription: true,
           autoTimelineAfterTranscription: true,
           autoProcessingTypes: ["summary", "action_items"],
+          automaticOutputTypes: [],
           defaultOpenaiModel: "gpt-5.6-terra",
           outputLanguage: "cs",
           sonioxRegion: "eu",

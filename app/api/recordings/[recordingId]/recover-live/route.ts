@@ -14,6 +14,9 @@ import {
   summarizeSafetyPartStorageObjects
 } from "@/lib/live-recording/recovery";
 import { InvalidSafetyPartListingError } from "@/lib/live-recording/safety-parts";
+import { createAutomaticTimelineGenerationIdentity, persistTranscriptCompletionTransition, scheduleAutomaticOutputs } from "@/lib/ai/automatic-timeline.server";
+
+export const maxDuration = 300;
 
 const routeParamsSchema = z.object({
   recordingId: z.uuid()
@@ -147,14 +150,26 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       storagePrefix,
       totalBytes: segments.totalBytes
     });
+    const { status: recoveredStatus, ...audioMetadataUpdate } = recordingUpdate;
     const { error: updateError } = await admin
       .from("recordings")
-      .update(recordingUpdate)
+      .update(transcript.hasTranscript ? audioMetadataUpdate : recordingUpdate)
       .eq("id", recoverableRecording.id)
       .eq("user_id", user.id);
 
     if (updateError) {
       return NextResponse.json({ error: "Obnova nahrávky selhala." }, { status: 500 });
+    }
+
+    if (transcript.hasTranscript && transcript.transcript) {
+      await persistTranscriptCompletionTransition({
+        admin, durationSeconds: recoverableRecording.duration_seconds,
+        generationIdentity: createAutomaticTimelineGenerationIdentity({ kind: "live", transcriptId: transcript.transcript.id }),
+        generationKind: "live", transcriptId: transcript.transcript.id, transcriptionJobId: null, user
+      });
+      await scheduleAutomaticOutputs({ admin, transcriptId: transcript.transcript.id, userId: user.id }).catch(() => {
+        console.error("[Vosio automatic AI] Recovery enqueue failed.");
+      });
     }
 
     const indexResult = transcript.transcript
@@ -164,7 +179,7 @@ export async function POST(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({
       recording: {
         id: recoverableRecording.id,
-        status: recordingUpdate.status,
+        status: recoveredStatus,
         transcriptId: transcript.transcript?.id ?? null
       },
       ...(indexResult ? getTranscriptSearchWarningPayload(indexResult) : {})

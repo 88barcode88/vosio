@@ -23,7 +23,7 @@ describe("automatic timeline completion entry points", () => {
     );
 
     expect(source).toContain("persistTranscriptCompletionTransition");
-    expect(source).toContain("reconcileAutomaticTimeline");
+    expect(source).toContain("scheduleAutomaticOutputs");
     expect(source).not.toContain("deleteAiDataForTranscriptReplacement");
   });
 
@@ -35,7 +35,7 @@ describe("automatic timeline completion entry points", () => {
     const importSource = readFileSync("app/api/recordings/import-transcript/route.ts", "utf8");
 
     expect(liveSource).toContain("persistTranscriptCompletionTransition");
-    expect(liveSource).toContain("reconcileAutomaticTimeline");
+    expect(liveSource).toContain("scheduleAutomaticOutputs");
     expect(importSource).toContain("persistTranscriptCompletionTransition");
   });
 });

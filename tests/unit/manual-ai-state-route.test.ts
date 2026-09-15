@@ -286,7 +286,8 @@ describe("real detail tabs after server revalidation", () => {
       const afterSettlement = fetchMock.mock.calls.length;
       await act(async () => vi.advanceTimersByTimeAsync(60_000));
       expect(fetchMock).toHaveBeenCalledTimes(afterSettlement);
-      expect(afterSettlement).toBeLessThanOrEqual(4);
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/ai-state")).length).toBeLessThanOrEqual(4);
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/automatic-timeline")).length).toBeLessThanOrEqual(2);
     } finally {
       await act(async () => root.unmount());
     }

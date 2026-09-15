@@ -196,8 +196,8 @@ describe("automatic timeline orchestration", () => {
 
       expect(rpc).toHaveBeenCalledOnce();
       expect(rpc).toHaveBeenCalledWith(
-        "complete_transcript_generation_v1",
-        expect.objectContaining({ p_automatic_timeline_enabled: true })
+        "complete_transcript_generation_v2",
+        expect.objectContaining({ p_processing_types: ["timeline_chapters"] })
       );
     }
   );
@@ -395,19 +395,7 @@ describe("automatic timeline orchestration", () => {
 
   it("claims one retry, runs the immutable snapshot and settles its lease", async () => {
     const settleJob = vi.fn(async () => true);
-    const executeJob = vi.fn(async (input: {
-      completeJob?: (
-        admin: never,
-        jobId: string,
-        usage: { inputTokenCount: number | null; outputTokenCount: number | null }
-      ) => Promise<void>;
-    }) => {
-      await input.completeJob?.({} as never, "job-id", {
-        inputTokenCount: 12,
-        outputTokenCount: 8
-      });
-      return { id: "output-id" };
-    });
+    const executeJob = vi.fn(async () => ({ id: "output-id" }));
     const job = {
       attempt_count: 0,
       automatic_idempotency_key: "atl_v1_key",
@@ -445,12 +433,10 @@ describe("automatic timeline orchestration", () => {
 
     expect(result).toEqual({ status: "done" });
     expect(executeJob).toHaveBeenCalledOnce();
-    expect(settleJob).toHaveBeenCalledWith(expect.objectContaining({
-      inputTokenCount: 12,
-      jobId: "job-id",
-      outputTokenCount: 8,
-      succeeded: true
+    expect(executeJob).toHaveBeenCalledWith(expect.objectContaining({
+      automaticPublication: { generationKey: "atl_v1_key", leaseToken: expect.any(String) }
     }));
+    expect(settleJob).not.toHaveBeenCalled();
   });
 
   it("settles a durable output without making another paid provider call", async () => {

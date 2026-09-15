@@ -10,7 +10,7 @@ import {
   useState
 } from "react";
 import type { FormEvent } from "react";
-import { Pause, Play } from "lucide-react";
+import { ChevronDown, ChevronUp, Pause, Play } from "lucide-react";
 import { createPlaybackController } from "@/components/transcript-tabs/playback-controller";
 import type { RecordingClientView } from "@/lib/recordings/client-view";
 
@@ -97,6 +97,7 @@ export const RecordingAudioPlayer = forwardRef<
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [durationSeconds, setDurationSeconds] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const playbackController = useMemo(
     () => createPlaybackController(() => audioRef.current),
@@ -159,6 +160,7 @@ export const RecordingAudioPlayer = forwardRef<
     setCurrentSeconds(0);
     setDurationSeconds(0);
     setIsPlaying(false);
+    setIsExpanded(false);
     setMessage(null);
 
     if (recordingId) {
@@ -273,7 +275,7 @@ export const RecordingAudioPlayer = forwardRef<
   }
 
   return (
-    <section className="recording-audio-player" aria-label="Přehrávač nahrávky">
+    <section className="recording-audio-player" aria-label="Přehrávač nahrávky" data-expanded={isExpanded}>
       <button
         aria-label={isPlaying ? "Pozastavit nahrávku" : "Přehrát nahrávku"}
         className="recording-audio-toggle"
@@ -287,7 +289,17 @@ export const RecordingAudioPlayer = forwardRef<
         <strong>{activeRecording?.title ?? "Nahrávka"}</strong>
         <span>{formatPlaybackTime(currentSeconds)} / {formatPlaybackTime(displayedDuration)}</span>
       </div>
-      <label className="recording-audio-progress">
+      <button
+        aria-controls={`recording-audio-progress-${recordingId}`}
+        aria-expanded={isExpanded}
+        aria-label={isExpanded ? "Sbalit přehrávač" : "Rozbalit přehrávač"}
+        className="recording-audio-expand"
+        onClick={() => setIsExpanded((expanded) => !expanded)}
+        type="button"
+      >
+        {isExpanded ? <ChevronUp aria-hidden="true" size={16} /> : <ChevronDown aria-hidden="true" size={16} />}
+      </button>
+      <label className="recording-audio-progress" hidden={!isExpanded} id={`recording-audio-progress-${recordingId}`}>
         <span className="visually-hidden">Pozice přehrávání</span>
         <input
           aria-valuemax={durationSeconds}

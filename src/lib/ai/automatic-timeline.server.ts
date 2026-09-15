@@ -1,17 +1,45 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
+import { after } from "next/server";
+import { automaticOutputTypes, type AutomaticOutputType } from "@/lib/settings/types";
 import type { User } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { executePersistedAiProcessing } from "@/lib/ai/processing-service.server";
 import { getAiModelOption, type AiProviderId } from "@/lib/model-options";
 import {
   getUserSettingsFromMetadata,
-  hasAutomaticTimelineConsent
+  hasAutomaticTimelineConsent,
+  resolveAutomaticOutputTypes
 } from "@/lib/settings/metadata";
 
 const AUTOMATIC_TIMELINE_LEASE_SECONDS = 900;
 const AUTOMATIC_TIMELINE_PROCESSING_TYPE = "timeline_chapters";
 const AUTOMATIC_TIMELINE_SAFE_ERROR = "Automatické vytvoření časové osy selhalo.";
+
+// scheduleAutomaticOutputs restores only persisted current intents, then dispatches at most six independent workers.
+export async function scheduleAutomaticOutputs(input: { admin: SupabaseClient; transcriptId: string; userId: string }) {
+  const { data: transcript, error: transcriptError } = await input.admin.from("transcripts")
+    .select("completion_generation_key").eq("id", input.transcriptId).eq("user_id", input.userId).single();
+  if (transcriptError) throw new Error("Generaci přepisu se nepodařilo načíst.");
+  if (!transcript?.completion_generation_key) return { status: "not_scheduled" };
+  const { data, error } = await input.admin.from("automatic_timeline_intents")
+    .select("*").eq("transcript_id", input.transcriptId).eq("user_id", input.userId)
+    .eq("completion_generation_key", transcript.completion_generation_key)
+    .in("processing_type", [...automaticOutputTypes]).limit(6);
+  if (error) throw new Error("Automatické výstupy se nepodařilo načíst.");
+  const intents = (data ?? []) as AutomaticTimelineIntentRow[];
+  if (!intents.length) return { status: "not_scheduled" };
+  const results = await Promise.allSettled(intents.map(async (intent) => ({
+    intent, job: await enqueueAutomaticTimelineJob(getAutomaticTimelineJobInput(intent), input.admin)
+  })));
+  const workers = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  after(async () => {
+    await Promise.allSettled(workers.map(({ intent, job }) => reconcileAutomaticTimeline({
+      ...input, jobId: job.id, generationKey: intent.completion_generation_key
+    }, { findJob: async () => job })));
+  });
+  return { status: "queued", scheduledTypes: intents.map((intent) => intent.processing_type) };
+}
 
 type AutomaticTimelineGenerationInput =
   | { kind: "async"; transcriptionJobId: string }
@@ -21,6 +49,7 @@ type AutomaticTimelineGenerationInput =
 type AutomaticTimelineGenerationKind = AutomaticTimelineGenerationInput["kind"];
 
 type AutomaticTimelineJobRow = {
+  processing_type?: AutomaticOutputType;
   attempt_count: number;
   automatic_idempotency_key: string;
   id: string;
@@ -37,6 +66,8 @@ type AutomaticTimelineJobRow = {
 };
 
 type AutomaticTimelineIntentRow = {
+  processing_type?: AutomaticOutputType;
+  completion_generation_key?: string;
   automatic_idempotency_key: string;
   consent_snapshot: true;
   created_at: string;
@@ -56,6 +87,7 @@ type AutomaticTimelineIntentRow = {
 };
 
 type EnqueueAutomaticTimelineJobInput = {
+  processingType?: AutomaticOutputType;
   idempotencyKey: string;
   model: string;
   outputSchemaSnapshot: unknown;
@@ -83,6 +115,7 @@ type AutomaticTimelineResult = {
 
 type CompletionTransitionRow = {
   automatic_timeline_scheduled: boolean;
+  scheduled_types?: AutomaticOutputType[];
   is_new_generation: boolean;
   transcript_id: string;
 };
@@ -90,6 +123,7 @@ type CompletionTransitionRow = {
 type CompleteGenerationInput = {
   admin: SupabaseClient;
   automaticTimelineEnabled: boolean;
+  processingTypes: AutomaticOutputType[];
   completionGenerationKey: string;
   durationSeconds: number | null;
   generationKind: AutomaticTimelineGenerationKind;
@@ -179,18 +213,9 @@ async function enqueueAutomaticTimelineJob(
   admin: SupabaseClient
 ) {
   const { data, error } = await admin
-    .rpc("enqueue_automatic_timeline_job_v1", {
+    .rpc("enqueue_automatic_ai_job_v2", {
       p_automatic_idempotency_key: input.idempotencyKey,
-      p_model: input.model,
-      p_prompt_id: input.promptId,
-      p_prompt_name_snapshot: input.promptNameSnapshot,
-      p_prompt_output_schema_snapshot: input.outputSchemaSnapshot,
-      p_prompt_override_id: input.overrideId,
-      p_prompt_revision_snapshot: input.promptRevisionSnapshot,
-      p_prompt_source: input.promptSource,
-      p_prompt_text_snapshot: input.promptTextSnapshot,
-      p_provider: input.provider,
-      p_provider_config: input.providerConfig,
+      p_processing_type: input.processingType ?? AUTOMATIC_TIMELINE_PROCESSING_TYPE,
       p_transcript_id: input.transcriptId,
       p_user_id: input.userId
     })
@@ -207,8 +232,8 @@ async function enqueueAutomaticTimelineJob(
 // completeTranscriptGeneration persists completion, generation arbitration and exact prompt intent atomically.
 async function completeTranscriptGeneration(input: CompleteGenerationInput) {
   const { data, error } = await input.admin
-    .rpc("complete_transcript_generation_v1", {
-      p_automatic_timeline_enabled: input.automaticTimelineEnabled,
+    .rpc("complete_transcript_generation_v2", {
+      p_processing_types: input.processingTypes,
       p_completion_generation_key: input.completionGenerationKey,
       p_duration_seconds: input.durationSeconds,
       p_generation_kind: input.generationKind,
@@ -226,7 +251,7 @@ async function completeTranscriptGeneration(input: CompleteGenerationInput) {
     throw new Error("Dokončení přepisu se nepodařilo atomicky uložit.");
   }
 
-  return data;
+  return { ...data, automatic_timeline_scheduled: data.scheduled_types?.includes("timeline_chapters") ?? false };
 }
 
 // persistTranscriptCompletionTransition snapshots consent/config in the sole completion transition.
@@ -259,6 +284,7 @@ export async function persistTranscriptCompletionTransition(
   return (dependencies.completeGeneration ?? completeTranscriptGeneration)({
     admin: input.admin,
     automaticTimelineEnabled: hasAutomaticTimelineConsent(input.user.user_metadata),
+    processingTypes: resolveAutomaticOutputTypes(input.user.user_metadata),
     completionGenerationKey: createAutomaticTimelineIdempotencyKey(input.generationIdentity),
     durationSeconds: input.durationSeconds,
     generationKind: input.generationKind,
@@ -283,6 +309,7 @@ async function findAutomaticTimelineIntent(input: {
     .eq("transcript_id", input.transcriptId)
     .eq("user_id", input.userId)
     .eq("consent_snapshot", true)
+    .eq("processing_type", AUTOMATIC_TIMELINE_PROCESSING_TYPE)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -297,6 +324,7 @@ async function findAutomaticTimelineIntent(input: {
 // getAutomaticTimelineJobInput restores the exact immutable job snapshot from durable intent.
 function getAutomaticTimelineJobInput(intent: AutomaticTimelineIntentRow) {
   return {
+    processingType: intent.processing_type ?? AUTOMATIC_TIMELINE_PROCESSING_TYPE,
     idempotencyKey: intent.automatic_idempotency_key,
     model: intent.model,
     outputSchemaSnapshot: intent.prompt_output_schema_snapshot,
@@ -352,7 +380,7 @@ async function claimAutomaticTimelineJob(input: {
   now: string;
 }) {
   const { data, error } = await input.admin
-    .rpc("claim_automatic_timeline_job_v1", {
+    .rpc("claim_automatic_ai_job_v2", {
       p_job_id: input.jobId,
       p_lease_seconds: AUTOMATIC_TIMELINE_LEASE_SECONDS,
       p_lease_token: input.leaseToken,
@@ -424,7 +452,7 @@ async function settleAutomaticTimelineJob(input: {
   outputTokenCount: number | null;
   succeeded: boolean;
 }) {
-  const { data, error } = await input.admin.rpc("settle_automatic_timeline_job_v1", {
+  const { data, error } = await input.admin.rpc("settle_automatic_ai_job_v2", {
     p_error_message: input.errorMessage,
     p_input_token_count: input.inputTokenCount,
     p_job_id: input.jobId,
@@ -446,6 +474,7 @@ export async function reconcileAutomaticTimeline(
   input: {
     admin: SupabaseClient;
     jobId?: string;
+    generationKey?: string;
     transcriptId: string;
     userId: string;
   },
@@ -525,20 +554,9 @@ export async function reconcileAutomaticTimeline(
 
     await executeJob({
       admin: input.admin,
-      completeJob: async (_admin, jobId, usage) => {
-        const settled = await settleJob({
-          admin: input.admin,
-          errorMessage: null,
-          inputTokenCount: usage.inputTokenCount,
-          jobId,
-          leaseToken,
-          outputTokenCount: usage.outputTokenCount,
-          succeeded: true
-        });
-
-        if (!settled) {
-          throw new Error("Automatický AI job ztratil lease před settlementem.");
-        }
+      automaticPublication: {
+        generationKey: input.generationKey ?? claimed.automatic_idempotency_key,
+        leaseToken
       },
       job: {
         id: claimed.id,
@@ -548,7 +566,7 @@ export async function reconcileAutomaticTimeline(
         provider: claimed.provider,
         providerConfig: claimed.provider_config ?? {}
       },
-      metadata: { automatic_timeline: true },
+      metadata: { automatic_processing_type: claimed.processing_type ?? AUTOMATIC_TIMELINE_PROCESSING_TYPE },
       transcript
     });
 
