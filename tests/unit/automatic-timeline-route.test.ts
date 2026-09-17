@@ -4,13 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
   createClient: vi.fn(),
-  reconcileAutomaticTimeline: vi.fn()
+  scheduleAutomaticOutputs: vi.fn()
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 vi.mock("@/lib/ai/automatic-timeline.server", () => ({
-  reconcileAutomaticTimeline: mocks.reconcileAutomaticTimeline
+  scheduleAutomaticOutputs: mocks.scheduleAutomaticOutputs
 }));
 
 import { POST } from "@/../app/api/transcripts/[transcriptId]/automatic-timeline/route";
@@ -42,7 +42,7 @@ describe("automatic timeline route", () => {
 
     expect(response.status).toBe(401);
     expect(mocks.createAdminClient).not.toHaveBeenCalled();
-    expect(mocks.reconcileAutomaticTimeline).not.toHaveBeenCalled();
+    expect(mocks.scheduleAutomaticOutputs).not.toHaveBeenCalled();
   });
 
   it("ignores browser-supplied provider configuration and reconciles only the owned persisted job", async () => {
@@ -53,7 +53,7 @@ describe("automatic timeline route", () => {
     });
     const admin = { serviceRole: true };
     mocks.createAdminClient.mockReturnValue(admin);
-    mocks.reconcileAutomaticTimeline.mockResolvedValue({ status: "done" });
+    mocks.scheduleAutomaticOutputs.mockResolvedValue({ status: "done" });
     const response = await POST(new NextRequest(`http://localhost/api/transcripts/${transcriptId}/automatic-timeline`, {
       body: JSON.stringify({ model: "attacker-model", processingType: "summary", prompt: "attacker" }),
       headers: { "content-type": "application/json" },
@@ -61,12 +61,12 @@ describe("automatic timeline route", () => {
     }), { params: Promise.resolve({ transcriptId }) });
 
     expect(response.status).toBe(200);
-    expect(mocks.reconcileAutomaticTimeline).toHaveBeenCalledWith({
+    expect(mocks.scheduleAutomaticOutputs).toHaveBeenCalledWith({
       admin,
       transcriptId,
       userId: "user-id"
     });
-    expect(JSON.stringify(mocks.reconcileAutomaticTimeline.mock.calls)).not.toContain("attacker");
+    expect(JSON.stringify(mocks.scheduleAutomaticOutputs.mock.calls)).not.toContain("attacker");
   });
 
   it("does not cross the admin boundary for an unowned transcript", async () => {
@@ -82,6 +82,6 @@ describe("automatic timeline route", () => {
 
     expect(response.status).toBe(404);
     expect(mocks.createAdminClient).not.toHaveBeenCalled();
-    expect(mocks.reconcileAutomaticTimeline).not.toHaveBeenCalled();
+    expect(mocks.scheduleAutomaticOutputs).not.toHaveBeenCalled();
   });
 });

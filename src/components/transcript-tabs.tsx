@@ -103,6 +103,10 @@ export function TranscriptTabs({
     () => loadAiForPurpose?.("timeline") ?? Promise.resolve(),
     [loadAiForPurpose]
   );
+  const reloadActiveAiState = useCallback(
+    () => loadAiForPurpose?.(activeTab === "timeline" ? "timeline" : "ai") ?? Promise.resolve(),
+    [activeTab, loadAiForPurpose]
+  );
 
   useEffect(() => {
     setActiveAiPurpose?.(activeTab === "ai" || activeTab === "timeline" ? activeTab : null);
@@ -575,12 +579,11 @@ export function TranscriptTabs({
             userSettings={userSettings}
           />
         ) : null}
+        {activeTab === "ai" || activeTab === "timeline" ? (
+          <AutomaticTimelineReconciler onReconciled={reloadActiveAiState} transcriptId={activeTranscript?.id ?? null} />
+        ) : null}
         {activeTab === "timeline" ? (
           <>
-            <AutomaticTimelineReconciler
-              onReconciled={reloadTimelineAiState}
-              transcriptId={activeTranscript?.id ?? null}
-            />
             <TimelineContent
               activeTranscript={activeTranscript}
               aiOutputs={displayedAiOutputs}

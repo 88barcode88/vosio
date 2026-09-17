@@ -3,6 +3,39 @@ import { expect, type Page, test } from "@playwright/test";
 
 type FixtureMode = "blocks" | "raw" | "ai" | "ai-many" | "timeline" | "files" | "chat";
 
+for (const width of [390, 768, 900, 901, 1024, 1440]) {
+  test(`detail disclosures stay in flow and usable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 540 });
+    await openFixture(page);
+    for (const theme of ["dark", "light"]) {
+      await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
+      for (const [trigger, panel] of [
+        [".export-controls > summary", ".export-controls-menu"],
+        [".recording-inline-edit > summary", ".recording-title-form"],
+        [".recording-organization-summary > button", ".recording-organization-editor-panel"]
+      ]) {
+        await page.locator(trigger).click();
+        await expect(page.locator(panel)).toBeVisible();
+        expect(await page.locator(panel).evaluate((element) => getComputedStyle(element).position)).toBe("static");
+        for (const control of await page.locator(panel).locator("input:not([type=hidden]), select, button").all()) {
+          if (!await control.isVisible()) continue;
+          await control.evaluate((element) => element.scrollIntoView({ block: "center" }));
+          if (await control.isEnabled()) {
+            await control.focus();
+            await expect(control).toBeFocused();
+          }
+          expect(await control.evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+          })).toBe(true);
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+        await page.locator(trigger).click();
+      }
+    }
+  });
+}
+
 // createFixtureScope supplies the exact twelve-hex token required by the guarded fixture route.
 function createFixtureScope() {
   return randomBytes(6).toString("hex");
@@ -269,7 +302,8 @@ test("the guarded fixture renders the real full-page recording detail", async ({
   await expect(page.getByRole("heading", { name: "Dlouhý testovací hovor" })).toBeVisible();
   await expect(page.locator(".recording-rail")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Přehrát nahrávku" })).toBeVisible();
-  await expect(page.getByRole("slider", { name: "Pozice přehrávání" })).toBeEnabled();
+  await expect(page.getByRole("slider", { name: "Pozice přehrávání" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Rozbalit přehrávač" })).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByRole("region", { name: "Přehrávač a záložky detailu" })).toBeVisible();
   await expect(page.getByRole("tab")).toHaveCount(5);
   await expect(page.getByRole("tab").allTextContents()).resolves.toEqual([
@@ -287,17 +321,34 @@ test("the guarded fixture renders the real full-page recording detail", async ({
 });
 
 test("the mounted player survives all five persisted detail tab transitions", async ({ page }) => {
-  await openFixture(page);
-  await page.locator(".recording-audio-player").evaluate((element) => {
-    (element as HTMLElement & { appicaIdentity?: string }).appicaIdentity = "persistent-player";
+  await page.addInitScript(() => {
+    // play keeps a deterministic active media session across layout and tab changes.
+    HTMLMediaElement.prototype.play = function play() {
+      Object.defineProperty(this, "paused", { configurable: true, value: false });
+      this.dispatchEvent(new Event("play"));
+      return Promise.resolve();
+    };
   });
+  await openFixture(page);
+  await page.getByRole("button", { name: "Přehrát nahrávku" }).click();
+  await page.locator("audio").evaluate((element) => {
+    (element as HTMLAudioElement & { appicaIdentity?: string }).appicaIdentity = "persistent-player";
+    Object.defineProperty(element, "currentTime", { configurable: true, value: 1, writable: true });
+  });
+  await page.getByRole("button", { name: "Rozbalit přehrávač" }).click();
+  await expect(page.getByRole("slider", { name: "Pozice přehrávání" })).toBeVisible();
+  await page.getByRole("button", { name: "Sbalit přehrávač" }).click();
+  await page.getByRole("button", { name: "Rozbalit přehrávač" }).click();
 
   for (const tabName of ["AI zpracování", "Časová osa", "Soubory", "Chat", "Přepis"]) {
     await page.getByRole("tab", { name: tabName }).click();
     await expect(page.getByRole("tab", { name: tabName })).toHaveAttribute("aria-selected", "true");
-    await expect.poll(() => page.locator(".recording-audio-player").evaluate((element) => (
-      (element as HTMLElement & { appicaIdentity?: string }).appicaIdentity
-    ))).toBe("persistent-player");
+    await expect.poll(() => page.locator("audio").evaluate((element) => ({
+      identity: (element as HTMLAudioElement & { appicaIdentity?: string }).appicaIdentity,
+      paused: (element as HTMLAudioElement).paused,
+      seconds: (element as HTMLAudioElement).currentTime
+    }))).toEqual({ identity: "persistent-player", paused: false, seconds: 1 });
+    await expect(page.getByRole("button", { name: "Sbalit přehrávač" })).toHaveAttribute("aria-expanded", "true");
     expect(await page.getByRole("tabpanel").evaluate((panel) => [panel, ...panel.children]
       .filter((element) => {
         const styles = getComputedStyle(element);
@@ -486,6 +537,7 @@ test("the custom progress control accepts repeated seeks without mouse movement 
   const slider = page.getByRole("slider", { name: "Pozice přehrávání" });
   const audio = page.locator(".recording-audio-element");
 
+  await page.getByRole("button", { name: "Rozbalit přehrávač" }).click();
   await expect(slider).toBeEnabled();
   await expect.poll(() => audio.evaluate((element) => (element as HTMLAudioElement).duration))
     .toBeCloseTo(2, 0);
@@ -510,6 +562,7 @@ test("the custom progress control accepts repeated seeks without mouse movement 
 
 test("the focused progress slider repeats Arrow, Home and End seeks with current ARIA values", async ({ page }) => {
   await openFixture(page);
+  await page.getByRole("button", { name: "Rozbalit přehrávač" }).click();
   const slider = page.getByRole("slider", { name: "Pozice přehrávání" });
   await expect(slider).toBeEnabled();
   await expect(slider).toHaveAttribute("aria-valuemax", "2");
@@ -551,6 +604,7 @@ test("tabs support arrow, Home and End keyboard navigation", async ({ page }) =>
 test("mobile icon controls expose 44px touch targets", async ({ page }) => {
   await page.setViewportSize({ height: 640, width: 375 });
   await openFixture(page, "ai");
+  await page.getByRole("button", { name: "Rozbalit přehrávač" }).click();
 
   for (const control of [
     page.getByRole("button", { name: "Přehrát nahrávku" }),
@@ -575,6 +629,7 @@ for (const width of [375, 768]) {
   test(`${width}px seek slider keeps a 44px hit area and remains repeatable`, async ({ page }) => {
     await page.setViewportSize({ height: 640, width });
     await openFixture(page);
+    await page.getByRole("button", { name: "Rozbalit přehrávač" }).click();
     const slider = page.getByRole("slider", { name: "Pozice přehrávání" });
     const audio = page.locator(".recording-audio-element");
     await expect(slider).toBeEnabled();
@@ -627,7 +682,8 @@ for (const viewport of [
       expect(navBox).not.toBeNull();
       expect(rowBox).not.toBeNull();
       expect(playerBox!.y + playerBox!.height).toBeLessThanOrEqual(navBox!.y + 2);
-      expect(rowBox!.y + rowBox!.height).toBeLessThanOrEqual(playerBox!.y + 2);
+      expect(rowBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 2);
+      expect(rowBox!.y + rowBox!.height).toBeLessThanOrEqual(navBox!.y + 2);
     }
   });
 }

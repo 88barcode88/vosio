@@ -164,6 +164,23 @@ test("technical information returns only readiness, missing names and optional G
   await expect(page.getByRole("region", { name: "Technické informace" })).toContainText("Připraveno");
 });
 
+test("six automatic choices stay independent through failed save and settings remain compact", async ({ page }) => {
+  await page.goto(fixturePath({ installation: "ready", region: "global", save: "error", surface: "settings" }));
+  const choices = page.locator('.settings-automatic-options input[type="checkbox"]');
+  await expect(choices).toHaveCount(6);
+  for (let index = 0; index < 6; index++) await expect(choices.nth(index)).not.toBeChecked();
+  await choices.nth(0).check(); await choices.nth(5).check();
+  await expect(choices.nth(1)).not.toBeChecked();
+  await expect(page.getByText("Jak funguje live přepis", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Technické informace" })).toHaveAttribute("aria-expanded", "false");
+  await page.getByRole("button", { name: "Uložit nastavení" }).click();
+  await expect(page.locator(".settings-alert-error")).toBeVisible();
+  await expect(choices.nth(0)).toBeChecked(); await expect(choices.nth(5)).toBeChecked();
+  await choices.nth(0).uncheck(); await choices.nth(5).uncheck();
+  for (let index = 0; index < 6; index++) await expect(choices.nth(index)).not.toBeChecked();
+  await expectSafeGeometry(page);
+});
+
 test("safe configuration diagnostics cover one, both and no missing public variables", async ({ page }) => {
   const failures = collectRuntimeFailures(page);
   for (const configuration of ["key", "both", "ready"] as const) {

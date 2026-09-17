@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
   createClient: vi.fn(),
   persistTranscriptCompletionTransition: vi.fn(),
-  reconcileAutomaticTimeline: vi.fn(),
+  scheduleAutomaticOutputs: vi.fn(),
   replaceTranscriptSearchChunks: vi.fn()
 }));
 
@@ -24,7 +24,7 @@ vi.mock("@/lib/ai/automatic-timeline.server", () => ({
     transcriptId: string;
   }) => `${input.kind}:${input.transcriptId}`,
   persistTranscriptCompletionTransition: mocks.persistTranscriptCompletionTransition,
-  reconcileAutomaticTimeline: mocks.reconcileAutomaticTimeline
+  scheduleAutomaticOutputs: mocks.scheduleAutomaticOutputs
 }));
 vi.mock("@/lib/transcripts/search-index", () => ({
   replaceTranscriptSearchChunks: mocks.replaceTranscriptSearchChunks
@@ -157,7 +157,7 @@ beforeEach(() => {
       transcript_id: transcriptId
     };
   });
-  mocks.reconcileAutomaticTimeline.mockImplementation(async () => {
+  mocks.scheduleAutomaticOutputs.mockImplementation(async () => {
     mocks.activeScenario?.events.push("reconciled");
     return { status: "not_scheduled" };
   });
@@ -217,7 +217,7 @@ describe("automatic timeline persistence hooks", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.persistTranscriptCompletionTransition).toHaveBeenCalledOnce();
-    expect(mocks.reconcileAutomaticTimeline).toHaveBeenCalledOnce();
+    expect(mocks.scheduleAutomaticOutputs).toHaveBeenCalledOnce();
     expect(scenario.events.at(-1)).toBe("reconciled");
   });
 

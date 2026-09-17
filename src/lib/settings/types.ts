@@ -17,6 +17,9 @@ export const settingsProcessingTypes = [
   "follow_up_email"
 ] as const;
 
+export const automaticOutputTypes = [...settingsProcessingTypes, "timeline_chapters"] as const;
+export type AutomaticOutputType = (typeof automaticOutputTypes)[number];
+
 export const outputLanguages = ["call_language", "cs", "en"] as const;
 
 export const audioRetentionPolicies = [
@@ -41,6 +44,7 @@ export const defaultUserSettings = {
   autoProcessAfterTranscription: false,
   autoProcessingTypes: ["summary"],
   autoTimelineAfterTranscription: false,
+  automaticOutputTypes: [],
   defaultOpenaiModel: DEFAULT_AI_MODEL_ID,
   liveAudioQuality: "standard",
   outputLanguage: "call_language",
@@ -57,6 +61,7 @@ export const userSettingsSchema = z.object({
   autoProcessAfterTranscription: z.boolean(),
   autoProcessingTypes: z.array(z.enum(settingsProcessingTypes)),
   autoTimelineAfterTranscription: z.boolean(),
+  automaticOutputTypes: z.array(z.enum(settingsProcessingTypes)),
   defaultOpenaiModel: aiModelSchema,
   liveAudioQuality: liveAudioQualitySchema,
   outputLanguage: z.enum(outputLanguages),

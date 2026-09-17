@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,9 +15,22 @@ beforeEach(() => {
   })));
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("automatic timeline next-open reconciler", () => {
+  it("deduplicates StrictMode activation and defers hidden recovery until visible", async () => {
+    let visible = false;
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visible ? "visible" : "hidden");
+    const root = createRoot(document.createElement("div"));
+    const onReconciled = vi.fn();
+    try {
+      await act(async () => root.render(<StrictMode><AutomaticTimelineReconciler transcriptId="t" onReconciled={onReconciled} /></StrictMode>));
+      expect(fetch).not.toHaveBeenCalled();
+      visible = true;
+      await act(async () => { document.dispatchEvent(new Event("visibilitychange")); window.dispatchEvent(new Event("online")); });
+      expect(fetch).toHaveBeenCalledOnce(); expect(onReconciled).toHaveBeenCalledOnce();
+    } finally { await act(async () => root.unmount()); }
+  });
   it("posts once when the active timeline mounts and reloads state locally without router refresh", async () => {
     const container = document.createElement("div");
     const root = createRoot(container);

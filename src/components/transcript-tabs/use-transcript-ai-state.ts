@@ -140,6 +140,7 @@ export function TranscriptAiStateProvider({
   // loadOutput fetches one exact artifact body and only its normalized rows.
   const loadOutput = useCallback(async (outputId: string) => {
     const scope = scopeRef.current;
+    const completionGeneration = stateRef.current.automaticGenerationKey;
     if (!transcriptId || scope.transcriptId !== transcriptId) return null;
     if (outputTombstonesRef.current.has(outputId)) return null;
     const existing = stateRef.current.loadedOutputs.find((output) => output.id === outputId);
@@ -154,6 +155,7 @@ export function TranscriptAiStateProvider({
         });
         const payload = await response.json().catch(() => null) as ExactOutputPayload | null;
         if (!response.ok || !payload?.output || !payload.structuredItems) return null;
+        if (stateRef.current.automaticGenerationKey !== completionGeneration) return null;
         if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId) return null;
         if (outputTombstonesRef.current.has(outputId)) return null;
         replaceState(applyClientGuards(
@@ -172,11 +174,34 @@ export function TranscriptAiStateProvider({
     return request;
   }, [replaceState, transcriptId]);
 
+  // mergeMetadata clears hydrated bodies and projections whenever accepted metadata changes generation.
+  const mergeMetadata = useCallback((payload: ManualAiStateSnapshot) => {
+    const generationChanged = payload.automaticGenerationKey !== undefined && stateRef.current.automaticGenerationKey !== undefined
+      && payload.automaticGenerationKey !== stateRef.current.automaticGenerationKey;
+    const metadata = applyClientGuards({
+      ...mergeManualAiState(stateRef.current, {
+        ...payload,
+        classifications: payload.classifications ?? [],
+        cleanup: payload.cleanup ?? { eligible_count: 0, next_cursor: null }
+      }),
+      loadedOutputs: generationChanged ? [] : stateRef.current.loadedOutputs,
+      structuredItems: generationChanged ? { tasks: [], chapters: [], decisions: [], risks: [] } : stateRef.current.structuredItems,
+      nextOutputOffset: payload.nextOutputOffset ?? null
+    } as LoadedManualAiState,
+    outputTombstonesRef.current,
+    jobTombstonesRef.current,
+    taskDeletionTombstonesRef.current,
+    taskStatusOverridesRef.current);
+    replaceState(metadata);
+    return metadata;
+  }, [replaceState]);
+
   // refreshMetadata deduplicates one owner-scoped state request and merges it into current hydration.
   const refreshMetadata = useCallback(async () => {
     const scope = scopeRef.current;
     if (!transcriptId || scope.transcriptId !== transcriptId) return null;
     if (stateRequestRef.current) return stateRequestRef.current;
+    const completionGeneration = stateRef.current.automaticGenerationKey;
     const initialLoad = !isLoadedRef.current;
     if (initialLoad) setIsLoading(true);
     else setIsRefreshing(true);
@@ -187,22 +212,18 @@ export function TranscriptAiStateProvider({
         if (!response.ok || !payload || !Array.isArray(payload.jobs) || !Array.isArray(payload.outputs)) {
           throw new Error("invalid_state");
         }
-        if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId) return null;
-        const metadata = applyClientGuards({
-          ...mergeManualAiState(stateRef.current, {
-            ...payload,
-            classifications: payload.classifications ?? [],
-            cleanup: payload.cleanup ?? { eligible_count: 0, next_cursor: null }
-          }),
-          loadedOutputs: stateRef.current.loadedOutputs,
-          structuredItems: stateRef.current.structuredItems,
-          nextOutputOffset: payload.nextOutputOffset ?? null
-        } as LoadedManualAiState,
-        outputTombstonesRef.current,
-        jobTombstonesRef.current,
-        taskDeletionTombstonesRef.current,
-        taskStatusOverridesRef.current);
-        replaceState(metadata);
+        if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId
+          || stateRef.current.automaticGenerationKey !== completionGeneration) return null;
+        const eligible = new Set((payload.classifications ?? []).filter((item) => item.poll_eligible).map((item) => item.job_id));
+        if (payload.jobs.some((job) => job.execution_mode === "automatic" && eligible.has(job.id)
+          && (job.status === "queued" || job.status === "failed"
+            || (job.status === "running" && Date.parse(job.lease_expires_at ?? "") <= Date.now())))) {
+          // Recovery POST can restore/claim persisted intents; the metadata GET never calls a provider.
+          await fetch(`/api/transcripts/${transcriptId}/automatic-timeline`, { method: "POST" }).catch(() => null);
+          if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId
+            || stateRef.current.automaticGenerationKey !== completionGeneration) return null;
+        }
+        const metadata = mergeMetadata(payload);
         isLoadedRef.current = true;
         setIsLoaded(true);
         setError(null);
@@ -221,7 +242,7 @@ export function TranscriptAiStateProvider({
     })();
     stateRequestRef.current = request;
     return request;
-  }, [replaceState, transcriptId]);
+  }, [mergeMetadata, transcriptId]);
 
   // hydratePurpose loads only the newest body needed by the visible AI or timeline surface.
   const hydratePurpose = useCallback(async (purpose: AiStatePurpose, metadata?: ManualAiStateSnapshot | null) => {
@@ -231,6 +252,11 @@ export function TranscriptAiStateProvider({
       ? outputs.find((output) => output.processing_type === "timeline_chapters")
       : outputs[0];
     if (target) await loadOutput(target.id);
+    const automaticDone = new Set((metadata?.jobs ?? stateRef.current.jobs)
+      .filter((job) => job.execution_mode === "automatic" && job.status === "done").map((job) => job.id));
+    await Promise.all(outputs.filter((output) => automaticDone.has(output.processing_job_id)
+      && (purpose === "ai" || output.processing_type === "timeline_chapters"))
+      .slice(0, 6).map((output) => loadOutput(output.id)));
   }, [loadOutput]);
 
   // loadForPurpose marks a lazy consumer and hydrates only its default-open body.
@@ -246,6 +272,15 @@ export function TranscriptAiStateProvider({
     const metadata = await refreshMetadata();
     if (!metadata) return null;
     const scope = scopeRef.current;
+    const completionGeneration = metadata.automaticGenerationKey;
+    // exportIsCurrent prevents deferred pages or hydration from crossing this export's generation.
+    const exportIsCurrent = () => {
+      if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId) return false;
+      if (stateRef.current.automaticGenerationKey === completionGeneration) return true;
+      setError("Přepis se změnil. Export spusťte znovu.");
+      return false;
+    };
+    if (!exportIsCurrent()) return null;
     let nextOutputOffset = metadata.nextOutputOffset ?? null;
 
     while (nextOutputOffset !== null) {
@@ -255,15 +290,9 @@ export function TranscriptAiStateProvider({
       );
       const payload = await response.json().catch(() => null) as ManualAiStateSnapshot | null;
       if (!response.ok || !payload || !Array.isArray(payload.jobs) || !Array.isArray(payload.outputs)) return null;
-      if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId) return null;
-      const merged = applyClientGuards(
-        { ...stateRef.current, ...mergeManualAiState(stateRef.current, payload) },
-        outputTombstonesRef.current,
-        jobTombstonesRef.current,
-        taskDeletionTombstonesRef.current,
-        taskStatusOverridesRef.current
-      );
-      replaceState(merged);
+      if (!exportIsCurrent()) return null;
+      mergeMetadata(payload);
+      if (!exportIsCurrent()) return null;
       const followingOffset = payload.nextOutputOffset ?? null;
       if (followingOffset !== null && followingOffset <= nextOutputOffset) return null;
       nextOutputOffset = followingOffset;
@@ -274,10 +303,12 @@ export function TranscriptAiStateProvider({
       const loaded = await Promise.all(
         outputs.slice(index, index + OUTPUT_BODY_LOAD_CONCURRENCY).map((output) => loadOutput(output.id))
       );
+      if (!exportIsCurrent()) return null;
       if (loaded.some((payload) => !payload)) return null;
     }
+    if (!exportIsCurrent()) return null;
     return { loadedOutputs: stateRef.current.loadedOutputs, structuredItems: stateRef.current.structuredItems };
-  }, [loadOutput, refreshMetadata, replaceState, transcriptId]);
+  }, [loadOutput, mergeMetadata, refreshMetadata, transcriptId]);
 
   // acceptJob merges the server-accepted durable identity without inventing success output.
   const acceptJob = useCallback((job: { id: string; status: ManualAiJobStatus }, processingType: string) => {

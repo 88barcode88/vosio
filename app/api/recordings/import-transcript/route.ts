@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   createAutomaticTimelineGenerationIdentity,
   persistTranscriptCompletionTransition,
-  reconcileAutomaticTimeline
+  scheduleAutomaticOutputs
 } from "@/lib/ai/automatic-timeline.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -17,6 +17,9 @@ import {
 } from "@/lib/transcripts/manual-import";
 
 export const runtime = "nodejs";
+
+// Automatic providers run within this bounded after() host budget.
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   rawText: z.string(),
@@ -150,8 +153,8 @@ export async function POST(request: NextRequest) {
     }, { status: 503 });
   }
 
-  if (completion.automatic_timeline_scheduled) {
-    await reconcileAutomaticTimeline({
+  if ((completion.scheduled_types?.length || completion.automatic_timeline_scheduled)) {
+    await scheduleAutomaticOutputs({
       admin,
       transcriptId: transcript.id,
       userId: user.id

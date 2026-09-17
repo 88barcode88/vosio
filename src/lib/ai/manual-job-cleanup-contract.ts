@@ -5,6 +5,7 @@ export const MANUAL_AI_CLEANUP_BATCH_LIMIT = 50;
 export type ManualAiCleanupAction = "reconcile" | "interrupt" | "delete";
 
 export type ManualAiCleanupReason =
+  | "automatic_status"
   | "eligible_terminal_no_output"
   | "eligible_stale_unclaimed"
   | "protected_output"

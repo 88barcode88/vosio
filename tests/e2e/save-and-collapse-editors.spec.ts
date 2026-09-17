@@ -36,7 +36,7 @@ for (const surface of ["detail", "list"] as const) {
     await trigger.click();
     await expect(form).toBeVisible();
     await input.fill(persistedValue);
-    await form.getByRole("button", { name: "Uložit" }).click();
+    await input.press("Enter");
 
     await expect(form).not.toBeVisible();
     await expect(savedTitle).toHaveText(persistedValue);

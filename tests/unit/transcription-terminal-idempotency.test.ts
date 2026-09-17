@@ -57,7 +57,7 @@ const mocks = vi.hoisted(() => ({
   getSonioxTranscription: vi.fn(),
   mapSonioxStatus: vi.fn(),
   persistTranscriptCompletionTransition: vi.fn(),
-  reconcileAutomaticTimeline: vi.fn()
+  scheduleAutomaticOutputs: vi.fn()
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
@@ -73,7 +73,7 @@ vi.mock("@/lib/ai/automatic-timeline.server", () => ({
   createAutomaticTimelineIdempotencyKey: (generationIdentity: string) =>
     `atl-test:${generationIdentity}`,
   persistTranscriptCompletionTransition: mocks.persistTranscriptCompletionTransition,
-  reconcileAutomaticTimeline: mocks.reconcileAutomaticTimeline
+  scheduleAutomaticOutputs: mocks.scheduleAutomaticOutputs
 }));
 vi.mock("@/lib/soniox/client", () => ({
   createSonioxTranscription: vi.fn(),
@@ -323,7 +323,7 @@ beforeEach(() => {
       transcript_id: input.transcriptId
     };
   });
-  mocks.reconcileAutomaticTimeline.mockImplementation(async (input: {
+  mocks.scheduleAutomaticOutputs.mockImplementation(async (input: {
     transcriptId: string;
   }) => {
     const state = mocks.activeState as ScenarioState;
@@ -370,7 +370,7 @@ describe("terminal transcription polling idempotency", () => {
       ]);
       expect(state.providerRuns).toBe(1);
       expect(mocks.persistTranscriptCompletionTransition).toHaveBeenCalledTimes(3);
-      expect(mocks.reconcileAutomaticTimeline).toHaveBeenCalledTimes(3);
+      expect(mocks.scheduleAutomaticOutputs).toHaveBeenCalledTimes(3);
     }
   );
 
@@ -415,7 +415,7 @@ describe("terminal transcription polling idempotency", () => {
       expect(state.providerRuns).toBe(1);
       expect(state.aiJobs.map((job) => job.id)).toEqual(["manual-job"]);
       expect(mocks.persistTranscriptCompletionTransition).toHaveBeenCalledOnce();
-      expect(mocks.reconcileAutomaticTimeline).not.toHaveBeenCalled();
+      expect(mocks.scheduleAutomaticOutputs).not.toHaveBeenCalled();
     }
   );
 

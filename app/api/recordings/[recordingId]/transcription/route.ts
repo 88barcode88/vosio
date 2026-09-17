@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   createAutomaticTimelineGenerationIdentity,
   persistTranscriptCompletionTransition,
-  reconcileAutomaticTimeline
+  scheduleAutomaticOutputs
 } from "@/lib/ai/automatic-timeline.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -32,6 +32,9 @@ import {
 import { listStorageObjectsToExhaustion } from "@/lib/live-recording/recovery";
 
 const SEGMENTED_AUDIO_SOURCE = "supabase_recording_segment";
+
+// Automatic providers run within this bounded after() host budget.
+export const maxDuration = 300;
 
 const routeParamsSchema = z.object({
   recordingId: z.uuid()
@@ -884,8 +887,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         transcriptionJobId: refreshedJobs.at(-1)?.id ?? null,
         user
       });
-      if (completion.automatic_timeline_scheduled) {
-        await reconcileAutomaticTimeline({ admin, transcriptId, userId: user.id }).catch(() => {
+      if ((completion.scheduled_types?.length || completion.automatic_timeline_scheduled)) {
+        await scheduleAutomaticOutputs({ admin, transcriptId, userId: user.id }).catch(() => {
           console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
         });
       }
@@ -1002,8 +1005,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       transcriptionJobId: latestJob.id,
       user
     });
-    if (completion.automatic_timeline_scheduled) {
-      await reconcileAutomaticTimeline({
+    if ((completion.scheduled_types?.length || completion.automatic_timeline_scheduled)) {
+      await scheduleAutomaticOutputs({
         admin,
         transcriptId: transcriptWrite.data.id,
         userId: user.id

@@ -14,6 +14,7 @@ type MistralResponse = {
 };
 
 type RunMistralProcessingInput = {
+  signal?: AbortSignal;
   model: string;
   outputSchema: unknown;
   prompt: string;
@@ -83,12 +84,13 @@ function extractMistralResult(payload: MistralResponse | null): RecordingChatPro
 }
 
 // requestMistral sends a server-only provider request and normalizes every failure without raw detail.
-async function requestMistral(body: unknown) {
+async function requestMistral(body: unknown, signal?: AbortSignal) {
   const env = getMistralEnv();
   let response: Response;
 
   try {
     response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+      ...(signal ? { signal } : {}),
       body: JSON.stringify(body),
       headers: {
         Authorization: `Bearer ${env.mistralApiKey}`,
@@ -119,7 +121,7 @@ async function requestMistral(body: unknown) {
 
 // runMistralProcessing sends one transcript processing request through the paid server-side API.
 export function runMistralProcessing(input: RunMistralProcessingInput): Promise<AiProviderProcessingResult> {
-  return requestMistral(createMistralProcessingRequestBody(input));
+  return requestMistral(createMistralProcessingRequestBody(input), input.signal);
 }
 
 // runMistralChat sends one bounded recording conversation through the paid server-side API.

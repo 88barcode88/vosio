@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import { buildStructuredAiItems } from "@/lib/ai/structured-items";
 import { persistStructuredAiItems } from "@/lib/ai/structured-persistence";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
@@ -18,6 +19,7 @@ type CompleteJob = (
 ) => Promise<void>;
 
 export type ProcessingPersistenceDependencies = {
+  automaticPublication?: { generationKey: string; leaseToken: string };
   completeJob?: CompleteJob;
   persistStructuredRows?: PersistStructuredRows;
 };
@@ -39,6 +41,23 @@ export async function persistCompletedAiProcessing(
   input: CompletedAiProcessingInput,
   dependencies: ProcessingPersistenceDependencies = {}
 ) {
+  if (dependencies.automaticPublication) {
+    const outputId = randomUUID();
+    const projections = buildStructuredAiItems({
+      aiOutputId: outputId, processingJobId: input.jobId, transcriptId: input.transcriptId,
+      transcriptSegments: input.transcriptSegments, userId: input.userId
+    }, input.outputJson);
+    const { data, error } = await input.admin.rpc("publish_automatic_ai_output_v2", {
+      p_job_id: input.jobId, p_user_id: input.userId, p_transcript_id: input.transcriptId,
+      p_generation_key: dependencies.automaticPublication.generationKey,
+      p_lease_token: dependencies.automaticPublication.leaseToken,
+      p_output_id: outputId, p_output_text: input.outputText, p_output_json: input.outputJson,
+      p_input_token_count: input.inputTokenCount, p_output_token_count: input.outputTokenCount,
+      p_projections: projections
+    }).select("id,output_text,output_json").single();
+    if (error || !data) throw new SafeAiProviderError({ failureCode: "persistence_failed", retryAfterAt: null });
+    return data;
+  }
   const { data: output, error: outputError } = await input.admin
     .from("ai_outputs")
     .insert({

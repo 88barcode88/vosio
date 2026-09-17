@@ -33,6 +33,7 @@ export type PersistedAiTranscript = {
 };
 
 type RunProvider = (input: {
+  signal?: AbortSignal;
   model: string;
   outputSchema: unknown;
   prompt: string;
@@ -133,6 +134,7 @@ async function runConfiguredProvider(input: Parameters<RunProvider>[0]) {
 export async function executePersistedAiProcessing(
   input: {
     admin: SupabaseClient;
+    automaticPublication?: ProcessingPersistenceDependencies["automaticPublication"];
     completeJob?: ProcessingPersistenceDependencies["completeJob"];
     job: PersistedAiProcessingJob;
     metadata?: Record<string, unknown>;
@@ -174,6 +176,7 @@ export async function executePersistedAiProcessing(
   }
 
   const result = await (dependencies.runProvider ?? runConfiguredProvider)({
+    ...(input.automaticPublication ? { signal: AbortSignal.timeout(240_000) } : {}),
     model: execution.providerModel,
     outputSchema: input.job.outputSchemaSnapshot,
     prompt,
@@ -195,6 +198,9 @@ export async function executePersistedAiProcessing(
   };
   const persist = dependencies.persistCompleted ?? persistCompletedAiProcessing;
 
+  if (input.automaticPublication) {
+    return persist(persistenceInput, { automaticPublication: input.automaticPublication });
+  }
   return input.completeJob
     ? persist(persistenceInput, { completeJob: input.completeJob })
     : persist(persistenceInput);

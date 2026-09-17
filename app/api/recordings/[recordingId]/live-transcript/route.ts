@@ -3,13 +3,16 @@ import { z } from "zod";
 import {
   createAutomaticTimelineGenerationIdentity,
   persistTranscriptCompletionTransition,
-  reconcileAutomaticTimeline
+  scheduleAutomaticOutputs
 } from "@/lib/ai/automatic-timeline.server";
 import { buildLiveTranscriptSuccessPayload } from "@/lib/live-recording/live-transcript-response";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
 import { extractTranscriptSpeakerSummaries } from "@/lib/transcripts/speakers";
+
+// Automatic providers run within this bounded after() host budget.
+export const maxDuration = 300;
 
 const routeParamsSchema = z.object({
   recordingId: z.uuid()
@@ -151,8 +154,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Nepodařilo se dokončit live přepis." }, { status: 503 });
   }
 
-  if (completion.automatic_timeline_scheduled) {
-    await reconcileAutomaticTimeline({
+  if ((completion.scheduled_types?.length || completion.automatic_timeline_scheduled)) {
+    await scheduleAutomaticOutputs({
       admin,
       transcriptId: transcriptWrite.data.id,
       userId: user.id

@@ -14,6 +14,7 @@ import { updateUserSettingsAction } from "@/lib/settings/actions";
 import { createInitialSettingsActionState, type SettingsActionState } from "@/lib/settings/action-state";
 import {
   supabaseStoragePlans,
+  settingsProcessingTypes,
   trashRetentionHours,
   type TrashRetentionHours,
   type UserSettings
@@ -43,6 +44,7 @@ type SettingsPanelProps = {
 type VisibleSettingsDraft = Pick<
   UserSettings,
   | "autoTimelineAfterTranscription"
+  | "automaticOutputTypes"
   | "defaultOpenaiModel"
   | "liveAudioQuality"
   | "sonioxRealtimeLanguage"
@@ -56,6 +58,7 @@ type VisibleSettingsDraft = Pick<
 function createVisibleSettingsDraft(settings: UserSettings): VisibleSettingsDraft {
   return {
     autoTimelineAfterTranscription: settings.autoTimelineAfterTranscription,
+    automaticOutputTypes: settings.automaticOutputTypes ?? [],
     defaultOpenaiModel: settings.defaultOpenaiModel,
     liveAudioQuality: settings.liveAudioQuality,
     sonioxRealtimeLanguage: settings.sonioxRealtimeLanguage,
@@ -329,6 +332,20 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
               <p>{AI_MODEL_QUALITY_GUIDANCE}</p>
             </aside>
           </div>
+          <p className="settings-stored-note">Automatické výstupy pro nově dokončené přepisy. Každý zapnutý výstup se zpracuje samostatně výchozím AI modelem. Vše vypnuto znamená žádné automatické AI zpracování.</p>
+          <div className="settings-automatic-options">
+          {settingsProcessingTypes.map((type) => (
+            <label className="settings-checkbox-row" key={type}>
+              <input checked={visibleDraft.automaticOutputTypes.includes(type)} disabled={disableSave}
+                name="automaticOutputTypes" type="checkbox" value={type}
+                onChange={(event) => {
+                  const checked = event.currentTarget.checked;
+                  setVisibleDraft((draft) => ({ ...draft, automaticOutputTypes: checked
+                    ? [...draft.automaticOutputTypes, type] : draft.automaticOutputTypes.filter((item) => item !== type) }));
+                }} />
+              <span><strong>{{ summary: "Shrnutí", action_items: "Úkoly", meeting_minutes: "Zápis ze schůzky", crm_note: "CRM poznámka", follow_up_email: "Navazující e-mail" }[type]}</strong></span>
+            </label>
+          ))}
           <label className="settings-checkbox-row">
             <input
               checked={visibleDraft.autoTimelineAfterTranscription}
@@ -342,9 +359,9 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
             />
             <span>
               <strong>Automaticky vytvořit časovou osu po přepisu</strong>
-              <small>Platí pouze pro nové přepisy dokončené po uložení této volby. Každá generace dostane nejvýše jeden automatický výstup.</small>
             </span>
           </label>
+          </div>
         </section>
 
         <section className="settings-section settings-section-transcription" aria-labelledby="settings-transcription">
@@ -400,14 +417,17 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
               Region EU vyžaduje Soniox EU projekt a odpovídající regionální API klíč. Pokud se objeví chyba přístupu nebo autorizace, kontaktujte <a href="mailto:support@soniox.com">support@soniox.com</a>.
             </p>
           </aside>
-          <Disclosure label="Jak funguje live přepis" triggerLabel="Jak funguje live přepis" className="settings-disclosure">
+          <div className="settings-live-explanation">
+            <strong>Jak funguje live přepis</strong>
             <p>{sonioxRealtimeModel.description} Pevná jazyková volba pomůže přepisu držet se jednoho jazyka; diarizace mluvčích zůstává zapnutá.</p>
-          </Disclosure>
+          </div>
         </section>
 
         <section className="settings-section" aria-labelledby="settings-recording">
           <div className="settings-section-heading"><h2 id="settings-recording">Nahrávání</h2><p>Retence se uloží jako neměnný termín až při budoucím přesunutí nahrávky do Koše.</p></div>
-          <div className="settings-grid settings-grid-single">
+          <div className="settings-grid settings-grid-recording">
+            <div className="settings-audio-quality-field">
+            <span>Kvalita live audia</span>
             <div aria-label="Kvalita live audia" className="settings-audio-quality-options" role="radiogroup">
               {liveAudioQualityIds.map((quality) => {
                 const option = liveAudioQualityOptions[quality];
@@ -429,6 +449,7 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
                   </label>
                 );
               })}
+            </div>
             </div>
             <label>
               <span>Budoucí položky v Koši</span>
@@ -481,6 +502,8 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         <section className="settings-section settings-diagnostics" aria-labelledby="settings-diagnostics">
           <div className="settings-section-heading"><h2 id="settings-diagnostics">Diagnostika a využití</h2><p>Měsíční souhrn z řádků Vosio; ceny jsou orientační odhad.</p></div>
           <UsageContent state={usageState} />
+        </section>
+        <section className="settings-section settings-technical-section">
           <Disclosure label="Technické informace" triggerLabel="Technické informace" className="settings-disclosure">
             <dl className="settings-technical-list">
               <div><dt>Verze aplikace</dt><dd>{APP_VERSION}</dd></div>

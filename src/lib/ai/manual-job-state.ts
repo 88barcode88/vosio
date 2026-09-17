@@ -16,6 +16,7 @@ export type ManualAiJobStatus = "queued" | "running" | "done" | "failed" | "canc
 export type ManualAiJobDisplayStatus = ManualAiJobStatus | "stalled";
 
 export type ManualAiJobSummary = {
+  execution_mode?: "manual" | "automatic";
   attempt_count: number;
   completed_at: string | null;
   created_at: string;
@@ -40,6 +41,7 @@ export type ManualAiOutputMetadata = {
 };
 
 export type ManualAiStateSnapshot = {
+  automaticGenerationKey?: string | null;
   classifications?: ManualAiCleanupClassification[];
   cleanup?: ManualAiCleanupMetadata;
   jobs: ManualAiJobSummary[];
@@ -73,6 +75,7 @@ export function getManualAiJobDisplayStatus(
   runtimeMs = MANUAL_AI_RUNTIME_MS,
   graceMs = MANUAL_AI_STALL_GRACE_MS
 ): ManualAiJobDisplayStatus {
+  if (job.execution_mode === "automatic") return job.status;
   if (job.status !== "queued" && job.status !== "running") {
     return job.status;
   }
@@ -90,9 +93,17 @@ export function mergeManualAiState(
   current: ManualAiStateSnapshot | undefined,
   incoming: ManualAiStateSnapshot
 ): ManualAiStateSnapshot {
-  const jobs = new Map((current?.jobs ?? []).map((job) => [job.id, job]));
+  if (incoming.automaticGenerationKey !== undefined && current?.automaticGenerationKey !== undefined
+    && incoming.automaticGenerationKey !== current.automaticGenerationKey) {
+    current = undefined;
+  }
+  const currentJobs = (current?.jobs ?? []).filter((job) => job.execution_mode !== "automatic"
+    || incoming.automaticGenerationKey === undefined || incoming.jobs.some((next) => next.id === job.id));
+  const jobs = new Map(currentJobs.map((job) => [job.id, job]));
   const outputs = new Map((current?.outputs ?? []).map((output) => [output.id, output]));
-  const classifications = new Map((current?.classifications ?? []).map((item) => [item.job_id, item]));
+  const classifications = new Map((current?.classifications ?? []).filter((item) =>
+    item.cleanup_reason !== "automatic_status" || currentJobs.some((job) => job.id === item.job_id)
+  ).map((item) => [item.job_id, item]));
 
   incoming.jobs.forEach((job) => jobs.set(job.id, { ...jobs.get(job.id), ...job }));
   incoming.outputs.forEach((output) => outputs.set(output.id, {
@@ -103,6 +114,7 @@ export function mergeManualAiState(
   incoming.classifications?.forEach((item) => classifications.set(item.job_id, item));
 
   return {
+    automaticGenerationKey: incoming.automaticGenerationKey !== undefined ? incoming.automaticGenerationKey : current?.automaticGenerationKey,
     classifications: Array.from(classifications.values()),
     cleanup: incoming.cleanup ?? current?.cleanup ?? { eligible_count: 0, next_cursor: null },
     jobs: Array.from(jobs.values()).sort(compareCreatedRows),
