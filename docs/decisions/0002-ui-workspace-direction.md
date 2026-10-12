@@ -27,3 +27,4 @@ Hlavní objekt aplikace je nahrávka. Přepis, AI zpracování, časová osa a s
 
 - `DESIGN.md`
 - `docs/requirements/ui-direction.md`
+- `docs/requirements/ui-redesign-plan.md`

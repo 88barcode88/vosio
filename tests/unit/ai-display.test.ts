@@ -32,30 +32,10 @@ describe("AI display helpers", () => {
     expect(lines.some((line) => "text" in line && line.text.includes("**"))).toBe(false);
   });
 
-  it("preserves the existing profiles and exposes all five new profiles", () => {
-    expect(aiModelOptions.map((option) => option.id)).toEqual([
-      "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
-      "gemini-3.6-flash",
-      "gemini-3.8-flash",
-      "gpt-6-astra-low",
-      "gpt-6-astra-medium",
-      "mistral-small-2603",
-      "mistral-large-2512"
-    ]);
-  });
-
-  it("maps five new profiles onto four exact provider API model ids", () => {
-    expect(aiModelOptions.slice(4).map((option) => [option.id, option.provider, option.providerModel])).toEqual([
-      ["gemini-3.8-flash", "gemini", "gemini-3.8-flash"],
-      ["gpt-6-astra-low", "openai", "gpt-6-astra"],
-      ["gpt-6-astra-medium", "openai", "gpt-6-astra"],
-      ["mistral-small-2603", "mistral", "mistral-small-2603"],
-      ["mistral-large-2512", "mistral", "mistral-large-2512"]
-    ]);
-    expect(getAiModelOption("gpt-6-astra-low")).toMatchObject({ reasoningEffort: "low" });
-    expect(getAiModelOption("gpt-6-astra-medium")).toMatchObject({ reasoningEffort: "medium" });
+  it("offers exactly two OpenAI models and retains historical labels", () => {
+    expect(aiModelOptions.filter((option) => option.provider === "openai").map((option) => option.id))
+      .toEqual(["gpt-6.1-sol", "gpt-6-astra"]);
+    expect(getAiModelOption("gpt-6-astra-low")).toMatchObject({ label: "GPT-6 Astra · Low", reasoningEffort: "low" });
   });
 
   it("validates profile/provider/provider-model snapshots and safely supports legacy rows", () => {
@@ -116,28 +96,28 @@ describe("AI display helpers", () => {
   });
 
   it("normalizes only the explicit historical model aliases", () => {
-    expect(DEFAULT_AI_MODEL_ID).toBe("gpt-5.6-terra");
-    expect(normalizeAiModelId("gpt-4.1-mini")).toBe("gpt-5.6-terra");
-    expect(normalizeAiModelId("gpt-4.1-nano")).toBe("gpt-5.6-terra");
-    expect(normalizeAiModelId("gpt-5.4")).toBe("gpt-5.6-terra");
-    expect(normalizeAiModelId("gpt-5.4-mini")).toBe("gpt-5.6-terra");
-    expect(normalizeAiModelId("gpt-5.4-nano")).toBe("gpt-5.6-terra");
+    expect(DEFAULT_AI_MODEL_ID).toBe("gpt-6.1-sol");
+    expect(normalizeAiModelId("gpt-4.1-mini")).toBe("gpt-6.1-sol");
+    expect(normalizeAiModelId("gpt-4.1-nano")).toBe("gpt-6.1-sol");
+    expect(normalizeAiModelId("gpt-5.4")).toBe("gpt-6.1-sol");
+    expect(normalizeAiModelId("gpt-5.4-mini")).toBe("gpt-6.1-sol");
+    expect(normalizeAiModelId("gpt-5.4-nano")).toBe("gpt-6.1-sol");
     expect(normalizeAiModelId("gemini-3.1-flash-lite")).toBe("gemini-3.6-flash");
     expect(normalizeAiModelId("gemini-3.1-pro-preview")).toBe("gemini-3.6-flash");
     expect(normalizeAiModelId("gemini-3.5-flash")).toBe("gemini-3.6-flash");
-    expect(normalizeAiModelId("gpt-5.6-sol")).toBe("gpt-5.6-sol");
+    expect(normalizeAiModelId("gpt-5.6-sol")).toBe("gpt-6.1-sol");
     expect(normalizeAiModelId("gpt-6-astra-typo")).toBe("gpt-6-astra-typo");
     expect(normalizeAiModelId("mistral-small-typo")).toBe("mistral-small-typo");
   });
 
-  it("configures Gemini 3.6 Flash with explicit thinking and no deprecated temperature", () => {
+  it("configures Gemini 3.6 Flash with explicit thinking and supported temperature", () => {
     expect(getAiModelOption("gemini-3.6-flash")).toMatchObject({
       geminiThinkingLevel: "medium",
       provider: "gemini",
-      supportsTemperature: false
+      supportsTemperature: true
     });
-    expect(supportsModelTemperature("gpt-5.6-terra")).toBe(false);
-    expect(supportsModelTemperature("gemini-3.6-flash")).toBe(false);
+    expect(supportsModelTemperature("gpt-6.1-sol")).toBe(false);
+    expect(supportsModelTemperature("gemini-3.6-flash")).toBe(true);
   });
 
   it("keeps model-quality guidance shared across settings and the recording AI panel", () => {

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { aiModelOptions } from "@/lib/model-options";
+import { z } from "zod";
+import { getAiModelOption } from "@/lib/model-options";
 
 export type AiUsageRow = {
   created_at: string;
@@ -9,12 +10,9 @@ export type AiUsageRow = {
   status: string;
 };
 
-export type RecordingUsageRow = {
-  created_at: string;
+export type RecordingDurationRow = {
   duration_seconds: number | null;
-  file_size_bytes: number | null;
   id: string;
-  status: string;
 };
 export type TranscriptionUsageRow = {
   created_at: string;
@@ -94,45 +92,17 @@ const LEGACY_AI_PRICING_USD_PER_1M_TOKENS: Record<string, ModelPricing> = {
   "gpt-5.4-nano": { inputUsdPerMillionTokens: 0.2, outputUsdPerMillionTokens: 1.25 }
 };
 
-const AI_PRICING_USD_PER_1M_TOKENS: Record<string, ModelPricing> = {
-  ...LEGACY_AI_PRICING_USD_PER_1M_TOKENS,
-  ...Object.fromEntries(
-    aiModelOptions.map((option) => [
-      option.id,
-      {
-        inputUsdPerMillionTokens: option.inputUsdPerMillionTokens,
-        outputUsdPerMillionTokens: option.outputUsdPerMillionTokens
-      }
-    ])
-  )
-};
 const SONIOX_STT_EQUIVALENT_PRICING_USD_PER_HOUR = {
   async: 0.1,
   realtime: 0.12
 } as const;
 
-const aiUsageColumns = `
-  created_at,
-  input_token_count,
-  model,
-  output_token_count,
-  status
-`;
-
-const recordingUsageColumns = `
-  created_at,
-  duration_seconds,
-  file_size_bytes,
-  id,
-  status
-`;
-const transcriptionUsageColumns = `
-  created_at,
-  mode,
-  provider,
-  recording_id,
-  status
-`;
+const ownedJobsSchema = z.object({
+  ai: z.array(z.object({ created_at: z.string(), model: z.string(), status: z.string(),
+    input_token_count: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
+    output_token_count: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable() })),
+  soniox: z.array(z.object({ created_at: z.string(), mode: z.string(), provider: z.literal("soniox"), recording_id: z.string(), status: z.string() }))
+});
 
 // getCurrentMonthPeriod returns the UTC month-to-date window used for usage queries.
 function getCurrentMonthPeriod(now = new Date()) {
@@ -184,7 +154,8 @@ export function summarizeAiUsageRows(rows: AiUsageRow[]) {
 
   const modelBreakdown = Object.values(rowsByModel)
     .map((modelUsage) => {
-      const pricing = AI_PRICING_USD_PER_1M_TOKENS[modelUsage.model];
+      const pricing = getAiModelOption(modelUsage.model)
+        ?? LEGACY_AI_PRICING_USD_PER_1M_TOKENS[modelUsage.model];
 
       return {
         ...modelUsage,
@@ -213,29 +184,42 @@ export function summarizeAiUsageRows(rows: AiUsageRow[]) {
   };
 }
 
-// summarizeRecordingUsageRows aggregates recording counts and stored media metadata for the month.
-export function summarizeRecordingUsageRows(rows: RecordingUsageRow[]) {
-  const rowsWithDuration = rows.filter((row) => row.duration_seconds !== null);
-  const rowsWithFileSize = rows.filter((row) => row.file_size_bytes !== null);
+// Parses PostgREST bigint/numeric values only when their integer value is exactly representable.
+function parseUsageInteger(value: unknown): number {
+  if (typeof value !== "number" && (typeof value !== "string" || !/^\d+$/.test(value))) {
+    throw new Error("Invalid recording usage number");
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error("Invalid recording usage number");
+  return parsed;
+}
 
-  return {
-    count: rows.length,
-    deletedCount: rows.filter((row) => row.status === "deleted").length,
-    totalDurationSeconds: rowsWithDuration.length > 0
-      ? rowsWithDuration.reduce((total, row) => total + (row.duration_seconds ?? 0), 0)
-      : null,
-    totalFileSizeBytes: rowsWithFileSize.length > 0
-      ? rowsWithFileSize.reduce((total, row) => total + (row.file_size_bytes ?? 0), 0)
-      : null,
-    withDurationCount: rowsWithDuration.length,
-    withFileSizeCount: rowsWithFileSize.length
+// Validates the single owner aggregate row while preserving NULL sums and their coverage counts.
+function parseOwnedRecordingSummary(data: unknown): CurrentMonthUsageSummary["recordings"] {
+  if (!Array.isArray(data) || data.length !== 1 || !data[0] || typeof data[0] !== "object") {
+    throw new Error("Invalid recording usage response");
+  }
+  const row = data[0];
+  const result = {
+    count: parseUsageInteger(row.count),
+    deletedCount: parseUsageInteger(row.deleted_count),
+    totalDurationSeconds: row.total_duration_seconds === null ? null : parseUsageInteger(row.total_duration_seconds),
+    totalFileSizeBytes: row.total_file_size_bytes === null ? null : parseUsageInteger(row.total_file_size_bytes),
+    withDurationCount: parseUsageInteger(row.with_duration_count),
+    withFileSizeCount: parseUsageInteger(row.with_file_size_count)
   };
+  if (result.deletedCount > result.count || result.withDurationCount > result.count || result.withFileSizeCount > result.count
+    || (result.withDurationCount === 0) !== (result.totalDurationSeconds === null)
+    || (result.withFileSizeCount === 0) !== (result.totalFileSizeBytes === null)) {
+    throw new Error("Invalid recording usage coverage");
+  }
+  return result;
 }
 
 // summarizeSonioxUsageRows estimates STT spend from completed Soniox jobs and known audio durations.
 export function summarizeSonioxUsageRows(
   jobs: TranscriptionUsageRow[],
-  recordings: RecordingUsageRow[]
+  recordings: RecordingDurationRow[]
 ) {
   const recordingDurationById = new Map(
     recordings.map((recording) => [recording.id, recording.duration_seconds] as const)
@@ -301,80 +285,65 @@ function getUniqueRecordingIds(jobs: TranscriptionUsageRow[]) {
   return Array.from(new Set(jobs.map((job) => job.recording_id).filter(Boolean)));
 }
 
-// loadRecordingsForTranscriptionJobs loads recording durations for the selected job rows through RLS.
+// Loads only technical-owner durations in bounded session RPC batches, independent of current content access.
 async function loadRecordingsForTranscriptionJobs(
   supabase: SupabaseClient,
   jobs: TranscriptionUsageRow[]
 ) {
   const recordingIds = getUniqueRecordingIds(jobs);
 
-  if (recordingIds.length === 0) {
-    return [];
+  const rows: RecordingDurationRow[] = [];
+  for (let offset = 0; offset < recordingIds.length; offset += 1000) {
+    const ids = recordingIds.slice(offset, offset + 1000);
+    const { data, error } = await supabase.rpc("get_owned_recording_durations_v1", { p_recording_ids: ids });
+    if (error || !Array.isArray(data)) throw new Error("Unable to load Soniox recording durations");
+    const requested = new Set(ids);
+    const seen = new Set<string>();
+    for (const row of data) {
+      if (!row || typeof row !== "object" || typeof row.recording_id !== "string"
+        || !requested.has(row.recording_id) || seen.has(row.recording_id)
+        || (row.duration_seconds !== null && (typeof row.duration_seconds !== "number"
+          || !Number.isInteger(row.duration_seconds) || row.duration_seconds < 0 || row.duration_seconds > 2147483647))) {
+        throw new Error("Invalid owned recording duration response");
+      }
+      seen.add(row.recording_id);
+      rows.push({ id: row.recording_id, duration_seconds: row.duration_seconds });
+    }
   }
-
-  const { data, error } = await supabase
-    .from("recordings")
-    .select(recordingUsageColumns)
-    .in("id", recordingIds)
-    .returns<RecordingUsageRow[]>();
-
-  if (error) {
-    throw new Error(`Unable to load Soniox recording durations: ${error.message}`);
-  }
-
-  return data ?? [];
+  return rows;
 }
 
-// loadCurrentMonthUsageSummary loads authenticated usage data through Supabase RLS.
+// Loads owner-only jobs and narrow recording accounting RPCs, never the broader shared content scope.
 export async function loadCurrentMonthUsageSummary(supabase: SupabaseClient) {
   const period = getCurrentMonthPeriod();
-  const [aiJobsResult, recordingsResult, transcriptionJobsResult] = await Promise.all([
-    supabase
-      .from("ai_processing_jobs")
-      .select(aiUsageColumns)
-      .gte("created_at", period.startIso)
-      .lt("created_at", period.endIso)
-      .order("created_at", { ascending: false })
-      .returns<AiUsageRow[]>(),
-    supabase
-      .from("recordings")
-      .select(recordingUsageColumns)
-      .gte("created_at", period.startIso)
-      .lt("created_at", period.endIso)
-      .order("created_at", { ascending: false })
-      .returns<RecordingUsageRow[]>(),
-    supabase
-      .from("transcription_jobs")
-      .select(transcriptionUsageColumns)
-      .eq("provider", "soniox")
-      .gte("created_at", period.startIso)
-      .lt("created_at", period.endIso)
-      .order("created_at", { ascending: false })
-      .returns<TranscriptionUsageRow[]>(),
+  const [jobsResult, recordingsResult] = await Promise.all([
+    supabase.rpc("get_owned_job_usage_v1", { p_created_from: period.startIso, p_created_before: period.endIso }),
+    supabase.rpc("get_owned_recording_usage_summary_v1", {
+      p_created_from: period.startIso,
+      p_created_before: period.endIso
+    })
   ]);
 
-  if (aiJobsResult.error) {
-    throw new Error(`Unable to load AI usage: ${aiJobsResult.error.message}`);
+  if (jobsResult.error) {
+    throw new Error("Unable to load owned job accounting");
   }
 
   if (recordingsResult.error) {
     throw new Error(`Unable to load recording usage: ${recordingsResult.error.message}`);
   }
 
-  if (transcriptionJobsResult.error) {
-    throw new Error(`Unable to load Soniox usage: ${transcriptionJobsResult.error.message}`);
-  }
-
+  const jobs = ownedJobsSchema.parse(jobsResult.data);
+  const recordings = parseOwnedRecordingSummary(recordingsResult.data);
   const sonioxRecordingRows = await loadRecordingsForTranscriptionJobs(
     supabase,
-    transcriptionJobsResult.data ?? []
+    jobs.soniox
   );
 
   return {
-    ai: summarizeAiUsageRows(aiJobsResult.data ?? []),
+    ai: summarizeAiUsageRows(jobs.ai),
     period,
-    recordings: summarizeRecordingUsageRows(recordingsResult.data ?? []),
-    soniox: summarizeSonioxUsageRows(transcriptionJobsResult.data ?? [], sonioxRecordingRows)
+    recordings,
+    soniox: summarizeSonioxUsageRows(jobs.soniox, sonioxRecordingRows)
   } satisfies CurrentMonthUsageSummary;
 }
 

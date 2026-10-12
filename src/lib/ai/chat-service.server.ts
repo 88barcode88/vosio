@@ -18,10 +18,12 @@ import {
   getSafeProviderErrorDetail
 } from "@/lib/ai/processing-service.server";
 import { getAiProviderConfigurationError } from "@/lib/env.server";
-import { getAiModelOption, type AiProviderId } from "@/lib/model-options";
+import { resolveNewAiModelSelection, type AiProviderId } from "@/lib/model-options";
 import { createRateLimiter, type RateLimitResult } from "@/lib/rate-limit";
 import { resolveEvidenceLocation } from "@/lib/transcripts/evidence-location";
 import { getTranscriptSpeakerContext } from "@/lib/transcripts/speakers";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
+import { getRecordingById } from "@/lib/recordings/queries";
 
 export const CHAT_QUESTION_MAX_CHARS = 8_000;
 export const CHAT_TURN_STALE_LEASE_MS = 10 * 60_000;
@@ -33,10 +35,11 @@ const recordingChatRateLimit = createRateLimiter({
   windowMs: CHAT_RATE_LIMIT_WINDOW_MS
 });
 
-const CHAT_TURN_SELECT = "id,client_turn_id,thread_id,transcript_id,recording_id,user_id,question,status,provider,model,system_prompt_id,prompt_text_snapshot,prompt_revision_snapshot,provider_response_id,input_token_count,output_token_count,answer_markdown,verified_evidence,safe_error,started_at,completed_at,created_at,updated_at";
+const CHAT_TURN_SELECT = "id,client_turn_id,thread_id,transcript_id,recording_id,user_id,question,status,provider,model,provider_config,system_prompt_id,prompt_text_snapshot,prompt_revision_snapshot,provider_response_id,input_token_count,output_token_count,answer_markdown,verified_evidence,safe_error,started_at,completed_at,created_at,updated_at";
 const CHAT_THREAD_SELECT = "id,user_id,recording_id,transcript_id,created_at,updated_at";
 
 export type OwnedRecordingChatTranscript = {
+  canRunPersonalAi?: boolean;
   id: string;
   rawText: string;
   recordingId: string;
@@ -89,7 +92,7 @@ type SubmitDependencies = {
     model: string;
     outputSchema: unknown;
     provider: AiProviderId;
-    reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+    reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
     systemInstruction: string;
   }) => Promise<RecordingChatProviderResult>;
   store: RecordingChatStore;
@@ -225,21 +228,17 @@ export function createRecordingChatStore(authenticated: SupabaseClient, admin: S
         speakers: unknown;
         user_id: string;
       };
-      const recordingResult = await authenticated
-        .from("recordings")
-        .select("id,user_id,title")
-        .eq("id", transcript.recording_id)
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (recordingResult.error) throwStoreError();
-      if (!recordingResult.data) return null;
+      const capabilities = await resolveRecordingCapabilities(authenticated, transcript.recording_id);
+      if (!capabilities.read) return null;
+      const recording = await getRecordingById(authenticated, transcript.recording_id);
+      if (!recording) return null;
 
       return {
+        canRunPersonalAi: capabilities.runPersonalAi && capabilities.usePrivateChat,
         id: transcript.id,
         rawText: transcript.raw_text,
         recordingId: transcript.recording_id,
-        recordingTitle: (recordingResult.data as { title: string }).title,
+        recordingTitle: recording.title,
         segments: transcript.segments,
         speakers: transcript.speakers,
         userId: transcript.user_id
@@ -395,7 +394,7 @@ export async function getRecordingChatHistory(
   input: { transcriptId: string; userId: string },
   dependencies: { now?: () => Date; store: RecordingChatStore }
 ) {
-  await requireOwnedTranscript(dependencies.store, input.userId, input.transcriptId);
+  const transcript = await requireOwnedTranscript(dependencies.store, input.userId, input.transcriptId);
   const thread = await dependencies.store.getThread(input.userId, input.transcriptId);
 
   if (!thread) {
@@ -403,7 +402,7 @@ export async function getRecordingChatHistory(
   }
 
   const now = dependencies.now?.() ?? new Date();
-  await dependencies.store.failStaleRunningTurn(
+  if (transcript.canRunPersonalAi) await dependencies.store.failStaleRunningTurn(
     thread.id,
     new Date(now.getTime() - CHAT_TURN_STALE_LEASE_MS).toISOString(),
     now.toISOString()
@@ -421,6 +420,7 @@ export async function submitRecordingChatTurn(
   input: {
     clientTurnId: string;
     model: string;
+    reasoningEffort?: string;
     question: string;
     transcriptId: string;
     userId: string;
@@ -430,6 +430,9 @@ export async function submitRecordingChatTurn(
   const now = dependencies.now?.() ?? new Date();
   const store = dependencies.store;
   const transcript = await requireOwnedTranscript(store, input.userId, input.transcriptId);
+  if (!transcript.canRunPersonalAi) {
+    throw new RecordingChatServiceError("forbidden", 403, "Nové AI zprávy nejsou povoleny.");
+  }
   const existingBeforeThread = await store.findTurnByClientId(input.userId, input.clientTurnId);
 
   if (existingBeforeThread) {
@@ -442,7 +445,7 @@ export async function submitRecordingChatTurn(
     return { thread: projectRecordingChatThread(existingThread), turn: projectRecordingChatTurn(existingBeforeThread) };
   }
 
-  const modelOption = getAiModelOption(input.model);
+  const modelOption = resolveNewAiModelSelection(input.model, input.reasoningEffort);
 
   if (!modelOption) {
     throw new RecordingChatServiceError("invalid_model", 400, "Vybraný AI model není podporovaný.");
@@ -489,6 +492,11 @@ export async function submitRecordingChatTurn(
     prompt_revision_snapshot: systemPrompt.revision,
     prompt_text_snapshot: systemPrompt.promptText,
     provider: modelOption.provider,
+    provider_config: {
+      provider: modelOption.provider, provider_model: modelOption.providerModel,
+      reasoning_effort: modelOption.reasoningEffort ?? null,
+      ...(modelOption.supportsTemperature ? { temperature: 0.3 } : {})
+    },
     question: input.question,
     recording_id: transcript.recordingId,
     started_at: startedAt,

@@ -8,7 +8,7 @@ Průvodce používá `codex mcp add --url` a osobní OAuth uložené nativním k
 
 ## Serverová hranice
 
-Instalace musí samostatně provozovat kompatibilní vzdálený Vosio MCP. Tato veřejná verze aplikace zatím MCP server, jeho OAuth bridge ani potřebné databázové migrace neobsahuje. Publikace balíčku nezajišťuje možnost jeho připojení k nově naklonované aplikaci. Uživatel pro tuto změnu výslovně zvolil zveřejnění pouze univerzálního pluginu. Přenos serverové implementace a souvisejících oprávnění je mimo tuto změnu; plugin je použitelný s již připravenou instalací.
+Instalace musí samostatně provozovat kompatibilní vzdálený Vosio MCP. Veřejná aplikace nyní obsahuje server, OAuth bridge, webové consent/discovery stránky a celý migrační řetězec. Správce své instalace je nasadí a nakonfiguruje podle [českého návodu](../../plugins/vosio/SETUP.md). Publikace zdrojů nebo instalace balíčku sama nevytváří Supabase projekt, klienta ani přihlašovací údaje a MCP zůstává do výslovné aktivace vypnuté.
 
 Připojení potřebuje osobní účet a consent; právo na konkrétní nahrávku určuje server. Běžný klient nedostává Supabase service role, serverový confidential client secret, šifrovací klíč ani provider klíče. Nastavení pluginu nevykonává migrace ani konfiguraci infrastruktury. Zobrazení URL, uložení konfigurace, dokončení OAuth a funkční autorizovaný nástroj jsou oddělené důkazy.
 

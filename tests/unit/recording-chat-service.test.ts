@@ -18,6 +18,7 @@ const promptId = "00000000-0000-4000-8000-000000000106";
 const now = new Date("2026-08-28T12:00:00.000Z");
 
 const transcript: OwnedRecordingChatTranscript = {
+  canRunPersonalAi: true,
   id: transcriptId,
   rawText: "Eva potvrdila termín v pátek.",
   recordingId,
@@ -46,7 +47,7 @@ function createRunningTurnRow(input: { clientTurnId: string; id: string; started
     created_at: input.startedAt,
     id: input.id,
     input_token_count: null,
-    model: "gpt-5.6-terra",
+    model: "gpt-6.1-sol",
     output_token_count: null,
     prompt_revision_snapshot: 1,
     prompt_text_snapshot: prompt.promptText,
@@ -124,7 +125,7 @@ function createStore() {
 
 const baseInput = {
   clientTurnId,
-  model: "gpt-5.6-terra" as const,
+  model: "gpt-6.1-sol" as const,
   question: "Kdy je termín?",
   transcriptId,
   userId
@@ -142,18 +143,51 @@ describe("recording chat service", () => {
       providerResponseId: null
     }));
 
-    await submitRecordingChatTurn({ ...baseInput, model: "gpt-6-astra-low" }, {
+    await submitRecordingChatTurn({ ...baseInput, model: "gpt-6-astra", reasoningEffort: "low" }, {
       now: () => now,
       rateLimit: () => ({ allowed: true, retryAfterSeconds: 0 }),
       runProvider,
       store: fixture.store
     });
 
-    expect(fixture.turns[0]).toMatchObject({ model: "gpt-6-astra-low", provider: "openai" });
+    expect(fixture.turns[0]).toMatchObject({ model: "gpt-6-astra", provider_config: { reasoning_effort: "low" }, provider: "openai" });
     expect(runProvider).toHaveBeenCalledWith(expect.objectContaining({
       model: "gpt-6-astra",
       provider: "openai"
     }));
+  });
+
+  it("replays a historical turn without offering its removed model to new requests", async () => {
+    const fixture = createStore();
+    await fixture.store.createThread({ recordingId, transcriptId, userId });
+    fixture.turns.push({ ...createRunningTurnRow({ clientTurnId, id: "old", startedAt: now.toISOString() }), model: "gpt-5.6-terra" });
+    const runProvider = vi.fn();
+    await expect(submitRecordingChatTurn({ ...baseInput, model: "gpt-5.6-terra" }, { store: fixture.store, runProvider }))
+      .resolves.toMatchObject({ turn: { model: "gpt-5.6-terra" } });
+    expect(runProvider).not.toHaveBeenCalled();
+    await expect(submitRecordingChatTurn({ ...baseInput, clientTurnId: "another", model: "gpt-5.6-terra" }, { store: fixture.store, runProvider }))
+      .rejects.toMatchObject({ code: "invalid_model", status: 400 });
+  });
+
+  it("keeps own history readable but denies provider work after losing manager authority", async () => {
+    const fixture = createStore();
+    fixture.store.getOwnedTranscript = vi.fn().mockResolvedValue({ ...transcript, canRunPersonalAi: false });
+    await fixture.store.createThread({ recordingId, transcriptId, userId });
+    const runProvider = vi.fn();
+    await expect(getRecordingChatHistory({ transcriptId, userId }, { store: fixture.store })).resolves.toEqual(expect.objectContaining({ thread: expect.anything() }));
+    expect(fixture.store.failStaleRunningTurn).not.toHaveBeenCalled();
+    await expect(submitRecordingChatTurn(baseInput, { store: fixture.store, runProvider })).rejects.toMatchObject({ status: 403 });
+    expect(fixture.store.insertRunningTurn).not.toHaveBeenCalled();
+    expect(runProvider).not.toHaveBeenCalled();
+  });
+  it.each(["low", "medium", "high", "xhigh", "max"])("persists and dispatches Sol chat effort %s", async (reasoningEffort) => {
+    const fixture = createStore();
+    const runProvider = vi.fn(async () => ({ inputTokenCount: 1, outputText: '{"answer_markdown":"OK","evidence":[]}', outputTokenCount: 1, providerResponseId: null }));
+    await submitRecordingChatTurn({ ...baseInput, reasoningEffort }, { store: fixture.store, runProvider,
+      rateLimit: () => ({ allowed: true, retryAfterSeconds: 0 }) });
+    expect(fixture.turns[0]).toMatchObject({ provider_config: { provider_model: "gpt-6.1-sol", reasoning_effort: reasoningEffort } });
+    expect(fixture.turns[0]?.provider_config).not.toHaveProperty("temperature");
+    expect(runProvider).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-6.1-sol", reasoningEffort }));
   });
 
   it("persists one completed attributed turn with prompt snapshot, usage and verified evidence", async () => {
@@ -175,7 +209,7 @@ describe("recording chat service", () => {
     expect(result.turn).toMatchObject({
       answerMarkdown: "Termín je **v pátek**.",
       evidence: [{ endMs: 2_000, quote: "potvrdila termín v pátek", startMs: 1_400 }],
-      model: "gpt-5.6-terra",
+      model: "gpt-6.1-sol",
       provider: "openai",
       status: "completed",
       usage: { inputTokens: 120, outputTokens: 40 }

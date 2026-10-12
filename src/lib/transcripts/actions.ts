@@ -2,31 +2,26 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
 import {
   SPEAKER_SAVE_ERROR,
-  SPEAKER_SEARCH_WARNING,
   type TranscriptSpeakerSaveInput,
   type TranscriptSpeakerSaveResult
 } from "@/lib/transcripts/speaker-save-state";
-import {
-  getStoredTranscriptSpeakerSummaries,
-  updateTranscriptSpeakerSummary
-} from "@/lib/transcripts/speakers";
+import { patchContentSpeaker } from "@/lib/recording-sharing/content-edits.server";
 
 const speakerRoleSchema = z.enum(["client_customer", "delivery_team", "unknown"]);
 
 const transcriptSpeakerSaveSchema = z.object({
   name: z.string().trim().max(80).nullable(),
   revision: z.number().int().nonnegative(),
+  expectedVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   role: speakerRoleSchema,
   speakerId: z.string().trim().min(1).max(80),
   transcriptId: z.string().uuid()
 });
 
-// saveTranscriptSpeakerAutosaveAction persists one queued speaker snapshot without redirecting the editor.
+// Patch one versioned DB speaker slot; conflicts return fresh state without overwriting another writer.
 export async function saveTranscriptSpeakerAutosaveAction(
   input: TranscriptSpeakerSaveInput
 ): Promise<TranscriptSpeakerSaveResult> {
@@ -47,51 +42,7 @@ export async function saveTranscriptSpeakerAutosaveAction(
     };
   }
 
-  const { data: transcript, error: transcriptError } = await supabase
-    .from("transcripts")
-    .select("id,recording_id,user_id,raw_text,segments,speakers")
-    .eq("id", parsed.data.transcriptId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (transcriptError || !transcript) {
-    return { message: SPEAKER_SAVE_ERROR, revision: parsed.data.revision, status: "error" };
-  }
-
-  const nextSpeakers = updateTranscriptSpeakerSummary(
-    transcript.speakers,
-    transcript.segments,
-    parsed.data
-  );
-  const admin = createAdminClient();
-  const { data: savedTranscript, error: updateError } = await admin
-    .from("transcripts")
-    .update({ speakers: nextSpeakers })
-    .eq("id", transcript.id)
-    .eq("user_id", user.id)
-    .select("id,recording_id,user_id,raw_text,segments,speakers")
-    .single();
-
-  if (updateError || !savedTranscript) {
-    return { message: SPEAKER_SAVE_ERROR, revision: parsed.data.revision, status: "error" };
-  }
-
-  const indexResult = await replaceTranscriptSearchChunks(admin, savedTranscript);
-  const savedSpeaker = getStoredTranscriptSpeakerSummaries(
-    savedTranscript.speakers,
-    savedTranscript.segments
-  ).find((speaker) => speaker.id === parsed.data.speakerId);
-
-  if (!savedSpeaker) {
-    return { message: SPEAKER_SAVE_ERROR, revision: parsed.data.revision, status: "error" };
-  }
-
-  revalidatePath("/recordings");
-
-  return {
-    revision: parsed.data.revision,
-    savedSpeaker,
-    searchWarning: indexResult.status === "incomplete" ? SPEAKER_SEARCH_WARNING : null,
-    status: "success"
-  };
+  const result = await patchContentSpeaker(supabase, parsed.data);
+  if (result.status === "success") revalidatePath("/recordings");
+  return result;
 }

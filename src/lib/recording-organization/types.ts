@@ -1,5 +1,5 @@
 export const RECORDING_CLIENT_COLUMNS = "id,user_id,name,color,created_at,updated_at";
-export const RECORDING_PROJECT_COLUMNS = "id,client_id,user_id,name,color,created_at,updated_at";
+export const RECORDING_PROJECT_COLUMNS = "id,name,color,created_at,updated_at";
 export const RECORDING_FOLDER_COLUMNS = "id,user_id,name,color,created_at,updated_at";
 export const RECORDING_TAG_COLUMNS = "id,user_id,name,color,created_at,updated_at";
 export const RECORDING_TAG_LINK_WITH_TAG_COLUMNS =
@@ -14,8 +14,11 @@ export type RecordingClientRow = {
   user_id: string;
 };
 
-export type RecordingProjectRow = RecordingClientRow & {
-  client_id: string;
+export type RecordingProjectRow = Omit<RecordingClientRow, "user_id"> & {
+  user_id?: string;
+  client_id: string | null;
+  can_manage_access?: boolean;
+  can_capture?: boolean;
 };
 
 export type RecordingFolderRow = RecordingClientRow;

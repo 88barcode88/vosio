@@ -42,7 +42,8 @@ describe("recordings route states", () => {
 
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(container.querySelector('[role="status"]')?.textContent).toContain("Načítám váš inbox");
-    expect(container.querySelector("button, a")).toBeNull();
+    expect(container.querySelector('[aria-busy="true"]')?.querySelector("button, a")).toBeNull();
+    expect(container.querySelector(".sidebar")).not.toBeNull();
   });
 
   it("automatically resets only once for the same recordings navigation error window", async () => {

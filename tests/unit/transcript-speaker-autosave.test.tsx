@@ -2,7 +2,14 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SpeakerSummaryEditor } from "@/components/transcript-tabs/speaker-summary-editor";
+import { SpeakerSummaryEditor as Editor } from "@/components/transcript-tabs/speaker-summary-editor";
+import { RecordingCapabilityProvider } from "@/components/recording-capability-context";
+import type { ComponentProps } from "react";
+
+// Supply the same explicit server permission and slot versions as the workbench.
+function SpeakerSummaryEditor(props: ComponentProps<typeof Editor>) {
+  return <RecordingCapabilityProvider capabilities={{ read: true, editTitle: true, editSpeakers: true, editTaskStatus: true, manageAccess: false, delete: false, restore: false, purge: false, runPersonalAi: false, usePrivateChat: false }} speakerVersions={{ "1": 0, "2": 0 }}><Editor {...props} /></RecordingCapabilityProvider>;
+}
 
 const saveSpeaker = vi.fn();
 
@@ -233,5 +240,23 @@ describe("SpeakerSummaryEditor", () => {
     const retry = container.querySelector<HTMLButtonElement>('button[aria-label="Zkusit znovu uložit Mluvčí 1"]') as HTMLButtonElement;
     await act(async () => retry.click());
     expect(saveSpeaker).toHaveBeenLastCalledWith(expect.objectContaining({ role: "delivery_team", revision: 2 }));
+  });
+
+  it("shows a fresh conflict and requires explicit retry with the returned DB version", async () => {
+    saveSpeaker.mockResolvedValueOnce({ status: "conflict", revision: 1, version: 9,
+      savedSpeaker: { ...speakers[0], name: "Jana souběžná" }, message: "Mluvčí byl změněn." })
+      .mockResolvedValueOnce({ status: "success", revision: 2, version: 10, savedSpeaker: speakers[0], searchWarning: null });
+    await act(async () => root.render(<SpeakerSummaryEditor onSpeakersChange={vi.fn()} speakers={speakers} transcriptId="11111111-1111-4111-8111-111111111111" />));
+    const name = container.querySelector<HTMLInputElement>('input[aria-label="Jméno Mluvčí 1"]')!;
+    setInputValue(name, "Eva lokální");
+    await act(async () => name.dispatchEvent(new Event("input", { bubbles: true })));
+    await act(async () => name.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(saveSpeaker).toHaveBeenLastCalledWith(expect.objectContaining({ expectedVersion: 0 }));
+    expect(container.textContent).toContain("Jana souběžná");
+    expect(name.value).toBe("Eva lokální");
+    await act(async () => name.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(saveSpeaker).toHaveBeenCalledTimes(1);
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Zkusit znovu uložit Mluvčí 1"]')!.click());
+    expect(saveSpeaker).toHaveBeenLastCalledWith(expect.objectContaining({ expectedVersion: 9, name: "Eva lokální" }));
   });
 });

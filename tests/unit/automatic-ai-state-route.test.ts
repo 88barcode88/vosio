@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { expect, it, vi } from "vitest";
+vi.mock("@/lib/recording-sharing/resolve-capabilities", () => ({ resolveRecordingCapabilities: vi.fn(async () => ({ read: true, runPersonalAi: true })) }));
 const mocks = vi.hoisted(() => ({ client: vi.fn(), admin: vi.fn(), cleanup: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.client }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.admin }));

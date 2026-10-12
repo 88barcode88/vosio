@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { persistCompletedAiProcessing } from "@/lib/ai/process-route-orchestration";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 import { POST } from "../../app/api/transcripts/[transcriptId]/process/route";
 
 const routeMocks = vi.hoisted(() => ({
@@ -64,13 +65,14 @@ function createRouteFixture(effectivePrompt: {
   transcriptQuery.select.mockReturnValue(transcriptQuery);
   transcriptQuery.eq.mockReturnValue(transcriptQuery);
   transcriptQuery.single.mockResolvedValue({
-    data: { id: transcriptId, raw_text: "Potvrzený přepis hovoru.", segments: [], speakers: [], user_id: userId },
+    data: { id: transcriptId, recording_id: transcriptId, raw_text: "Potvrzený přepis hovoru.", segments: [], speakers: [], user_id: userId },
     error: null,
   });
   const resolverChain = { returns: vi.fn(), single: vi.fn() };
   resolverChain.returns.mockReturnValue(resolverChain);
   resolverChain.single.mockResolvedValue({ data: effectivePrompt, error: null });
-  const rpc = vi.fn().mockReturnValue(resolverChain);
+  const rpc = vi.fn().mockImplementation((name) => name === "recording_capabilities_v1"
+    ? Promise.resolve({ data: { ...NO_RECORDING_CAPABILITIES, read: true, runPersonalAi: true }, error: null }) : resolverChain);
   routeMocks.createClient.mockResolvedValue({
     auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: userId } }, error: null }) },
     from: vi.fn((tableName: string) => {
@@ -124,12 +126,12 @@ function createRouteFixture(effectivePrompt: {
 }
 
 // postActionItems invokes the route with the intentionally prompt-agnostic browser contract.
-function postActionItems(overrides: { metadata?: Record<string, unknown>; model?: string; temperature?: number } = {}) {
+function postActionItems(overrides: { metadata?: Record<string, unknown>; model?: string; reasoningEffort?: string; temperature?: number } = {}) {
   return POST(
     new NextRequest(`https://vosio.test/api/transcripts/${transcriptId}/process`, {
       body: JSON.stringify({
         metadata: { source: "manual-button", workspace: "sales" },
-        model: "gpt-5.6-terra",
+        model: "gpt-6.1-sol",
         processingType: "action_items",
         requestId: "00000000-0000-4000-8000-000000000815",
         temperature: 0.7,
@@ -142,7 +144,190 @@ function postActionItems(overrides: { metadata?: Record<string, unknown>; model?
   );
 }
 
+// createRetryFixture supplies an exact historical snapshot independently of today's prompt resolver.
+function createRetryFixture(sourceOverrides: Record<string, unknown> = {}) {
+  const fixture = createRouteFixture({ system_prompt_id: systemPromptId, override_id: null,
+    name: "Changed current prompt", processing_type: "action_items", prompt_text: "Different current text",
+    output_schema: null, source: "system", revision: null });
+  const source = {
+    id: "00000000-0000-4000-8000-000000000816", execution_mode: "manual", status: "failed",
+    user_id: userId, transcript_id: transcriptId, processing_type: "action_items", model: "gpt-6-astra-low",
+    provider: "openai", provider_config: { provider: "openai", provider_model: "gpt-6-astra",
+      reasoning_effort: "low", temperature: 0.7, metadata: { source: "old-button" }, response_format: "json_schema" },
+    prompt_id: systemPromptId, prompt_override_id: overrideId, prompt_source: "user_override",
+    prompt_name_snapshot: "Historical name", prompt_text_snapshot: "Historical {{raw_text}}",
+    prompt_output_schema_snapshot: { type: "object", properties: { old: { type: "string" } } },
+    prompt_revision_snapshot: 2, prompt_snapshot_exact: true, retry_source_job_id: null,
+    failure_code: "unknown", retry_after_at: null, ...sourceOverrides
+  };
+  fixture.jobQuery.maybeSingle.mockResolvedValueOnce({ data: null, error: null })
+    .mockResolvedValueOnce({ data: source, error: null });
+  return { ...fixture, source };
+}
+
+// postRetry uses lineage alone; the server supplies every model and prompt input from the source.
+function postRetry(overrides: Record<string, unknown> = {}) {
+  return POST(new NextRequest(`https://vosio.test/api/transcripts/${transcriptId}/process`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ processingType: "action_items",
+      requestId: "00000000-0000-4000-8000-000000000815",
+      retryOfJobId: "00000000-0000-4000-8000-000000000816", ...overrides })
+  }), { params: Promise.resolve({ transcriptId }) });
+}
+
+describe("explicit manual retry lineage", () => {
+  it.each([
+    { model: "gpt-6-astra-low" }, { model: "gpt-5.6-terra", provider_config: {
+      provider: "openai", provider_model: "gpt-5.6-terra", reasoning_effort: "high", temperature: 0.9, metadata: {} } },
+    { model: "gemini-3.8-flash", provider: "gemini", provider_config: {
+      provider: "gemini", provider_model: "gemini-3.8-flash", thinking_level: "medium", temperature: 0.2, metadata: {} } }
+  ])("clones every accepted historical snapshot field unchanged for $model", async (sourceOverrides) => {
+    const fixture = createRetryFixture(sourceOverrides);
+    const before = structuredClone(fixture.source);
+    expect((await postRetry()).status).toBe(202);
+    const { id: sourceId, status: _status, failure_code: _failure, retry_after_at: _retry, ...snapshot } = before;
+    expect(fixture.jobInsert).toHaveBeenCalledWith(expect.objectContaining({ ...snapshot,
+      retry_source_job_id: sourceId, attempt_count: 0, max_attempts: 1, lease_token: null,
+      lease_expires_at: null, status: "queued", retry_after_at: null, failure_code: null }));
+    expect(fixture.source).toEqual(before);
+    expect(fixture.jobQuery.update).not.toHaveBeenCalled();
+    expect(fixture.rpc).not.toHaveBeenCalledWith("resolve_effective_prompt_template_v1", expect.anything());
+    expect(routeMocks.afterCallbacks).toHaveLength(1);
+    expect(routeMocks.runManualAiJob).not.toHaveBeenCalled();
+    await routeMocks.afterCallbacks[0]!();
+    expect(routeMocks.runManualAiJob).toHaveBeenCalledWith({ jobId: "job-1", transcriptId, userId });
+  });
+
+  it.each([
+    { user_id: overrideId }, { transcript_id: overrideId }, { execution_mode: "automatic" },
+    { processing_type: "summary" }, { status: "running" }, { status: "queued" }, { status: "done" },
+    { status: "cancelled" }, { prompt_snapshot_exact: false }, { prompt_text_snapshot: "" },
+    { provider_config: {} }
+  ])("rejects an ineligible source %j without inserting or scheduling", async (sourceOverrides) => {
+    const fixture = createRetryFixture(sourceOverrides);
+    expect((await postRetry()).status).toBe(409);
+    expect(fixture.jobInsert).not.toHaveBeenCalled();
+    expect(routeMocks.afterCallbacks).toHaveLength(0);
+  });
+
+  it.each([{ model: "gpt-6.1-sol" }, { reasoningEffort: "medium" }, { temperature: 0.3 }, { metadata: {} }])(
+    "rejects conflicting retry overrides %j", async (overrides) => {
+      const fixture = createRetryFixture();
+      expect((await postRetry(overrides)).status).toBe(409);
+      expect(fixture.jobInsert).not.toHaveBeenCalled();
+    });
+
+  it("accepts matching compatibility fields without rebuilding the snapshot", async () => {
+    const fixture = createRetryFixture();
+    expect((await postRetry({ model: fixture.source.model, reasoningEffort: "low", temperature: 0.7,
+      metadata: fixture.source.provider_config.metadata })).status).toBe(202);
+    expect(fixture.jobInsert).toHaveBeenCalledWith(expect.objectContaining({ provider_config: fixture.source.provider_config }));
+  });
+
+  it("enforces the existing rate-limited source deadline", async () => {
+    const fixture = createRetryFixture({ failure_code: "rate_limited", retry_after_at: new Date(Date.now() + 60_000).toISOString() });
+    const response = await postRetry();
+    expect(response.status).toBe(429);
+    expect(Number(response.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect(fixture.jobInsert).not.toHaveBeenCalled();
+  });
+
+  it("allows a retry after the source backoff expires", async () => {
+    createRetryFixture({ failure_code: "rate_limited", retry_after_at: new Date(Date.now() - 1_000).toISOString() });
+    expect((await postRetry()).status).toBe(202);
+  });
+
+  it("rejects a missing source instead of treating lineage as a fresh request", async () => {
+    const fixture = createRetryFixture();
+    fixture.jobQuery.maybeSingle.mockReset().mockResolvedValue({ data: null, error: null });
+    expect((await postRetry()).status).toBe(409);
+    expect(fixture.jobInsert).not.toHaveBeenCalled();
+  });
+
+  it("requires current personal AI authority before reading retry lineage", async () => {
+    const fixture = createRetryFixture();
+    fixture.rpc.mockResolvedValue({ data: { ...NO_RECORDING_CAPABILITIES, read: true }, error: null });
+    expect((await postRetry()).status).toBe(403);
+    expect(fixture.jobQuery.maybeSingle).not.toHaveBeenCalled();
+    expect(fixture.jobInsert).not.toHaveBeenCalled();
+  });
+
+  it("replays accepted lineage without reading a subsequently deleted source or scheduling work", async () => {
+    const fixture = createRetryFixture();
+    fixture.jobQuery.maybeSingle.mockReset().mockResolvedValue({ data: {
+      ...fixture.source, id: "00000000-0000-4000-8000-000000000815", status: "done",
+      retry_source_job_id: fixture.source.id }, error: null });
+    expect((await postRetry()).status).toBe(202);
+    expect(fixture.jobQuery.maybeSingle).toHaveBeenCalledTimes(1);
+    expect(fixture.jobInsert).not.toHaveBeenCalled();
+    expect(routeMocks.rateLimit).not.toHaveBeenCalled();
+    expect(routeMocks.afterCallbacks).toHaveLength(0);
+  });
+
+  it.each([{ retry_source_job_id: null }, { retry_source_job_id: overrideId }, { user_id: overrideId },
+    { transcript_id: overrideId }, { processing_type: "summary" }])("rejects retry UUID collisions %j", async (collision) => {
+    const fixture = createRetryFixture();
+    fixture.jobQuery.maybeSingle.mockReset().mockResolvedValue({ data: {
+      ...fixture.source, retry_source_job_id: fixture.source.id, ...collision }, error: null });
+    expect((await postRetry()).status).toBe(409);
+    expect(fixture.jobInsert).not.toHaveBeenCalled();
+  });
+
+  it("does not replay an accepted retry as a fresh picker request", async () => {
+    const fixture = createRetryFixture({ model: "gpt-6.1-sol", provider_config: {
+      provider: "openai", provider_model: "gpt-6.1-sol", reasoning_effort: "medium", temperature: 0.3,
+      metadata: { source: "manual-button", workspace: "sales" }, response_format: "json_schema" } });
+    fixture.jobQuery.maybeSingle.mockReset().mockResolvedValue({ data: {
+      ...fixture.source, retry_source_job_id: fixture.source.id }, error: null });
+    expect((await postActionItems()).status).toBe(409);
+  });
+
+  it("returns a matching raced retry insert without scheduling twice", async () => {
+    const fixture = createRetryFixture();
+    fixture.jobQuery.single.mockResolvedValue({ data: null, error: { code: "23505" } });
+    fixture.jobQuery.maybeSingle.mockResolvedValueOnce({ data: {
+      ...fixture.source, retry_source_job_id: fixture.source.id, status: "queued" }, error: null });
+    expect((await postRetry()).status).toBe(202);
+    expect(routeMocks.afterCallbacks).toHaveLength(0);
+  });
+
+  it("rejects a raced insert with unrelated lineage", async () => {
+    const fixture = createRetryFixture();
+    fixture.jobQuery.single.mockResolvedValue({ data: null, error: { code: "23505" } });
+    fixture.jobQuery.maybeSingle.mockResolvedValueOnce({ data: {
+      ...fixture.source, retry_source_job_id: overrideId, status: "queued" }, error: null });
+    expect((await postRetry()).status).toBe(409);
+    expect(routeMocks.afterCallbacks).toHaveLength(0);
+  });
+});
+
 describe("process route prompt resolution", () => {
+  it.each([
+    ["gpt-6-astra", "low"], ["gpt-6.1-sol", "medium"],
+    ["gpt-6.1-sol", "xhigh"], ["gpt-6.1-sol", "max"]
+  ])("snapshots selected %s effort %s before scheduling", async (model, reasoningEffort) => {
+    const fixture = createRouteFixture({ system_prompt_id: systemPromptId, override_id: null,
+      name: "Action items", processing_type: "action_items", prompt_text: "{{raw_text}}",
+      output_schema: null, source: "system", revision: null });
+    expect((await postActionItems({ model, reasoningEffort })).status).toBe(202);
+    expect(fixture.jobInsert).toHaveBeenCalledWith(expect.objectContaining({ model,
+      provider_config: expect.objectContaining({ reasoning_effort: reasoningEffort, temperature: 0.3 }) }));
+  });
+
+  it.each([
+    { model: "gpt-6-astra", reasoningEffort: "ultra" },
+    { model: "gemini-3.8-flash", reasoningEffort: "max" },
+    { model: "mistral-small-2603", reasoningEffort: "low" },
+    { model: "gpt-5.6-terra" }
+  ])("rejects unsupported new selection %j before insert/provider", async (selection) => {
+    const fixture = createRouteFixture({ system_prompt_id: systemPromptId, override_id: null,
+      name: "Action items", processing_type: "action_items", prompt_text: "{{raw_text}}",
+      output_schema: null, source: "system", revision: null });
+    expect((await postActionItems(selection)).status).toBe(400);
+    expect(fixture.jobInsert).not.toHaveBeenCalled();
+    expect(routeMocks.afterCallbacks).toHaveLength(0);
+  });
+
   it("snapshots an owner override before registering provider work after the response", async () => {
     const effectivePrompt = {
       system_prompt_id: systemPromptId,
@@ -176,8 +361,8 @@ describe("process route prompt resolution", () => {
       prompt_snapshot_exact: true,
       provider_config: expect.objectContaining({
         metadata: { source: "manual-button", workspace: "sales" },
-        provider_model: "gpt-5.6-terra",
-        temperature: 0.7
+        provider_model: "gpt-6.1-sol",
+        temperature: 0.3
       })
     }));
     const jobPayload = fixture.jobInsert.mock.calls[0]?.[0];
@@ -193,8 +378,8 @@ describe("process route prompt resolution", () => {
 
   it.each([
     ["gemini-3.8-flash", "gemini", "gemini-3.8-flash"],
-    ["gpt-6-astra-low", "openai", "gpt-6-astra"],
-    ["gpt-6-astra-medium", "openai", "gpt-6-astra"],
+    ["gpt-6.1-sol", "openai", "gpt-6.1-sol"],
+    ["gpt-6-astra", "openai", "gpt-6-astra"],
     ["mistral-small-2603", "mistral", "mistral-small-2603"],
     ["mistral-large-2512", "mistral", "mistral-large-2512"]
   ])("snapshots profile %s with exact %s API model", async (model, provider, providerModel) => {
@@ -283,7 +468,7 @@ describe("process route prompt resolution", () => {
       error: null
     });
 
-    const response = await postActionItems();
+    const response = await postActionItems({ model: "gpt-5.6-terra" });
 
     expect(response.status).toBe(202);
     await expect(response.json()).resolves.toEqual({
@@ -330,7 +515,7 @@ describe("process route prompt resolution", () => {
       error: null
     });
 
-    const response = await postActionItems(overrides);
+    const response = await postActionItems({ ...overrides, model: "gpt-5.6-terra" });
 
     expect(response.status).toBe(409);
     expect(routeMocks.rateLimit).not.toHaveBeenCalled();

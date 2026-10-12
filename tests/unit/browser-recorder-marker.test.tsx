@@ -4,10 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrowserRecorder } from "@/components/browser-recorder";
-import {
-  TRANSCRIPT_SEARCH_INDEX_WARNING,
-  TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
-} from "@/lib/transcripts/search-warning";
+import { TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE } from "@/lib/transcripts/search-warning";
 
 const clientMarkerId = "6bd31215-9b8f-4c68-9e2f-89f4d31f96b1";
 const recordingId = "5ad31215-9b8f-4c68-9e2f-89f4d31f96b0";
@@ -65,6 +62,14 @@ vi.mock("@/lib/recordings/upload", () => ({
 vi.mock("@/lib/supabase/browser", () => ({
   createClient: mocks.createBrowserClient
 }));
+
+// Lifecycle tests isolate the revised session persistence transport; receipt authorization is covered separately.
+vi.mock("@/lib/recordings/live-capture-client", () => ({ sendLiveCapture: async (recording: { id: string }, kind: string, payload: unknown) => {
+  const response = await mocks.fetch(`/api/recordings/${recording.id}/${kind === "live_draft" ? "live-draft" : "live-transcript"}`, { method: kind === "live_draft" ? "PUT" : "POST", body: JSON.stringify(payload) });
+  if (!response.ok) throw new Error("live save failed");
+  const body = await Promise.resolve(response.json()).catch(() => null);
+  return { recordingId: recording.id, captureRevision: 1, status: "completed", transcriptId: recording.id, jobId: null, warnings: body?.warnings };
+} }));
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -293,6 +298,7 @@ async function startReadyRecorder(redirectAfterSave?: "detail" | "list") {
     await Promise.resolve();
   });
 
+  mocks.randomUUID.mockClear();
   return { draftClient, performanceNow, realtime };
 }
 
@@ -307,7 +313,14 @@ beforeEach(() => {
   mocks.completeLiveRecordingWithoutAudio.mockReset();
   mocks.createBrowserClient.mockReset();
   mocks.createLiveRecordingDraft.mockReset();
+  mocks.createLiveRecordingDraft.mockImplementation(async () => {
+    const result = await mocks.createBrowserClient().from("recordings").insert().select().single();
+    if (result.error || !result.data) throw new Error(result.error?.message ?? "draft unavailable");
+    return { id: result.data.id, userId: "8dd31215-9b8f-4c68-9e2f-89f4d31f96b3", storagePrefix: "" };
+  });
   mocks.failLiveRecordingUpload.mockReset();
+  mocks.failLiveRecordingUpload.mockResolvedValue(undefined);
+  mocks.completeLiveRecordingWithoutAudio.mockResolvedValue(undefined);
   mocks.fetch.mockReset();
   mocks.randomUUID.mockReset();
   mocks.realtimeRecord.mockReset();
@@ -826,10 +839,10 @@ describe("BrowserRecorder live markers", () => {
     expect(document.querySelector(".live-recording-text")?.textContent).toBe("Závěr hovoru.");
   });
 
-  it("keeps live draft and final saves successful while exposing the search fallback", async () => {
+  it("keeps session draft and final saves successful without a provider or legacy completion path", async () => {
     const { realtime } = await startReadyRecorder("detail");
     mocks.fetch.mockResolvedValue({
-      json: vi.fn().mockResolvedValue({ warnings: [TRANSCRIPT_SEARCH_INDEX_WARNING] }),
+      json: vi.fn().mockResolvedValue({ warnings: ["transcript_search_index_incomplete"] }),
       ok: true
     });
 
@@ -853,7 +866,7 @@ describe("BrowserRecorder live markers", () => {
       element.textContent === TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
     ))).toBe(true);
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      `/recordings/${recordingId}?warning=${TRANSCRIPT_SEARCH_INDEX_WARNING}`
+      `/recordings/${recordingId}?warning=transcript_search_index_incomplete`
     );
     expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
   });

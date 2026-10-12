@@ -60,6 +60,22 @@ async function chooseFiles(...files: File[]) {
 }
 
 describe("recording upload form UI", () => {
+  it("binds one approved request to one file and rejects a multi-file queue before transport", async () => {
+    const requestId = "00000000-0000-4000-8000-000000000001";
+    const scope = { projectId: requestId, visibility: "selected" as const, recipients: [{ userId: requestId, role: "editor" as const }] };
+    mocks.uploadRecording.mockResolvedValue({ id: "fixture", storagePath: "fixture" });
+    await act(async () => root.render(<RecordingUploadForm {...uploadFormProps} captureScope={scope} captureRequestId={requestId} />));
+    const first = new File(["audio"], "one.mp3", { type: "audio/mpeg" });
+    const second = new File(["other"], "two.mp3", { type: "audio/mpeg" });
+    await chooseFiles(first, second);
+    expect(mocks.uploadRecording).not.toHaveBeenCalled();
+    await chooseFiles(first);
+    expect(mocks.uploadRecording).toHaveBeenCalledOnce();
+    expect(mocks.uploadRecording.mock.calls[0]![0].capture).toMatchObject({ requestId, scope });
+    await chooseFiles(second);
+    expect(mocks.uploadRecording).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("jedinou nahrávku");
+  });
   it("keeps a stable labelled status surface before and after a successful upload", async () => {
     mocks.uploadRecording.mockImplementation(async (input) => {
       input.onPhase?.("transferring");

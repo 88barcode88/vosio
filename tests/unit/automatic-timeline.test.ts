@@ -125,12 +125,12 @@ describe("automatic timeline orchestration", () => {
           `${generationKind}:authority-id`
         ),
         generationKind,
-        model: "gpt-5.6-terra",
+        model: "gpt-6.1-sol",
         provider: "openai",
         providerConfig: {
           provider: "openai",
-          provider_model: "gpt-5.6-terra",
-          reasoning_effort: "high",
+          provider_model: "gpt-6.1-sol",
+          reasoning_effort: "medium",
           thinking_level: null
         },
         transcriptId: "transcript-id",

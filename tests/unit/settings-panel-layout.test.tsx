@@ -120,6 +120,47 @@ describe("settings workspace layout", () => {
     expect(markup).toContain("Budoucí položky v Koši");
   });
 
+  it("saves the visible effort and preserves it when switching to Gemini before saving", async () => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const saveAction = vi.fn(async (_state: SettingsActionState, _formData: FormData): Promise<SettingsActionState> => (
+      { errorCode: null, sonioxRegion: null, status: "saved" }
+    ));
+    try {
+      await act(async () => root.render(<SettingsPanel
+        accountEmail="user@example.test" installationStatus={installationStatus} recordingStorageConfig={storageConfig}
+        saveAction={saveAction} settings={defaultUserSettings} status={null}
+        usageState={{ error: "Usage se teď nepodařilo načíst.", summary: null }} />));
+      const form = container.querySelector<HTMLFormElement>(".settings-form")!;
+      await act(async () => container.querySelector('input[type="range"]')!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true })));
+      await act(async () => form.requestSubmit());
+      const openAiSaved = parseSettingsForm(saveAction.mock.calls[0][1]);
+      expect(openAiSaved.defaultOpenaiModel).toBe("gpt-6.1-sol");
+      expect(openAiSaved.defaultReasoningEffort).toBe("max");
+      const model = container.querySelector<HTMLSelectElement>('select[name="defaultOpenaiModel"]')!;
+      await act(async () => {
+        model.value = "gemini-3.8-flash";
+        model.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(container.querySelector('input[type="range"]')).toBeNull();
+      await act(async () => form.requestSubmit());
+      const geminiSaved = parseSettingsForm(saveAction.mock.calls[1][1]);
+      expect(geminiSaved.defaultOpenaiModel).toBe("gemini-3.8-flash");
+      expect(geminiSaved.defaultReasoningEffort).toBe("max");
+      await act(async () => {
+        model.value = "gpt-6-astra";
+        model.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(container.querySelector('input[type="range"]')?.getAttribute("aria-valuetext")).toBe("Maximum (max)");
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
   it("offers the three accessible live audio quality choices with exact hourly estimates", () => {
     const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
     const container = document.createElement("div");
@@ -331,7 +372,7 @@ describe("settings workspace layout", () => {
     try {
       await act(async () => root.render(renderPanel()));
       const draft = {
-        defaultOpenaiModel: "gpt-5.6-sol",
+        defaultOpenaiModel: "gpt-6-astra",
         sonioxRealtimeLanguage: "de",
         sonioxRealtimeModel: "stt-rt-v5",
         sonioxRegion: "eu",
@@ -350,6 +391,8 @@ describe("settings workspace layout", () => {
           }
         }
       });
+      await act(async () => container.querySelector('input[type="range"]')!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true })));
       const technicalDisclosure = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
         .find((button) => button.textContent === "Technické informace")!;
       await act(async () => technicalDisclosure.click());
@@ -360,6 +403,8 @@ describe("settings workspace layout", () => {
       await act(async () => container.querySelector<HTMLFormElement>(".settings-form")!.requestSubmit());
 
       expect(saveAction).toHaveBeenCalledOnce();
+      expect(saveAction.mock.calls[0]?.[1].get("defaultReasoningEffort")).toBe("max");
+      expect(container.querySelector('input[type="range"]')?.getAttribute("aria-valuetext")).toBe("Maximum (max)");
       for (const [name, value] of Object.entries(draft)) {
         expect(saveAction.mock.calls[0]?.[1].get(name)).toBe(value);
         const valueAfterFailure = name === "liveAudioQuality"
@@ -376,6 +421,7 @@ describe("settings workspace layout", () => {
       expect(container.querySelector(".settings-region-warning")).not.toBeNull();
 
       await act(async () => root.render(renderPanel({ ...persistedSettings })));
+      expect(container.querySelector('input[type="range"]')?.getAttribute("aria-valuetext")).toBe("Maximum (max)");
       for (const [name, value] of Object.entries(draft)) {
         const valueAfterRerender = name === "liveAudioQuality"
           ? container.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`)?.value
@@ -386,7 +432,7 @@ describe("settings workspace layout", () => {
 
       const serverSettings: UserSettings = {
         ...defaultUserSettings,
-        defaultOpenaiModel: "gpt-5.6-luna",
+        defaultOpenaiModel: "gpt-6.1-sol",
         sonioxRealtimeLanguage: "cs",
         sonioxRegion: "global",
         liveAudioQuality: "economy",
@@ -394,7 +440,7 @@ describe("settings workspace layout", () => {
       };
       await act(async () => root.render(renderPanel(serverSettings, "saved")));
       expect(container.querySelector<HTMLSelectElement>('select[name="defaultOpenaiModel"]')?.value)
-        .toBe("gpt-5.6-luna");
+        .toBe("gpt-6.1-sol");
       expect(container.querySelector<HTMLSelectElement>('select[name="sonioxRealtimeLanguage"]')?.value)
         .toBe("cs");
       expect(container.querySelector<HTMLSelectElement>('select[name="sonioxRegion"]')?.value)

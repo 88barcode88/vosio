@@ -17,6 +17,9 @@ function createFixtureScope() {
 
 // openQuietFixture enters the guarded development-only manual AI surface.
 async function openQuietFixture(page: Page) {
+  await page.route("**/api/transcripts/*/automatic-timeline", (route) => route.fulfill({
+    contentType: "application/json", json: { status: "not_scheduled" }, status: 200
+  }));
   await page.goto(`/login/manual-ai-refresh-e2e?scope=${createFixtureScope()}`);
 }
 
@@ -183,11 +186,19 @@ test("server-authorized individual and paged bulk cleanup stay exact and truthfu
 
 test("poll cadence and lifecycle storms keep one request and the original deadline", async ({ page }) => {
   const clockStart = new Date("2026-09-08T10:00:00.000Z");
-  await page.clock.install({ time: clockStart });
-  await page.clock.pauseAt(await page.evaluate(() => Date.now()));
+  await page.clock.install({ time: new Date(clockStart.getTime() - 60_000) });
+  await page.clock.pauseAt(clockStart);
   await page.addInitScript(() => {
-    const target = window as typeof window & { __manualAiRequestTimes?: number[] };
+    const target = window as typeof window & { __manualAiRequestTimes?: number[]; __manualAiPollSchedules?: { at: number; delay: number }[] };
     target.__manualAiRequestTimes = [];
+    target.__manualAiPollSchedules = [];
+    const nativeSetTimeout = window.setTimeout.bind(window);
+    window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+      if (delay !== undefined && [10_000, 30_000, 60_000].includes(delay)) {
+        target.__manualAiPollSchedules!.push({ at: Date.now(), delay });
+      }
+      return nativeSetTimeout(handler, delay, ...args);
+    }) as typeof window.setTimeout;
     const nativeFetch = window.fetch.bind(window);
     window.fetch = (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -228,6 +239,9 @@ test("poll cadence and lifecycle storms keep one request and the original deadli
   await openQuietFixture(page);
   await expect.poll(() => requestCount).toBe(1);
   firstRequestTime = (await page.evaluate(() => (window as typeof window & { __manualAiRequestTimes: number[] }).__manualAiRequestTimes[0]))!;
+  // Wait for the real provider timer, rather than advancing time when only the request has arrived.
+  const latestSchedule = () => page.evaluate(() => (window as typeof window & { __manualAiPollSchedules: { at: number; delay: number }[] }).__manualAiPollSchedules.at(-1));
+  await expect.poll(latestSchedule).toEqual({ at: firstRequestTime, delay: 10_000 });
 
   await page.clock.runFor(5_000);
   await page.evaluate(() => {
@@ -239,10 +253,12 @@ test("poll cadence and lifecycle storms keep one request and the original deadli
   expect(requestCount).toBe(1);
   await page.clock.runFor(1);
   await expect.poll(() => requestCount).toBe(2);
+  await expect.poll(latestSchedule).toEqual({ at: firstRequestTime + 10_000, delay: 30_000 });
   await page.clock.runFor(29_999);
   expect(requestCount).toBe(2);
   await page.clock.runFor(1);
   await expect.poll(() => requestCount).toBe(3);
+  await expect.poll(latestSchedule).toEqual({ at: firstRequestTime + 40_000, delay: 60_000 });
   await page.clock.runFor(59_999);
   expect(requestCount).toBe(3);
   await page.clock.runFor(1);

@@ -1,4 +1,6 @@
 export type TranscriptRow = {
+  speaker_versions?: Record<string, number>;
+  search_version?: number;
   id: string;
   created_at: string;
   language: string | null;
@@ -7,6 +9,5 @@ export type TranscriptRow = {
   segments: unknown;
   speakers: unknown;
   transcription_job_id: string | null;
-  user_id: string;
+  user_id?: string;
 };
-

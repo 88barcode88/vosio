@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 import {
   RECORDING_MARKER_COLUMNS,
   type RecordingMarkerRow
@@ -70,7 +71,7 @@ function createSupabaseMock({
   const recordingMaybeSingle = vi.fn().mockResolvedValue(recordingResult);
   const recordingNeq = vi.fn(() => ({ maybeSingle: recordingMaybeSingle }));
   const recordingEqUser = vi.fn(() => ({ neq: recordingNeq }));
-  const recordingEqId = vi.fn(() => ({ eq: recordingEqUser }));
+  const recordingEqId = vi.fn(() => ({ neq: recordingNeq }));
   const recordingSelect = vi.fn(() => ({ eq: recordingEqId }));
 
   const insertSingle = vi.fn().mockResolvedValue(insertResult);
@@ -113,7 +114,7 @@ function createSupabaseMock({
     recordingMaybeSingle,
     recordingNeq,
     recordingSelect,
-    supabase: { auth: { getUser }, from }
+    supabase: { auth: { getUser }, from, rpc: vi.fn().mockResolvedValue({ data: { ...NO_RECORDING_CAPABILITIES, read: true, runPersonalAi: true }, error: null }) }
   };
 }
 
@@ -144,6 +145,14 @@ beforeEach(() => {
 });
 
 describe("POST recording marker", () => {
+  it("denies reader/editor markers before any row lookup or insert", async () => {
+    const mock = createSupabaseMock();
+    mock.supabase.rpc.mockResolvedValue({ data: { ...NO_RECORDING_CAPABILITIES, read: true, editTitle: true, editSpeakers: true, editTaskStatus: true }, error: null });
+    mocks.createClient.mockResolvedValue(mock.supabase);
+    expect((await callRoute(recordingId)).status).toBe(403);
+    expect(mock.from).not.toHaveBeenCalled();
+    expect(mock.insert).not.toHaveBeenCalled();
+  });
   it("returns 400 before auth for an invalid recording UUID", async () => {
     const response = await callRoute("not-a-uuid");
 
@@ -211,7 +220,7 @@ describe("POST recording marker", () => {
     expect(body).toEqual({ error: "Nahrávka nebyla nalezena." });
     expect(JSON.stringify(body)).not.toContain("private database detail");
     expect(mock.recordingEqId).toHaveBeenCalledWith("id", recordingId);
-    expect(mock.recordingEqUser).toHaveBeenCalledWith("user_id", userId);
+    expect(mock.recordingEqUser).not.toHaveBeenCalled();
     expect(mock.recordingNeq).toHaveBeenCalledWith("status", "deleted");
     expect(mock.insert).not.toHaveBeenCalled();
   });

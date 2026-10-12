@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SaveAction } from "@/lib/forms/save-action-state";
 import { createInitialSaveActionState } from "@/lib/forms/save-action-state";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 import {
   assignRecordingOrganizationAction,
   createRecordingClientAction,
@@ -82,7 +83,7 @@ function createForm(values: Record<string, string | string[]>) {
 // arrangeSupabase installs one authenticated request-scoped client.
 function arrangeSupabase({
   from = vi.fn(),
-  rpc = vi.fn().mockResolvedValue({ data: null, error: null }),
+  rpc = vi.fn().mockResolvedValue({ data: true, error: null }),
   user = { id: userId },
   userError = null
 }: {
@@ -123,6 +124,19 @@ beforeEach(() => {
 });
 
 describe("recording organization actions", () => {
+  it("mutates a project only as its session-resolved founder, without a protected owner-column predicate", async () => {
+    const query = createMutationQuery();
+    const from = vi.fn().mockReturnValue(query);
+    const rpc = vi.fn().mockResolvedValue({ data: true, error: null });
+    arrangeSupabase({ from, rpc });
+    expect((await renameRecordingProjectAction(createInitialSaveActionState(), createForm({ entityId, scopeKey: entityId, name: "Project", color: "" }))).status).toBe("success");
+    expect(rpc).toHaveBeenCalledWith("is_recording_project_founder_v1", { p_project_id: entityId });
+    expect(query.eq).not.toHaveBeenCalledWith("user_id", userId);
+    rpc.mockResolvedValue({ data: false, error: null });
+    from.mockClear();
+    expect((await deleteRecordingProjectAction(createInitialSaveActionState(), createForm({ entityId, scopeKey: entityId }))).status).toBe("error");
+    expect(from).not.toHaveBeenCalled();
+  });
   it.each(createCases)("creates $table with an exact stable create scope", async ({ action, kind, table }) => {
     const query = createMutationQuery();
     const from = vi.fn().mockReturnValue(query);
@@ -188,7 +202,8 @@ describe("recording organization actions", () => {
     expect(from).toHaveBeenCalledWith(table);
     expect(query.update).toHaveBeenCalledWith({ color: "#AABBCC", name: "Nový název" });
     expect(query.eq).toHaveBeenNthCalledWith(1, "id", entityId);
-    expect(query.eq).toHaveBeenNthCalledWith(2, "user_id", userId);
+    if (table === "recording_projects") expect(query.eq).not.toHaveBeenCalledWith("user_id", userId);
+    else expect(query.eq).toHaveBeenNthCalledWith(2, "user_id", userId);
   });
 
   it.each(deleteCases)("deletes only an owned $table row", async ({ action, table }) => {
@@ -205,7 +220,8 @@ describe("recording organization actions", () => {
     expect(from).toHaveBeenCalledWith(table);
     expect(query.delete).toHaveBeenCalledOnce();
     expect(query.eq).toHaveBeenNthCalledWith(1, "id", entityId);
-    expect(query.eq).toHaveBeenNthCalledWith(2, "user_id", userId);
+    if (table === "recording_projects") expect(query.eq).not.toHaveBeenCalledWith("user_id", userId);
+    else expect(query.eq).toHaveBeenNthCalledWith(2, "user_id", userId);
   });
 
   it("blocks a mismatched rename scope before authentication or mutation", async () => {
@@ -337,8 +353,10 @@ describe("recording organization actions", () => {
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
-  it("assigns normalized organization through exactly one RPC and revalidates only success paths", async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+  it("assigns normalized private organization through locked RPC and verifies persisted safe projection", async () => {
+    const rpc = vi.fn().mockImplementation(async (name: string) => ({ error: null, data: name === "recording_capabilities_v1"
+      ? { ...NO_RECORDING_CAPABILITIES, read: true, manageAccess: true }
+      : name === "get_accessible_recording_v1" ? [{ id: recordingId, visibility: "private", client_id: clientId, project_id: projectId, folder_id: folderId, tag_ids: [tagId] }] : null }));
     const from = vi.fn();
     arrangeSupabase({ from, rpc });
     const formData = createForm({
@@ -354,7 +372,7 @@ describe("recording organization actions", () => {
       createInitialSaveActionState(),
       formData
     )).resolves.toMatchObject({ scopeKey: recordingId, status: "success" });
-    expect(rpc).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledTimes(4);
     expect(rpc).toHaveBeenCalledWith("assign_recording_organization_v1", {
       p_client_id: clientId,
       p_folder_id: folderId,

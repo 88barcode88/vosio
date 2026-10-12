@@ -11,7 +11,6 @@ import {
   type RecordingFolderRow,
   type RecordingOrganization,
   type RecordingOrganizationOptions,
-  type RecordingProjectPicker,
   type RecordingProjectRow,
   type RecordingTagPicker,
   type RecordingTagRow
@@ -48,7 +47,6 @@ async function getOwnedOrganizationRow<T>(
   table: string,
   columns: string,
   id: string | null,
-  userId: string,
   errorLabel: string
 ): Promise<T | null> {
   if (!id) {
@@ -59,7 +57,6 @@ async function getOwnedOrganizationRow<T>(
     .from(table)
     .select(columns)
     .eq("id", id)
-    .eq("user_id", userId)
     .maybeSingle();
 
   if (error) {
@@ -105,7 +102,17 @@ export async function listRecordingOrganizationOptions(
     )
   ]);
 
-  return { clients, folders, projects, tags };
+  const resolvedProjects = await Promise.all(projects.map(async (project) => {
+    const capture = await supabase.rpc("can_capture_in_recording_project", { p_project_id: project.id });
+    if (capture.error) throw new Error("Unable to load project capture authority");
+    const { data: founder, error: founderError } = await supabase.rpc("is_recording_project_founder_v1", { p_project_id: project.id });
+    if (founderError) throw new Error("Unable to load project authority");
+    if (founder !== true) return { ...project, client_id: null, can_manage_access: false, can_capture: capture.data === true };
+    const { data, error } = await supabase.rpc("get_personal_recording_project_v1", { p_project_id: project.id });
+    if (error || !data || data.id !== project.id) throw new Error("Unable to load personal project metadata");
+    return { ...project, client_id: typeof data.client_id === "string" ? data.client_id : null, can_manage_access: true, can_capture: capture.data === true };
+  }));
+  return { clients, folders, projects: resolvedProjects, tags };
 }
 
 // getRecordingOrganization builds a separate nullable organization projection for one recording.
@@ -119,32 +126,22 @@ export async function getRecordingOrganization(
       "recording_clients",
       "id,name,color",
       recording.client_id,
-      recording.user_id,
       "Unable to load recording client"
     ),
-    getOwnedOrganizationRow<Pick<RecordingProjectPicker, "color" | "id" | "name">>(
-      supabase,
-      "recording_projects",
-      "id,name,color",
-      recording.project_id,
-      recording.user_id,
-      "Unable to load recording project"
-    ),
+    Promise.resolve(recording.project_id && recording.project_name
+      ? { id: recording.project_id, name: recording.project_name, color: null } : null),
     getOwnedOrganizationRow<RecordingFolderPicker>(
       supabase,
       "recording_folders",
       "id,name,color",
       recording.folder_id,
-      recording.user_id,
       "Unable to load recording folder"
     ),
-    supabase
-      .from("recording_tag_links")
-      .select(RECORDING_TAG_LINK_WITH_TAG_COLUMNS)
-      .eq("recording_id", recording.id)
-      .eq("user_id", recording.user_id)
-      .order("tag_id", { ascending: true })
-      .returns<RecordingTagJoinRow[]>()
+    recording.tag_ids?.length ? supabase
+      .from("recording_tag_links").select(RECORDING_TAG_LINK_WITH_TAG_COLUMNS)
+      .eq("recording_id", recording.id).in("tag_id", recording.tag_ids)
+      .order("tag_id", { ascending: true }).returns<RecordingTagJoinRow[]>()
+      : Promise.resolve({ data: [], error: null })
   ]);
 
   if (tagResult.error) {

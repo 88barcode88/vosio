@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { useRecordingCapabilities } from "@/components/recording-capability-context";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -157,6 +158,7 @@ function StructuredTaskRowView({
   onTaskStatusConfirmed?: (task: StructuredTaskRow, status: StructuredTaskRow["status"]) => void;
 } & EvidenceNavigationProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { capabilities } = useRecordingCapabilities();
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleted, setIsDeleted] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -175,7 +177,7 @@ function StructuredTaskRowView({
 
   // toggleTaskStatus saves one checklist status without leaving the current scroll position.
   function toggleTaskStatus() {
-    if (!task.id || isPending || pendingStatusActionRef.current !== null) {
+    if (!capabilities.editTaskStatus || !task.id || isPending || pendingStatusActionRef.current !== null) {
       return;
     }
 
@@ -234,7 +236,7 @@ function StructuredTaskRowView({
 
   // deleteTask removes only this logical task projection and restores it after a failed request.
   async function deleteTask() {
-    if (!task.id || isDeleting || !window.confirm(
+    if (!capabilities.delete || !task.id || isDeleting || !window.confirm(
       `Smazat úkol „${task.title}“? Původní AI výstup zůstane uložený.`
     )) {
       return;
@@ -273,7 +275,7 @@ function StructuredTaskRowView({
       <button
         aria-label={isDone ? "Označit úkol jako nedokončený" : "Označit úkol jako hotový"}
         aria-pressed={isDone}
-        disabled={!task.id || isPending}
+        disabled={!capabilities.editTaskStatus || !task.id || isPending}
         onClick={toggleTaskStatus}
         type="button"
       >
@@ -307,7 +309,7 @@ function StructuredTaskRowView({
       <button
         aria-label={`Smazat úkol: ${task.title}`}
         className="structured-task-delete"
-        disabled={!task.id || isDeleting}
+        disabled={!capabilities.delete || !task.id || isDeleting}
         onClick={deleteTask}
         title={`Smazat úkol: ${task.title}`}
         type="button"

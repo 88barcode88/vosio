@@ -6,6 +6,7 @@ import { Trash2 } from "lucide-react";
 import { markNearestOptimisticDeleteTarget, restoreOptimisticDeleteTarget } from "@/components/optimistic-delete";
 import { Modal } from "@/components/ui/modal";
 import { purgeRecordingAction } from "@/lib/recordings/actions";
+import { retainPurgeRequest } from "@/lib/recordings/purge-request-retention";
 
 export type TrashRecordingAction = (formData: FormData) => Promise<void>;
 
@@ -14,6 +15,7 @@ type PurgeRecordingFormProps = {
   next?: string;
   purgeAction?: TrashRecordingAction;
   recordingId: string;
+  expectedUpdatedAt?: string;
 };
 
 // isRedirectSignal preserves Next navigation control flow before local failure recovery.
@@ -27,7 +29,8 @@ export function PurgeRecordingForm({
   actionContext,
   next = "/trash",
   purgeAction = purgeRecordingAction,
-  recordingId
+  recordingId,
+  expectedUpdatedAt
 }: PurgeRecordingFormProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -47,6 +50,9 @@ export function PurgeRecordingForm({
   // runPurge restores the exact row after an unexpected action rejection.
   async function runPurge(formData: FormData) {
     try {
+      const request = retainPurgeRequest(recordingId, expectedUpdatedAt ?? "");
+      formData.set("requestId", request.requestId);
+      formData.set("expectedUpdatedAt", request.expectedUpdatedAt);
       await purgeAction(formData);
     } catch (error) {
       if (isRedirectSignal(error)) throw error;

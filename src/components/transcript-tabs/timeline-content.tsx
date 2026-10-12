@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
+import { usePathname } from "next/navigation";
+import { DeleteAiOutputForm } from "@/components/delete-ai-output-form";
+import { useRecordingCapabilities } from "@/components/recording-capability-context";
 import { AudioLines, Flag, Sparkles } from "lucide-react";
 import {
   getTimelineChapterMeta,
@@ -15,7 +18,8 @@ import type { AiOutputView } from "@/lib/ai/types";
 import type { RecordingMarkerRow, RecordingMarkerType } from "@/lib/recording-markers/types";
 import { formatRecordingDate } from "@/lib/recordings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
-import type { ManualAiJobStatus } from "@/lib/ai/manual-job-state";
+import type { ManualAiJobStatus, ManualAiOutputMetadata } from "@/lib/ai/manual-job-state";
+import { getActiveAiModelOption, type AiReasoningEffort } from "@/lib/model-options";
 
 const markerTypeLabels: Record<RecordingMarkerType, string> = {
   decision: "Rozhodnutí",
@@ -41,26 +45,37 @@ export function TimelineContent({
   activeTranscript,
   aiOutputs,
   defaultAiModel,
+  defaultReasoningEffort,
+  isLoaded = true,
   markers,
   onJobAccepted,
   onReload,
   onOpenMarker,
+  onOutputsRemoved,
+  outputMetadata,
   stateError,
   structuredItems
 }: {
   activeTranscript: TranscriptRow | null;
   aiOutputs: AiOutputView[];
   defaultAiModel: string;
+  defaultReasoningEffort?: AiReasoningEffort;
+  isLoaded?: boolean;
   markers: RecordingMarkerRow[];
   onJobAccepted?: (job: { id: string; status: ManualAiJobStatus }, processingType: string) => void;
   onReload?: () => Promise<void>;
   onOpenMarker: (target: TranscriptTarget, recordingId: string) => void;
+  onOutputsRemoved?: (outputIds: string[]) => void;
+  outputMetadata?: ManualAiOutputMetadata[];
   structuredItems: StructuredAiItems;
   stateError?: string | null;
 }) {
+  const { capabilities } = useRecordingCapabilities();
+  const pathname = usePathname();
   const processing = useAiProcessingRun(activeTranscript?.id ?? null, onJobAccepted);
   const timelinePending = processing.isRunning("timeline_chapters");
   const timelineOutput = useMemo(() => getTimelineOutput(aiOutputs), [aiOutputs]);
+  const timelineArtifact = outputMetadata?.find((output) => output.processing_type === "timeline_chapters") ?? timelineOutput;
   const chapters = useMemo(() => getPreferredTimelineChapters({
     aiOutputs,
     persistedChapters: structuredItems.chapters
@@ -71,6 +86,11 @@ export function TimelineContent({
 
   return (
     <div className="timeline-list timeline-list-rich">
+      {timelineArtifact ? <div className="ai-output-actions">
+        <span>Uložený výstup časové osy · {formatRecordingDate(timelineArtifact.created_at)}</span>
+        <DeleteAiOutputForm key={timelineArtifact.id} next={pathname} onDeleted={onOutputsRemoved} outputId={timelineArtifact.id}
+          confirmationMessage={`Smazat tento výstup časové osy (${formatRecordingDate(timelineArtifact.created_at)}) a jeho odvozené projekce? Markery, nahrávka, přepis a ostatní AI výstupy zůstanou.`} />
+      </div> : null}
       {orderedMarkers.length > 0 ? (
         <section className="timeline-marker-section" aria-labelledby="recording-markers-title">
           <header className="timeline-list-header">
@@ -120,13 +140,16 @@ export function TimelineContent({
         </section>
       ) : null}
 
+      {stateError && chapters.length > 0 ? <p className="ai-state" role="alert">
+        {stateError} <button className="secondary-inline-action" onClick={() => void onReload?.()} type="button">Zkusit znovu</button>
+      </p> : null}
       {!activeTranscript ? (
         <div className="transcript-empty">
           <AudioLines size={22} />
           <strong>Časová osa zatím není dostupná</strong>
           <p>Nejdřív dokončete přepis nahrávky.</p>
         </div>
-      ) : stateError ? (
+      ) : stateError && chapters.length === 0 ? (
         <div className="transcript-empty" role="alert">
           <AudioLines size={22} />
           <strong>Časovou osu se nepodařilo načíst</strong>
@@ -135,6 +158,8 @@ export function TimelineContent({
             Zkusit znovu
           </button>
         </div>
+      ) : !isLoaded && chapters.length === 0 ? (
+        <div className="transcript-empty" aria-busy="true"><p role="status">Načítám časovou osu…</p></div>
       ) : chapters.length === 0 ? (
         <div className="transcript-empty">
           <AudioLines size={22} />
@@ -143,10 +168,11 @@ export function TimelineContent({
           <button
             aria-describedby="timeline-generation-state"
             className="secondary-inline-action"
-            disabled={timelinePending}
+            disabled={timelinePending || !capabilities.runPersonalAi}
             onClick={() => void processing.run({
               model: defaultAiModel,
-              processingType: "timeline_chapters"
+              processingType: "timeline_chapters",
+              ...(getActiveAiModelOption(defaultAiModel)?.provider === "openai" ? { reasoningEffort: defaultReasoningEffort ?? "medium" } : {})
             })}
             type="button"
           >

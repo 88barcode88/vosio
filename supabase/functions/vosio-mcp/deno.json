@@ -1,0 +1,8 @@
+{
+  "nodeModulesDir": "none",
+  "compilerOptions": { "strict": true, "lib": ["deno.ns", "dom", "dom.iterable", "esnext"] },
+  "tasks": {
+    "check": "deno check index.ts runtime.test.ts",
+    "test": "deno test --allow-env runtime.test.ts"
+  }
+}

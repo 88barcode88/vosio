@@ -89,27 +89,37 @@ export type RecordingStatus =
   | "deleted";
 
 export type RecordingRow = {
+  visibility?: import("@/lib/recording-sharing/types").RecordingVisibility;
+  project_name?: string | null;
+  tag_ids?: string[] | null;
+  capabilities?: import("@/lib/recording-sharing/types").RecordingCapabilities;
+  canReadPrivateChat?: boolean;
+  audioAvailability?: import("@/lib/recordings/client-view").RecordingAudioAvailability;
   client_id: string | null;
   id: string;
   created_at: string;
   deleted_at?: string | null;
   duration_seconds: number | null;
-  error_message: string | null;
+  error_message?: string | null;
   file_size_bytes: number | null;
   folder_id: string | null;
   mime_type: string | null;
   purge_after?: string | null;
+  purge_phase?: "none" | "prepared" | "started" | null;
   project_id: string | null;
   source_type: "upload" | "in_app_recording" | "realtime";
   status: RecordingStatus;
-  storage_path: string | null;
+  storage_path?: string | null;
   title: string;
   trash_retention_hours?: 24 | 168 | 720 | null;
   updated_at: string;
-  user_id: string;
+  user_id?: string;
 };
 
 export type RecordingSearchResult = {
+  projectName?: string | null;
+  visibility?: import("@/lib/recording-sharing/types").RecordingVisibility;
+  capabilities?: import("@/lib/recording-sharing/types").RecordingCapabilities;
   clientId: string | null;
   createdAt: string;
   durationSeconds: number | null;

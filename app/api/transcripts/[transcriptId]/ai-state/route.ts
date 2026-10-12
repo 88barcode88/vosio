@@ -3,9 +3,11 @@ import { z } from "zod";
 import type { ManualAiJobSummary, ManualAiOutputMetadata } from "@/lib/ai/manual-job-state";
 import { AI_FAILURE_CODES, type AiFailureCode } from "@/lib/ai/provider-errors";
 import { createClient } from "@/lib/supabase/server";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getManualAiCleanupState } from "@/lib/ai/manual-job-cleanup.server";
 import { classifyAutomaticJob } from "@/lib/ai/automatic-job-state";
+import { getAccessibleOutputTypes } from "@/lib/ai/queries";
 
 const routeParamsSchema = z.object({ transcriptId: z.uuid() });
 const MAX_MANUAL_AI_STATE_ROWS = 50;
@@ -28,7 +30,7 @@ function getSafeFailureCode(value: unknown): AiFailureCode | null {
     : null;
 }
 
-// GET returns bounded owner-scoped manual job summaries and artifact metadata for one transcript.
+// GET splits shared saved artifact metadata from currently authorized personal job and cleanup state.
 export async function GET(request: NextRequest, context: RouteContext) {
   const params = routeParamsSchema.safeParse(await context.params);
   if (!params.success) return NextResponse.json({ error: "Přepis nebyl nalezen." }, { status: 404 });
@@ -42,9 +44,30 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (userError || !user) return NextResponse.json({ error: "Nejste přihlášený." }, { status: 401 });
 
   const { data: transcript } = await supabase.from("transcripts")
-    .select("id,completion_generation_key").eq("id", transcriptId).eq("user_id", user.id)
-    .maybeSingle<{ id: string; completion_generation_key: string | null }>();
+    .select("id,recording_id,completion_generation_key").eq("id", transcriptId)
+    .maybeSingle<{ id: string; recording_id: string; completion_generation_key: string | null }>();
   if (!transcript) return NextResponse.json({ error: "Přepis nebyl nalezen." }, { status: 404 });
+  const capabilities = await resolveRecordingCapabilities(supabase, transcript.recording_id);
+  if (!capabilities.read) {
+    return NextResponse.json({ error: "Přístup není povolen." }, { status: 403 });
+  }
+  // Shared readers load saved artifact metadata only, never personal jobs, intents or cleanup state.
+  if (!capabilities.runPersonalAi) {
+    const result = await supabase.from("ai_outputs").select("id,created_at,processing_job_id,transcript_id")
+      .eq("transcript_id", transcriptId).order("created_at", { ascending: false }).order("id", { ascending: false })
+      .range(outputOffset, outputOffset + MAX_MANUAL_AI_STATE_ROWS);
+    if (result.error) return NextResponse.json({ error: "AI stav se nepodařilo načíst." }, { status: 503 });
+    const rows = result.data ?? [];
+    const types = await getAccessibleOutputTypes(supabase, rows);
+    return NextResponse.json({
+      jobs: [], classifications: [], cleanup: { eligible_count: 0, next_cursor: null },
+      automaticGenerationKey: transcript.completion_generation_key,
+      nextOutputOffset: rows.length > MAX_MANUAL_AI_STATE_ROWS ? outputOffset + MAX_MANUAL_AI_STATE_ROWS : null,
+      outputs: rows.slice(0, MAX_MANUAL_AI_STATE_ROWS).map((row) => ({
+        ...row, body_loaded: false, processing_type: types.get(row.id) ?? null
+      }))
+    }, { headers: { "Cache-Control": "private, no-store" } });
+  }
 
   const admin = createAdminClient();
   const automaticJobsPromise = (async () => {

@@ -2,7 +2,8 @@ import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { runManualAiJob } from "@/lib/ai/manual-processing.server";
 import { getAiProviderConfigurationError } from "@/lib/env.server";
-import { aiModelIds, DEFAULT_AI_MODEL_ID, getAiModelOption, resolveAiModelExecution, type AiProviderId } from "@/lib/model-options";
+import { aiModelIds, aiReasoningEfforts, legacyAiModelOptions, resolveNewAiModelSelection, DEFAULT_AI_MODEL_ID, getAiModelOption, resolveAiModelExecution, type AiProviderId } from "@/lib/model-options";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
 import {
   quickPromptProcessingTypes,
   type EffectivePromptRpcRow,
@@ -18,9 +19,11 @@ export const maxDuration = 300;
 const aiProcessingRateLimit = createRateLimiter({ limit: 10, windowMs: 60_000 });
 const requestBodySchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
-  model: z.enum(aiModelIds).optional(),
+  model: z.string().optional(),
+  reasoningEffort: z.enum(aiReasoningEfforts).optional(),
   processingType: z.enum(quickPromptProcessingTypes),
   requestId: z.uuid(),
+  retryOfJobId: z.uuid().optional(),
   temperature: z.number().min(0).max(2).optional()
 });
 
@@ -31,6 +34,16 @@ type ExistingJob = {
   model: string;
   processing_type: string;
   prompt_output_schema_snapshot: unknown;
+  prompt_id: string | null;
+  prompt_override_id: string | null;
+  prompt_source: string | null;
+  prompt_name_snapshot: string | null;
+  prompt_text_snapshot: string | null;
+  prompt_revision_snapshot: number | null;
+  prompt_snapshot_exact: boolean;
+  retry_source_job_id: string | null;
+  failure_code: string | null;
+  retry_after_at: string | null;
   provider: AiProviderId;
   provider_config: unknown;
   status: "queued" | "running" | "done" | "failed";
@@ -44,7 +57,7 @@ function routeErrorResponse(_error: unknown, fallbackMessage: string, status = 5
   return NextResponse.json({ error: fallbackMessage }, { status });
 }
 
-// getAuthenticatedTranscript verifies ownership through the request-scoped RLS client.
+// getAuthenticatedTranscript requires current personal AI authority before prompt, job or provider access.
 async function getAuthenticatedTranscript(transcriptId: string) {
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -53,10 +66,19 @@ async function getAuthenticatedTranscript(transcriptId: string) {
   }
 
   const { data: transcript, error: transcriptError } = await supabase
-    .from("transcripts").select("id,user_id").eq("id", transcriptId).eq("user_id", user.id).single();
+    .from("transcripts")
+    .select("id,recording_id,user_id")
+    .eq("id", transcriptId)
+    .eq("user_id", user.id)
+    .single();
+
   if (transcriptError || !transcript) {
     return { error: NextResponse.json({ error: "Přepis nebyl nalezen." }, { status: 404 }) };
   }
+  if (!(await resolveRecordingCapabilities(supabase, transcript.recording_id)).runPersonalAi) {
+    return { error: NextResponse.json({ error: "AI zpracování není povoleno." }, { status: 403 }) };
+  }
+
   return { transcript, user };
 }
 
@@ -74,7 +96,7 @@ async function resolveEffectivePrompt(processingType: QuickPromptProcessingType)
 async function findExistingJob(jobId: string) {
   const admin = createAdminClient();
   const { data } = await admin.from("ai_processing_jobs")
-    .select("id,status,transcript_id,user_id,execution_mode,processing_type,model,prompt_output_schema_snapshot,provider,provider_config")
+    .select("id,status,transcript_id,user_id,execution_mode,processing_type,model,prompt_id,prompt_override_id,prompt_source,prompt_name_snapshot,prompt_text_snapshot,prompt_output_schema_snapshot,prompt_revision_snapshot,prompt_snapshot_exact,provider,provider_config,retry_source_job_id,failure_code,retry_after_at")
     .eq("id", jobId).maybeSingle<ExistingJob>();
   return data;
 }
@@ -104,8 +126,11 @@ function createProviderConfigSnapshot(input: {
   model: string;
   outputSchema: unknown;
   temperature: number;
+  reasoningEffort?: string;
+  legacy?: boolean;
 }) {
-  const modelOption = getAiModelOption(input.model);
+  const modelOption = input.legacy ? getAiModelOption(input.model)
+    : resolveNewAiModelSelection(input.model, input.reasoningEffort);
   if (!modelOption) {
     throw new Error("Invalid AI model profile.");
   }
@@ -115,7 +140,8 @@ function createProviderConfigSnapshot(input: {
     provider,
     provider_model: modelOption.providerModel,
     response_format: input.outputSchema ? "json_schema" : "text",
-    temperature: input.temperature,
+    temperature: input.legacy ? input.temperature : 0.3,
+    ...(!input.legacy && provider === "gemini" ? { sampling_temperature_supported: true } : {}),
     ...(modelOption?.reasoningEffort ? { reasoning_effort: modelOption.reasoningEffort } : {}),
     ...(modelOption?.geminiThinkingLevel ? { thinking_level: modelOption.geminiThinkingLevel } : {})
   };
@@ -149,9 +175,32 @@ function isSameAcceptedRequest(
     && job.transcript_id === input.transcriptId
     && job.model === input.model
     && job.processing_type === input.processingType
+    && !job.retry_source_job_id
     && job.provider === input.providerConfig.provider
     && normalizedExistingConfig !== null
     && hasSameJsonValue(normalizedExistingConfig, input.providerConfig);
+}
+
+// matchesRetryRequest binds replay and optional compatibility fields to the exact accepted snapshot.
+function matchesRetryRequest(job: ExistingJob, input: z.infer<typeof requestBodySchema>, transcriptId: string, userId: string) {
+  const config = job.provider_config as Record<string, unknown> | null;
+  return job.execution_mode === "manual" && job.user_id === userId && job.transcript_id === transcriptId
+    && job.processing_type === input.processingType
+    && (input.model === undefined || input.model === job.model)
+    && (input.reasoningEffort === undefined || input.reasoningEffort === config?.reasoning_effort)
+    && (input.temperature === undefined || input.temperature === config?.temperature)
+    && (input.metadata === undefined || hasSameJsonValue(input.metadata, config?.metadata));
+}
+
+// canCloneManualSnapshot mirrors worker admission so a retry never rebuilds an incomplete historical prompt.
+function canCloneManualSnapshot(job: ExistingJob) {
+  const config = job.provider_config as Record<string, unknown> | null;
+  return job.prompt_snapshot_exact === true && typeof job.prompt_text_snapshot === "string"
+    && job.prompt_text_snapshot.trim() !== "" && config !== null && !Array.isArray(config)
+    && typeof config?.metadata === "object" && config.metadata !== null && !Array.isArray(config.metadata)
+    && typeof config.temperature === "number" && Number.isFinite(config.temperature)
+    && config.temperature >= 0 && config.temperature <= 2
+    && resolveAiModelExecution({ model: job.model, provider: job.provider, providerConfig: config }) !== null;
 }
 
 // POST durably accepts one idempotent manual AI job and releases provider work to Next after().
@@ -167,14 +216,47 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const authenticated = await getAuthenticatedTranscript(params.data.transcriptId);
     if (authenticated.error) return authenticated.error;
     const { transcript, user } = authenticated;
-    const requestedModel = body.data.model ?? DEFAULT_AI_MODEL_ID;
     const existingJob = await findExistingJob(body.data.requestId);
+    let retrySource: ExistingJob | null = null;
+    if (body.data.retryOfJobId) {
+      if (existingJob) {
+        return existingJob.retry_source_job_id === body.data.retryOfJobId
+          && matchesRetryRequest(existingJob, body.data, transcript.id, user.id)
+          ? acceptedJobResponse(existingJob)
+          : NextResponse.json({ error: "Požadavek nelze přijmout." }, { status: 409 });
+      }
+      retrySource = await findExistingJob(body.data.retryOfJobId);
+      if (!retrySource || retrySource.status !== "failed"
+        || !matchesRetryRequest(retrySource, body.data, transcript.id, user.id)
+        || !canCloneManualSnapshot(retrySource)) {
+        return NextResponse.json({ error: "AI požadavek nelze opakovat." }, { status: 409 });
+      }
+      const retryAt = retrySource.retry_after_at ? Date.parse(retrySource.retry_after_at) : Number.NaN;
+      if (retrySource.failure_code === "rate_limited" && Number.isFinite(retryAt) && retryAt > Date.now()) {
+        return NextResponse.json({ error: "AI požadavek lze opakovat později." }, {
+          status: 429, headers: { "Retry-After": String(Math.ceil((retryAt - Date.now()) / 1000)) }
+        });
+      }
+    }
+    const requestedModel = retrySource?.model ?? body.data.model ?? existingJob?.model ?? DEFAULT_AI_MODEL_ID;
+    if (!retrySource && !aiModelIds.includes(requestedModel as (typeof aiModelIds)[number])
+      && (!existingJob || existingJob.model !== requestedModel)) {
+      return NextResponse.json({ error: "Vybraný AI model není podporovaný." }, { status: 400 });
+    }
+    if (!retrySource && aiModelIds.includes(requestedModel as (typeof aiModelIds)[number])
+      && !resolveNewAiModelSelection(requestedModel, body.data.reasoningEffort)) {
+      return NextResponse.json({ error: "Nepodporovaná úroveň uvažování." }, { status: 400 });
+    }
     if (existingJob) {
       const providerConfig = createProviderConfigSnapshot({
         metadata: body.data.metadata ?? {},
         model: requestedModel,
         outputSchema: existingJob.prompt_output_schema_snapshot,
-        temperature: body.data.temperature ?? 0.2
+        temperature: body.data.temperature ?? 0.2,
+        reasoningEffort: body.data.reasoningEffort,
+        legacy: legacyAiModelOptions.some((option) => option.id === existingJob.model && option.provider === "openai")
+          || (existingJob.provider === "gemini" && !(existingJob.provider_config as Record<string, unknown>)?.sampling_temperature_supported)
+          || (existingJob.provider === "mistral" && (existingJob.provider_config as Record<string, unknown>)?.temperature !== 0.3)
       });
       return isSameAcceptedRequest(existingJob, {
         model: requestedModel,
@@ -195,22 +277,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const requestedModelOption = getAiModelOption(requestedModel);
-    if (!requestedModelOption) {
+    const requestedModelOption = retrySource ? null : resolveNewAiModelSelection(requestedModel, body.data.reasoningEffort);
+    if (!retrySource && !requestedModelOption) {
       return NextResponse.json({ error: "Vybraný AI model není podporovaný." }, { status: 400 });
     }
-    const requestedProvider = requestedModelOption.provider;
+    const requestedProvider = retrySource?.provider ?? requestedModelOption!.provider;
     const providerConfigurationError = getAiProviderConfigurationError(requestedProvider);
     if (providerConfigurationError) {
       return NextResponse.json({ error: providerConfigurationError }, { status: 503 });
     }
 
-    const promptTemplate = await resolveEffectivePrompt(body.data.processingType);
-    const providerConfig = createProviderConfigSnapshot({
+    const promptTemplate = retrySource ? null : await resolveEffectivePrompt(body.data.processingType);
+    const providerConfig = retrySource ? retrySource.provider_config : createProviderConfigSnapshot({
       metadata: body.data.metadata ?? {},
       model: requestedModel,
-      outputSchema: promptTemplate.output_schema,
-      temperature: body.data.temperature ?? 0.2,
+      outputSchema: promptTemplate!.output_schema,
+      temperature: 0.3,
+      reasoningEffort: body.data.reasoningEffort,
     });
     const admin = createAdminClient();
     const { data: job, error: jobError } = await admin.from("ai_processing_jobs").insert({
@@ -223,17 +306,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
       max_attempts: 1,
       model: requestedModel,
       processing_type: body.data.processingType,
-      prompt_id: promptTemplate.system_prompt_id,
-      prompt_override_id: promptTemplate.override_id,
-      prompt_source: promptTemplate.source,
-      prompt_name_snapshot: promptTemplate.name,
-      prompt_text_snapshot: promptTemplate.prompt_text,
-      prompt_output_schema_snapshot: promptTemplate.output_schema,
-      prompt_revision_snapshot: promptTemplate.revision,
-      prompt_snapshot_exact: true,
+      prompt_id: retrySource ? retrySource.prompt_id : promptTemplate!.system_prompt_id,
+      prompt_override_id: retrySource ? retrySource.prompt_override_id : promptTemplate!.override_id,
+      prompt_source: retrySource ? retrySource.prompt_source : promptTemplate!.source,
+      prompt_name_snapshot: retrySource ? retrySource.prompt_name_snapshot : promptTemplate!.name,
+      prompt_text_snapshot: retrySource ? retrySource.prompt_text_snapshot : promptTemplate!.prompt_text,
+      prompt_output_schema_snapshot: retrySource ? retrySource.prompt_output_schema_snapshot : promptTemplate!.output_schema,
+      prompt_revision_snapshot: retrySource ? retrySource.prompt_revision_snapshot : promptTemplate!.revision,
+      prompt_snapshot_exact: retrySource ? retrySource.prompt_snapshot_exact : true,
       provider: requestedProvider,
       provider_config: providerConfig,
       retry_after_at: null,
+      retry_source_job_id: body.data.retryOfJobId ?? null,
       started_at: null,
       status: "queued",
       transcript_id: transcript.id,
@@ -243,11 +327,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (jobError || !job) {
       const racedJob = await findExistingJob(body.data.requestId);
       if (racedJob) {
+        if (body.data.retryOfJobId) {
+          return racedJob.retry_source_job_id === body.data.retryOfJobId
+            && matchesRetryRequest(racedJob, body.data, transcript.id, user.id)
+            ? acceptedJobResponse(racedJob)
+            : NextResponse.json({ error: "Požadavek nelze přijmout." }, { status: 409 });
+        }
         const racedProviderConfig = createProviderConfigSnapshot({
           metadata: body.data.metadata ?? {},
           model: requestedModel,
           outputSchema: racedJob.prompt_output_schema_snapshot,
-          temperature: body.data.temperature ?? 0.2
+          temperature: 0.3,
+          reasoningEffort: body.data.reasoningEffort
         });
         if (isSameAcceptedRequest(racedJob, {
           model: requestedModel,

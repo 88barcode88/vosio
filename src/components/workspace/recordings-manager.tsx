@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { MoreHorizontal, Plus } from "lucide-react";
+import { BulkRecordingSharing } from "@/components/workspace/bulk-recording-sharing";
+import { RecordingSharingCheckbox, RecordingSharingSelectionProvider } from "@/components/workspace/recording-sharing-selection";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { LiveRecordingRecoveryPanel } from "@/components/live-recording-recovery-panel";
 import { SearchResultExcerpt } from "@/components/search-result-excerpt";
@@ -71,7 +73,7 @@ function getSearchOrganizationMeta(
 ) {
   return [
     options.clients.find((item) => item.id === result.clientId)?.name,
-    options.projects.find((item) => item.id === result.projectId)?.name,
+    result.projectName,
     options.folders.find((item) => item.id === result.folderId)?.name
   ].filter((value): value is string => Boolean(value)).join(" · ");
 }
@@ -82,21 +84,22 @@ function getRecordingOrganizationMeta(
   options: RecordingOrganizationOptions
 ) {
   return [
-    options.projects.find((item) => item.id === recording.project_id)?.name,
+    recording.project_name,
     options.folders.find((item) => item.id === recording.folder_id)?.name
   ].filter((value): value is string => Boolean(value)).join(" · ");
 }
 
 // RecordingActionsMenu keeps secondary row actions available without letting them dominate the inbox.
-function RecordingActionsMenu({ recordingId, title }: { recordingId: string; title: string }) {
+function RecordingActionsMenu({ recordingId, title, capabilities }: { recordingId: string; title: string; capabilities?: RecordingRow["capabilities"] }) {
+  if (!capabilities?.editTitle && !capabilities?.delete) return null;
   return (
     <details className="recordings-actions-menu">
       <summary aria-label={`Možnosti nahrávky ${title}`} title="Možnosti nahrávky">
-        <MoreHorizontal aria-hidden="true" size={18} />
+        <MoreHorizontal aria-hidden="true" size={15} />
       </summary>
       <div className="recordings-actions-popover">
-        <RecordingTitleEditor recordingId={recordingId} title={title} />
-        <DeleteRecordingForm recordingId={recordingId} variant="compact" />
+        {capabilities.editTitle ? <RecordingTitleEditor recordingId={recordingId} title={title} /> : null}
+        {capabilities.delete ? <DeleteRecordingForm recordingId={recordingId} variant="compact" /> : null}
       </div>
     </details>
   );
@@ -212,7 +215,7 @@ function RecordingSearchResults({
                   aria-label={`Akce nahrávky ${result.title}`}
                   role="group"
                 >
-                  <RecordingActionsMenu recordingId={result.id} title={result.title} />
+                  <RecordingActionsMenu recordingId={result.id} title={result.title} capabilities={result.capabilities} />
                 </div>
               </article>
             );
@@ -277,6 +280,7 @@ export function RecordingsManager({
   const statusSearchParams = new URLSearchParams(recordingsSearchParams);
 
   return (
+    <RecordingSharingSelectionProvider recordings={recordings}>
     <Panel className="recordings-inbox" aria-label="Správa nahrávek">
       <div className="recordings-inbox-header">
         <div>
@@ -284,12 +288,11 @@ export function RecordingsManager({
           <p>Vaše hovory, přepisy a navazující výstupy.</p>
         </div>
         <Link className="recordings-create-button" href="/recordings/new">
-          <Plus aria-hidden="true" size={17} />
+          <Plus aria-hidden="true" size={15} />
           Nová nahrávka
         </Link>
       </div>
       {errorMessage ? <p className="recordings-alert" role="alert">{errorMessage}</p> : null}
-      <LiveRecordingRecoveryPanel />
       <div aria-label="Nástroje nahrávek" className="recordings-toolbar" role="toolbar">
         <RecordingFilters
           filters={filters}
@@ -298,7 +301,9 @@ export function RecordingsManager({
           searchQuery={searchQuery}
         />
         <OrganizationManagerDrawer actions={organizationActions} options={organizationOptions} />
+        <LiveRecordingRecoveryPanel />
       </div>
+      <BulkRecordingSharing recordings={recordings} />
       {hasActiveQuery && (!searchQuery || !searchPage) ? (
         <p className="recordings-search-status">
           Filtrovaný výsledek: {formatRecordingResultCount(recordings.length)}.
@@ -345,6 +350,7 @@ export function RecordingsManager({
                         data-recording-id={recording.id}
                         key={recording.id}
                       >
+                        <RecordingSharingCheckbox recordingId={recording.id} title={recording.title} />
                         <div className="recordings-row-main">
                           <div className="recordings-row-title">
                             <Link
@@ -370,7 +376,7 @@ export function RecordingsManager({
                           aria-label={`Akce nahrávky ${recording.title}`}
                           role="group"
                         >
-                          <RecordingActionsMenu recordingId={recording.id} title={recording.title} />
+                          <RecordingActionsMenu recordingId={recording.id} title={recording.title} capabilities={recording.capabilities} />
                         </div>
                       </article>
                     );
@@ -392,5 +398,6 @@ export function RecordingsManager({
         </div>
       )}
     </Panel>
+    </RecordingSharingSelectionProvider>
   );
 }

@@ -16,6 +16,8 @@ import {
   parseRecordingAssignment
 } from "@/lib/recording-organization/validation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
+import { getRecordingById } from "@/lib/recordings/queries";
 
 type OrganizationActionConfig = {
   createMessage: string;
@@ -129,7 +131,8 @@ async function executeCreateOrganization(
     name = parseOrganizationName(getFormString(formData, "name"), config.kind);
     color = parseOrganizationColor(getFormString(formData, "color"));
     if (config.kind === "project") {
-      clientId = parseOrganizationId(getFormString(formData, "clientId"));
+      const selectedClient = getFormString(formData, "clientId");
+      clientId = selectedClient ? parseOrganizationId(selectedClient) : null;
     }
   } catch {
     return createSaveError(previousState.revision, scopeKey || null, invalidInputMessage);
@@ -218,13 +221,16 @@ async function executeRenameOrganization(
       return createSaveError(previousState.revision, scopeKey, authenticationMessage);
     }
 
-    const result = await context.supabase
+    if (config.kind === "project") {
+      const founder = await context.supabase.rpc("is_recording_project_founder_v1", { p_project_id: entityId });
+      if (founder.error || founder.data !== true) return createSaveError(previousState.revision, scopeKey, "Změnu se nepodařilo uložit.");
+    }
+    let query = context.supabase
       .from(config.table)
       .update({ color, name })
-      .eq("id", entityId)
-      .eq("user_id", context.user.id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", entityId);
+    if (config.kind !== "project") query = query.eq("user_id", context.user.id);
+    const result = await query.select("id").maybeSingle();
 
     if (result.error || !result.data) {
       return createSaveError(
@@ -265,13 +271,16 @@ async function executeDeleteOrganization(
       return createSaveError(previousState.revision, scopeKey, authenticationMessage);
     }
 
-    const result = await context.supabase
+    if (config.kind === "project") {
+      const founder = await context.supabase.rpc("is_recording_project_founder_v1", { p_project_id: entityId });
+      if (founder.error || founder.data !== true) return createSaveError(previousState.revision, scopeKey, "Změnu se nepodařilo uložit.");
+    }
+    let query = context.supabase
       .from(config.table)
       .delete()
-      .eq("id", entityId)
-      .eq("user_id", context.user.id)
-      .select("id")
-      .maybeSingle();
+      .eq("id", entityId);
+    if (config.kind !== "project") query = query.eq("user_id", context.user.id);
+    const result = await query.select("id").maybeSingle();
 
     if (result.error || !result.data) {
       return createSaveError(
@@ -378,6 +387,11 @@ export async function assignRecordingOrganizationAction(
       return createSaveError(previousState.revision, scopeKey, authenticationMessage);
     }
 
+    const capabilities = await resolveRecordingCapabilities(context.supabase, recordingId);
+    const recording = capabilities.manageAccess ? await getRecordingById(context.supabase, recordingId) : null;
+    if (!recording || recording.visibility !== "private") {
+      return createSaveError(previousState.revision, scopeKey, "Zařazení nahrávky se nepodařilo uložit.");
+    }
     const { error } = await context.supabase.rpc("assign_recording_organization_v1", {
       p_client_id: assignment.clientId,
       p_folder_id: assignment.folderId,
@@ -386,7 +400,10 @@ export async function assignRecordingOrganizationAction(
       p_tag_ids: assignment.tagIds
     });
 
-    if (error) {
+    const saved = error ? null : await getRecordingById(context.supabase, recordingId);
+    if (error || !saved || saved.client_id !== assignment.clientId || saved.project_id !== assignment.projectId
+      || saved.folder_id !== assignment.folderId
+      || JSON.stringify([...(saved.tag_ids ?? [])].sort()) !== JSON.stringify([...assignment.tagIds].sort())) {
       return createSaveError(
         previousState.revision,
         scopeKey,

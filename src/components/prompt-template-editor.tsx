@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { PencilLine, RotateCcw } from "lucide-react";
+import { Pencil, RotateCcw, Save } from "lucide-react";
 import {
   resetPromptOverrideAction,
   savePromptOverrideAction,
@@ -121,7 +121,7 @@ export function PromptTemplateEditor({
           />
         ) : (
           <div className="prompt-editor-empty">
-            <PencilLine aria-hidden="true" size={20} />
+            <Pencil aria-hidden="true" size={15} />
             <strong>Vyberte AI prompt</strong>
             <p>Upravte instrukce, které používá jedno z existujících AI tlačítek.</p>
           </div>
@@ -262,7 +262,7 @@ function EffectivePromptForm({
 // SubmitPromptButton exposes the pending state inside the save form.
 function SubmitPromptButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
-  return <button disabled={pending} type="submit">{pending ? "Ukládám…" : label}</button>;
+  return <button disabled={pending} type="submit"><Save aria-hidden="true" size={15} />{pending ? "Ukládám…" : label}</button>;
 }
 
 // ResetPromptButton exposes the pending state inside the destructive reset boundary.

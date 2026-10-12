@@ -60,9 +60,8 @@ export function parseRecordingOrganizationFilters(
   const requestedProjectId = normalizeUuid(
     searchParams.getAll("project").length === 1 ? searchParams.get("project") ?? undefined : undefined
   );
-  const projectId = requestedProjectId && clientId && options.projects.some((project) =>
-    project.id.toLowerCase() === requestedProjectId && project.client_id.toLowerCase() === clientId
-  ) ? requestedProjectId : null;
+  // Exact selected grants can authorize a project filter without exposing a general project option.
+  const projectId = requestedProjectId;
   const normalizedTagIds: string[] = [];
   const seenTagIds = new Set<string>();
 

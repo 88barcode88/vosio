@@ -1,6 +1,7 @@
+import { WorkspaceLoading } from "@/components/workspace/loading";
 import { Panel } from "@/components/ui/panel";
 
 // TemplatesLoading keeps the prompt document stable while RLS data resolves.
 export default function TemplatesLoading() {
-  return <Panel aria-busy="true" aria-label="Načítání AI promptů" className="utility-route-state" data-utility-route-state="loading"><h1>AI prompty</h1><p role="status">Načítám AI prompty…</p></Panel>;
+  return <WorkspaceLoading view="templates"><Panel aria-busy="true" aria-label="Načítání AI promptů" className="utility-route-state" data-utility-route-state="loading"><h1>AI prompty</h1><p role="status">Načítám AI prompty…</p></Panel></WorkspaceLoading>;
 }

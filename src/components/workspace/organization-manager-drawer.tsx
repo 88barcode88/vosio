@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Settings2, X } from "lucide-react";
 import { Drawer } from "@/components/ui/drawer";
 import {
   OrganizationManager,
@@ -32,12 +32,13 @@ export function OrganizationManagerDrawer({ actions, options }: {
         onClick={() => setOpen(true)}
         type="button"
       >
+        <Settings2 aria-hidden="true" size={15} />
         Spravovat
       </button>
       <Drawer className="organization-manager-drawer" keepMounted label="Správa organizace" onClose={close} open={open}>
         <header>
           <div><span>Organizace</span><h2>Zařazení nahrávek</h2></div>
-          <button aria-label="Zavřít správu organizace" onClick={close} type="button"><X size={16} /></button>
+          <button aria-label="Zavřít správu organizace" onClick={close} type="button"><X aria-hidden="true" size={15} /></button>
         </header>
         <OrganizationManager actions={actions} options={options} />
       </Drawer>

@@ -7,6 +7,7 @@ import {
 } from "@/lib/ai/manual-job-cleanup.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
 
 const routeParamsSchema = z.object({ transcriptId: z.uuid() });
 const cursorSchema = z.string().min(1).max(1_024).nullable();
@@ -21,9 +22,10 @@ async function authorizeCleanupScope(transcriptId: string) {
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) return { error: "unauthorized" as const };
-  const { data: transcript } = await supabase.from("transcripts").select("id")
-    .eq("id", transcriptId).eq("user_id", user.id).maybeSingle<{ id: string }>();
+  const { data: transcript } = await supabase.from("transcripts").select("id,recording_id")
+    .eq("id", transcriptId).eq("user_id", user.id).maybeSingle<{ id: string; recording_id: string }>();
   if (!transcript) return { error: "not_found" as const };
+  if (!(await resolveRecordingCapabilities(supabase, transcript.recording_id)).delete) return { error: "not_found" as const };
   return { transcriptId: transcript.id, userId: user.id };
 }
 

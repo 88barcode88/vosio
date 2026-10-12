@@ -1,0 +1,202 @@
+/* Approved compact variant A: existing tokens, small visual controls and full 44px targets. */
+.compact-popover { position: relative; min-width: 0; width: auto; margin: 0; padding: 0; border: 0; background: transparent; }
+.compact-popover > summary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; min-width: 44px; list-style: none; cursor: pointer; font-size: .75rem; font-weight: 500; padding: 0 10px; }
+.compact-popover > summary::-webkit-details-marker { display: none; }
+.compact-popover > summary::after { display: none; }
+.compact-popover > summary[aria-disabled="true"] { cursor: wait; opacity: .6; }
+.compact-popover-surface { position: fixed; z-index: 100; display: grid; gap: 10px; width: min(360px, calc(100vw - 32px)); min-width: 0; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text); background: var(--surface-raised); box-shadow: 0 12px 32px color-mix(in srgb, var(--text) 12%, transparent); padding: 14px; }
+.compact-popover-surface[hidden] { display: none; }
+.compact-popover-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.compact-popover-header strong { font-size: .8125rem; font-weight: 650; }
+.compact-popover-header button { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--text-secondary); }
+.compact-popover-header button:hover:not(:disabled) { color: var(--text); background: var(--surface-muted); }
+.compact-popover :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.compact-popover-surface :is(input:not([type="checkbox"]), select) { min-width: 0; width: 100%; min-height: 44px; border: 1px solid var(--border-strong); border-radius: 5px; color: var(--text); background: var(--surface); padding: 8px 10px; }
+.compact-popover-surface p { font-size: .75rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.compact-popover-surface :is(fieldset, .auth-form) { min-width: 0; margin: 0; }
+.compact-popover-surface .auth-form { gap: 10px; }
+.compact-popover-surface .auth-form button { width: fit-content; justify-self: end; }
+.compact-popover-surface .auth-form label { font-size: .75rem; }
+.compact-popover-surface :is(ul, li) { padding-left: 0; list-style: none; overflow-wrap: anywhere; font-size: .75rem; }
+.compact-popover-surface h3 { font-size: .8125rem; margin: 8px 0; }
+.compact-popover-surface .bulk-recording-sharing { width: 100%; min-width: 0; border: 0; padding: 0; margin: 0; }
+.compact-popover-surface .bulk-recording-sharing > summary { min-height: 44px; font-size: .75rem; cursor: pointer; }
+.bulk-recording-sharing-form { display: grid; gap: 8px; min-width: 0; }
+.bulk-recording-sharing-form fieldset { display: grid; gap: 8px; border: 0; padding: 0; }
+.bulk-recording-sharing-form legend { color: var(--text-secondary); font-size: .6875rem; }
+.bulk-recording-sharing-form label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; overflow-wrap: anywhere; font-size: .75rem; }
+.bulk-recording-sharing-form label:has(select) { display: grid; }
+.bulk-recording-sharing-form input[type="checkbox"] { width: 16px; height: 16px; }
+.bulk-recording-sharing-form > button { justify-self: end; }
+.recording-selection-toolbar:not([hidden]) { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; margin: 8px 0; border-radius: 5px; background: var(--surface-muted); font-size: .75rem; }
+.recording-selection-toolbar > button { border: 0; background: transparent; color: var(--text-secondary); font-size: .75rem; padding: 0 8px; }
+.recording-sharing-result { margin: 8px 0; color: var(--text-secondary); font-size: .75rem; }
+.recordings-inbox .recordings-status-summary { flex-direction: row; flex-wrap: nowrap; width: fit-content; min-width: 0; min-height: 44px; gap: 2px; padding: 0 3px; border-radius: 6px; overflow-x: auto; }
+.recordings-inbox .recordings-status-summary a { position: relative; isolation: isolate; flex: 0 0 auto; min-width: 44px; min-height: 44px; padding: 0 9px; border: 0; border-radius: 5px; background: transparent; box-shadow: none; font-size: .71875rem; }
+.recordings-inbox .recordings-status-summary a::before { content: ""; position: absolute; z-index: -1; inset: 7px 0; border-radius: 5px; }
+.recordings-inbox .recordings-status-summary a:hover::before { background: var(--surface); }
+.recordings-inbox .recordings-status-summary a[aria-current="page"]::before { background: var(--surface); border: 1px solid var(--border); }
+.recording-sharing-checkbox, .recording-sharing-checkbox-placeholder { display: flex; align-items: center; justify-content: center; min-height: 44px; width: 44px; align-self: center; }
+.recording-sharing-checkbox { cursor: pointer; }
+.recording-sharing-checkbox input { width: 14px; height: 14px; accent-color: var(--accent); }
+.recordings-inbox .recordings-row:has(.recording-sharing-checkbox-placeholder), .recordings-inbox .recordings-row:has(.recording-sharing-checkbox) { grid-template-columns: 44px minmax(0, 1fr) 48px; }
+.recordings-inbox .recordings-table:has(.recording-sharing-checkbox, .recording-sharing-checkbox-placeholder) .recordings-table-head { padding-left: 44px; grid-template-columns: minmax(0, 1fr) 48px; }
+.recordings-inbox .recordings-row-actions { padding: 0; justify-content: center; border-top: 0; }
+.recordings-inbox .recordings-row-main { min-height: 68px; padding-block: 5px; }
+.recordings-inbox .recordings-row-title { gap: 0; }
+.recordings-inbox .recordings-row-title > a { min-height: 44px; }
+.recordings-inbox .recordings-row-title > span { margin-top: -6px; padding-bottom: 6px; }
+.recordings-inbox .recordings-row-main strong { font-size: .8125rem; }
+.recordings-toolbar .live-recovery-popover { flex-shrink: 0; }
+.live-recovery-popover > summary { color: var(--warning); }
+.compact-popover-surface .live-recovery-panel { border: 0; margin: 0; padding: 0; background: transparent; }
+.compact-popover-surface .live-recovery-panel-header { display: none; }
+.compact-popover-surface .live-recovery-content { display: grid; gap: 8px; }
+.compact-popover-surface .live-recovery-panel article { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 0; }
+.compact-popover-surface .live-recovery-panel article > button { width: fit-content; justify-self: end; }
+.recording-detail-actions:has(details[open]) { flex-basis: auto; justify-content: flex-end; }
+.recording-object-header .export-controls[open], .recording-object-header .recording-inline-edit-shell:has(details[open]) { flex: 0 0 auto; width: auto; min-width: 0; }
+.recording-detail-actions .compact-popover { flex: 0 0 auto; }
+.recording-detail-actions > .recording-inline-edit-shell { flex: 0 0 auto; }
+.recording-object-header .recording-title-stack h1 { font-size: 1.3125rem; }
+.recording-object-header .recording-detail-main { gap: 10px; }
+.recording-object-header .recording-title-stack { gap: 6px; }
+.recording-object-header .compact-popover-surface .recording-title-form { position: static; width: 100%; margin: 0; border: 0; box-shadow: none; padding: 0; background: transparent; }
+.recording-object-header .compact-popover-surface .export-controls-menu { position: static; width: 100%; margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
+.recording-detail-actions :is(.compact-popover > summary, .delete-recording-form button), .recording-organization-summary > button, .recording-selection-toolbar .compact-popover > summary { position: relative; isolation: isolate; min-height: 44px; padding: 0 9px; border: 0 !important; border-radius: 5px; background: transparent !important; box-shadow: none; font-size: .75rem; }
+.recording-detail-actions :is(.compact-popover > summary, .delete-recording-form button)::before, .recording-organization-summary > button::before, .recording-selection-toolbar .compact-popover > summary::before { content: ""; position: absolute; z-index: -1; inset: 7px 0; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); }
+.recording-detail-actions :is(.compact-popover > summary, .delete-recording-form button):hover::before, .recording-organization-summary > button:hover::before { border-color: var(--border-strong); background: var(--surface-muted); }
+.recording-detail-actions svg { width: 15px; height: 15px; }
+.recording-detail-actions .recording-inline-edit summary { gap: 6px; }
+.recording-title-form .recording-title-popover-actions { gap: 8px; justify-content: flex-end; }
+.recording-title-form button { width: auto; min-width: 44px; }
+.capture-scope-disclosure { margin: -4px 0 4px; }
+.capture-scope-disclosure > summary { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-secondary); font-size: .75rem; cursor: pointer; }
+.capture-scope-disclosure .capture-scope-picker { width: min(520px, 100%); margin-bottom: 12px; }
+.new-recording-workspace .recording-storage-info-row { background: transparent; border: 0; margin: 0; padding: 0; font-size: .6875rem; }
+.capture-sharing-note { margin: 0; color: var(--text-secondary); font-size: .75rem; }
+/* Semantic small actions share one visual surface; capture, player and data icons stay unchanged. */
+:is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock) :is(
+  .compact-popover button, .compact-popover > summary, .recording-title-form button,
+  .recording-organization-actions button, .organization-save-actions button,
+  .organization-manager-row-actions button, .recording-selection-toolbar button,
+  .organization-manager-trigger, .organization-save-editor > button, .organization-manager-drawer > header button, .recording-filter-clear-search,
+  .recordings-create-button, .utility-header-actions > a, .mobile-more-close,
+  .command-button, .ghost-action, .danger-action, .settings-save-button,
+  .prompt-editor-form button, .prompt-reset-form button,
+  .trash-action, .trash-bulk-toolbar button, .trash-bulk-modal-actions button,
+  .trash-purge-form button, .purge-recovery-panel button, .recording-filter-actions button,
+  .real-upload-actions button, .upload-terminal-actions button, .transcript-import-form button, .auth-form button,
+  .recording-chat-composer button[type="submit"], .recording-chat-reconcile
+) {
+  position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px; min-width: 44px; min-height: 44px; padding: 0 9px !important;
+  border: 0 !important; border-radius: 5px; background: transparent !important;
+  box-shadow: none; font-size: .75rem; font-weight: 500; line-height: 1.25;
+  color: var(--text); --compact-action-background: var(--surface); --compact-action-border: var(--border);
+}
+:is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock) :is(
+  .compact-popover button, .compact-popover > summary, .recording-title-form button,
+  .recording-organization-actions button, .organization-save-actions button,
+  .organization-manager-row-actions button, .recording-selection-toolbar button,
+  .organization-manager-trigger, .organization-save-editor > button, .organization-manager-drawer > header button, .recording-filter-clear-search,
+  .recordings-create-button, .utility-header-actions > a, .mobile-more-close,
+  .command-button, .ghost-action, .danger-action, .settings-save-button,
+  .prompt-editor-form button, .prompt-reset-form button,
+  .trash-action, .trash-bulk-toolbar button, .trash-bulk-modal-actions button,
+  .trash-purge-form button, .purge-recovery-panel button, .recording-filter-actions button,
+  .real-upload-actions button, .upload-terminal-actions button, .transcript-import-form button, .auth-form button,
+  .recording-chat-composer button[type="submit"], .recording-chat-reconcile
+)::before {
+  content: ""; position: absolute; z-index: -1; inset: 7px 0; border-radius: 5px;
+  border: 1px solid var(--compact-action-border); background: var(--compact-action-background);
+}
+:is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock) :is(
+  .compact-popover button, .compact-popover > summary, .recording-title-form button,
+  .recording-organization-actions button, .organization-save-actions button,
+  .organization-manager-row-actions button, .recording-selection-toolbar button,
+  .organization-manager-trigger, .organization-save-editor > button, .organization-manager-drawer > header button, .recording-filter-clear-search,
+  .recordings-create-button, .utility-header-actions > a, .mobile-more-close,
+  .command-button, .ghost-action, .danger-action, .settings-save-button,
+  .prompt-editor-form button, .prompt-reset-form button,
+  .trash-action, .trash-bulk-toolbar button, .trash-bulk-modal-actions button,
+  .trash-purge-form button, .purge-recovery-panel button, .recording-filter-actions button,
+  .real-upload-actions button, .upload-terminal-actions button, .transcript-import-form button, .auth-form button,
+  .recording-chat-composer button[type="submit"], .recording-chat-reconcile
+) > svg { flex: 0 0 15px; width: 15px; height: 15px; }
+:is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock) :is(button, summary):hover:not(:disabled):not([aria-disabled="true"])::before { filter: brightness(.94); }
+:is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock) :is(button, summary):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+:is(.workspace-shell, .recordings-inbox) :is(.auth-form button[type="submit"], .settings-save-button, .command-primary, .recordings-create-button, .recording-organization-primary-action, .recording-chat-composer button[type="submit"], .prompt-editor-form button[type="submit"]) { color: var(--accent-text); --compact-action-background: var(--accent); --compact-action-border: var(--accent); }
+:is(.workspace-shell, .recordings-inbox) :is(.danger-action, .trash-action-danger, .trash-confirm-danger, .delete-recording-form button) { color: var(--danger); }
+.compact-popover .compact-popover-header button { --compact-action-background: transparent; --compact-action-border: transparent; padding: 0 !important; }
+.recording-organization-popover .recording-organization-fields { grid-template-columns: minmax(0, 1fr); }
+.recording-organization-popover .recording-organization-actions { display: flex; flex-wrap: wrap; padding: 0; background: transparent; justify-content: flex-end; }
+.recording-organization-popover .recording-organization-actions button { width: auto; flex: 0 0 auto; }
+.recording-organization-popover .recording-organization-tags { padding: 0; border: 0; }
+.recording-organization-popover .recording-organization-form { min-width: 0; }
+.recording-header-operations { width: 340px; max-width: 100%; min-width: 0; }
+.transcription-controls { width: 100%; min-width: 0; display: grid; gap: 2px; }
+.transcription-actions { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px; min-height: 44px; }
+.transcription-action-label { display: grid; text-align: center; }
+.transcription-action-label > span { grid-area: 1 / 1; }
+.transcription-action-label > span[aria-hidden="true"] { visibility: hidden; }
+.transcription-check-action[aria-hidden="true"] { visibility: hidden; pointer-events: none; }
+.transcription-feedback { height: 4.2em; overflow-y: auto; font-size: .71875rem; line-height: 1.4; overscroll-behavior: contain; }
+.transcription-feedback .command-state { line-height: inherit; }
+.transcription-controls-recovery .transcription-feedback { height: auto; min-height: 4.2em; overflow: visible; }
+.transcription-recovery-choice { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.transcription-recovery-choice > strong { font-size: .8125rem; }
+.transcription-recovery-choice > .command-button { justify-self: start; }
+.transcription-recovery-secondary { display: flex; flex-wrap: wrap; gap: 6px; }
+.transcription-controls .transcription-recovery-error { color: var(--danger); overflow-wrap: anywhere; }
+.recording-audio-player .recording-audio-player-status { display: block; grid-column: 1 / -1; min-height: 2.8em; margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+/* Inbox actions follow the detail geometry without widening or opening an inline filter row. */
+.recordings-inbox .recordings-toolbar { display: flex; align-items: center; gap: 8px; }
+.recordings-inbox .recording-filter-search { flex: 1 1 240px; }
+.recordings-inbox .recording-filter-advanced { display: block; flex: 0 0 auto; }
+.recordings-inbox .recordings-toolbar > .organization-manager-trigger { flex: 0 0 auto; width: auto; min-width: 44px; font-weight: 500; }
+.recordings-inbox .recordings-create-button { flex-shrink: 0; white-space: nowrap; }
+.recording-filter-advanced .recording-filter-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.recording-filter-advanced .compact-popover-surface .recording-filter-grid select { border-radius: 5px; }
+.recording-filter-advanced .recording-filter-tag-row { display: grid; gap: 8px; min-width: 0; }
+.recording-filter-advanced .recording-filter-tags { padding: 0; border: 0; background: transparent; }
+.recording-filter-advanced .recording-filter-tags label { max-width: 100%; overflow-wrap: anywhere; }
+.recording-filter-advanced .recording-filter-actions { width: auto; justify-content: flex-end; }
+.recording-filter-advanced .recording-filter-actions button { width: auto; }
+/* Project access owns a complete row so names and actions keep usable columns. */
+.recordings-inbox .organization-manager-drawer { width: min(640px, 100%); overscroll-behavior: contain; }
+.organization-manager-drawer .organization-manager-group > ul > li { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr); align-items: center; gap: 8px 12px; }
+.organization-manager-drawer .organization-manager-row-label { min-width: 0; }
+.organization-manager-drawer .organization-manager-badge { max-width: 100%; overflow-wrap: break-word; word-break: normal; }
+.organization-manager-drawer .organization-manager-row-actions { min-width: 0; flex-wrap: wrap; }
+.organization-manager-drawer .organization-manager-row-actions > div { max-width: 100%; }
+.organization-manager-drawer .organization-manager-row-actions button { max-width: 100%; overflow-wrap: anywhere; text-align: center; }
+.organization-manager-drawer .organization-manager-group > ul > li > section { grid-column: 1 / -1; min-width: 0; padding-top: 8px; }
+.organization-manager-drawer .organization-manager-group > ul > li > section > p { margin: 8px 0; color: var(--text-secondary); font-size: .75rem; overflow-wrap: anywhere; }
+.organization-manager-drawer .organization-manager-group > ul > li > section .auth-form { display: grid; grid-template-columns: minmax(0, 2fr) minmax(120px, 1fr); gap: 10px; }
+.organization-manager-drawer .organization-manager-group > ul > li > section .auth-form label { min-width: 0; font-size: .75rem; }
+.organization-manager-drawer .organization-manager-group > ul > li > section .auth-form :is(input, select) { width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); padding: 8px 10px; }
+.organization-manager-drawer .organization-manager-group > ul > li > section .auth-form button { grid-column: 1 / -1; width: auto; justify-self: end; }
+@media(max-width:900px) {
+  .recording-detail-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .recording-detail-actions:has(details[open]) { justify-content: flex-start; }
+  .recording-object-header .recording-detail-actions > *, .recording-object-header .recording-detail-actions summary { flex: 0 0 auto; width: auto; }
+  .compact-popover-surface :is(input:not([type="checkbox"]), select) { font-size: 16px; }
+  .recordings-toolbar { flex-wrap: wrap; }
+  .recordings-inbox .recording-filter-search { flex-basis: 100%; }
+  .recordings-toolbar .live-recovery-popover { align-self: flex-start; }
+  .recording-selection-toolbar:not([hidden]) { flex-wrap: wrap; gap: 4px; }
+}
+@media(max-width:480px) {
+  .organization-manager-drawer .organization-manager-group > ul > li { grid-template-columns: minmax(0, 1fr); }
+  .organization-manager-drawer .organization-manager-row-actions { justify-content: flex-start; }
+  .organization-manager-drawer .organization-manager-group > ul > li > section .auth-form { grid-template-columns: minmax(0, 1fr); }
+}
+@media(max-width:760px) {
+  .recordings-inbox .recordings-status-summary { max-width: calc(100% - 28px); }
+}
+@container recordings-inbox (max-width:680px) {
+  .recordings-inbox .recordings-row:has(.recording-sharing-checkbox), .recordings-inbox .recordings-row:has(.recording-sharing-checkbox-placeholder) { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+  .recordings-inbox .recordings-row-main { min-height: 80px; }
+  .recordings-inbox .recordings-row:has(.recording-sharing-checkbox, .recording-sharing-checkbox-placeholder) > .recordings-row-actions { grid-column: 3; }
+}

@@ -43,7 +43,10 @@ describe("installation documentation contract", () => {
       expect(environment).toContain(name);
     }
 
-    expect(readme).toMatch(/each person or company.+own Vercel deployment.+own Supabase, Soniox, and AI credentials/is);
+    expect(readme).toMatch(/Každá instalace používá vlastní Supabase, Soniox, web a případné AI poskytovatele/iu);
+    expect(readme).toContain("vlastní Vercel projekt");
+    expect(readme).toContain("Supabase Edge Functions → Secrets");
+    expect(readme).toContain("všechny");
     expect(environment).toMatch(/Production and Preview.+same required variable names/is);
     expect(environment).toMatch(/same data.+provider costs/is);
     expect(environment).toContain("/configuration");

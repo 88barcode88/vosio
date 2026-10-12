@@ -5,6 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { RecordingsManager } from "@/components/workspace/recordings-manager";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
 vi.mock("@/components/live-recording-recovery-panel", () => ({
   LiveRecordingRecoveryPanel: () => null
 }));
@@ -219,6 +221,7 @@ describe("recordings indexed search UI", () => {
           matchStartMs: 1200,
           mimeType: "audio/webm",
           projectId: "project-1",
+          projectName: "CRM",
           sourceType: "upload" as const,
           status: "completed" as const,
           title: "Lucern CRM call",

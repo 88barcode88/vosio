@@ -4,11 +4,13 @@
 
 `Chat` je uložený vícekolový rozhovor nad jedním hotovým a uloženým přepisem nahrávky. Není to live chat nad audiem ani náhrada přepisu: bez uloženého `transcripts` řádku tab zobrazí nedostupný stav. Pro jednoho vlastníka a konkrétní `transcript_id` existuje nejvýše jedno vlákno; historie se po refreshi a při návratu k nahrávce znovu načte.
 
-Každý tah ukládá otázku, vybraný model a provider, snapshot systémového promptu, usage, stav a bezpečnou chybu nebo odpověď. Chat používá OpenAI/Gemini/Mistral modelový katalog s odděleným UI profilem a přesným API modelem, serverové adaptéry a uložený speaker context. Browser neposílá audio, Storage URL, provider, prompt ani transcriptový kontext.
+Každý tah ukládá otázku, vybraný model a provider, snapshot systémového promptu, usage, stav a bezpečnou chybu nebo odpověď. Chat používá stávající OpenAI/Gemini/Mistral modelový katalog s odděleným UI profilem a přesným API modelem, serverové adaptéry a uložený speaker context. Browser neposílá audio, Storage URL, provider, prompt ani transcriptový kontext.
 
 ## HTTP kontrakt
 
-Composer odesílá zprávu klávesou Enter. Shift+Enter zachová nový řádek na Windows i macOS. Potvrzení IME kompozice neodesílá zprávu; opakování držené klávesy, prázdný dotaz a probíhající odeslání jsou blokované. Klávesnice používá stejnou formulářovou a idempotentní cestu jako tlačítko Odeslat.
+Composer odesílá zprávu klávesou Enter. Shift+Enter zachovává nový řádek na Windows i macOS. Potvrzení IME kompozice neodesílá zprávu; opakování držené klávesy, prázdný dotaz a probíhající odeslání jsou blokované. Klávesnice používá stejnou formulářovou a idempotentní cestu jako tlačítko Odeslat.
+
+Načítání historie a prázdný chat sdílí stabilní prostor; composer a již načtená historie se při odeslání nevyměňují. Změna výchozího modelu účtu pro stejný otevřený přepis mění pouze následující volbu modelu, nenačítá znovu historii a nemaže draft ani původní UUID odeslání. Od odeslání je vidět otázka a tři tečky odpovědi; stejný indikátor pokračuje pro serverové `queued`/`running` přes polling a končí dokončenou odpovědí nebo bezpečnou terminální chybou. Při nejistém spojení zůstává otázka zachovaná s výzvou k ověření, ne s tvrzením o dokončení. Nový POST je blokovaný do ověření; případné opakování používá stejné UUID, otázku a model. Přepnutí přepisu resetuje jen jeho lokální composer a nepřijme pozdní odpověď předchozího přepisu.
 
 Obě route vyžadují platnou Supabase session a vrací stejný `404` pro chybějící i cizí přepis.
 

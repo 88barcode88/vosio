@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
   })
 }));
 
-vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
+vi.mock("next/navigation", () => ({ redirect: mocks.redirect, usePathname: () => "/settings" }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 vi.mock("@/lib/installation-status.server", () => ({ getInstallationStatus: mocks.getInstallationStatus }));
 vi.mock("@/lib/recordings/storage-config.server", () => ({ getRecordingStorageConfig: mocks.getRecordingStorageConfig }));

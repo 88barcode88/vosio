@@ -4,9 +4,9 @@ import packageMetadata from "../../package.json";
 import { APP_VERSION } from "@/lib/app-version";
 
 describe("application version", () => {
-  it("prepares the approved Vosio 0.3.1 release", () => {
-    expect(packageMetadata.version).toBe("0.3.1");
-    expect(APP_VERSION).toBe("0.3.1");
+  it("prepares the approved Vosio 0.3.2 release", () => {
+    expect(packageMetadata.version).toBe("0.3.2");
+    expect(APP_VERSION).toBe("0.3.2");
   });
 
   it("uses package.json as the single application version source", () => {

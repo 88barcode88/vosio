@@ -10,6 +10,7 @@ export type SavedTranscriptSearchSource = {
   segments: unknown;
   speakers: unknown;
   user_id: string;
+  search_version?: number;
 };
 
 export type TranscriptSearchIndexResult =
@@ -32,7 +33,7 @@ function getIncompleteIndexResult(): TranscriptSearchIndexResult {
   return { status: "incomplete", warning: TRANSCRIPT_SEARCH_INDEX_WARNING };
 }
 
-// replaceTranscriptSearchChunks atomically replaces precise chunks for one persisted transcript.
+// Reindex a fresh persisted snapshot with its DB version so stale work cannot delete newer chunks.
 export async function replaceTranscriptSearchChunks(
   admin: SupabaseClient,
   transcript: SavedTranscriptSearchSource
@@ -42,10 +43,16 @@ export async function replaceTranscriptSearchChunks(
   }
 
   try {
+    const { data: snapshot, error: snapshotError } = await admin.from("transcripts")
+      .select("id,raw_text,segments,speakers,search_version").eq("id", transcript.id)
+      .eq("recording_id", transcript.recording_id).eq("user_id", transcript.user_id).maybeSingle();
+    if (snapshotError || !snapshot || !Number.isSafeInteger(snapshot.search_version) || snapshot.search_version < 0) {
+      return getIncompleteIndexResult();
+    }
     const chunks = buildTranscriptSearchChunks({
-      rawText: transcript.raw_text,
-      segments: transcript.segments,
-      speakers: transcript.speakers
+      rawText: snapshot.raw_text,
+      segments: snapshot.segments,
+      speakers: snapshot.speakers
     }).map((chunk) => ({
       end_ms: chunk.endMs,
       position: chunk.position,
@@ -53,12 +60,13 @@ export async function replaceTranscriptSearchChunks(
       start_ms: chunk.startMs,
       text: chunk.text
     }));
-    const { error } = await admin.rpc("replace_transcript_search_chunks_v1", {
+    const { data, error } = await admin.rpc("replace_transcript_search_chunks_v2", {
+      p_expected_version: snapshot.search_version,
       p_chunks: chunks,
       p_transcript_id: transcript.id
     });
 
-    if (error) {
+    if (error || data !== true) {
       return getIncompleteIndexResult();
     }
   } catch {

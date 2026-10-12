@@ -119,7 +119,7 @@ describe("Appica-inspired application shell navigation", () => {
     const utility = container.querySelector("nav[aria-label='Nástroje workspace']");
 
     expect(Array.from(primary?.querySelectorAll("a") ?? [], (link) => link.textContent?.trim()))
-      .toEqual(["Nahrávky", "Nová nahrávka", "AI prompty"]);
+      .toEqual(["Nová nahrávka", "Nahrávky", "AI prompty"]);
     expect(Array.from(utility?.querySelectorAll("a") ?? [], (link) => link.textContent?.trim()))
       .toEqual(["Koš", "Nastavení", "Dokumentace"]);
     expect(container.textContent).not.toContain("AI zpracování");

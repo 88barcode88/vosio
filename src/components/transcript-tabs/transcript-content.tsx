@@ -81,7 +81,7 @@ function getPendingTranscriptTitle(activeRecording: RecordingClientView | null) 
   }
 
   if (activeRecording.status === "transcribing") {
-    return "Soniox přepis běží";
+    return "Přepis zatím není dokončený";
   }
 
   if (activeRecording.status === "failed") {
@@ -98,7 +98,7 @@ function getPendingTranscriptDescription(activeRecording: RecordingClientView | 
   }
 
   if (activeRecording.status === "transcribing") {
-    return "Soniox job je založený a běží mimo prohlížeč. Vosio teď stav kontroluje automaticky a po dokončení načte uložený transcript.";
+    return "Uložený přepis zatím není dostupný. Aktuální stav a možnosti obnovy najdete v ovládání přepisu nahoře.";
   }
 
   if (activeRecording.status === "failed") {

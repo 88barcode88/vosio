@@ -7,6 +7,16 @@ import type {
   StructuredTaskRow
 } from "@/lib/ai/structured-types";
 import { dedupeStructuredAiItems } from "@/lib/ai/structured-dedupe";
+import { fetchAllRows } from "@/lib/supabase/pagination";
+
+const sharedColumns = "id,ai_output_id,transcript_id,processing_job_id,position,title,source_type,raw_item,created_at,updated_at";
+const evidenceColumns = "evidence_quote,evidence_start_ms,evidence_end_ms";
+export const structuredColumns = {
+  transcript_tasks: `${sharedColumns},${evidenceColumns},deadline,deadline_confidence,deadline_normalized,description,owner_category,owner_name,status`,
+  transcript_chapters: `${sharedColumns},confidence,dominant_roles,end_time,speakers,start_time,summary,topics`,
+  transcript_decisions: `${sharedColumns},${evidenceColumns},owner_category,owner_role,status`,
+  transcript_risks: `${sharedColumns},${evidenceColumns},impact,mitigation,owner_category,owner_role`
+};
 
 // getEmptyStructuredAiItems returns the neutral query result for pages without transcripts.
 export function getEmptyStructuredAiItems(): StructuredAiItems {
@@ -43,16 +53,12 @@ async function selectStructuredRows<T>(
   tableName: "transcript_tasks" | "transcript_chapters" | "transcript_decisions" | "transcript_risks",
   transcriptIds: string[]
 ): Promise<T[]> {
-  const { data, error } = await supabase
+  return fetchAllRows<T>(`Unable to load structured AI rows from ${tableName}`, (from, to) => supabase
     .from(tableName)
-    .select("*")
+    .select(structuredColumns[tableName])
     .in("transcript_id", transcriptIds)
     .order("position", { ascending: true })
-    .returns<T[]>();
-
-  if (error) {
-    throw new Error(`Unable to load structured AI rows from ${tableName}: ${error.message}`);
-  }
-
-  return data ?? [];
+    .order("id", { ascending: true })
+    .range(from, to)
+    .returns<T[]>());
 }

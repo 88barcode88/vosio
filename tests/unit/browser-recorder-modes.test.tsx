@@ -29,6 +29,7 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 const mocks = vi.hoisted(() => ({
+  acquireDurableGenerationWriter: vi.fn(),
   completeLiveRecordingUpload: vi.fn(),
   completeLiveRecordingWithoutAudio: vi.fn(),
   cleanupDurableSafetyGeneration: vi.fn(),
@@ -91,6 +92,18 @@ vi.mock("@/lib/live-recording/durable-audio", () => ({
 }));
 
 vi.mock("@/lib/supabase/browser", () => ({ createClient: mocks.createBrowserClient }));
+vi.mock("@/lib/live-recording/generation-lock", () => ({ acquireDurableGenerationWriter: mocks.acquireDurableGenerationWriter }));
+// Mode tests retain transport ordering; canonical revision/authority validation is tested separately.
+vi.mock("@/lib/recordings/live-capture-client", () => ({ sendLiveCapture: async (recording: { id: string }, kind: string, payload: unknown) => {
+  const response = await mocks.fetch(`/api/recordings/${recording.id}/${kind === "live_draft" ? "live-draft" : "live-transcript"}`, {
+    method: kind === "live_draft" ? "PUT" : "POST", body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error("live save failed");
+  return { recordingId: recording.id, captureRevision: 1, status: "completed", transcriptId: recording.id, jobId: null };
+} }));
+vi.mock("@/lib/recordings/capture", async (original) => ({ ...await original<typeof import("@/lib/recordings/capture")>(),
+  getCaptureState: async (_client: unknown, id: string) => ({ recordingId: id, captureRevision: 1, status: "uploaded" })
+}));
 
 class MediaStreamFixture {
   // constructor stores the tracks owned by this capture consumer.
@@ -190,6 +203,20 @@ function createCaptureTrack(kind: "audio" | "video" = "audio") {
 function createMasterStream() {
   const master = createCaptureTrack();
   return new MediaStreamFixture([master]) as unknown as MediaStream;
+}
+
+// Track every actual owned raw/clone track to prove lease races cannot leave microphone clones alive.
+function createTrackedMasterStream() {
+  const raw = createCaptureTrack();
+  const tracks = [raw];
+  // Include later recursive archive and safety clones in the same ownership proof.
+  function trackClones(track: MediaStreamTrack) {
+    vi.mocked(track.clone).mockImplementation(() => {
+      const clone = createCaptureTrack(); tracks.push(clone); trackClones(clone); return clone;
+    });
+  }
+  trackClones(raw);
+  return { stream: new MediaStreamFixture([raw]) as unknown as MediaStream, tracks };
 }
 
 // createAudioContextFixture produces a mixed destination stream without browser Web Audio.
@@ -331,6 +358,8 @@ beforeEach(() => {
     .IS_REACT_ACT_ENVIRONMENT = true;
   vi.useFakeTimers();
   Object.values(mocks).forEach((mock) => mock.mockReset());
+  mocks.acquireDurableGenerationWriter.mockResolvedValue(vi.fn(async () => {}));
+  mocks.failLiveRecordingUpload.mockResolvedValue(undefined);
   vi.stubGlobal("fetch", mocks.fetch);
   vi.stubGlobal("MediaStream", MediaStreamFixture);
   vi.stubGlobal("MediaRecorder", MediaRecorderFixture);
@@ -397,6 +426,36 @@ afterEach(async () => {
 });
 
 describe("BrowserRecorder modes", () => {
+  it("never creates a safety clone when unmounted during deferred writer acquisition", async () => {
+    const source = createTrackedMasterStream();
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue(source.stream) } });
+    const lease = createDeferred<() => Promise<void>>();
+    const release = vi.fn(async () => {});
+    mocks.acquireDurableGenerationWriter.mockReturnValueOnce(lease.promise);
+    await act(async () => { root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />); });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => { document.querySelector<HTMLButtonElement>(".record-button")?.click();await flushPromises(16); });
+    expect(mocks.acquireDurableGenerationWriter).toHaveBeenCalledOnce();
+    expect(MediaRecorderFixture.instances).toHaveLength(1);
+    const beforeLease = source.tracks.length;
+    await act(async () => root?.unmount());root = null;
+    await act(async () => { lease.resolve(release);await flushPromises(16); });
+    expect(release).toHaveBeenCalledOnce();expect(source.tracks).toHaveLength(beforeLease);
+    for (const track of source.tracks) expect(track.stop).toHaveBeenCalled();
+  });
+  it("keeps the archive usable without creating a safety clone when writer acquisition rejects", async () => {
+    const source = createTrackedMasterStream();
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue(source.stream) } });
+    mocks.acquireDurableGenerationWriter.mockRejectedValueOnce(new Error("lock rejected"));
+    await act(async () => { root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />); });
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => { document.querySelector<HTMLButtonElement>(".record-button")?.click();await flushPromises(16); });
+    expect(MediaRecorderFixture.instances).toHaveLength(1);expect(MediaRecorderFixture.instances[0].state).toBe("recording");
+    const cloneCount = source.tracks.length;
+    await act(async () => root?.unmount());root = null;
+    expect(source.tracks).toHaveLength(cloneCount);
+    for (const track of source.tracks) expect(track.stop).toHaveBeenCalled();
+  });
   it("defaults desktop browsers to microphone plus shared-tab audio", async () => {
     const getUserMedia = vi.fn().mockResolvedValue(createMasterStream());
     const getDisplayMedia = vi.fn();
@@ -1108,10 +1167,10 @@ describe("BrowserRecorder modes", () => {
       String(url).endsWith(`/api/recordings/${recordingId}/live-transcript`)
     ));
     expect(JSON.parse(String(liveTranscriptCall?.[1]?.body))).toEqual(expect.objectContaining({
-      audioStorage: "supabase_recording_segments"
+      rawText: "Hotový text."
     }));
     expect(mocks.fetch.mock.calls.some(([url]) => (
-      String(url).endsWith(`/api/recordings/${recordingId}/transcription?restart=1`)
+      String(url).endsWith(`/api/recordings/${recordingId}/transcription`)
     ))).toBe(true);
   });
 
@@ -1545,7 +1604,7 @@ describe("BrowserRecorder modes", () => {
       if (path.endsWith(`/api/recordings/${recordingId}/live-transcript`)) {
         events.push("live-transcript");
       }
-      if (path.endsWith(`/api/recordings/${recordingId}/transcription?restart=1`)) {
+      if (path.endsWith(`/api/recordings/${recordingId}/transcription`)) {
         events.push("async-transcription");
       }
       return { json: vi.fn().mockResolvedValue({}), ok: true };
@@ -1620,7 +1679,7 @@ describe("BrowserRecorder modes", () => {
     });
 
     expect(mocks.fetch.mock.calls.filter(([url]) => (
-      String(url).endsWith(`/api/recordings/${recordingId}/transcription?restart=1`)
+      String(url).endsWith(`/api/recordings/${recordingId}/transcription`)
     ))).toHaveLength(1);
   });
 
@@ -1706,15 +1765,16 @@ describe("BrowserRecorder modes", () => {
       await flushPromises(14);
     });
 
-    const expectedAsyncPath = finalText
-      ? `/api/recordings/${recordingId}/transcription?restart=1`
-      : `/api/recordings/${recordingId}/transcription`;
+    const expectedAsyncPath = `/api/recordings/${recordingId}/transcription`;
     const asyncCalls = mocks.fetch.mock.calls.filter(([url]) => String(url).endsWith(expectedAsyncPath));
     const asyncCallIndex = mocks.fetch.mock.calls.findIndex(([url]) => (
       String(url).endsWith(expectedAsyncPath)
     ));
 
     expect(asyncCalls).toHaveLength(1);
+    expect(JSON.parse(String(asyncCalls[0]?.[1]?.body))).toMatchObject({
+      captureRevision: 1, purpose: finalText ? "retranscribe" : "capture", requestId: expect.any(String)
+    });
     expect(mocks.uploadLiveRecording).toHaveBeenCalledOnce();
     expect(mocks.completeLiveRecordingUpload.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.fetch.mock.invocationCallOrder[asyncCallIndex] ?? 0);

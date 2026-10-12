@@ -47,8 +47,8 @@ const options: RecordingOrganizationOptions = {
     { color: null, created_at: timestamp, id: folderId, name: "Obchod", updated_at: timestamp, user_id: userId }
   ],
   projects: [
-    { client_id: clientA, color: null, created_at: timestamp, id: projectA, name: "Projekt A", updated_at: timestamp, user_id: userId },
-    { client_id: clientB, color: null, created_at: timestamp, id: projectB, name: "Projekt B", updated_at: timestamp, user_id: userId }
+    { can_manage_access: true, client_id: clientA, color: null, created_at: timestamp, id: projectA, name: "Projekt A", updated_at: timestamp, user_id: userId },
+    { can_manage_access: true, client_id: clientB, color: null, created_at: timestamp, id: projectB, name: "Projekt B", updated_at: timestamp, user_id: userId }
   ],
   tags: [
     { color: "#ABCDEF", created_at: timestamp, id: tagA, name: "Priorita", updated_at: timestamp, user_id: userId },
@@ -133,7 +133,7 @@ async function setSelect(name: string, value: string) {
 
 // clickButton activates a button selected by visible text.
 async function clickButton(label: string) {
-  const button = Array.from(container.querySelectorAll("button")).find((item) =>
+  const button = Array.from(container.querySelectorAll<HTMLButtonElement>("button, summary")).find((item) =>
     item.textContent?.includes(label)
   );
   if (!button) throw new Error(`Missing button ${label}`);
@@ -181,7 +181,7 @@ describe("RecordingOrganizationEditor", () => {
     expect(folderChip?.classList.contains("organization-chip-colored")).toBe(false);
   });
 
-  it("shows current chips and enforces client-dependent project choices", async () => {
+  it("shows current chips and filters project choices while keeping clientless assignment available", async () => {
     await act(async () => root.render(
       <RecordingOrganizationEditor
         organization={organization}
@@ -201,7 +201,7 @@ describe("RecordingOrganizationEditor", () => {
     expect(Array.from(projectSelect?.options ?? []).map((item) => item.value)).toContain(projectB);
     expect(Array.from(projectSelect?.options ?? []).map((item) => item.value)).not.toContain(projectA);
     await setSelect("clientId", "");
-    expect(projectSelect?.disabled).toBe(true);
+    expect(projectSelect?.disabled).toBe(false);
   });
 
   it("clears every assignment and supports multiple controlled tags", async () => {
@@ -229,8 +229,12 @@ describe("RecordingOrganizationEditor", () => {
     for (const name of ["clientId", "projectId", "folderId"]) {
       expect(container.querySelector(`select[name="${name}"]`)?.closest("label")).not.toBeNull();
     }
-    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
-    expect(container.querySelector(".recording-organization-editor-panel")).toBeNull();
+    const form = container.querySelector(".recording-organization-form");
+    await act(async () => container.querySelector('[role="dialog"]')?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(container.querySelector(".recording-organization-popover[open]")).toBeNull();
+    expect(container.querySelector(".recording-organization-form")).toBe(form);
+    await clickButton("Upravit zařazení");
+    expect(container.querySelector(".recording-organization-form")).toBe(form);
   });
 
   it("blocks dismiss and duplicate submit while pending, then preserves values on error", async () => {
@@ -245,7 +249,12 @@ describe("RecordingOrganizationEditor", () => {
     await submitForm("recording-organization-form");
     expect(saveAction).toHaveBeenCalledOnce();
     expect((await clickButton("Zrušit")).disabled).toBe(true);
-    expect(container.querySelector(".recording-organization-editor-panel")).not.toBeNull();
+    expect(container.querySelector(".recording-organization-popover[open]")).not.toBeNull();
+    await act(async () => {
+      container.querySelector('[role="dialog"]')?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(container.querySelector(".recording-organization-popover[open]")).not.toBeNull();
 
     await act(async () => {
       deferred.resolve(createSaveError(0, recordingA, "Uložení selhalo."));
@@ -281,7 +290,7 @@ describe("RecordingOrganizationEditor", () => {
       />
     ));
 
-    expect(container.querySelector(".recording-organization-editor-panel")).not.toBeNull();
+    expect(container.querySelector(".recording-organization-popover[open]")).not.toBeNull();
     expect(container.querySelector<HTMLSelectElement>('select[name="clientId"]')?.value).toBe(clientB);
     expect(container.querySelector<HTMLSelectElement>('select[name="projectId"]')?.value).toBe(projectB);
     expect(container.querySelector<HTMLSelectElement>('select[name="folderId"]')?.value).toBe("");
@@ -309,7 +318,7 @@ describe("RecordingOrganizationEditor", () => {
       />
     ));
 
-    expect(container.querySelector(".recording-organization-editor-panel")).not.toBeNull();
+    expect(container.querySelector(".recording-organization-popover[open]")).not.toBeNull();
     expect(container.querySelector<HTMLSelectElement>('select[name="clientId"]')?.value).toBe(clientB);
     expect(container.querySelector<HTMLSelectElement>('select[name="projectId"]')?.value).toBe(projectB);
     await act(async () => {
@@ -351,7 +360,7 @@ describe("RecordingOrganizationEditor", () => {
         saveAction={vi.fn()}
       />
     ));
-    expect(container.querySelector(".recording-organization-editor-panel")).toBeNull();
+    expect(container.querySelector(".recording-organization-popover[open]")).toBeNull();
     await clickButton("Upravit zařazení");
     expect(container.querySelector<HTMLSelectElement>('select[name="clientId"]')?.value).toBe(clientA);
     expect(container.querySelector<HTMLInputElement>(`input[name="tagIds"][value="${tagA}"]`)?.checked).toBe(true);
@@ -379,7 +388,7 @@ describe("RecordingOrganizationEditor", () => {
     const trigger = await clickButton("Upravit zařazení");
     await submitForm("recording-organization-form");
     animationFrameCallbacks.forEach((callback) => callback(0));
-    expect(container.querySelector(".recording-organization-editor-panel")).toBeNull();
+    expect(container.querySelector(".recording-organization-popover[open]")).toBeNull();
     expect(document.activeElement).toBe(trigger);
     expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain("Zařazení uloženo.");
   });
@@ -713,7 +722,7 @@ describe("organization UI integration", () => {
       /if \(hasOrganizationFilterValues\(searchParams\)\) \{\s+const organizationOptions = await listRecordingOrganizationOptions\(supabase\);/
     );
     expect(listPageSource).toMatch(
-      /const \[organizationOptions, statusCounts, deletedCount, recordingData\] = await Promise\.all\(\[\s+listRecordingOrganizationOptions\(supabase\),/
+      /const \[organizationOptions, statusCounts, recordingData\] = await Promise\.all\(\[\s+listRecordingOrganizationOptions\(supabase\),/
     );
     expect(listPageSource).not.toMatch(/recordings\.map[\s\S]*listRecordingOrganizationOptions/);
     expect(detailPageSource.match(/listRecordingOrganizationOptions\(supabase\)/g)).toHaveLength(1);

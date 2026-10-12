@@ -12,6 +12,7 @@ import {
 import { createUploadOperationGuard, createUploadQueue } from "@/lib/recordings/upload-queue";
 import { createUploadProgressTracker, type AggregateUploadProgress } from "@/lib/recordings/upload-progress";
 import type { RecordingUploadProgress } from "@/lib/recordings/resumable-upload";
+import { CaptureError, createCaptureAttempt, lostCaptureAccessMessage, type CaptureAttempt, type CaptureScope } from "@/lib/recordings/capture";
 import {
   unsupportedRecordingMimeMessage,
   uploadRecording,
@@ -37,6 +38,7 @@ const genericUploadFailureMessage = "Nahrání souboru se nepodařilo. Zkuste to
 const standardCancellationMessage = "Nahrávání bylo zrušeno.";
 const failedStateSuffix = " Záznam se nepodařilo označit jako neúspěšný.";
 const safeExactUploadMessages = new Set([
+  lostCaptureAccessMessage,
   genericUploadFailureMessage,
   `${genericUploadFailureMessage}${failedStateSuffix}`,
   "Nahrávání souborů teď není dostupné.",
@@ -49,6 +51,8 @@ const safeExactUploadMessages = new Set([
 const safeFileSizeMessagePattern = /^Soubor je větší než (?:(?:povolených )?\d+(?:[.,]\d+)? (?:B|KB|MB|GB)\.)(?: Vyberte menší soubor\.)?$/u;
 
 type RecordingUploadFormProps = {
+  captureScope?: CaptureScope;
+  captureRequestId?: string;
   allowedMimeTypes: readonly string[] | null;
   maxFileSizeBytes: number | null;
   redirectAfterUpload?: "detail" | "list" | "stay";
@@ -91,6 +95,8 @@ function summarizeSelectedFiles(files: File[]): SelectedFileSummary {
 
 // RecordingUploadForm uploads selected audio and keeps progress and terminal states in one stable surface.
 export function RecordingUploadForm({
+  captureScope,
+  captureRequestId,
   allowedMimeTypes,
   maxFileSizeBytes,
   redirectAfterUpload,
@@ -100,6 +106,9 @@ export function RecordingUploadForm({
   const mountedRef = useRef(true);
   const operationGuardRef = useRef<ReturnType<typeof createUploadOperationGuard> | null>(null);
   const retryFilesRef = useRef<File[]>([]);
+  const capturesRef = useRef(new WeakMap<File, CaptureAttempt>());
+  const approvedFilesRef = useRef(new Map<string, File>());
+  const [lostAccess, setLostAccess] = useState(false);
   const router = useRouter();
   const { registerNavigationBlocker } = useRecordingNavigationBlocker();
   const [uploadState, setUploadState] = useState<UploadState>({
@@ -134,6 +143,15 @@ export function RecordingUploadForm({
   // processFiles performs the authenticated serial upload flow for a browser selection or retry.
   async function processFiles(files: File[]) {
     if (maxFileSizeBytes === null || allowedMimeTypes === null || files.length === 0 || isUploading) return;
+    try {
+      if (captureRequestId && files.length !== 1) throw new Error();
+      if (captureRequestId && files[0]) {
+        const boundFile = approvedFilesRef.current.get(captureRequestId);
+        if (boundFile && boundFile !== files[0]) throw new Error();
+        approvedFilesRef.current.set(captureRequestId, files[0]);
+      }
+      for (const file of files) if (!capturesRef.current.has(file)) capturesRef.current.set(file, createCaptureAttempt(captureScope, captureRequestId));
+    } catch { setUploadState({ tone: "error", message: "Vyberte platné sdílení. Schválení od zakladatele platí pro jedinou nahrávku." }); return; }
 
     retryFilesRef.current = files;
     setSelectedFiles(summarizeSelectedFiles(files));
@@ -179,6 +197,7 @@ export function RecordingUploadForm({
         }
 
         const uploadedRecording = await uploadTransport({
+          capture: capturesRef.current.get(file),
           allowedMimeTypes,
           file,
           maxFileSizeBytes,
@@ -223,6 +242,7 @@ export function RecordingUploadForm({
       }
 
       if (result.failed.length > 0) {
+        setLostAccess(result.failed.some((item) => item.error instanceof CaptureError && item.error.code === "42501"));
         const detail = getSafeUploadFailureMessage(result.failed[0]?.error);
         const message = result.succeeded.length > 0
           ? `Uloženo ${result.succeeded.length} z ${files.length} nahrávek. ${detail}`
@@ -277,6 +297,11 @@ export function RecordingUploadForm({
 
   return (
     <div aria-busy={isUploading} className="real-upload" data-phase={phase}>
+      {lostAccess ? <button type="button" disabled={isUploading} onClick={() => {
+        for (const file of retryFilesRef.current) capturesRef.current.set(file, createCaptureAttempt());
+        setLostAccess(false);
+        void processFiles(retryFilesRef.current);
+      }}>Uložit místní soubory jako nové soukromé nahrávky</button> : null}
       <input
         accept={fileAccept}
         className="visually-hidden"
@@ -302,7 +327,7 @@ export function RecordingUploadForm({
             onClick={() => filteredInputRef.current?.click()}
             type="button"
           >
-            <Upload aria-hidden="true" size={18} />
+            <Upload aria-hidden="true" size={15} />
             Vybrat soubor
           </button>
         </div>
@@ -350,13 +375,13 @@ export function RecordingUploadForm({
               onClick={() => operationGuardRef.current?.cancel()}
               type="button"
             >
-              <X aria-hidden="true" size={18} />
+              <X aria-hidden="true" size={15} />
               {phase === "finalizing" ? "Dokončuji…" : "Zrušit nahrávání"}
             </button>
           ) : null}
           {canRetry ? (
             <button className="secondary-upload-button" onClick={() => void processFiles(retryFilesRef.current)} type="button">
-              <RotateCcw aria-hidden="true" size={18} />
+              <RotateCcw aria-hidden="true" size={15} />
               Zkusit znovu
             </button>
           ) : null}

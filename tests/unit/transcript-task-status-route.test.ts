@@ -30,11 +30,16 @@ function createClientDouble(result: { data: unknown; error: unknown }) {
     eq: vi.fn().mockReturnThis(),
     select: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue(result)
+    maybeSingle: vi.fn().mockResolvedValueOnce(result.data || result.error ? { data: { id: taskId, transcripts: { recording_id: userId } }, error: null } : result)
+      .mockResolvedValue(result)
   };
   return {
     auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: userId } }, error: null }) },
     from: vi.fn(() => query),
+    rpc: vi.fn(async (name: string) => name === "recording_capabilities_v1" ? { data: {
+      read: true, editTitle: false, editSpeakers: false, editTaskStatus: true, manageAccess: false,
+      delete: false, restore: false, purge: false, runPersonalAi: false, usePrivateChat: false
+    }, error: null } : { data: null, error: result.error }),
     query
   };
 }
@@ -52,10 +57,10 @@ describe("PATCH /api/transcript-tasks/:taskId/status", () => {
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "Úkol nebyl nalezen." });
-    expect(client.query.select).toHaveBeenCalledWith("id,status");
+    expect(client.query.select).toHaveBeenCalledWith("id,transcripts!inner(recording_id)");
   });
 
-  it("returns the actually stored status after one owner-scoped update", async () => {
+  it("returns the actually stored status after one authorized locked update", async () => {
     const client = createClientDouble({ data: { id: taskId, status: "done" }, error: null });
     mocks.createClient.mockResolvedValue(client);
 
@@ -63,9 +68,10 @@ describe("PATCH /api/transcript-tasks/:taskId/status", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, status: "done" });
-    expect(client.query.update).toHaveBeenCalledWith({ status: "done" });
+    expect(client.rpc).toHaveBeenCalledWith("edit_recording_task_status_v1", { p_task_id: taskId, p_status: "done" });
+    expect(client.query.update).not.toHaveBeenCalled();
     expect(client.query.eq).toHaveBeenCalledWith("id", taskId);
-    expect(client.query.eq).toHaveBeenCalledWith("user_id", userId);
+    expect(client.query.select).toHaveBeenCalledWith("id,status");
   });
 
   it("sanitizes update database errors", async () => {

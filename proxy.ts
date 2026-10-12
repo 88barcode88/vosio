@@ -6,6 +6,12 @@ import { isConfigurationBypassPath, isDevelopmentWorkspaceShellFixture } from "@
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
+  // MCP APIs and exact metadata endpoints use their own bearer/config guards before cookie redirects.
+  if (pathname === "/api/mcp" || pathname.startsWith("/api/mcp/")
+    || pathname === "/.well-known/oauth-protected-resource/api/mcp" || pathname === "/.well-known/oauth-authorization-server") {
+    return NextResponse.next({ request });
+  }
+
   if (isDevelopmentWorkspaceShellFixture(pathname)) {
     return NextResponse.next({ request });
   }

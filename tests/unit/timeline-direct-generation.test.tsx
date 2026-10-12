@@ -3,8 +3,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TimelineContent } from "@/components/transcript-tabs/timeline-content";
+import { RecordingCapabilityProvider } from "@/components/recording-capability-context";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 
 const run = vi.fn();
+vi.mock("@/components/delete-ai-output-form", () => ({ DeleteAiOutputForm: ({ outputId }: { outputId: string }) => <button data-output-id={outputId}>Smazat výstup</button> }));
 const processingState: { message: string | null; running: boolean } = {
   message: null,
   running: false
@@ -57,16 +60,31 @@ describe("TimelineContent direct generation", () => {
     root = createRoot(container);
   });
 
+  it("keeps cached chapters mounted on background failure and offers a read retry", async () => {
+    const reload = vi.fn();
+    const props = { activeTranscript: transcript, aiOutputs: [], defaultAiModel: "gpt-6.1-sol", markers: [], onOpenMarker: vi.fn(), onReload: reload,
+      structuredItems: { chapters: [{ id: "chapter", title: "Uložená kapitola", start_time: "00:00", end_time: "00:01", summary: "Obsah", position: 1,
+        ai_output_id: "output", processing_job_id: "job", transcript_id: transcript.id, user_id: transcript.user_id,
+        confidence: null, dominant_roles: [], raw_item: {}, source_type: "explicit" as const, speakers: [], topics: [] }], tasks: [], decisions: [], risks: [] } };
+    await act(async () => root.render(<TimelineContent {...props} />));
+    const chapter = container.querySelector(".timeline-chapter");
+    await act(async () => root.render(<TimelineContent {...props} stateError="Stav se nepodařilo načíst." />));
+    expect(container.querySelector(".timeline-chapter")).toBe(chapter);
+    expect(container.textContent).toContain("Uložená kapitola");
+    await act(async () => container.querySelector<HTMLButtonElement>('[role="alert"] button')?.click());
+    expect(reload).toHaveBeenCalledOnce();
+  });
+
   it("starts timeline_chapters with the default model in the current tab", async () => {
     await act(async () => root.render(
-      <TimelineContent
+      <RecordingCapabilityProvider capabilities={{ ...NO_RECORDING_CAPABILITIES, read: true, runPersonalAi: true }}><TimelineContent
         activeTranscript={transcript}
         aiOutputs={[]}
         defaultAiModel="gpt-5.6-terra"
         markers={[]}
         onOpenMarker={vi.fn()}
         structuredItems={{ chapters: [], decisions: [], risks: [], tasks: [] }}
-      />
+      /></RecordingCapabilityProvider>
     ));
 
     const button = Array.from(container.querySelectorAll("button")).find(

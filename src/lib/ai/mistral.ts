@@ -63,7 +63,8 @@ export function createMistralChatRequestBody(input: RunMistralChatInput) {
       ...input.messages
     ],
     model: input.model,
-    response_format: createMistralResponseFormat(input.outputSchema)
+    response_format: createMistralResponseFormat(input.outputSchema),
+    temperature: 0.3
   };
 }
 

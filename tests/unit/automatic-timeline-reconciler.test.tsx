@@ -24,7 +24,7 @@ describe("automatic timeline next-open reconciler", () => {
     const root = createRoot(document.createElement("div"));
     const onReconciled = vi.fn();
     try {
-      await act(async () => root.render(<StrictMode><AutomaticTimelineReconciler transcriptId="t" onReconciled={onReconciled} /></StrictMode>));
+      await act(async () => root.render(<StrictMode><AutomaticTimelineReconciler transcriptId="t" onReconciled={onReconciled} canRunPersonalAi /></StrictMode>));
       expect(fetch).not.toHaveBeenCalled();
       visible = true;
       await act(async () => { document.dispatchEvent(new Event("visibilitychange")); window.dispatchEvent(new Event("online")); });
@@ -37,7 +37,7 @@ describe("automatic timeline next-open reconciler", () => {
     const onReconciled = vi.fn();
 
     await act(async () => {
-      root.render(<AutomaticTimelineReconciler onReconciled={onReconciled} transcriptId="transcript-id" />);
+      root.render(<AutomaticTimelineReconciler onReconciled={onReconciled} transcriptId="transcript-id" canRunPersonalAi />);
     });
 
     expect(fetch).toHaveBeenCalledOnce();
@@ -58,10 +58,17 @@ describe("automatic timeline next-open reconciler", () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<AutomaticTimelineReconciler transcriptId="transcript-id" />);
+      root.render(<AutomaticTimelineReconciler transcriptId="transcript-id" canRunPersonalAi />);
     });
 
     expect(fetch).toHaveBeenCalledOnce();
+    await act(async () => root.unmount());
+  });
+
+  it.each([false, undefined])("never starts reconciliation without explicit server permission (%s)", async (canRunPersonalAi) => {
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(<AutomaticTimelineReconciler transcriptId="transcript-id" canRunPersonalAi={canRunPersonalAi} />));
+    expect(fetch).not.toHaveBeenCalled();
     await act(async () => root.unmount());
   });
 });

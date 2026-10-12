@@ -1,7 +1,5 @@
 # Supabase Schema
 
-AI cleanup and model rollout is source-only: `20260908101824_add_mistral_ai_provider.sql`, then `20260908103000_add_manual_ai_job_cleanup.sql`. Each target requires its own approved preflight, forward apply and postflight; source presence does not prove application, deployment or live behavior.
-
 ## Stav
 
 Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seřazený řetězec:
@@ -20,12 +18,39 @@ Zdroj pravdy pro bootstrap nového Supabase projektu je celý timestampově seř
 - `supabase/migrations/20260828130631_add_transcript_chat.sql`
 - `supabase/migrations/20260828131010_add_transcript_chat_schema.sql`
 - `supabase/migrations/20260904140126_harden_manual_ai_job_recovery.sql`
+- `supabase/migrations/20260908101824_add_mistral_ai_provider.sql`
+- `supabase/migrations/20260908103000_add_manual_ai_job_cleanup.sql`
+- `supabase/migrations/20260915170017_add_automatic_ai_outputs.sql`
+- `supabase/migrations/20260922190000_add_project_sharing.sql`
+- `supabase/migrations/20260922200000_add_project_sharing_read_paths.sql`
+- `supabase/migrations/20260922210000_add_shared_ai_output_types.sql`
+- `supabase/migrations/20260922220000_add_shared_recording_trash.sql`
+- `supabase/migrations/20260922230000_add_owned_usage_and_trash_audio.sql`
+- `supabase/migrations/20260923000000_add_bulk_recording_sharing.sql`
+- `supabase/migrations/20260923010000_add_capture_operation_contracts.sql`
+- `supabase/migrations/20261002000000_list_selected_capture_authorizations.sql`
+- `supabase/migrations/20261002010000_capture_personal_intents_and_contacts.sql`
+- `supabase/migrations/20261002020000_capture_index_and_speaker_repairs.sql`
+- `supabase/migrations/20261002030000_founder_owned_private_sharing.sql`
+- `supabase/migrations/20261002040000_release_absent_purge_requests.sql`
+- `supabase/migrations/20261002050000_owned_job_usage.sql`
+- `supabase/migrations/20261002060000_integrate_dev_capture_features.sql`
+- `supabase/migrations/20261002070000_guard_manual_ai_destructive_admission.sql`
+- `supabase/migrations/20261003010000_add_atomic_checklist_delete.sql`
+- `supabase/migrations/20261003020000_future_ai_model_selection.sql`
+- `supabase/migrations/20261003143836_vosio_mcp_oauth_bridge.sql`
+- `supabase/migrations/20261005010000_adopt_legacy_live_recovery.sql`
+- `supabase/migrations/20261005020000_complete_saved_transcript_and_dispatch.sql`
+- `supabase/migrations/20261006113000_vosio_mcp_installation.sql`
+- `supabase/migrations/20261006122518_add_transcription_recovery.sql`
+- `supabase/migrations/20261006140000_add_transcription_recovery_read.sql`
+- `supabase/migrations/20261007100000_vosio_mcp_dynamic_registration.sql`
 
 Baseline vytváří core public tabulky, enumy, indexy, forced RLS policies, private Storage bucket `recordings`, storage policies a systémové prompt templates. Obsahuje i `provider_config` sloupce, Gemini provider, `timeline_chapters`, strukturované AI projekce a performance indexy pro detail nahrávky. Evidence sloupce vznikají až po `10000`, organizační sloupce/tabulky/RPC až po `11000`, `recording_markers` až po `12000`, fulltext search tabulka/RPC/indexy až po `13000`, přesná restore/purge metadata a Storage write fence až po `05550`, stavové facety až po `130000`, prompt overrides/job snapshots až po `130900`, privilege hardening až po `15073029`, automatic timeline idempotency/lease až po `20260827094435`, Trash retention deadlines/leases až po `20260827100000`, chat enum až po `20260828130631`, systémový prompt, chat tabulky, RLS a granty až po `20260828131010` a manual AI failure metadata/claim/settle/reconcile RPC až po `20260904140126`. Baseline proto není kompletní source of truth; úplný fresh-project kontrakt je pouze celý uvedený ordered chain.
 
 Existující produkční Supabase projekt může mít v `supabase_migrations.schema_migrations` historické záznamy ze starého vývojového řetězu. Pro běžný provoz je důležité, aby skutečné schema odpovídalo explicitně schválené a aplikované části aktuálního řetězce; produkční DB se kvůli baseline neresetuje.
 
-Budoucí schema změny se přidávají jako nové timestampové migrace na konec řetězce. Tento veřejný repozitář je zdrojový kontrakt, nikoli deployment ledger: u žádného hostovaného targetu automaticky netvrdí aplikaci migrací. Recording chat zůstává ve stejném Supabase projektu jako nahrávky a přepisy; nevytváří druhý projekt. Zdrojový soubor v repu, aplikovaná migrace na konkrétním targetu, deploy aplikace a živá funkce jsou rozdílné stavy. Nový prázdný projekt aplikuje celý řetězec v pořadí; existující projekt musí nejdřív samostatně porovnat skutečné schema a migration history a aplikovat pouze chybějící forwards.
+Budoucí schema změny se přidávají jako nové timestampové migrace na konec řetězce. Recording chat zůstává ve stejném Supabase projektu jako nahrávky a přepisy; nevytváří druhý projekt. Zdrojový soubor v repu, aplikovaná migrace na konkrétním targetu, deploy aplikace a živá funkce jsou rozdílné stavy. Aktuální stav cílů ale není shodný:
 
 Systémové prompt templates jsou seedované stabilními UUID a aktuálním kontraktem JSON + `markdown`. Prompty používají vstupní model `raw_text` + `segments` + `speakers`, obsahují pravidla pro speaker role a zahrnují typy `summary`, `action_items`, `meeting_minutes`, `crm_note`, `follow_up_email`, `custom_prompt` a `timeline_chapters`. `20260828130631` nejdřív přidá enumový typ `recording_chat`; jeho systémový prompt přibude až po aplikaci `20260828131010`. Není součástí šesti quick actions ani uživatelského editoru promptů.
 
@@ -50,7 +75,7 @@ Ověřeno v source a automatických testech:
 3. raw `ai_outputs` se ukládá před odvozenými projekcemi a AI job přejde do `done` až po pokusu o jejich uložení,
 4. component/E2E kontrakt navigace pro single audio, transcript-only a legacy segmented záznam.
 
-Source testy ověřují očekávané evidence sloupce a všechny 3 checks. Každý deployment target stále potřebuje vlastní runtime databázový a dvouuživatelský RLS postflight.
+Každý target vyžaduje vlastní schema/grants/RLS postflight a runtime akceptaci; source publikace jeho stav nepotvrzuje.
 
 ## Recording organization forward migrace
 
@@ -79,7 +104,7 @@ Unikátní funkční indexy nad `lower(btrim(name))` zajišťují case-insensiti
 
 ### Stav ověření organizační migrace
 
-Source testy ověřují textový schema/security kontrakt a aplikační testy canonical URL, transakční assignment kontrakt, ALL-tag filtrování a keyset klienta. Každý deployment target musí samostatně ověřit tabulky, forced RLS, policies, constraints, indexy, RPC, skutečný two-user runtime RLS a úplnou `auth.users` cascade.
+Source testy ověřují textový schema/security kontrakt a aplikační testy canonical URL, transakční assignment kontrakt, ALL-tag filtrování a keyset klienta. Každý target vyžaduje vlastní schema/grants/RLS postflight a runtime akceptaci; source publikace jeho stav nepotvrzuje.
 
 ## Recording markers forward migrace
 
@@ -101,7 +126,7 @@ První úspěšný insert vrací `201`. Konflikt unikátního `(user_id, client_
 
 ### Stav ověření marker migrace
 
-Source a automatické testy ověřují textový SQL contract, validaci route, přesný retry konflikt, pořadí dotazu a aplikační full/compact/timeline chování. Každý deployment target musí samostatně ověřit forced RLS, policies, constraints, index, trigger, granty a dvouuživatelský runtime RLS.
+Source a automatické testy ověřují textový SQL contract, validaci route, přesný retry konflikt, pořadí dotazu a aplikační full/compact/timeline chování. Každý target vyžaduje vlastní schema/grants/RLS postflight a runtime akceptaci; source publikace jeho stav nepotvrzuje.
 
 ## Transcript fulltext search forward migrace
 
@@ -115,25 +140,23 @@ Soubor `supabase/migrations/20260804130000_add_transcript_fulltext_search.sql` j
 - trigger `transcripts_refresh_search_fallback`, který při insert/update transcriptu nahradí chunks jedním raw-text fallbackem bez času,
 - jednorázový source backfill existujících neprázdných `transcripts.raw_text` do fallback chunků.
 
-Přesný aplikační index odvozuje po sobě jdoucí renderovatelné speaker bloky ze stejných tokenů jako transcript UI. Každý chunk zachovává text, stabilní 1-based pozici a dostupný čas. Pokud speaker bloky nejsou renderovatelné, používá se jediný trimmed `raw_text` chunk bez času; prázdný transcript nemá chunk. Async, segment-combine, realtime draft/final, recovery, ruční import a změna speaker metadata po uložení volají `replace_transcript_search_chunks_v1`. Selhání tohoto doplňkového indexování zachová durable transcript i triggerový raw fallback a vrací pouze stabilní nefatální warning.
+Přesný aplikační index odvozuje po sobě jdoucí renderovatelné speaker bloky ze stejných tokenů jako transcript UI. Každý chunk zachovává text, stabilní 1-based pozici a dostupný čas. Pokud speaker bloky nejsou renderovatelné, používá se jediný trimmed `raw_text` chunk bez času; prázdný transcript nemá chunk. Capture write cesty indexují až po ověřeném durable transcript receiptu přes version-fenced servisní kontrakt; historický `replace_transcript_search_chunks_v1` není capture autorizační brána. Selhání tohoto doplňkového indexování zachová durable transcript i triggerový raw fallback a vrací pouze stabilní nefatální warning.
 
-Search RPC normalizuje whitespace a omezuje dotaz na 120 znaků, parsuje ho přes `websearch_to_tsquery('simple', query_text)` a vrací právě jednu vítěznou shodu pro každou nahrávku. Transcript část pro každou nahrávku používá právě nejnovější vlastní transcript podle `created_at desc, id desc`; starší transcript se po existenci novějšího neprohledává. Eligible množina vyžaduje `auth.uid()`, `recordings.user_id = auth.uid()`, `status <> 'deleted'` a stejné client/project/folder/ALL-tag filtry jako workspace. Výsledky jsou řazené podle ranku, data a recording ID, obsahují pouze excerpt, volitelný `match_start_ms`/`match_end_ms` a `total_count`, nikoli celé transcripty.
+Search RPC normalizuje whitespace a omezuje dotaz na 120 znaků, parsuje ho přes `websearch_to_tsquery('simple', query_text)` a vrací právě jednu vítěznou shodu pro každou nahrávku. Transcript část pro každou nahrávku používá právě nejnovější přístupný transcript podle `created_at desc, id desc`; starší transcript se po existenci novějšího neprohledává. Aktuální sharing kontrakt vyhodnocuje přesný read scope nahrávky, `status <> 'deleted'` a stejné client/project/folder/ALL-tag filtry jako workspace, bez úniku osobní taxonomie. Výsledky jsou řazené podle ranku, data a recording ID, obsahují pouze excerpt, volitelný `match_start_ms`/`match_end_ms` a `total_count`, nikoli celé transcripty.
 
-V1 RPC `list_own_recordings_v1` a `search_own_recordings_v1` zůstávají pouze pro kompatibilitu. Současné UI bezpodmínečně používá `list_own_recordings_v2` bez `q` a `search_own_recordings_v2` s neprázdným `q`; V2 přidává přesný status filtr. Search UI používá bounded `page` a `limit/offset` stránkování po 25 výsledcích. To se nesmí zaměnit s keysetem běžného V2 listu `(created_at, id)` ani s keysetem servisního backfillu, který postupuje vzestupně podle transcript `id`.
+Legacy owner-only list/search RPC zůstávají pouze pro kompatibilitu. Současné source UI používá `list_accessible_recordings_v1` bez `q` a `search_accessible_recordings_v1` s neprázdným `q`, včetně přesného status filtru. Search UI používá bounded `page` a `limit/offset` stránkování po 25 výsledcích. To se nesmí zaměnit s keysetem běžného listu `(created_at, id)` ani s keysetem servisního backfillu, který postupuje vzestupně podle transcript `id`. Sharing forwards musí být aplikovány jako celá řada; tento dokument nepotvrzuje jejich živé nasazení.
 
-Source migrace `20260813000000_add_recording_status_filters.sql` přidává oba V2 list/search kontrakty a `count_own_recording_statuses_v1`. Toto RPC vrací přesné facety přes celý aktuální `q`, organizační filtry a ALL sadu štítků. Facety ignorují aktivní `status`; `Smazáno` je samostatný úplný počet Koše.
+Source migrace `20260813000000_add_recording_status_filters.sql` přidala historické V2 list/search kontrakty a `count_own_recording_statuses_v1`. Aktuální source caller používá `count_accessible_recording_statuses_v1`: přesné facety přes celý aktuální `q`, organizační filtry a ALL sadu štítků. Facety ignorují aktivní `status`; `Smazáno` je samostatný úplný počet spravovaného Koše.
 
-Tabulka `transcript_search_chunks` má enabled i forced RLS. `authenticated` má pouze `select` vlastních řádků, `anon` nemá grant, `service_role` má plný grant. Search RPC je invoker a executable jen pro `authenticated`; replace RPC je executable jen pro `service_role`. Triggerová funkce je `SECURITY DEFINER`, ale není executable pro `public`, `anon` ani `authenticated`.
+Tabulka `transcript_search_chunks` má enabled i forced RLS. Sharing forward autorizuje `authenticated` SELECT přes nahrávku, nikoli jen autorství; `anon` nemá grant a servisní indexování neuděluje uživatelské právo zápisu. Aktuální přesná obnova indexu po capture používá version-fenced servisní kontrakt podle [capture API](capture-operation-contracts.md); triggerový raw fallback zůstává zachovaný. Triggerová funkce není executable pro `public`, `anon` ani `authenticated`.
 
-Repo obsahuje servisní příkaz `npm run search:backfill`. Vyžaduje explicitní `--environment=disposable|live`; live navíc `--allow-live`, podporuje `--dry-run` a bounded batch `1..500`. Jeho spuštění je samostatné target-specific provozní rozhodnutí; migrace `13000` už obsahuje inline fallback backfill.
+Repo obsahuje servisní příkaz `npm run search:backfill`. Vyžaduje explicitní `--environment=disposable|live`; live navíc `--allow-live`, podporuje `--dry-run` a bounded batch `1..500`. Tento samostatný script nebyl spuštěn. Inline fallback backfill je součástí migrace `13000`; každý target musí ověřit svůj výsledek.
 
 ### Stav ověření search migrace
 
-Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivaci, latest pořadí, query parsing, owner/deleted/organization filtry, stránkování, deep-link resolvery, raw/manual fallback, ambiguity/no-false-highlight, one-shot warning a single/none/segmented playback chování. Každý deployment target musí samostatně ověřit forced RLS, indexy, funkce, trigger, granty, authenticated GIN `EXPLAIN`, two-user runtime RLS a current-vs-old/manual/raw/deleted behavior.
+Source/unit/component/E2E testy pokrývají SQL textový kontrakt, chunk derivaci, latest pořadí, query parsing, owner/deleted/organization filtry, stránkování, deep-link resolvery, raw/manual fallback, ambiguity/no-false-highlight, one-shot warning a single/none/segmented playback chování. Každý target vyžaduje vlastní schema/grants/RLS postflight a runtime akceptaci; source publikace jeho stav nepotvrzuje.
 
 ## Forward migrations release gate
-
-Fresh-project pořadí zůstává závazné: baseline, evidence `10000`, organization `11000`, markers `12000`, search `13000`, Trash restore/purge `05550`, status filters `130000`, prompt overrides/job snapshots `130900`, privilege hardening `15073029`, automatic timeline idempotency `20260827094435` a Trash retention `20260827100000`. Každý target potřebuje vlastní schema/history preflight, apply pouze chybějících migrací a databázový postflight před app deployem. Legacy historii nemaž ani neresetuj jen proto, aby odpovídala fresh baseline.
 
 ## Trash retention deadlines and cleanup leases
 
@@ -141,7 +164,7 @@ Source migrace `20260827100000_add_trash_retention_deadlines.sql` přidává na 
 
 Service-only RPC `claim_due_recording_purges_v1` vybírá due řádky ve stabilním pořadí, používá row locking se `skip locked`, přiděluje UUID lease token, bere nejvýše 20 řádků, nepřekračuje pět pokusů a reclaimuje až po 15 minutách stejně jako ruční purge. Refresh, finalize a release RPC mění jen řádek s přesným claim tokenem; claim loss proto nedovolí dokončit cizí lease. Release se používá jen před prvním Storage delete pokusem. Po zahájení mutace zůstává claim držený pro bezpečný stale retry a trigger mezitím blokuje restore. Všechny čtyři funkce jsou `SECURITY INVOKER`, mají prázdný `search_path`, plně kvalifikované objekty, explicitní revoke pro `PUBLIC`, `anon`, `authenticated` a execute pouze pro `service_role`. Trigger helper `recordings_manage_trash_metadata()` má stejný direct-call ACL; revokace nemění spuštění již instalovaného PostgreSQL triggeru při update řádku.
 
-Source Edge Function `supabase/functions/trash-retention` volá tato RPC a maže private objekty pouze přes Supabase Storage API, nikdy SQL proti `storage.objects`. Je bounded na batch 20 a přesně dva paralelní itemy, ověřuje kanonický owner/recording prefix a fail-closed vyžaduje vlastní scheduler token i přesný enable secret `true`. Repo neobsahuje cron ani schedule. Zdrojový repozitář sám nepotvrzuje aplikaci migrace, nasazení funkce, nastavení secrets ani povolení cleanupu na žádném cíli.
+Edge Function `supabase/functions/trash-retention` volá tato RPC a maže private objekty pouze přes Supabase Storage API, nikdy SQL proti `storage.objects`. Je bounded na batch 20 a přesně dva paralelní itemy, ověřuje kanonický owner/recording prefix a fail-closed vyžaduje vlastní scheduler token i přesný enable secret `true`. Repo neobsahuje cron ani schedule. Každý target vyžaduje vlastní schema/grants/RLS postflight a runtime akceptaci; source publikace jeho stav nepotvrzuje.
 
 ## Public tabulky
 
@@ -219,7 +242,7 @@ Unikátní `(user_id, client_turn_id)` zajišťuje idempotenci přes retry reque
 
 Authenticated save/reset používají `SECURITY INVOKER` funkce `save_prompt_template_override_v1` a `reset_prompt_template_override_v1`. Obě odvozují vlastníka z `auth.uid()`, zamykají existující řádek a vyžadují expected revision. Resolver `resolve_effective_prompt_template_v1` vrací owner override text, pokud je aktivní, ale název, processing type a schema vždy čte ze systémového základu. Browser-callable RPC grant je pouze pro `authenticated`; provozní `service_role` si ponechává `EXECUTE`. Tabulka má forced owner RLS a `anon` nemá grant.
 
-Opravná migrace `20260815073029_harden_prompt_override_privileges.sql` nejdřív revokuje zděděné tabulkové granty role `authenticated` a vrací pouze `SELECT`, `INSERT` a `UPDATE`. Trigger-only `validate_prompt_template_override_base_v1()` po ní nemá přímý `EXECUTE` pro `PUBLIC`, `anon` ani `authenticated`. Samostatný index na `prompt_template_overrides(system_prompt_id)` pokrývá reverse foreign-key lookup; partial jobs index na nenulovém `prompt_override_id` zůstává záměrně beze změny. Postflight každého targetu musí ověřit přesný ACL, effective function privileges, validní a ready index, forced RLS, policies a job snapshot invarianty.
+Opravná migrace `20260815073029_harden_prompt_override_privileges.sql` nejdřív revokuje zděděné tabulkové granty role `authenticated` a vrací pouze `SELECT`, `INSERT` a `UPDATE`. Trigger-only `validate_prompt_template_override_base_v1()` po ní nemá přímý `EXECUTE` pro `PUBLIC`, `anon` ani `authenticated`. Samostatný index na `prompt_template_overrides(system_prompt_id)` pokrývá reverse foreign-key lookup; partial jobs index na nenulovém `prompt_override_id` zůstává záměrně beze změny. Každý target vyžaduje vlastní schema/grants/RLS postflight a runtime akceptaci; source publikace jeho stav nepotvrzuje.
 
 `ai_processing_jobs` po migraci ukládá `prompt_override_id`, `prompt_source`, `prompt_name_snapshot`, `prompt_text_snapshot`, `prompt_output_schema_snapshot`, `prompt_revision_snapshot` a `prompt_snapshot_exact`. Nový quick-action job zapisuje přesný snapshot před provider callem a má `prompt_snapshot_exact=true`. Historické řádky se rekonstruují z dostupného `prompt_id`, ale vždy mají `prompt_snapshot_exact=false`; chybějící identita se označí `unknown`. Reset override staré snapshoty ani `ai_outputs` nemění.
 
@@ -231,23 +254,19 @@ Legacy nesystémové řádky v `prompt_templates` zůstávají uložené, ale ed
 
 `20260827094435_add_automatic_timeline_idempotency.sql` přidává do `ai_processing_jobs` additive pole `execution_mode`, `automatic_idempotency_key`, `attempt_count`, `max_attempts`, `lease_token` a `lease_expires_at` a do `transcripts` nenulovaný `completion_generation_key`. Existující a nové manuální řádky mají default `execution_mode='manual'`; automatický řádek musí být exact-snapshot `timeline_chapters` job s nenulovým idempotency digestem. Partial unique index povolí jen jeden automatický job na persistovanou generation identity a unique index `ai_outputs(processing_job_id)` jen jeden raw output na job. Nová forced-RLS tabulka `automatic_timeline_intents` drží service-only completion-time consent a celý immutable model/prompt/provider snapshot před prvním enqueue pokusem. Řádek bez consentu se nevytváří a historický transcript bez intentu se nerecoveruje.
 
-## Manual AI recovery
+### Manual AI recovery forward migrace
 
-`20260904140126_harden_manual_ai_job_recovery.sql` je additive forward migrace. Přidává `failure_code` a `retry_after_at` s allowlist/check constraints a service-role-only RPC `claim_manual_ai_job_v1`, `settle_manual_ai_job_v1` a `reconcile_manual_ai_job_v1`. Funkce jsou `SECURITY INVOKER`, používají prázdný `search_path`, plně kvalifikované objekty a nemají `EXECUTE` pro `PUBLIC`, `anon` ani `authenticated`. Forced RLS a owner-select model tabulky `ai_processing_jobs` zůstává zachovaný.
+`20260904140126_harden_manual_ai_job_recovery.sql` je additive source migrace. Přidává pouze `failure_code` a `retry_after_at` s allowlist/check constraints a tři `SECURITY INVOKER`, `search_path = ''` RPC: `claim_manual_ai_job_v1`, `settle_manual_ai_job_v1` a `reconcile_manual_ai_job_v1`. Všechny tři funkce mají `EXECUTE` revokované pro `PUBLIC`, `anon` i `authenticated` a grantované pouze `service_role`; forced RLS a owner-select model `ai_processing_jobs` se nemění.
 
-Claim přijme pouze nový manuální tvar jobu a nastaví přesný 480sekundový lease. Settlement vyžaduje shodnou identitu jobu, transcriptu, vlastníka a lease tokenu. Reconcile nikdy nevolá provider: nový queued job může naplánovat, čerstvý running ponechá běžet, stale running s odpovídajícím outputem uzavře jako `done` a bez outputu jako `failed / execution_interrupted`. Starší nebo nejednoznačný tvar vrací `operator_required` a vyžaduje samostatné target-specific rozhodnutí.
+Claim přijme pouze nový manual shape (`execution_mode='manual'`, `queued`, `attempt_count=0`, `max_attempts=1`, exact prompt snapshot, provider/model config bez aktivního lease), nastaví `running` a přesný 480sekundový lease. Settlement vyžaduje shodný lease token a přesnou identitu job/transcript/owner. Reconcile pod row lockem kontroluje output před stavem: stale `running` s vlastněným outputem uzavře `done`, stale `running` bez outputu uzavře `failed / execution_interrupted`, nový `queued` pouze vrátí `schedule` nebo ho na explicitní `interrupt` ukončí. Legacy shape vrací `operator_required`; provider se z RPC nikdy nevolá.
 
-`GET /api/transcripts/{transcriptId}/ai-state` vrací pouze omezené owner-scoped job/output metadata a allowlistovaný `failure_code`; neposílá lease token, raw provider chybu, prompt, provider config, transcript ani output body. `POST /api/transcripts/{transcriptId}/manual-ai/reconcile` přijímá jen přesné job UUID a akci `reconcile` nebo `interrupt`, ověřuje session i ownership a nic nemaže.
+### API boundary pro ruční AI stav
 
-Soubor v tomto repozitáři je source kontrakt, nikoli doklad aplikace na libovolném vzdáleném targetu. Každý existující projekt vyžaduje vlastní preflight, apply pouze chybějící migrace a postflight; nekanonické starší joby se nesmějí automaticky mazat ani znovu posílat provideru.
+`GET /api/transcripts/{transcriptId}/ai-state` po ověření session a ownership vrací nejvýše 50 owner-scoped manual job summaries a stránkovaná output metadata. Vrací jen `status`, timestamps, attempt/lease metadata a allowlistovaný `failure_code` s případným `retry_after_at`; neposílá lease token, `error_message`, prompt, provider config, transcript ani output body. Chyba dotazu je non-2xx, nikdy falešná prázdná obálka.
 
-## Manual AI cleanup
+`POST /api/transcripts/{transcriptId}/manual-ai/reconcile` přijímá pouze `{ jobId: uuid, action: "reconcile" | "interrupt" }`. Route nejprve ověří request-scoped session a vlastníka transcriptu, poté zavolá service-role-only reconcile RPC. Výsledek je bezpečný stav `schedule`, `busy`, `done`, `interrupted`, `terminal`, `operator_required` nebo `missing`; endpoint nevolá provider přímo a nic nemaže. `interrupt` čerstvý running job neukončuje ani neslibuje jeho zrušení.
 
-Po source migracích `20260908101824_add_mistral_ai_provider.sql` a `20260908103000_add_manual_ai_job_cleanup.sql` rozšiřuje enum provider o `mistral` a přidává service-role-only klasifikaci, keyset listing a bounded cleanup manuálních AI jobů. Cleanup přijímá nejvýše 50 přesných job ID pro jednoho vlastníka a transcript, zamyká rodiče i závislosti a maže jen serverem potvrzené terminalní nebo přesně rozpoznané stale joby bez outputu či projekce. Outputy, úkoly, kapitoly, rozhodnutí a rizika parent job chrání. Staré nebo nejednoznačné lifecycle tvary zůstávají `unsupported_legacy`; cleanup je nesmí automaticky mazat ani spouštět provider.
-
-Všechny nové funkce jsou `SECURITY INVOKER`, mají prázdný `search_path`, explicitně odebraný `EXECUTE` pro `PUBLIC`, `anon` a `authenticated` a execute pouze pro `service_role`. Každý target před apply samostatně ověří skutečné enumy, tabulky, RLS, grants, funkční signatury, cizí klíče a migration ledger. Přítomnost source souborů není důkazem aplikace ani concurrency ověření.
-
-RPC `complete_transcript_generation_v1`, `enqueue_automatic_timeline_job_v1`, `claim_automatic_timeline_job_v1` a `settle_automatic_timeline_job_v1` jsou `SECURITY INVOKER`, mají prázdný `search_path`, odebraný `EXECUTE` pro `PUBLIC`, `anon` i `authenticated` a explicitní grant pouze pro `service_role`. Completion RPC zamkne owner transcript `FOR UPDATE`, rozhodne same/new generation, vybere a `FOR SHARE` zamkne systémový prompt a aktivní override, uloží přesný intent, provede replacement cleanup právě jednou a teprve ve stejné transakci nastaví generation marker i recording `completed`. Jakákoli prompt/intent chyba rollbackne completion; ztracená odpověď po commitu je obnovitelná z intentu. Enqueue používá stejný unique digest; souběžné recovery proto vrátí jediný durable job. Claim přijme queued/failed job s remaining attempts nebo `running` job až po deterministické expiraci lease; každý claim zvýší attempt count. Settlement vyžaduje přesný aktuální lease token. Migrace neobsahuje cron ani plánovanou úlohu. Každý target stále potřebuje vlastní preflight, apply, postflight a rollback evidence.
+RPC `complete_transcript_generation_v1`, `enqueue_automatic_timeline_job_v1`, `claim_automatic_timeline_job_v1` a `settle_automatic_timeline_job_v1` jsou `SECURITY INVOKER`, mají prázdný `search_path`, odebraný `EXECUTE` pro `PUBLIC`, `anon` i `authenticated` a explicitní grant pouze pro `service_role`. Completion RPC zamkne owner transcript `FOR UPDATE`, rozhodne same/new generation, vybere a `FOR SHARE` zamkne systémový prompt a aktivní override, uloží přesný intent, provede replacement cleanup právě jednou a teprve ve stejné transakci nastaví generation marker i recording `completed`. Jakákoli prompt/intent chyba rollbackne completion; ztracená odpověď po commitu je obnovitelná z intentu. Enqueue používá stejný unique digest; souběžné recovery proto vrátí jediný durable job. Claim přijme queued/failed job s remaining attempts nebo `running` job až po deterministické expiraci lease; každý claim zvýší attempt count. Settlement vyžaduje přesný aktuální lease token. Migrace neobsahuje cron ani plánovanou úlohu. Každý target vyžaduje vlastní schema/grants/RLS postflight a runtime akceptaci; source publikace jeho stav nepotvrzuje.
 
 Před jakýmkoli apply `20260827094435` na existující target musí oprávněný operátor spustit přesně tento read-only preflight:
 
@@ -262,27 +281,28 @@ having count(*) > 1
 order by processing_job_id;
 ```
 
-Nulový výsledek je nutná, nikoli postačující podmínka apply. Jakýkoli řádek blokuje live apply a vyžaduje explicitní lineage review každého outputu. Migrace stejný invariant kontroluje fail-closed ještě před unique indexem a vyhodí výjimku; neobsahuje blind dedup ani delete. Každý target zůstává `live apply blocked pending preflight`, dokud není doložen jeho vlastní nulový výsledek a schválen další rollout krok.
+Nulový výsledek je nutná, nikoli postačující podmínka apply. Jakýkoli řádek blokuje live apply a vyžaduje explicitní lineage review každého outputu. Migrace stejný invariant kontroluje fail-closed ještě před unique indexem a vyhodí výjimku; neobsahuje blind dedup ani delete. Každý target vyžaduje vlastní schema/grants/RLS postflight a runtime akceptaci; source publikace jeho stav nepotvrzuje.
+
+Live apply blocked pending preflight platí pro každou existující cílovou databázi, dokud správce nedoloží nulový výsledek tohoto dotazu a ostatní target-specific rollout podmínky.
 
 ## Přístupový model
 
 Authenticated uživatel:
 
-- může číst vlastní nahrávky, joby, přepisy, AI joby, AI výstupy a audit metadata,
-- může číst vlastní strukturované AI projekce a měnit pouze `transcript_tasks.status`,
-- může vytvářet/upravovat/mazat vlastní `recordings`,
+- čte vlastní i výslovně sdílené nahrávky, přepisy, uložené AI výstupy a projekce podle aktuálních canonical recording capabilities,
+- osobní AI joby, prompty, taxonomy, chat a audit zůstávají osobní; nový AI job vyžaduje aktuálního osobního vlastníka s read a management právem,
+- editor mění pouze povolený obsah a přesný task status úzkými session RPC; read-only příjemce nic neupravuje,
+- Koš, obnovu, trvalý purge a mazání checklistu provádí aktuální manager přes locked RPC a přesný receipt/CAS; široký browser delete/update grant se nepoužívá,
 - po aplikaci organization migrace může přes forced owner RLS spravovat jen vlastní klienty, projekty, ploché složky, štítky a jejich vazby; assignment a filtrovaný seznam používají pouze authenticated RPC granty,
-- po aplikaci marker migrace může přes forced RLS číst a měnit pouze vlastní `recording_markers`,
-- po aplikaci search migrace může přes forced RLS číst pouze vlastní `transcript_search_chunks` a spouštět owner-safe `search_own_recordings_v1`,
+- markery a search chunks používají aktuální recording-level přístup; běžný seznam a hledání používají accessible RPC, owner V1/V2 zůstávají kompatibilní,
 - může vytvářet/upravovat/mazat vlastní nesystémové `prompt_templates`,
 - po aplikaci prompt override migrace může přes forced RLS a revision-safe RPC uložit nebo resetovat jen vlastní `prompt_text` override,
 - po aplikaci chat migrace může přes forced owner RLS pouze číst vlastní `transcript_chat_threads` a `transcript_chat_turns`; nemá browser grant ani policy pro jejich create/update/delete,
-- může pracovat jen se Storage objekty v cestě `user_id/...`.
+- Storage read se řídí aktuálním přístupem k nahrávce a kanonickým locator/manifestem; autor jiného objektu ani znalost cesty přístup nedává. Write vyžaduje aktuální capture oprávnění a přesnou registraci.
 
 Server/worker přes `service_role`:
 
-- vytváří a upravuje `transcription_jobs`,
-- ukládá `transcripts`,
+- durable přepis přijímá session prepare/start, service worker pokračuje pouze přes exact accepted custody, fencing a claims; ukládá novou transcript generaci,
 - vytváří a upravuje `ai_processing_jobs`,
 - po aplikaci automatic timeline migrace persistuje a čte `automatic_timeline_intents` pouze přes service-role boundary,
 - ukládá `ai_outputs`,
@@ -290,9 +310,9 @@ Server/worker přes `service_role`:
 - zapisuje `audit_logs`,
 - po aplikaci marker migrace má plný grant nad `recording_markers`; běžný marker endpoint přesto používá authenticated session a owner RLS,
 - po aplikaci search migrace atomicky nahrazuje `transcript_search_chunks` přes service-only RPC; běžnému authenticated klientovi tento zápis přístupný není.
-- po aplikaci chat migrace vytváří a mění chat vlákna a tahy pouze přes serverovou `service_role` boundary po ověření authenticated ownera.
+- chat vytváří a mění pouze přes serverovou `service_role` boundary po ověření aktuálního osobního owner/manager kontraktu.
 
-Manuální restart přepisu používá stejnou server-side kontrolu vlastnictví. Při `POST /api/recordings/{recordingId}/transcription?restart=1` se nejdřív založí nový Soniox job a až potom se smažou existující transcripty pro danou nahrávku; navázané `ai_processing_jobs` a `ai_outputs` se odstraní přes kaskádové FK. Staré dokončené `transcription_jobs` zůstávají kvůli usage historii, běžící lokální joby se označí jako `cancelled`.
+Nový přepis zachovává předchozí transcript/AI historii. Nejasný provider submit se automaticky neopakuje; recovery ověřuje přesnou operaci a snapshot. [Capture kontrakt](capture-operation-contracts.md) popisuje receipt/CAS, durable manifests, accepted work a revoke chování. [Sharing runbook](project-sharing-runbook.md) určuje společný DB/web/worker upgrade.
 
 Anon role:
 
@@ -300,7 +320,7 @@ Anon role:
 - nemá žádnou storage policy na bucket `recordings`,
 - při runtime ověření nevidí žádné `recordings` řádky.
 
-RLS je zapnuté a forced na všech uživatelských public tabulkách. Policies jsou vázané na `to authenticated` a vlastnictví přes `(select auth.uid()) = user_id`, kromě systémových `prompt_templates`, které může authenticated uživatel číst, ale ne upravovat.
+Uživatelské tabulky používají RLS: osobní data owner policies, sdílený obsah canonical recording capabilities a úzké RPC. Systémové `prompt_templates` může authenticated uživatel číst, ale ne upravovat. Privátní custody a interní operation tabulky mají forced RLS a žádný přímý browser/service table přístup.
 
 ## Storage
 
@@ -326,7 +346,3 @@ Nová live nahrávka pod limitem používá jeden finální objekt:
 ```
 
 `recordings.storage_path` ukazuje přímo na tento objekt. Pro kompatibilitu aplikace stále rozpozná starší segmentovaný prefix `{user_id}/{recording_id}/live/`; u takového záznamu vytvoří async znovupřepis jeden řádek v `transcription_jobs` pro každý nalezený objekt, se společným `provider_config.batch_id` a `provider_config.audio_source = supabase_recording_segment`.
-
-## Deployment verification boundary
-
-Tento veřejný schema dokument neuchovává stav konkrétního hostovaného projektu. Před deployem proti existujícímu targetu ověř celý ordered chain, skutečné tabulky a sloupce, constraints, indexy, granty, forced RLS, dvouuživatelskou izolaci, job snapshot invarianty a migration history. Produkční databázi kvůli porovnání s fresh baseline neresetuj a starší historii nepřepisuj bez samostatně schváleného reconciliation plánu.

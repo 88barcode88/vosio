@@ -21,6 +21,10 @@ export type SonioxTranscription = {
   error_type?: string | null;
   id: string;
   status: SonioxTranscriptionStatus;
+  audio_url?: string | null;
+  client_reference_id?: string | null;
+  created_at?: string;
+  model?: string;
 };
 
 export type SonioxTranscript = {
@@ -96,6 +100,7 @@ async function sonioxFetch<T>(region: SonioxRegion, path: string, init?: Request
   const target = getSonioxRegionTarget(region);
   const response = await fetch(`${target.apiBaseUrl}${path}`, {
     ...init,
+    signal: AbortSignal.any([...(init?.signal ? [init.signal] : []), AbortSignal.timeout(30000)]),
     headers: {
       Authorization: `Bearer ${env.sonioxApiKey}`,
       "Content-Type": "application/json",
@@ -103,7 +108,7 @@ async function sonioxFetch<T>(region: SonioxRegion, path: string, init?: Request
     }
   });
 
-  const payload = (await response.json().catch(() => null)) as T | unknown;
+  const payload = response.status === 204 ? null : (await response.json().catch(() => null)) as T | unknown;
 
   if (!response.ok) {
     throw getSonioxRequestError(payload, response.status, env.sonioxApiKey);
@@ -156,11 +161,13 @@ export async function createSonioxTranscription(input: {
   clientReferenceId: string;
   options: SonioxTranscriptionOptions;
   region: SonioxRegion;
+  webhook?: { webhook_url?: string; webhook_auth_header_name?: string; webhook_auth_header_value?: string };
 }) {
   return sonioxFetch<SonioxTranscription>(input.region, "/v1/transcriptions", {
     body: JSON.stringify({
       audio_url: input.audioUrl,
       client_reference_id: input.clientReferenceId,
+      ...input.webhook,
       ...input.options
     }),
     method: "POST"
@@ -170,9 +177,21 @@ export async function createSonioxTranscription(input: {
 // getSonioxTranscription retrieves async transcription status from Soniox.
 export async function getSonioxTranscription(
   region: SonioxRegion,
-  transcriptionId: string
+  transcriptionId: string,
+  signal?: AbortSignal
 ) {
-  return sonioxFetch<SonioxTranscription>(region, `/v1/transcriptions/${transcriptionId}`);
+  return sonioxFetch<SonioxTranscription>(region, `/v1/transcriptions/${encodeURIComponent(transcriptionId)}`, { signal });
+}
+
+// Read a bounded provider page; callers must finish pagination before concluding that a job is absent.
+export async function listSonioxTranscriptions(region: SonioxRegion, cursor?: string, signal?: AbortSignal) {
+  const query = new URLSearchParams({ limit: "1000", ...(cursor ? { cursor } : {}) });
+  return sonioxFetch<{ transcriptions: SonioxTranscription[]; next_page_cursor: string | null }>(region, `/v1/transcriptions?${query}`, { signal });
+}
+
+// Delete only a verified original provider job; Soniox rejects deletion while it is processing.
+export async function deleteSonioxTranscription(region: SonioxRegion, transcriptionId: string, signal?: AbortSignal) {
+  await sonioxFetch<null>(region, `/v1/transcriptions/${encodeURIComponent(transcriptionId)}`, { method: "DELETE", signal });
 }
 
 // getSonioxTranscript retrieves completed transcript text and tokens from Soniox.

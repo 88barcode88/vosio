@@ -92,7 +92,8 @@ function createMarkerQueryMock(result: {
   error: { message: string } | null;
 }) {
   const returns = vi.fn().mockResolvedValue(result);
-  const orderId = vi.fn(() => ({ returns }));
+  const range = vi.fn(() => ({ returns }));
+  const orderId = vi.fn(() => ({ range }));
   const orderOffset = vi.fn(() => ({ order: orderId }));
   const eq = vi.fn(() => ({ order: orderOffset }));
   const select = vi.fn(() => ({ eq }));
@@ -122,7 +123,7 @@ describe("recording marker queries", () => {
 
     await expect(listRecordingMarkers(mock.supabase as never, recordingId)).resolves.toEqual([markerRow]);
     expect(mock.from).toHaveBeenCalledWith("recording_markers");
-    expect(mock.select).toHaveBeenCalledWith(RECORDING_MARKER_COLUMNS);
+    expect(mock.select).toHaveBeenCalledWith(RECORDING_MARKER_COLUMNS.split(",").filter((column) => column !== "user_id").join(","));
     expect(mock.eq).toHaveBeenCalledWith("recording_id", recordingId);
     expect(mock.orderOffset).toHaveBeenCalledWith("offset_ms", { ascending: true });
     expect(mock.orderId).toHaveBeenCalledWith("id", { ascending: true });

@@ -246,13 +246,13 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     const advancedFilters = page.getByRole("button", { name: /^Filtry \(\d+\)$/u });
     await expect(advancedFilters).toHaveAttribute("aria-expanded", "false");
     await advancedFilters.click();
-    const advancedPanel = page.locator(".recording-filter-advanced .ui-disclosure-panel");
+    const advancedPanel = page.locator(".recording-filter-advanced .compact-popover-surface");
     await expect(advancedPanel).toBeVisible();
     const expandedFilterGeometry = await page.locator(".recordings-toolbar").evaluate((toolbar) => {
       const form = toolbar.querySelector<HTMLElement>(".recording-filters")!;
       const search = form.querySelector<HTMLElement>(".recording-filter-search")!;
-      const trigger = form.querySelector<HTMLElement>(".recording-filter-advanced .ui-disclosure-trigger")!;
-      const panel = form.querySelector<HTMLElement>(".recording-filter-advanced .ui-disclosure-panel")!;
+      const trigger = form.querySelector<HTMLElement>(".recording-filter-advanced > summary")!;
+      const panel = form.querySelector<HTMLElement>(".recording-filter-advanced .compact-popover-surface")!;
       const searchBox = search.getBoundingClientRect();
       const triggerBox = trigger.getBoundingClientRect();
       const panelBox = panel.getBoundingClientRect();
@@ -269,8 +269,9 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       };
     });
     expect(expandedFilterGeometry.domOrder).toBe(true);
-    expect(expandedFilterGeometry.panel.x).toBeCloseTo(expandedFilterGeometry.toolbar.x, 0);
-    expect(expandedFilterGeometry.panel.width).toBeCloseTo(expandedFilterGeometry.toolbar.width, 0);
+    expect(expandedFilterGeometry.panel.x).toBeGreaterThanOrEqual(15);
+    expect(expandedFilterGeometry.panel.width).toBeLessThanOrEqual(360);
+    expect(expandedFilterGeometry.panel.x + expandedFilterGeometry.panel.width).toBeLessThanOrEqual(width - 15);
     expect(expandedFilterGeometry.panel.y).toBeGreaterThanOrEqual(
       Math.max(expandedFilterGeometry.searchBottom, expandedFilterGeometry.triggerBottom) - 0.5
     );
@@ -279,12 +280,11 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     );
     const search = page.getByRole("searchbox", { name: "Hledat v nahrávkách" });
     expect(await expandedControls.count()).toBeGreaterThan(0);
-    for (const [control, borderRadius] of [[search, "6px"], [disclosure, "10px"]] as const) {
+    for (const [control, borderRadius] of [[search, "6px"], [disclosure, "5px"]] as const) {
       const styles = await getCompactControlStyle(control);
       expect(styles.height).toBeGreaterThanOrEqual(44);
       expect(styles.borderRadius).toBe(borderRadius);
-      expect(styles.borderWidth).toBe("1px");
-      expect(styles.borderColor).not.toBe(styles.backgroundColor);
+      expect(styles.borderWidth).toBe(control === search ? "1px" : "0px");
       expect(styles.color).not.toBe(styles.backgroundColor);
     }
     for (const theme of ["dark", "light"] as const) {
@@ -292,11 +292,11 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       for (const control of await expandedControls.all()) {
         const styles = await getCompactControlStyle(control);
         expect(styles.height).toBeGreaterThanOrEqual(44);
-        expect(styles.borderRadius).toBe("6px");
+        expect(styles.borderRadius).toBe("5px");
       }
     }
     await advancedFilters.click();
-    await expect(page.getByRole("region", { name: "Pokročilé filtry nahrávek" })).toBeHidden();
+    await expect(advancedPanel).toBeHidden();
     await expect(page.getByRole("heading", { name: /Bez klienta/ })).toBeVisible();
     await expect(page.locator(".live-recovery-panel")).toHaveCount(0);
 
@@ -315,7 +315,6 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     const geometry = await getInboxGeometry(page.locator(".recordings-inbox"));
     const {
       actions: actionsBox,
-      basicFilterRow: basicFilterRowBox,
       actionsMenu: actionsMenuBox,
       disclosure: disclosureBox,
       headerActions: headerActionsBox,
@@ -374,15 +373,15 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     }
     expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(width + 0.5);
     if (width <= 900) {
-      expect(disclosureBox.y).toBeGreaterThanOrEqual(basicFilterRowBox.y + basicFilterRowBox.height - 0.5);
-      expect(disclosureBox.x).toBeCloseTo(toolbarBox.x, 0);
-      expect(disclosureBox.width).toBeCloseTo(toolbarBox.width, 0);
+      expect(disclosureBox.y).toBeGreaterThanOrEqual(searchBox.y + searchBox.height - 0.5);
+      expect(disclosureBox.width).toBeLessThan(toolbarBox.width);
     } else {
       expect(searchBox.y).toBeCloseTo(disclosureBox.y, 0);
       expect(disclosureBox.x).toBeGreaterThanOrEqual(searchBox.x + searchBox.width - 0.5);
     }
     if (!listMode) {
-      expect(actionsBox.y).toBeGreaterThanOrEqual(mainBox.y + mainBox.height - 0.5);
+      expect(actionsBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width - 0.5);
+      expect(actionsBox.width).toBeCloseTo(44, 0);
       for (const control of await page.locator(
         ".recording-filters input:visible, .recording-filters select:visible, .recording-filters button:visible, .recordings-row-actions button:visible"
       ).all()) {
@@ -396,7 +395,7 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       }
     } else {
       expect(actionsBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width - 0.5);
-      expect(actionsBox.width).toBeCloseTo(52, 0);
+      expect(actionsBox.width).toBeCloseTo(48, 0);
       expect(headerActionsBox).not.toBeNull();
       expect(actionsBox.x).toBeCloseTo(headerActionsBox!.x, 0);
       expect(actionsBox.width).toBeCloseTo(headerActionsBox!.width, 0);
@@ -414,12 +413,11 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       colors.push(await page.locator(".recordings-status-summary").evaluate((element) =>
         getComputedStyle(element).backgroundColor
       ));
-      for (const [control, borderRadius] of [[search, "6px"], [disclosure, "10px"]] as const) {
+      for (const [control, borderRadius] of [[search, "6px"], [disclosure, "5px"]] as const) {
         const styles = await getCompactControlStyle(control);
         expect(styles.height).toBeGreaterThanOrEqual(44);
         expect(styles.borderRadius).toBe(borderRadius);
-        expect(styles.borderWidth).toBe("1px");
-        expect(styles.borderColor).not.toBe(styles.backgroundColor);
+        expect(styles.borderWidth).toBe(control === search ? "1px" : "0px");
         expect(styles.color).not.toBe(styles.backgroundColor);
       }
       await search.focus();

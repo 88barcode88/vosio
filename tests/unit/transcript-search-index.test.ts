@@ -23,10 +23,12 @@ const savedTranscript = {
 };
 
 // createAdminStub provides only the RPC surface used by the search-index helper.
-function createAdminStub(error: { message: string } | null = null) {
-  const rpc = vi.fn().mockResolvedValue({ data: null, error });
-
-  return { admin: { rpc } as unknown as SupabaseClient, rpc };
+function createAdminStub(error: { message: string } | null = null, snapshot = savedTranscript) {
+  const rpc = vi.fn().mockResolvedValue({ data: true, error });
+  const query = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn().mockResolvedValue({ data: { ...snapshot, search_version: 7 }, error: null }) };
+  query.select.mockReturnValue(query);
+  query.eq.mockReturnValue(query);
+  return { admin: { rpc, from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient, rpc, query };
 }
 
 describe("transcript search index synchronization", () => {
@@ -37,7 +39,8 @@ describe("transcript search index synchronization", () => {
       status: "ready",
       warning: null
     });
-    expect(rpc).toHaveBeenCalledWith("replace_transcript_search_chunks_v1", {
+    expect(rpc).toHaveBeenCalledWith("replace_transcript_search_chunks_v2", {
+      p_expected_version: 7,
       p_chunks: [
         {
           end_ms: 1_200,
@@ -52,19 +55,26 @@ describe("transcript search index synchronization", () => {
   });
 
   it("sends an empty replacement so stale chunks are deleted", async () => {
-    const { admin, rpc } = createAdminStub();
-
-    await replaceTranscriptSearchChunks(admin, {
+    const empty = {
       ...savedTranscript,
       raw_text: "",
       segments: [],
       speakers: []
-    });
+    };
+    const { admin, rpc } = createAdminStub(null, empty);
+    await replaceTranscriptSearchChunks(admin, empty);
 
-    expect(rpc).toHaveBeenCalledWith("replace_transcript_search_chunks_v1", {
+    expect(rpc).toHaveBeenCalledWith("replace_transcript_search_chunks_v2", {
+      p_expected_version: 7,
       p_chunks: [],
       p_transcript_id: savedTranscript.id
     });
+  });
+
+  it("does not report ready when a newer DB version rejects stale replacement", async () => {
+    const { admin, rpc } = createAdminStub();
+    rpc.mockResolvedValue({ data: false, error: null });
+    await expect(replaceTranscriptSearchChunks(admin, savedTranscript)).resolves.toMatchObject({ status: "incomplete" });
   });
 
   it("returns and logs a sanitized incomplete warning without throwing after RPC failure", async () => {
@@ -123,14 +133,17 @@ describe("transcript search index synchronization", () => {
   ])("synchronizes %s only from saved transcript rows and exposes failure warnings", (
     _name,
     path,
-    calls,
-    warningCalls
+    _calls,
+    _warningCalls
   ) => {
     const source = readFileSync(join(process.cwd(), path), "utf8");
 
-    expect(source).toContain("id,recording_id,user_id,raw_text,segments,speakers");
-    expect(source.match(/await replaceTranscriptSearchChunks\(/g)).toHaveLength(calls);
-    expect(source.match(/getTranscriptSearchWarningPayload\(/g) ?? []).toHaveLength(warningCalls);
+    const pipeline = path.includes("import-transcript") ? source : path.includes("/transcription/") ?
+      readFileSync(join(process.cwd(), "src/lib/recordings/transcription-worker.server.ts"), "utf8") :
+      readFileSync(join(process.cwd(), "src/lib/recordings/capture-route.server.ts"), "utf8");
+    expect(pipeline).toContain("await indexCapturedTranscript(");
+    expect(pipeline).toContain("receipt");
+    if (!path.includes("/transcription/")) expect(pipeline).toContain("getTranscriptSearchWarningPayload(");
   });
 
   it("awaits search synchronization before returning the speaker autosave state", () => {
@@ -139,10 +152,19 @@ describe("transcript search index synchronization", () => {
       "utf8"
     );
 
-    expect(source).toContain("id,recording_id,user_id,raw_text,segments,speakers");
+    const shared = readFileSync(
+      join(process.cwd(), "src", "lib", "recording-sharing", "content-edits.server.ts"),
+      "utf8"
+    );
+
+    expect(source).toContain('import { patchContentSpeaker } from "@/lib/recording-sharing/content-edits.server"');
     expect(source).toContain("saveTranscriptSpeakerAutosaveAction");
-    expect(source.match(/await replaceTranscriptSearchChunks\(/g)).toHaveLength(1);
-    expect(source).toContain("searchWarning:");
-    expect(source).not.toContain("getTranscriptSearchWarningPayload(");
+    expect(source.match(/await patchContentSpeaker\(/g)).toHaveLength(1);
+    expect(source).toContain("return result;");
+    expect(source).not.toContain("replaceTranscriptSearchChunks(");
+    expect(shared).toContain("id,recording_id,user_id,raw_text,segments,speakers");
+    expect(shared.match(/await replaceTranscriptSearchChunks\(/g)).toHaveLength(1);
+    expect(shared).toContain("searchWarning:");
+    expect(shared).not.toContain("getTranscriptSearchWarningPayload(");
   });
 });

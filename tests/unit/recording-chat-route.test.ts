@@ -59,10 +59,10 @@ describe("recording chat route", () => {
   });
 
   it.each([
-    [{ clientTurnId: "bad", model: "gpt-5.6-terra", question: "Ahoj" }, "uuid"],
+    [{ clientTurnId: "bad", model: "gpt-6.1-sol", question: "Ahoj" }, "uuid"],
     [{ clientTurnId, model: "unknown-model", question: "Ahoj" }, "model"],
-    [{ clientTurnId, model: "gpt-5.6-terra", question: "   " }, "question"],
-    [{ clientTurnId, model: "gpt-5.6-terra", prompt: "browser prompt", question: "Ahoj" }, "extra field"]
+    [{ clientTurnId, model: "gpt-6.1-sol", question: "   " }, "question"],
+    [{ clientTurnId, model: "gpt-6.1-sol", prompt: "browser prompt", question: "Ahoj" }, "extra field"]
   ])("rejects invalid browser payload (%s)", async (body, _label) => {
     const response = await POST(request(body), context);
 
@@ -87,12 +87,12 @@ describe("recording chat route", () => {
     const { RecordingChatServiceError } = await import("@/lib/ai/chat-service.server");
     routeMocks.submitTurn.mockRejectedValueOnce(new RecordingChatServiceError("not_found", 404, "Přepis nebyl nalezen."));
 
-    const foreign = await POST(request({ clientTurnId, model: "gpt-5.6-terra", question: "Ahoj" }), context);
+    const foreign = await POST(request({ clientTurnId, model: "gpt-6.1-sol", question: "Ahoj" }), context);
     expect(foreign.status).toBe(404);
     expect(await foreign.json()).toEqual({ error: "Přepis nebyl nalezen." });
 
     routeMocks.submitTurn.mockRejectedValueOnce(new RecordingChatServiceError("active_turn", 409, "Jiná odpověď se právě zpracovává."));
-    const active = await POST(request({ clientTurnId, model: "gpt-5.6-terra", question: "Ahoj" }), context);
+    const active = await POST(request({ clientTurnId, model: "gpt-6.1-sol", question: "Ahoj" }), context);
     expect(active.status).toBe(409);
   });
 
@@ -100,7 +100,7 @@ describe("recording chat route", () => {
     routeMocks.submitTurn.mockRejectedValue(new Error("question transcript secret"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    const response = await POST(request({ clientTurnId, model: "gpt-5.6-terra", question: "Ahoj" }), context);
+    const response = await POST(request({ clientTurnId, model: "gpt-6.1-sol", question: "Ahoj" }), context);
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "Chat se nepodařilo zpracovat." });

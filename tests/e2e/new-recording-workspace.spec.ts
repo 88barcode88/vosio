@@ -57,9 +57,10 @@ test("real primary capture cards stay equal on desktop and ordered when stacked"
   const storageInfo = page.getByLabel("Limity úložiště");
   await expect(storageInfo).toHaveClass(/recording-storage-info-row/u);
   await expect(storageInfo.locator("div")).toHaveCount(0);
-  await expect(storageInfo).toContainText("Bucket recordings");
-  await expect(storageInfo).toContainText("Globální limit");
-  await expect(storageInfo).toContainText("Preference");
+  await expect(storageInfo).toContainText("Limit audia");
+  await expect(storageInfo).toContainText("Maximální velikost souboru");
+  await expect(storageInfo).not.toContainText(/Bucket recordings|Globální limit|Preference/);
+  await expect(page.locator(".capture-scope-disclosure")).not.toHaveAttribute("open", "");
   await expect(page.getByText("Capture console")).toHaveCount(0);
 });
 
@@ -130,9 +131,7 @@ test("the seven common recording format groups use the same upload flow", async 
 
 test("an upload failure stays local, safe and retryable", async ({ page }) => {
   await openFixture(page, "error");
-  // Pause after hydration so the test can observe the fixture's visible transfer phase first.
-  await page.clock.install();
-  await page.clock.pauseAt(new Date(Date.now() + 1_000));
+  // Observe the real bounded fixture timers; advancing a paused clock can strand chained async phases.
   await page.locator(".real-upload input[accept]").setInputFiles({
     buffer: Buffer.from("fixture-audio"),
     mimeType: "audio/mpeg",
@@ -142,7 +141,6 @@ test("an upload failure stays local, safe and retryable", async ({ page }) => {
   const status = page.locator("[data-upload-status]");
   await expect(status).toHaveAttribute("data-phase", "transferring");
   await expect(status).toContainText("42 %");
-  await page.clock.runFor(1_000);
   await expect(status).toHaveAttribute("data-phase", "error");
   await expect(status).toContainText("Nahrání souboru se nepodařilo. Zkuste to znovu.");
   const retry = page.getByRole("button", { name: "Zkusit znovu" });
@@ -151,7 +149,6 @@ test("an upload failure stays local, safe and retryable", async ({ page }) => {
   await retry.click();
   await expect(status).toHaveAttribute("data-phase", "transferring");
   await expect(status).toContainText("42 %");
-  await page.clock.runFor(1_000);
   await expect(status).toHaveAttribute("data-phase", "error");
 });
 

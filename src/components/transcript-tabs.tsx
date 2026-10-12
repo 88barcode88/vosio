@@ -6,6 +6,7 @@ import { AudioLines } from "lucide-react";
 import { AiProcessingContent } from "@/components/transcript-tabs/ai-processing-content";
 import { ChatContent } from "@/components/transcript-tabs/chat-content";
 import { AutomaticTimelineReconciler } from "@/components/automatic-timeline-reconciler";
+import { useRecordingCapabilities } from "@/components/recording-capability-context";
 import { FilesContent } from "@/components/transcript-tabs/files-content";
 import {
   RecordingAudioPlayer,
@@ -79,7 +80,10 @@ export function TranscriptTabs({
   initialTabFromUrl?: boolean;
   userSettings: UserSettings;
 }) {
-  const [activeTab, setActiveTab] = useState<TranscriptTab>(initialTab);
+  const { capabilities, canReadPrivateChat } = useRecordingCapabilities();
+  const [requestedActiveTab, setActiveTab] = useState<TranscriptTab>(initialTab);
+  const activeTab = requestedActiveTab === "chat" && !canReadPrivateChat ? "transcript" : requestedActiveTab;
+  const availableTabs = transcriptTabs.filter((tab) => tab.id !== "chat" || canReadPrivateChat);
   const [activeBlockAnchorId, setActiveBlockAnchorId] = useState<string | null>(null);
   const [activeHighlightText, setActiveHighlightText] = useState<string | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<TranscriptTarget | null>(null);
@@ -482,11 +486,11 @@ export function TranscriptTabs({
 
   // handleTabKeyDown follows the horizontal WAI-ARIA tab keyboard pattern.
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    const lastIndex = transcriptTabs.length - 1;
+    const lastIndex = availableTabs.length - 1;
     const targetIndex = event.key === "ArrowRight"
-      ? (index + 1) % transcriptTabs.length
+      ? (index + 1) % availableTabs.length
       : event.key === "ArrowLeft"
-        ? (index - 1 + transcriptTabs.length) % transcriptTabs.length
+        ? (index - 1 + availableTabs.length) % availableTabs.length
         : event.key === "Home"
           ? 0
           : event.key === "End"
@@ -498,7 +502,7 @@ export function TranscriptTabs({
     }
 
     event.preventDefault();
-    selectActiveTab(transcriptTabs[targetIndex]!.id);
+    selectActiveTab(availableTabs[targetIndex]!.id);
     const tabList = event.currentTarget.closest('[role="tablist"]');
     const target = tabList?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[targetIndex];
     target?.focus();
@@ -514,7 +518,7 @@ export function TranscriptTabs({
         <RecordingAudioPlayer activeRecording={activeRecording} ref={playerRef} />
         <div className="tabs-row">
           <div className="tabs" role="tablist" aria-label="Detail nahrávky">
-            {transcriptTabs.map((tab, index) => (
+            {availableTabs.map((tab, index) => (
               <button
                 aria-controls={`recording-tab-panel-${tab.id}`}
                 aria-selected={activeTab === tab.id}
@@ -562,6 +566,7 @@ export function TranscriptTabs({
             aiOutputs={displayedAiOutputs}
             classifications={lazyAiState?.classifications}
             cleanup={lazyAiState?.cleanup}
+            isLoaded={lazyAiState?.isLoaded ?? true}
             isLoading={lazyAiState?.isLoading ?? false}
             jobs={lazyAiState?.jobs ?? []}
             loadOutput={lazyAiState?.loadOutput}
@@ -574,20 +579,23 @@ export function TranscriptTabs({
             resolveEvidenceTarget={resolveStructuredEvidenceTarget}
             structuredItems={runtimeStructuredItems}
             onTaskDeleted={lazyAiState?.confirmTaskDeletion}
+            onChecklistDeleted={lazyAiState?.confirmChecklistDeletion}
             onTaskStatusConfirmed={lazyAiState?.confirmTaskStatus}
             stateError={lazyAiState?.error ?? null}
             userSettings={userSettings}
           />
         ) : null}
-        {activeTab === "ai" || activeTab === "timeline" ? (
-          <AutomaticTimelineReconciler onReconciled={reloadActiveAiState} transcriptId={activeTranscript?.id ?? null} />
-        ) : null}
+        <AutomaticTimelineReconciler onReconciled={reloadActiveAiState} transcriptId={activeTranscript?.id ?? null} canRunPersonalAi={capabilities.runPersonalAi} />
         {activeTab === "timeline" ? (
           <>
             <TimelineContent
               activeTranscript={activeTranscript}
               aiOutputs={displayedAiOutputs}
               defaultAiModel={userSettings.defaultOpenaiModel}
+              defaultReasoningEffort={userSettings.defaultReasoningEffort}
+              isLoaded={lazyAiState?.isLoaded ?? true}
+              outputMetadata={lazyAiState?.outputs}
+              onOutputsRemoved={lazyAiState?.removeOutputs}
               onJobAccepted={lazyAiState?.acceptJob}
               onReload={reloadTimelineAiState}
               markers={activeRecordingMarkers}
@@ -598,10 +606,11 @@ export function TranscriptTabs({
           </>
         ) : null}
         {activeTab === "files" ? <FilesContent activeRecording={activeRecording} /> : null}
-        {activeTab === "chat" ? (
+        {activeTab === "chat" && canReadPrivateChat ? (
           <ChatContent
             activeTranscriptId={activeTranscript?.id ?? null}
             defaultModel={userSettings.defaultOpenaiModel}
+            defaultReasoningEffort={userSettings.defaultReasoningEffort}
             onOpenEvidence={openStructuredEvidence}
           />
         ) : null}

@@ -10,6 +10,16 @@ import type { NewRecordingFixtureMode } from "./development-runtime";
 
 const fixtureLimit = 50 * 1024 * 1024;
 
+// InertCaptureScope preserves the scope controls' geometry without mounting recipient RPC effects.
+function InertCaptureScope() {
+  return <fieldset className="capture-scope-picker">
+    <legend>Uložení nové nahrávky</legend>
+    <label>Projekt <select defaultValue=""><option value="">Bez projektu</option></select></label>
+    <label>Viditelnost <select defaultValue="private"><option value="private">Soukromá</option></select></label>
+    <p>Soukromou nahrávku vidíte pouze vy. Výběr platí pro nově zahájené nahrávání nebo nově vybrané soubory.</p>
+  </fieldset>;
+}
+
 // waitForFixturePhase leaves browser tests enough time to observe stable progress and finalization.
 function waitForFixturePhase(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -71,6 +81,7 @@ function InertTranscriptImport() {
 // NewRecordingFixture renders the actual shell with bounded local capture and upload adapters.
 export function NewRecordingFixture({ mode, scope }: { mode: NewRecordingFixtureMode; scope: string }) {
   const captureSlots = useMemo<NewRecordingCaptureSlots>(() => ({
+    scope: <InertCaptureScope />,
     live: <InertLiveCapture />,
     transcriptImport: <InertTranscriptImport />
   }), []);

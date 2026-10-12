@@ -21,6 +21,13 @@
 
 ## Data a soukromí
 
+- MCP je výchozí disabled a konfigurace patří konkrétní instalaci. Plugin má
+  jednu explicitní URL; neobsahuje Supabase/provider keys ani aplikační zdroj.
+- MCP handler pro každý request znovu ověřuje durable grant, upstream uživatele
+  a živou session. OAuth scope pouze omezuje, nerozšiřuje DB recording práva.
+- Obsahové editace UI/MCP sdílí `content-edits.server.ts`; žádné paid AI, delete,
+  access management, arbitrary SQL/filesystem tools. Viz [MCP contract](api/mcp-plugin.md).
+
 - U providerů vždy rozlišuj API režim od consumer web aplikace.
 - AI provider musí defaultně nepoužívat API input/output data k tréninku modelů.
 - Před implementací provider integrace ověř aktuální privacy/data policy.
@@ -35,7 +42,7 @@ Automatické AI používá výhradně serverový šestitypový resolver čerstv�
 - RLS policy musí být součástí migrace.
 - Stavové hodnoty drž konzistentní s `docs/architecture.md`.
 - JSONB používej pro provider segmenty, speakers a raw AI output JSON. Pracovní entity z AI výstupů, jako úkoly nebo kapitoly, ukládej normalizovaně do vlastních tabulek s RLS.
-- Odvozené AI projekce jsou čitelné pro vlastníka, ale jejich obsah kromě checklist `status` nemá běžný uživatel upravovat přímo. Přegenerování obsahu patří přes nový AI job a service role zápis.
+- Odvozené AI projekce jsou čitelné přes recording-level přístup. Editor mění pouze checklist `status` úzkým RPC; ostatní obsah nepřepisuje přímo. Nový osobní AI job vyžaduje původního osobního vlastníka se současným read i management oprávněním.
 - Mazání musí řešit referenční data i storage objekty.
 
 ## Frontend
@@ -63,7 +70,7 @@ Automatické AI používá výhradně serverový šestitypový resolver čerstv�
 - Success status kompaktního editoru drž v persistentním `aria-live="polite"` mimo zavíranou plochu. Inline feedback má rezervovaný slot, aby error a pending retry neposouvaly layout. Manuálně dismissed error revision se při znovuotevření neukazuje, ale vyšší revision ano.
 - Full-page formuláře, login, import, search, read-only disclosures a destruktivní potvrzení automaticky nesbaluj. U úspěšného delete zmizí samotná položka, takže success-only collapse kontrakt nedává smysl.
 - Detail nahrávky používá jeden dokumentový scroll owner. Player a záložky drž dostupné sticky/fixed vrstvou, ale transcript, AI, časovou osu ani soubory nezavírej do druhého svislého scrolleru.
-- Mazání jednotlivého AI úkolu patří do úzkého authenticated endpointu, který po ověření uživatele používá server-only admin klienta vždy se scope `id` i `user_id`. UI má jen kompaktní ikonu koše u úkolu; celý AI artefakt se maže pouze na output card.
+- Mazání jednotlivého AI úkolu patří do úzkého authenticated endpointu; T3 sdílení vyžaduje atomický session RPC s recording-level destructive manager autoritou, nikoliv admin delete po odděleném capability checku. Obdobně se maže uložený AI výstup. Kontrakt a rollout gate jsou v `docs/api/shared-recording-trash.md`. UI má jen kompaktní ikonu koše u úkolu; celý AI artefakt se maže pouze na output card.
 
 ## Kód
 
@@ -80,7 +87,17 @@ Automatické AI používá výhradně serverový šestitypový resolver čerstv�
 - `npm.cmd run lint` spouští ESLint přes App Router, React a TypeScript pravidla.
 - `npm.cmd run test` spouští Vitest unit testy v `tests/unit/`.
 - `npm.cmd run test:e2e` spouští Playwright smoke testy v `tests/e2e/` proti lokálnímu dev serveru na portu `3047`.
+- `npm.cmd run check:mcp` balí přesný sdílený importní graf a spouští samostatný Deno check/test. Je povinný při změně MCP nebo jeho sdílených závislostí.
 - `npm.cmd run check` kombinuje typecheck, lint a unit testy pro rychlou před-push kontrolu.
+- Projektové sdílení navíc vyžaduje skutečné disposable SQL/role/concurrency a izolované Auth/Storage ověření podle [runbooku](api/project-sharing-runbook.md). Inert E2E ani mocked RPC nenahrazují target důkaz.
+
+## Projektové sdílení a capture
+
+- Projektové přiřazení a viditelnost jsou oddělené. Používej server-resolved capabilities a session RPC, nikoli technické `user_id` jako access bypass.
+- Create scope, request ID a capture revision patří konkrétní relaci/položce fronty; retry nikdy nepřesnapshotuje scope ani nevymyslí novou identitu po nejasné odpovědi.
+- Hromadné sdílení je jeden bounded atomic RPC, ne smyčka jednopoložkových zápisů. Pending pozvánky nejsou grants.
+- Přijatý přepis pokračuje přes durable worker; GET polling neprovádí provider ani DB mutation. Nejasný provider POST se automaticky neopakuje.
+- Přijatá operace spustí bounded worker a nakonfigurovaný HTTPS callback. Bearer secret pro externí scheduler, jeho aktivace a alerts zůstávají samostatné provozní kroky. Příklady env neobsahují hodnoty secrets. Callback je odvozený per-job HMAC se Soniox klíčem; rotace klíče vyžaduje recovery starých callbacks přes exact worker/reconcile.
 
 ## Dokumentace
 

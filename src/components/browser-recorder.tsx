@@ -76,11 +76,14 @@ import {
   type LiveRecordingDraft
 } from "@/lib/recordings/upload";
 import { LIVE_RECORDING_AUTOSAVE_INTERVAL_MS } from "@/lib/live-recording/recovery";
+import { acquireDurableGenerationWriter } from "@/lib/live-recording/generation-lock";
+import { createCaptureAttempt, getCaptureState, CaptureError, lostCaptureAccessMessage, type CaptureAttempt } from "@/lib/recordings/capture";
 import { createClient } from "@/lib/supabase/browser";
+import { sendLiveCapture } from "@/lib/recordings/live-capture-client";
 import {
   TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE,
   addTranscriptSearchIndexWarningToPath,
-  hasTranscriptSearchIndexWarning
+  hasTranscriptSearchIndexWarning,
 } from "@/lib/transcripts/search-warning";
 import {
   sonioxRealtimeLanguageOptions,
@@ -226,6 +229,8 @@ function getCaptureSourceWarning(mutedSources: Set<SharedAudioInputName>) {
 
 // BrowserRecorder captures a selected browser audio topology and can save audio plus transcript or text only.
 export function BrowserRecorder({
+  captureScope,
+  captureRequestId,
   allowTranscriptOnly = false,
   captionMode = false,
   compact = false,
@@ -246,6 +251,11 @@ export function BrowserRecorder({
   const audioStartedAtRef = useRef<number | null>(null);
   const liveRecordingContentTypeRef = useRef("audio/webm");
   const liveRecordingDraftRef = useRef<LiveRecordingDraft | null>(null);
+  const captureAttemptRef = useRef<CaptureAttempt | null>(null);
+  const transcriptionRequestsRef = useRef(new Map<string, { requestId: string; captureRevision: number; purpose: "capture" | "retranscribe" }>());
+  const retainedAudioRef = useRef<Blob | null>(null);
+  const privateRetryRef = useRef<{ requestId: string; transitionRequestId: string; rawText: string } | null>(null);
+  const [lostCaptureAccess, setLostCaptureAccess] = useState(false);
   const liveRecordingStartedAtMsRef = useRef<number | null>(null);
   const liveCaptureActiveRef = useRef(false);
   const liveMarkerAttemptRef = useRef<LiveMarkerAttempt | null>(null);
@@ -857,7 +867,9 @@ export function BrowserRecorder({
 
   // fetchRealtimeConfig retrieves a short-lived browser-safe Soniox websocket key.
   async function fetchRealtimeConfig(): Promise<RealtimeConfig> {
-    const response = await fetch("/api/soniox/realtime-key", { method: "POST" });
+    const recordingId = liveRecordingDraftRef.current?.id;
+    if (!recordingId) throw new Error("Nejprve je potřeba připravit nahrávku.");
+    const response = await fetch("/api/soniox/realtime-key", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recordingId }) });
     const payload = (await response.json().catch(() => null)) as
       | (RealtimeConfig & RealtimeConfigError)
       | null;
@@ -1120,7 +1132,7 @@ export function BrowserRecorder({
   }
 
   // startSafetyAudioRecording rotates an isolated master clone and durably commits every complete part.
-  function startSafetyAudioRecording(
+  async function startSafetyAudioRecording(
     masterStream: MediaStream,
     recording: LiveRecordingDraft,
     sessionGeneration: number,
@@ -1130,7 +1142,11 @@ export function BrowserRecorder({
   ) {
     const repository = createIndexedDbDurableAudioRepository();
     let safetySession: SafetyAudioSession | null = null;
-    const controller = createRotatingSafetyRecorder({
+    const generationId = crypto.randomUUID();
+    const releaseWriter = await acquireDurableGenerationWriter({ ownerId: recording.userId, recordingId: recording.id, generationId });
+    if (!isCurrentCaptureSession(sessionGeneration)) { await releaseWriter(); return; }
+    let controller: ReturnType<typeof createRotatingSafetyRecorder>;
+    try { controller = createRotatingSafetyRecorder({
       createRecorder: (stream, options) => new MediaRecorder(stream, {
         ...options,
         audioBitsPerSecond
@@ -1166,22 +1182,28 @@ export function BrowserRecorder({
       },
       partDurationMs: LIVE_SAFETY_PART_DURATION_MS,
       stream: masterStream
-    });
-
+    }); } catch (error) { await releaseWriter(); throw error; }
     safetySession = {
       captureGeneration: sessionGeneration,
       controller,
       durableParts: [],
       finalizedParts: [],
-      generationId: crypto.randomUUID(),
+      generationId,
       latestManifest: null,
       persistenceFailed: false,
       promotionQueue: Promise.resolve(),
       recording,
       repository
     };
+    const stopController = controller.stop.bind(controller);
+    let stopPromise: Promise<void> | null = null;
+    // Keep the exact generation leased through final part flush and every already queued promotion.
+    controller.stop = () => stopPromise ??= (async () => {
+      try { await stopController(); await safetySession?.promotionQueue; }
+      finally { await releaseWriter(); }
+    })();
     safetyAudioSessionRef.current = safetySession;
-    controller.start();
+    try { controller.start(); } catch (error) { await controller.stop().catch(() => undefined); throw error; }
   }
 
   // createLocalMediaRecorder starts one bounded local audio file alongside live transcription.
@@ -1205,6 +1227,7 @@ export function BrowserRecorder({
     liveCaptureActiveRef.current = true;
     setRecorderPhase("recording");
     const draftPromise = createLiveRecordingDraft({
+      capture: captureAttemptRef.current ?? undefined,
       contentType,
       title: getLiveRecordingTitle("Live nahrávka")
     });
@@ -1227,7 +1250,7 @@ export function BrowserRecorder({
 
     liveRecordingDraftRef.current = recording;
     try {
-      startSafetyAudioRecording(
+      await startSafetyAudioRecording(
         masterStream,
         recording,
         sessionGeneration,
@@ -1244,39 +1267,9 @@ export function BrowserRecorder({
     return true;
   }
 
-  // createTranscriptOnlyDraft creates a recoverable text-only live transcript row before capture starts.
+  // Create text-only capture under the same immutable session scope before any provider connection.
   async function createTranscriptOnlyDraft(): Promise<LiveRecordingDraft> {
-    const supabase = createClient();
-    const {
-      data: { user },
-      error: userError
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      throw new Error("Přihlášení vypršelo. Přihlaste se znovu.");
-    }
-
-    const { data: recording, error } = await supabase
-      .from("recordings")
-      .insert({
-        file_size_bytes: 0,
-        source_type: "realtime",
-        status: "uploading",
-        title: getLiveRecordingTitle("Live přepis"),
-        user_id: user.id
-      })
-      .select("id")
-      .single();
-
-    if (error || !recording) {
-      throw new Error("Nepovedlo se vytvořit záznam live přepisu.");
-    }
-
-    return {
-      id: recording.id as string,
-      storagePrefix: "",
-      userId: user.id
-    };
+    return createLiveRecordingDraft({ capture: captureAttemptRef.current ?? undefined, contentType: "text/plain", sourceType: "realtime", title: getLiveRecordingTitle("Live přepis") });
   }
 
   // persistLiveDraftSnapshot sends one immutable transcript snapshot and reports search-index warnings.
@@ -1284,28 +1277,9 @@ export function BrowserRecorder({
     recording: LiveRecordingDraft,
     snapshot: { elapsedSeconds: number; rawText: string; tokens: RealtimeToken[] }
   ) {
-    const response = await fetch(`/api/recordings/${recording.id}/live-draft`, {
-      body: JSON.stringify({
-        elapsedSeconds: snapshot.elapsedSeconds,
-        rawText: snapshot.rawText,
-        segments: snapshot.tokens
-      }),
-      headers: { "Content-Type": "application/json" },
-      method: "PUT"
+    const payload = await sendLiveCapture(recording, "live_draft", {
+      elapsedSeconds: snapshot.elapsedSeconds, rawText: snapshot.rawText, segments: snapshot.tokens
     });
-
-    if (!response.ok) {
-      throw new Error("Koncept live přepisu se nepodařilo uložit.");
-    }
-
-    let payload: unknown = null;
-
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
-    }
-
     return hasTranscriptSearchIndexWarning(payload);
   }
 
@@ -1346,7 +1320,10 @@ export function BrowserRecorder({
           setRecorderFeedback(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
         }
         return "saved";
-      } catch {
+      } catch (error) {
+        if (error instanceof CaptureError && error.code === "42501" && isCurrentCaptureSession(sessionGeneration)) {
+          setLostCaptureAccess(true); setRecorderFeedback(lostCaptureAccessMessage, "error");
+        }
         return "failed";
       } finally {
         if (
@@ -1425,6 +1402,9 @@ export function BrowserRecorder({
       return;
     }
 
+    try { captureAttemptRef.current = createCaptureAttempt(captureScope, captureRequestId); }
+    catch { setRecorderFeedback("Vyberte platné sdílení a příjemce.", "error"); return; }
+    if (lostCaptureAccess) { setRecorderFeedback("Nejprve uložte místní kopii přepisu nebo audia.", "error"); return; }
     if (!navigator.mediaDevices?.getUserMedia) {
       setRecorderFeedback("Tento prohlížeč neumí nahrávání přes mikrofon.", "error");
       return;
@@ -1824,7 +1804,7 @@ export function BrowserRecorder({
 
       const failedDraft = liveRecordingDraftRef.current;
 
-      await failLiveRecordingUpload({ message, recording: failedDraft });
+      await failLiveRecordingUpload({ message, recording: failedDraft }).catch(() => undefined);
 
       if (
         !isMountedRef.current
@@ -1855,46 +1835,29 @@ export function BrowserRecorder({
     }
   }
 
-  // saveLiveTranscript persists the final realtime transcript under the saved recording.
-  async function saveLiveTranscript(
-    recordingId: string,
-    rawText: string,
-    tokens: RealtimeToken[],
-    audioStorage:
-      | "supabase_recording_segments"
-      | "supabase_recording_upload"
-      | "transcript_only"
-  ) {
-    if (!rawText) {
-      throw new Error("Live přepis nevrátil žádný text.");
-    }
-
-    const response = await fetch(`/api/recordings/${recordingId}/live-transcript`, {
-      body: JSON.stringify({ audioStorage, rawText, segments: tokens }),
-      headers: { "Content-Type": "application/json" },
-      method: "POST"
-    });
-
-    if (!response.ok) {
-      throw new Error("Nahrávka je uložená, ale live přepis se nepodařilo uložit.");
-    }
-
-    let payload: unknown = null;
-
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
-    }
-
-    return hasTranscriptSearchIndexWarning(payload);
+  // A final live payload is a current-author request, never an async service continuation.
+  async function saveLiveTranscript(recordingId: string, rawText: string, tokens: RealtimeToken[], _audioStorage: "supabase_recording_segments" | "supabase_recording_upload" | "transcript_only") {
+    if (!rawText) throw new Error("Live přepis nevrátil žádný text.");
+    const recording = liveRecordingDraftRef.current;
+    const capture = recording?.id === recordingId ? recording : { id: recordingId, userId: "", storagePrefix: "", capture: captureAttemptRef.current ?? undefined };
+    try { const result = await sendLiveCapture(capture, "live_final", { rawText, segments: tokens }); return result.warnings?.includes("transcript_search_index_incomplete") ?? false; }
+    catch (error) { if (error instanceof CaptureError && error.code === "42501") setLostCaptureAccess(true); throw error; }
   }
 
   // requestAsyncTranscription starts or explicitly replaces the durable job after audio is uploaded.
   async function requestAsyncTranscription(recordingId: string, restart = false) {
-    const suffix = restart ? "?restart=1" : "";
-    const response = await fetch(`/api/recordings/${recordingId}/transcription${suffix}`, {
+    const purpose = restart ? "retranscribe" : "capture";
+    const key = `${recordingId}:${purpose}`;
+    let request = transcriptionRequestsRef.current.get(key);
+    if (!request) {
+      const state = await getCaptureState(createClient(), recordingId);
+      request = { requestId: crypto.randomUUID(), captureRevision: state.captureRevision, purpose };
+      transcriptionRequestsRef.current.set(key, request);
+    }
+    const response = await fetch(`/api/recordings/${recordingId}/transcription`, {
       cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
       method: "POST"
     });
 
@@ -1943,64 +1906,12 @@ export function BrowserRecorder({
       return null;
     }
 
-    const supabase = createClient();
-    const {
-      data: { user },
-      error: userError
-    } = await supabase.auth.getUser();
-
-    if (!stillOwnsStop(stopRecordingInstance, stopGeneration)) {
-      return null;
-    }
-
-    if (userError || !user) {
-      throw new Error("Přihlášení vypršelo. Přihlaste se znovu.");
-    }
-
-    const { data: recording, error } = await supabase
-      .from("recordings")
-      .insert({
-        duration_seconds: elapsedSecondsRef.current,
-        file_size_bytes: 0,
-        source_type: "realtime",
-        status: "uploaded",
-        title: getLiveRecordingTitle("Live přepis"),
-        user_id: user.id
-      })
-      .select("id")
-      .single();
-
-    if (!stillOwnsStop(stopRecordingInstance, stopGeneration)) {
-      if (recording && user) {
-        await failLiveRecordingUpload({
-          message: "Nahrávací relace skončila během vytváření záznamu.",
-          recording: {
-            id: recording.id as string,
-            storagePrefix: "",
-            userId: user.id
-          }
-        });
-      }
-
-      return null;
-    }
-
-    if (error || !recording) {
-      throw new Error("Nepovedlo se vytvořit záznam live přepisu.");
-    }
-
-    const hasSearchWarning = await saveLiveTranscript(
-      recording.id,
-      rawText,
-      tokens,
-      "transcript_only"
-    );
-
-    if (!stillOwnsStop(stopRecordingInstance, stopGeneration)) {
-      return null;
-    }
-
-    return { hasSearchWarning, recordingId: recording.id as string };
+    const recording = await createTranscriptOnlyDraft();
+    if (!stillOwnsStop(stopRecordingInstance, stopGeneration)) return null;
+    liveRecordingDraftRef.current = recording;
+    const hasSearchWarning = await saveLiveTranscript(recording.id, rawText, tokens, "transcript_only");
+    if (!stillOwnsStop(stopRecordingInstance, stopGeneration)) return null;
+    return { hasSearchWarning, recordingId: recording.id };
   }
 
   // navigateAfterSave moves the user to the configured destination after saving a recording.
@@ -2323,6 +2234,7 @@ export function BrowserRecorder({
       }
 
       const audioBlob = await finalizeLocalAudioBlob();
+      retainedAudioRef.current = audioBlob;
 
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
         return;
@@ -2563,6 +2475,12 @@ export function BrowserRecorder({
 
       const message = error instanceof Error ? error.message : "Nahrávku se nepodařilo uložit.";
 
+      if (error instanceof CaptureError && error.code === "42501") {
+        setLostCaptureAccess(true);
+        setRecorderFeedback(lostCaptureAccessMessage, "error");
+        return;
+      }
+
       if (audioUploadCompleted && liveRecordingDraftRef.current) {
         setRecorderFeedback(`${message} Audio je uložené, live přepis můžete zkusit znovu z detailu.`, "error");
         navigateAfterSave(liveRecordingDraftRef.current.id);
@@ -2585,7 +2503,7 @@ export function BrowserRecorder({
         return;
       }
 
-      await failLiveRecordingUpload({ message, recording: liveRecordingDraftRef.current });
+      await failLiveRecordingUpload({ message, recording: liveRecordingDraftRef.current }).catch(() => undefined);
 
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
         return;
@@ -2646,6 +2564,24 @@ export function BrowserRecorder({
       className={compact ? "browser-recorder browser-recorder-compact" : "browser-recorder"}
       data-recording-status={status}
     >
+      {lostCaptureAccess ? <div role="alert">
+        <p>{lostCaptureAccessMessage}</p>
+        <button type="button" disabled={status !== "idle"} onClick={async () => {
+          const rawText = tokensToText(tokensRef.current) || liveTranscript;
+          if (!rawText) { setRecorderFeedback("Není k dispozici místní přepis.", "error"); return; }
+          const pending = privateRetryRef.current ??= { requestId: crypto.randomUUID(), transitionRequestId: crypto.randomUUID(), rawText };
+          try {
+            const result = await fetch("/api/recordings/import-transcript", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...pending, title: "Soukromá kopie live přepisu", scope: { projectId: null, visibility: "private", recipients: [] } }) });
+            const receipt = await result.json();
+            if (!result.ok || !receipt.recordingId) throw new Error();
+            setLostCaptureAccess(false); privateRetryRef.current = null; navigateAfterSave(receipt.recordingId);
+          } catch { setRecorderFeedback("Soukromou kopii se nepodařilo uložit. Místní obsah zůstává připravený.", "error"); }
+        }}>Uložit přepis jako novou soukromou nahrávku</button>
+        <button type="button" disabled={!retainedAudioRef.current} onClick={() => {
+          const audio = retainedAudioRef.current; if (!audio) return;
+          const url = URL.createObjectURL(audio); const link = document.createElement("a"); link.href = url; link.download = "live-nahravka.webm"; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }}>Stáhnout místní audio</button>
+      </div> : null}
       {compact ? (
         <div className="persistent-recorder-summary">
           <strong>

@@ -5,7 +5,7 @@ export type AiOutputRow = {
   output_text: string | null;
   processing_job_id: string;
   transcript_id: string;
-  user_id: string;
+  user_id?: string;
 };
 
 export type AiOutputView = Omit<AiOutputRow, "user_id"> & {
@@ -14,6 +14,7 @@ export type AiOutputView = Omit<AiOutputRow, "user_id"> & {
 };
 
 export type AiArchiveItem = Omit<AiOutputView, "user_id"> & {
+  capabilities?: import("@/lib/recording-sharing/types").RecordingCapabilities;
   recording: {
     id: string;
     status: import("@/lib/recordings/types").RecordingStatus;

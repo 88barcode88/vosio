@@ -1,14 +1,24 @@
 // @vitest-environment jsdom
-import { act, createElement, useState } from "react";
+import { act, createElement, useState, type ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiProcessingContent } from "@/components/transcript-tabs/ai-processing-content";
+import { RecordingCapabilityProvider } from "@/components/recording-capability-context";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { ManualAiJobSummary } from "@/lib/ai/manual-job-state";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/recordings/test" }));
 vi.mock("@/components/ai-processing-controls", () => ({ AiProcessingControls: () => null }));
 vi.mock("@/components/delete-ai-output-form", () => ({ DeleteAiOutputForm: () => null }));
+
+// OwnerAiProcessingContent gives personal retry fixtures the explicit authority carried by the detail page.
+function OwnerAiProcessingContent(props: ComponentProps<typeof AiProcessingContent>) {
+  return createElement(RecordingCapabilityProvider, {
+    capabilities: { ...NO_RECORDING_CAPABILITIES, read: true, runPersonalAi: true },
+    children: createElement(AiProcessingContent, props)
+  });
+}
 
 const metadata = [
   {
@@ -75,12 +85,26 @@ async function mountRetryJobs(jobs: ManualAiJobSummary[]) {
     resolveEvidenceTarget: () => null, structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] },
     userSettings: {} as never
   };
-  await act(async () => root.render(createElement(AiProcessingContent, props)));
+  await act(async () => root.render(createElement(OwnerAiProcessingContent, props)));
   const buttons = () => [...container.querySelectorAll("button")].filter((button) => button.textContent === "Zkusit znovu");
   return { root, container, props, buttons, onJobAccepted };
 }
 
 describe("manual AI retry feedback and deadlines", () => {
+  it("does not announce an empty result before the first metadata response", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const props = { activeTranscript: { id: "transcript-1" } as never, aiOutputs: [],
+      onOpenEvidence: () => undefined, resolveEvidenceTarget: () => null,
+      structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] }, userSettings: {} as never };
+    await act(async () => root.render(createElement(OwnerAiProcessingContent, { ...props, isLoaded: false, isLoading: false })));
+    expect(container.textContent).toContain("Načítám AI stav");
+    expect(container.textContent).not.toContain("Zatím žádné AI výstupy");
+    await act(async () => root.render(createElement(OwnerAiProcessingContent, { ...props, isLoaded: true, isLoading: false })));
+    expect(container.textContent).toContain("Zatím žádné AI výstupy");
+    await act(async () => root.unmount());
+  });
   it.each([
     [429, { error: "Příliš mnoho AI požadavků za sebou. Zkuste to za chvíli." }, "Příliš mnoho AI požadavků"],
     [503, { error: "AI služba je dočasně nedostupná." }, "AI služba je dočasně nedostupná."],
@@ -107,7 +131,7 @@ describe("manual AI retry feedback and deadlines", () => {
       expect(onJobAccepted).toHaveBeenCalledExactlyOnceWith({ id: "accepted-job", status: "queued" }, "summary");
       const acceptedBody = JSON.parse(String(fetchMock.mock.lastCall?.[1]?.body));
       expect(acceptedBody.requestId).not.toBe(failedRequestIds[0]);
-      await act(async () => root.render(createElement(AiProcessingContent, {
+      await act(async () => root.render(createElement(OwnerAiProcessingContent, {
         ...props, activeTranscript: { id: "22222222-2222-4222-8222-222222222222" } as never
       })));
       expect(container.textContent).not.toContain("AI požadavek je přijatý");
@@ -145,14 +169,14 @@ describe("manual AI retry feedback and deadlines", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-05T10:00:00Z"));
     const { root, props, buttons } = await mountRetryJobs([retryJob("old", new Date(Date.now() + 30_000).toISOString())]);
-    await act(async () => root.render(createElement(AiProcessingContent, {
+    await act(async () => root.render(createElement(OwnerAiProcessingContent, {
       ...props, jobs: [retryJob("new", new Date(Date.now() + 10_000).toISOString())]
     })));
     expect(vi.getTimerCount()).toBe(1);
     vi.setSystemTime(new Date(Date.now() + 60_000));
     await act(async () => vi.advanceTimersToNextTimerAsync());
     expect(buttons()[0]!.disabled).toBe(false);
-    await act(async () => root.render(createElement(AiProcessingContent, {
+    await act(async () => root.render(createElement(OwnerAiProcessingContent, {
       ...props, jobs: [retryJob("far-future", new Date(Date.now() + 3_000_000_000).toISOString())]
     })));
     expect(vi.getTimerCount()).toBe(1);
@@ -167,7 +191,7 @@ describe("manual AI retry feedback and deadlines", () => {
 // Harness turns a successful lazy request into the same parent rerender used by the AI state provider.
 function Harness({ loadOutput }: { loadOutput: (outputId: string) => Promise<unknown> }) {
   const [outputs, setOutputs] = useState([newestOutput]);
-  return createElement(AiProcessingContent, {
+  return createElement(OwnerAiProcessingContent, {
     activeTranscript: null,
     aiOutputs: outputs,
     loadOutput: async (outputId: string) => {
@@ -208,7 +232,7 @@ describe("AI processing historical output details", () => {
     const onCleanupMutation = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     try {
-      await act(async () => root.render(createElement(AiProcessingContent, {
+      await act(async () => root.render(createElement(OwnerAiProcessingContent, {
         activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
         aiOutputs: [], cleanup: { eligible_count: 51, next_cursor: "cursor-2" }, jobs: [],
         onCleanupMutation, onOpenEvidence: () => undefined,
@@ -244,7 +268,7 @@ describe("AI processing historical output details", () => {
     const onCleanupMutation = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     try {
-      await act(async () => root.render(createElement(AiProcessingContent, {
+      await act(async () => root.render(createElement(OwnerAiProcessingContent, {
         activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
         aiOutputs: [], classifications: [{
           actions: ["delete"], cleanup_reason: "eligible_terminal_no_output", job_id: job.id, poll_eligible: false
@@ -268,7 +292,7 @@ describe("AI processing historical output details", () => {
     const root = createRoot(container);
     const loadOutput = vi.fn().mockResolvedValue(null);
     await act(async () => {
-      root.render(createElement(AiProcessingContent, {
+      root.render(createElement(OwnerAiProcessingContent, {
         activeTranscript: null,
         aiOutputs: [],
         loadOutput,
@@ -362,12 +386,12 @@ describe("AI processing historical output details", () => {
       structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] },
       userSettings: {} as never
     };
-    await act(async () => root.render(createElement(AiProcessingContent, props)));
+    await act(async () => root.render(createElement(OwnerAiProcessingContent, props)));
     const cooldownButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Zkusit znovu")!;
     expect(cooldownButton.disabled).toBe(true);
     expect(container.textContent).toContain("AI služba dočasně omezuje požadavky. Zkuste to znovu později.");
 
-    await act(async () => root.render(createElement(AiProcessingContent, {
+    await act(async () => root.render(createElement(OwnerAiProcessingContent, {
       ...props,
       jobs: [{ ...baseJob, retry_after_at: new Date(Date.now() - 1_000).toISOString() }]
     })));
@@ -403,7 +427,7 @@ describe("AI processing historical output details", () => {
       started_at: state.started_at,
       status: state.status as "queued" | "running"
     };
-    await act(async () => root.render(createElement(AiProcessingContent, {
+    await act(async () => root.render(createElement(OwnerAiProcessingContent, {
       activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
       aiOutputs: [],
       classifications: [{ actions: ["interrupt"], cleanup_reason: "eligible_stale_unclaimed", job_id: job.id, poll_eligible: false }],
@@ -451,7 +475,7 @@ describe("AI processing historical output details", () => {
       started_at: state.started_at,
       status: state.status as "queued" | "running"
     };
-    await act(async () => root.render(createElement(AiProcessingContent, {
+    await act(async () => root.render(createElement(OwnerAiProcessingContent, {
       activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
       aiOutputs: [],
       classifications: [{
@@ -502,7 +526,7 @@ describe("AI processing historical output details", () => {
       started_at: null,
       status: "queued"
     };
-    await act(async () => root.render(createElement(AiProcessingContent, {
+    await act(async () => root.render(createElement(OwnerAiProcessingContent, {
       activeTranscript: { id: "11111111-1111-4111-8111-111111111111" } as never,
       aiOutputs: [],
       classifications: [{ actions: ["interrupt"], cleanup_reason: "eligible_stale_unclaimed", job_id: job.id, poll_eligible: false }],

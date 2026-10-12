@@ -28,7 +28,7 @@ export type RecordingMarkerRow = {
   offset_ms: number;
   recording_id: string;
   updated_at: string;
-  user_id: string;
+  user_id?: string;
 };
 
 export type RecordingMarkerRequest = {

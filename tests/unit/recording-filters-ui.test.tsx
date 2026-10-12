@@ -123,7 +123,7 @@ describe("RecordingFilters URL navigation", () => {
     expect(container.querySelector(".recording-filter-heading")).toBeNull();
   });
 
-  it("keeps the advanced disclosure outside a width-limiting action fieldset", async () => {
+  it("keeps the anchored filter popup outside a width-limiting action fieldset", async () => {
     await act(async () => root.render(
       <RecordingFilters filters={emptyFilters} options={options} searchQuery="" />
     ));
@@ -144,13 +144,15 @@ describe("RecordingFilters URL navigation", () => {
       />
     ));
 
-    const advancedTrigger = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent === "Filtry (2)");
+    const advancedTrigger = container.querySelector<HTMLElement>(".recording-filter-advanced > summary");
+    expect(advancedTrigger?.textContent).toBe("Filtry (2)");
     expect(advancedTrigger?.getAttribute("aria-expanded")).toBe("false");
     expect(container.querySelector('input[name="q"]')).not.toBeNull();
     expect(container.querySelector('select[name="client"]')?.closest("[hidden]")).not.toBeNull();
 
     await act(async () => advancedTrigger?.click());
+    expect(container.querySelector('[role="dialog"]')?.getAttribute("aria-label"))
+      .toBe("Pokročilé filtry nahrávek");
     await setSelect("client", clientB);
     await setSelect("folder", folderA);
     await act(async () => advancedTrigger?.click());
@@ -358,10 +360,19 @@ describe("RecordingFilters URL navigation", () => {
       <RecordingFilters filters={emptyFilters} options={options} searchQuery="" />
     ));
 
+    const filterTrigger = container.querySelector<HTMLElement>(".recording-filter-advanced > summary")!;
+    await act(async () => filterTrigger.click());
+
     changeSelectDuringTransition("client", clientA);
 
     const form = container.querySelector<HTMLFormElement>("form.recording-filters");
     expect(form?.getAttribute("aria-busy")).toBe("true");
+    expect(filterTrigger.getAttribute("aria-disabled")).toBe("true");
+    act(() => {
+      filterTrigger.click();
+      container.querySelector('[role="dialog"]')?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(filterTrigger.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.disabled).toBe(false);
     await setInput("q", "draft call");
     expect(container.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("draft call");

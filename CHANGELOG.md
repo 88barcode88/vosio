@@ -4,6 +4,25 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-12
+
+### Added
+
+- Kompletní veřejný zdroj aktuální aplikace včetně projektového/individuálního sdílení, pozvánek, serverových oprávnění, durable capture a obnovy původního přepisu.
+- Vosio MCP v Supabase Edge Function, osobní OAuth/PKCE, dynamická registrace, consent/discovery a odvolání připojení; obecný český setup pro vlastní instalaci.
+- Chybějící forward migrace, SQL/RLS/concurrency fixtures a runtime testy; univerzální Codex plugin 0.2.2 bez přednastavené instalace.
+
+### Changed
+
+- Veřejná aplikace zahrnuje aktuální checklist/model/reasoning funkce, kompaktní UI a stejné produktové runtime moduly jako vývojový source snapshot.
+- Self-host návody popisují celý migrační řetězec, kompatibilní upgrade webu/workerů a oddělenou aktivaci vlastního MCP.
+
+### Fixed
+
+- Live Soniox WebSocket posílá krátkodobý klíč při navázání spojení přes subprotocol místo první zprávy; npm postinstall kontroluje přesnou verzi SDK.
+- Next.js a dependency lock zahrnují ověřené bezpečnostní opravy; produkční audit převzatého locku je bez nálezů.
+- Původní veřejná baseline a její správná česká diakritika zůstávají zachované; nepřepisuje se historie existujících instalací.
+
 ## [0.3.1] - 2026-09-05
 
 ### Changed

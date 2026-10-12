@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewRecordingWorkspace } from "@/components/new-recording-workspace";
 import { defaultUserSettings } from "@/lib/settings/types";
 import type { LiveAudioQuality } from "@/lib/recordings/types";
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(async () => ({ data: [], error: null })) }));
+vi.mock("@/lib/supabase/browser", () => ({ createClient: () => ({ rpc: mocks.rpc }) }));
 
 vi.mock("@/components/persistent-recording-session", () => ({
   PersistentRecorderSlot: ({ liveAudioQuality }: { liveAudioQuality?: string }) => (
@@ -25,6 +27,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  vi.clearAllMocks();
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement("div");
   document.body.append(container);
@@ -38,7 +41,8 @@ afterEach(async () => {
 
 // renderWorkspace mounts the real page composition with deterministic child boundaries.
 async function renderWorkspace(
-  liveAudioQuality: LiveAudioQuality = defaultUserSettings.liveAudioQuality
+  liveAudioQuality: LiveAudioQuality = defaultUserSettings.liveAudioQuality,
+  inertScope = false
 ) {
   await act(async () => {
     root.render(
@@ -51,12 +55,38 @@ async function renderWorkspace(
           planMaxFileSizeBytes: null
         }}
         userSettings={{ ...defaultUserSettings, liveAudioQuality }}
+        captureSlots={inertScope ? {
+          scope: <fieldset data-testid="inert-scope">Soukromá fixture</fieldset>,
+          live: <div>Inert live</div>,
+          transcriptImport: <div>Inert import</div>
+        } : undefined}
       />
     );
   });
 }
 
+// Open the opt-in advanced scope so its authorization-dependent effects can mount.
+async function openAdvancedScope() {
+  await act(async () => {
+    const disclosure = container.querySelector<HTMLDetailsElement>(".capture-scope-disclosure")!;
+    disclosure.open = true;
+    disclosure.dispatchEvent(new Event("toggle"));
+    await Promise.resolve();
+  });
+}
+
 describe("new recording workspace composition", () => {
+  it("does not mount recipient RPC effects when the inert scope slot is supplied", async () => {
+    await renderWorkspace(defaultUserSettings.liveAudioQuality, true);
+
+    expect(container.querySelector("[data-testid='inert-scope']")).toBeNull();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(container.querySelector(".capture-sharing-note")?.textContent).not.toContain("uloží soukromě");
+    await openAdvancedScope();
+    expect(container.querySelector("[data-testid='inert-scope']")).not.toBeNull();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it("renders exactly two ordered primary capture cards and keeps transcript import secondary", async () => {
     await renderWorkspace();
 
@@ -81,6 +111,9 @@ describe("new recording workspace composition", () => {
       .toBe("high");
     expect(container.querySelector("[data-testid='real-upload-form']")).not.toBeNull();
     expect(container.querySelector("[data-testid='real-transcript-import']")).not.toBeNull();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    await openAdvancedScope();
+    expect(mocks.rpc).toHaveBeenCalledWith("list_confirmed_recording_recipients_v1");
   });
 
   it("renders storage limits as one compact information row without card children", async () => {
@@ -89,8 +122,9 @@ describe("new recording workspace composition", () => {
     const summary = container.querySelector('[aria-label="Limity úložiště"]');
     expect(summary?.classList.contains("recording-storage-info-row")).toBe(true);
     expect(summary?.querySelectorAll("div")).toHaveLength(0);
-    expect(summary?.textContent).toContain("Bucket recordings");
-    expect(summary?.textContent).toContain("Globální limit");
-    expect(summary?.textContent).toContain("Preference");
+    expect(summary?.textContent).toContain("Limit audia");
+    expect(summary?.textContent).toContain("Maximální velikost souboru");
+    expect(summary?.textContent).not.toMatch(/Bucket recordings|Globální limit|Preference/);
+    expect(container.textContent).toContain("Sdílení můžete nastavit v detailu po uložení");
   });
 });

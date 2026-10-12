@@ -4,7 +4,7 @@ import { expect, type Page, test } from "@playwright/test";
 type FixtureMode = "blocks" | "raw" | "ai" | "ai-many" | "timeline" | "files" | "chat";
 
 for (const width of [390, 768, 900, 901, 1024, 1440]) {
-  test(`detail disclosures stay in flow and usable at ${width}px`, async ({ page }) => {
+  test(`compact detail popups keep actions stable and usable at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 540 });
     await openFixture(page);
     for (const theme of ["dark", "light"]) {
@@ -12,11 +12,21 @@ for (const width of [390, 768, 900, 901, 1024, 1440]) {
       for (const [trigger, panel] of [
         [".export-controls > summary", ".export-controls-menu"],
         [".recording-inline-edit > summary", ".recording-title-form"],
-        [".recording-organization-summary > button", ".recording-organization-editor-panel"]
+        [".recording-detail-actions .compact-popover:not(.export-controls):not(.recording-inline-edit) > summary", ".recording-detail-actions [role='dialog'][aria-label='Sdílení a přístup']"]
       ]) {
+        const before = await page.locator(trigger).boundingBox();
         await page.locator(trigger).click();
         await expect(page.locator(panel)).toBeVisible();
-        expect(await page.locator(panel).evaluate((element) => getComputedStyle(element).position)).toBe("static");
+        const after = await page.locator(trigger).boundingBox();
+        expect(after?.width).toBe(before?.width);
+        expect(after?.x).toBe(before?.x);
+        expect(after?.y).toBe(before?.y);
+        expect(after?.height).toBeGreaterThanOrEqual(44);
+        const popup = page.locator(".recording-detail-actions [role='dialog']");
+        const popupBox = await popup.boundingBox();
+        expect(popupBox!.x).toBeGreaterThanOrEqual(15);
+        expect(popupBox!.x + popupBox!.width).toBeLessThanOrEqual(width - 15);
+        expect(popupBox!.y + popupBox!.height).toBeLessThanOrEqual(525);
         for (const control of await page.locator(panel).locator("input:not([type=hidden]), select, button").all()) {
           if (!await control.isVisible()) continue;
           await control.evaluate((element) => element.scrollIntoView({ block: "center" }));
@@ -30,7 +40,12 @@ for (const width of [390, 768, 900, 901, 1024, 1440]) {
           })).toBe(true);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
-        await page.locator(trigger).click();
+        if ((width === 390 || width === 1440) && panel === ".recording-title-form") {
+          await page.screenshot({ path: testInfo.outputPath(`compact-title-${width}-${theme}.png`), fullPage: false });
+        }
+        await popup.press("Escape");
+        await expect(popup).toHaveCount(0);
+        await expect(page.locator(trigger)).toBeFocused();
       }
     }
   });

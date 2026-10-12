@@ -31,7 +31,8 @@ describe("deleteAiOutputAction expected failure redirect", () => {
     for (const key of ["delete", "eq", "in", "select"] as const) deleteChain[key].mockReturnValue(deleteChain);
     deleteChain.returns.mockResolvedValue({ data: [], error: { message: "private database error" } });
     mocks.createClient.mockResolvedValue({
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } }, error: null }) }
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } }, error: null }) },
+      from: vi.fn(() => ({ select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: null, error: { message: "private database error" } }) }))
     });
     mocks.createAdminClient.mockReturnValue({ from: vi.fn().mockReturnValue(deleteChain) });
     const formData = new FormData();
@@ -47,5 +48,6 @@ describe("deleteAiOutputAction expected failure redirect", () => {
     expect(redirected.searchParams.get("type")).toBe("summary");
     expect(redirected.searchParams.get("recording")).toBe(recordingId);
     expect(redirected.toString()).not.toContain("private database error");
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
   });
 });

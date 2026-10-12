@@ -3,6 +3,7 @@ import { VosioWorkspace } from "@/components/vosio-workspace";
 import { getRecordingStorageConfig } from "@/lib/recordings/storage-config.server";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
+import { listRecordingOrganizationOptions } from "@/lib/recording-organization/queries";
 
 // NewRecordingPage renders the dedicated capture workspace.
 export default async function NewRecordingPage() {
@@ -17,12 +18,14 @@ export default async function NewRecordingPage() {
 
   const userSettings = getUserSettingsFromMetadata(user.user_metadata);
   const recordingStorageConfig = await getRecordingStorageConfig(userSettings.supabaseStoragePlan);
+  const recordingOrganizationOptions = await listRecordingOrganizationOptions(supabase);
 
   return (
     <VosioWorkspace
       aiOutputs={[]}
       isCreatingRecording
       recordingStorageConfig={recordingStorageConfig}
+      recordingOrganizationOptions={recordingOrganizationOptions}
       recordings={[]}
       transcripts={[]}
       userSettings={userSettings}

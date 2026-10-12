@@ -63,13 +63,13 @@ Design systém musí od začátku počítat s tokeny pro:
 
 Sidebar má zůstat čistý a kompaktní:
 
-- `Nová nahrávka`
 - `Nahrávky`
+- `Nová nahrávka`
 - `AI prompty` (`/templates`)
 - `Koš`
 - `Nastavení`
 - spodní utility skupina `Koš`, `Nastavení`, `Dokumentace` nad supportem a účtem uživatele na desktopu
-- malá ikona přepnutí světlý/tmavý režim vedle názvu Vosio
+- přepnutí světlý/tmavý režim v pravé části globálního topbaru
 
 Sidebar nemá obsahovat duplicitní seznam nahrávek ani storage kartu. Nahrávky patří na stránku `/recordings` a route `/templates` zůstává stabilní pro `AI prompty`. Na mobilu do 900 px má fixed spodní navigace přesně pět cílů `Nahrávky`, `Nová`, `AI prompty`, `Nastavení`, `Více`; Drawer `Více` zpřístupní `Koš`, `Dokumentaci`, motiv, support a účet s odhlášením.
 
@@ -157,7 +157,7 @@ Požadavky:
 - dlouhý přepis používá jediný dokumentový scroll celé detailové stránky; player a taby zůstávají sticky a nevzniká druhý vertikální scroll,
 - přehrávač je ve výchozím stavu sbalený na play/pause, název, čas a tlačítko rozbalení; posuvník se ukáže po rozbalení bez přerušení nebo opětovného načtení stejného audia,
 - přepínání záložek i změna názvu zachová rozbalení a přehrávání; nová nahrávka začíná sbalená,
-- export, název a organizace používají rozbalovací plochy v toku hlavičky; všechny ovládací prvky zůstávají dosažitelné myší i klávesnicí a sticky přehrávač je nezakrývá,
+- export, název a sdílení používají kompaktní popupy vedle sebe bez pohybu action lišty; zařazení používá stejný keep-mounted popup u organizačních chipů. Popupy jsou omezené viewportem, mají focus trap a návrat focusu, zachovávají draft a pending mutaci nelze zavřít,
 - mobilní přehrávač zůstává v horní sticky ploše se záložkami a nezabírá místo nad spodní navigací,
 - mluvčí mají stabilní barevné odlišení,
 - pokud jsou dostupné Soniox speaker tokeny, zobrazit bloky podle mluvčích,
@@ -186,18 +186,26 @@ Má obsahovat:
   - `Zápis ze schůzky`,
   - `CRM poznámka`,
   - `E-mail po hovoru`,
-- nastavení aktuálního modelu a jeho pevné reasoning/thinking úrovně,
+- nastavení aktuálního modelu a samostatné podporované úrovně uvažování,
 - viditelné stručné upozornění, že silnější modely obvykle zachytí více souvislostí, ale žádný model nezaručuje úplnost; menší model může vynechat detaily, úkoly nebo důkazy,
 - seznam již vytvořených AI výstupů jako kompaktní rozbalovací řádky,
 - detail vybraného výstupu otevřený až po kliknutí.
 
 AI výstupy mají být uložené a znovu otevřitelné. Nemají být jen dočasná odpověď v panelu.
 
+Schválená varianta A používá společný picker modelu nad diskrétním posuvníkem
+v AI detailu, Nastavení a Chatu. Pět explicitních kroků low/medium/high/xhigh/max
+má české popisky, keyboard ovládání, `aria-valuetext` a 44px dotykové cíle.
+U nepodporovaného modelu se uvažování nenabízí a request ho neodesílá; změna
+modelu neruší uloženou OpenAI effort preferenci. Nápověda určuje, zda volba platí
+pro nový ruční výstup, uložený default nebo následující chat otázku.
+Teplota nemá vlastní ovládání. Podrobnosti určuje [DESIGN.md](../../DESIGN.md).
+
 Ruční AI zpracování musí být odolné vůči navigaci a nejistému transportu. Po odeslání se nejprve zobrazí durable stav `queued` nebo `running`; stejný request UUID při transportním retry nesmí založit nový provider call. Explicitní uživatelský retry po terminálním selhání vždy vytvoří nové UUID a původní job zůstane v historii. UI nabízí bezpečné `Obnovit` nebo `Přerušit`: stale `running` s uloženým výstupem se uzavře jako hotový, stale `running` bez výstupu jako přerušený a čerstvý `running` se nesmí vydávat za zrušený. Provider chyby se zobrazují pouze přes pevné české kódy/zprávy, bez raw diagnostiky, transcriptu nebo outputu.
 
-Stavová metadata používají serverové `poll_eligible` a jen aktivní viditelnou online AI/Timeline plochu: 10 s prvních 30 s, 30 s mezi 30 a 120 s a 60 s poté. Focus/visibility/online catch-up nastává pouze více než 30 s po poslední dokončené kontrole; běží jeden request in flight a po chybě je backoff nejméně 30 s. Žádný kompletní refresh ani viditelný reset výstupů, úkolů, focusu, scrollu, rozepsaných polí či otevřených karet.
+Stavová metadata používají serverové `poll_eligible` a jen aktivní viditelnou online AI/Timeline plochu: 10 s prvních 30 s, 30 s mezi 30 a 120 s a 60 s poté. Focus/visibility/online catch-up pouze více než 30 s po poslední dokončené kontrole; jeden request in flight a nejméně 30 s backoff po chybě. Žádný kompletní refresh ani viditelný reset výstupů, úkolů, focusu, scrollu, rozepsaných polí či otevřených karet.
 
-Přehled AI požadavků je výchozí zavřený Appica panel. Hotové řádky se nezobrazují. Akce obnovit, přerušit a smazat jsou pouze podle serverového seznamu actions; neznámý legacy stav má pravdivé upozornění bez falešné možnosti opravy. „Vyčistit staré požadavky“ stránkuje GET -> POST nejvýše 50 přesných ID -> další cursor, neprovádí neomezené načtení před mazáním. Výstupy a projekce jsou chráněné; klient odstraní pouze serverem potvrzená ID.
+Přehled AI požadavků je výchozí zavřený Appica panel. Hotové řádky se nezobrazují. Akce obnovit/přerušit/smazat jsou pouze podle serverového seznamu actions; neznámý legacy stav má pravdivé upozornění bez falešné možnosti opravy. „Vyčistit staré požadavky“ stránkuje GET -> POST nejvýše 50 přesných ID -> další cursor, neprovádí neomezené načtení před mazáním. Výstupy a projekce jsou chráněné; klient odstraní pouze serverem potvrzená ID.
 
 ## Chat nad přepisem
 
@@ -234,7 +242,7 @@ Stránka nahrávek je kompaktní neutrální inbox. Priorita je rychle najít sp
 
 Požadavky:
 
-- nad obsahem je jeden kompaktní toolbar s pružným hledáním, tlačítkem pokročilých filtrů a `Spravovat`; při viewportu 900 px a méně se složí a `Spravovat` zabere celou šířku,
+- nad obsahem je jeden kompaktní toolbar s pružným hledáním, `Filtry`, hned navazujícím `Spravovat` a případným popupem nedokončených nahrávek; při viewportu 900 px a méně má hledání vlastní řádek a akce zůstávají malé,
 - toolbar a informace o výsledku nejsou samostatné vnořené tabulky nebo karty; stavové facety tvoří jediný měkký segmentovaný řádek,
 - běžný seznam je jednoúrovňový flat list v jednom bílém 16px panelu s jemnými skupinovými oddělovači a řádky dělenými pouze linkou,
 - hlavní pracovní plocha používá studené `#f7f8fa` pozadí a seznam bílý `surface-raised`, bez původního teplého béžového tónu,
@@ -246,13 +254,15 @@ Požadavky:
 - kompaktní stavové URL chips ukazují přesné facety všech aktivních persisted stavů; samostatné `Smazáno` vede na `/trash`,
 - velikost, datum a zdroj zobrazit kompaktně,
 - existující filtry `q`, `status`, `client`, závislý `project`, `folder` a opakovatelný `tag` zůstávají URL-backed a synchronizované s Back/Forward,
-- hledání zůstává viditelné; klient, projekt, složka a štítky jsou v keep-mounted disclosure pokročilých filtrů,
+- hledání zůstává viditelné; klient, projekt, složka a štítky jsou v keep-mounted ukotveném popupu pokročilých filtrů do 360 px, s focus trapem, Escape a návratem focusu; během aktualizace jsou organizační ovládání a zavření blokované,
 - zdroj nahrávky a datum vytvoření zůstávají pouze zobrazená metadata; nové source/date filtry nejsou součástí tohoto UI-only řezu,
 - při skutečné šířce content containeru nad 680 px používá seznam pracovní řádky; při 680 px a méně skládané karty bez horizontálního posunu.
 
-Klienti, projekty, ploché složky a štítky se spravují v keep-mounted pravém Draweru `Spravovat`. Drawer při zavření zůstává připojený, ale je skrytý pro focus i accessibility strom, takže rozepsaný nebo pending editor neztratí stav. Create, rename a assignment editory používají success-only collapse kontrakt; delete zůstává samostatná potvrzovaná destruktivní akce.
+Klienti, projekty, ploché složky a štítky se spravují v keep-mounted pravém Draweru `Spravovat` do 640 px. Název má vlastní čitelný sloupec, akce druhý sloupec a přístupový formulář celý řádek pod nimi; do 480 px se skládají pod sebe. Drawer při zavření zůstává připojený, ale je skrytý pro focus i accessibility strom, takže rozepsaný nebo pending editor neztratí stav. Create, rename a assignment editory používají success-only collapse kontrakt; delete zůstává samostatná potvrzovaná destruktivní akce.
 
-Nová nahrávka zobrazuje bucket, globální limit a preferenci jako jeden jemný informační řádek, ne tři technické karty. Koš podporuje výběr nejvýše 100 viditelných položek, partial bulk restore a permanentní mazání po jedné server mutation s klientskou souběžností 2. Neúspěšné nebo dosud nespouštěné položky zůstávají vybrané a viditelné.
+Schválená kompaktní varianta A zachovává tento inbox. Nedokončené záznamy jsou dostupné z malého popupu v toolbaru, bez automatického mazání obsahu. Sdílení výběru začíná přímo v řádcích autorizovaných soukromých nahrávek a teprve potom zobrazí malý action toolbar, nikoli filtr. Detail nabízí `Upravit název`, `Export` a `Sdílet` ve stabilní action liště s menší vizuální geometrií a nejméně 44px hit targety.
+
+Nová nahrávka upřednostňuje live a upload; osobní scope je výchozí soukromý a sdílení se nastavuje v detailu po uložení. Projektové a editor scope zůstávají volitelně v disclosure `Projekt a pokročilé sdílení`. Zobrazuje se jen skutečný limit audia/souboru a důležité chyby, ne raw bucket/globální/preference diagnostika. Koš podporuje výběr nejvýše 100 viditelných položek, partial bulk restore a permanentní mazání po jedné server mutation s klientskou souběžností 2. Neúspěšné nebo dosud nespouštěné položky zůstávají vybrané a viditelné.
 
 ## Mobil
 

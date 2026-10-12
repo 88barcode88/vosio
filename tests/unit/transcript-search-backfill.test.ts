@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 type BackfillModule = {
+  createChunkReplacer: (client: { rpc: ReturnType<typeof vi.fn> }) => (transcript: { id: string; search_version: number }, chunks: unknown[]) => Promise<void>;
   getBackfillExitCode: (summary: { failed: number }) => number;
   parseBackfillArguments: (args: string[]) => {
     allowLive: boolean;
@@ -34,6 +35,14 @@ async function loadBackfillModule() {
 }
 
 describe("transcript search backfill", () => {
+  it("uses the persisted search version and rejects a stale replacement outcome", async () => {
+    const { createChunkReplacer } = await loadBackfillModule();
+    const rpc = vi.fn().mockResolvedValueOnce({ data: true, error: null }).mockResolvedValueOnce({ data: false, error: null });
+    const replace = createChunkReplacer({ rpc });
+    await expect(replace({ id: "transcript", search_version: 4 }, [])).resolves.toBeUndefined();
+    expect(rpc).toHaveBeenCalledWith("replace_transcript_search_chunks_v2", { p_transcript_id: "transcript", p_expected_version: 4, p_chunks: [] });
+    await expect(replace({ id: "transcript", search_version: 4 }, [])).rejects.toThrow("Unable to replace");
+  });
   it("uses bounded keyset batches and performs no mutation in dry-run mode", async () => {
     const { runTranscriptSearchBackfill } = await loadBackfillModule();
     const fetchBatch = vi.fn()

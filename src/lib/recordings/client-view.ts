@@ -12,6 +12,7 @@ export type RecordingClientView = Pick<
   | "id"
   | "mime_type"
   | "purge_after"
+  | "purge_phase"
   | "source_type"
   | "status"
   | "title"
@@ -19,6 +20,7 @@ export type RecordingClientView = Pick<
   | "updated_at"
 > & {
   audioAvailability: RecordingAudioAvailability;
+  capabilities?: RecordingRow["capabilities"];
 };
 
 // toRecordingClientView removes private ownership and Storage locator fields before serialization.
@@ -31,7 +33,8 @@ export function toRecordingClientView(recording: RecordingRow): RecordingClientV
       : "none";
 
   return {
-    audioAvailability,
+    audioAvailability: recording.audioAvailability ?? audioAvailability,
+    capabilities: recording.capabilities,
     created_at: recording.created_at,
     deleted_at: recording.deleted_at ?? null,
     duration_seconds: recording.duration_seconds,
@@ -39,6 +42,7 @@ export function toRecordingClientView(recording: RecordingRow): RecordingClientV
     id: recording.id,
     mime_type: recording.mime_type,
     purge_after: recording.purge_after ?? null,
+    purge_phase: recording.purge_phase ?? null,
     source_type: recording.source_type,
     status: recording.status,
     title: recording.title,

@@ -304,8 +304,8 @@ describe("isolated Playwright outer runner", () => {
     });
   });
 
-  it("persists only bounded taskkill output aggregates for every diagnostic shape", async () => {
-    const fixtures = [
+  // Give each independent runner lifecycle its own unchanged timeout budget.
+  it.each([
       {
         name: "partial-success" as const,
         port: 3186,
@@ -408,9 +408,7 @@ describe("isolated Playwright outer runner", () => {
           truncated: false
         }
       }
-    ];
-
-    for (const fixture of fixtures) {
+    ])("persists only bounded taskkill output aggregates for $name", async (fixture) => {
       const run = startTestRunner({
         mode: "exit-zero",
         port: fixture.port,
@@ -435,7 +433,6 @@ describe("isolated Playwright outer runner", () => {
       expect(stderr).toContain(`"outputSummary":${JSON.stringify(fixture.summary)}`);
       expect(stderr).not.toContain("No running instance");
       expect(stderr).not.toContain("Lokalizovaný důvod");
-    }
   }, 15_000);
 
   it("fails closed and retains its workspace when a descendant tree is explicitly unproven", async () => {

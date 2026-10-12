@@ -39,6 +39,7 @@ export type RecordingChatTurnRow = {
   prompt_text_snapshot: string;
   provider: AiProviderId;
   provider_response_id: string | null;
+  provider_config?: Record<string, unknown> | null;
   question: string;
   recording_id: string;
   safe_error: string | null;

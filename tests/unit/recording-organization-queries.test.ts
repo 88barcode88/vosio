@@ -14,6 +14,7 @@ const recordingId = "00000000-0000-4000-8000-000000000002";
 function createListQuery(data: unknown[] = [], error: { message: string } | null = null) {
   const query = {
     eq: vi.fn(),
+    in: vi.fn(),
     order: vi.fn(),
     range: vi.fn(),
     returns: vi.fn(),
@@ -21,6 +22,7 @@ function createListQuery(data: unknown[] = [], error: { message: string } | null
   };
   query.select.mockReturnValue(query);
   query.eq.mockReturnValue(query);
+  query.in.mockReturnValue(query);
   query.order.mockReturnValue(query);
   query.range.mockReturnValue(query);
   query.returns.mockResolvedValue({ data, error });
@@ -79,7 +81,8 @@ describe("recording organization queries", () => {
       const selection = query.select.mock.calls[0]?.[0] as string;
       expect(selection).not.toContain("*");
       expect(selection).toContain("id");
-      expect(selection).toContain("user_id");
+      if (table === "recording_projects") expect(selection).not.toContain("user_id");
+      else expect(selection).toContain("user_id");
       expect(query.order).toHaveBeenNthCalledWith(1, "name", { ascending: true });
       expect(query.order).toHaveBeenNthCalledWith(2, "id", { ascending: true });
     }
@@ -97,8 +100,7 @@ describe("recording organization queries", () => {
     await expect(
       getRecordingOrganization({ from } as never, unclassifiedRecording)
     ).resolves.toEqual({ client: null, folder: null, project: null, tags: [] });
-    expect(from).toHaveBeenCalledTimes(1);
-    expect(linksQuery.select.mock.calls[0]?.[0]).not.toContain("*");
+    expect(from).not.toHaveBeenCalled();
   });
 
   it("maps owned lookup rows and tags into a separate projection", async () => {
@@ -119,22 +121,25 @@ describe("recording organization queries", () => {
       ...unclassifiedRecording,
       client_id: "client-1",
       folder_id: "folder-1",
-      project_id: "project-1"
+      project_id: "project-1",
+      project_name: "Web",
+      tag_ids: ["tag-1", "tag-2"]
     };
 
     await expect(getRecordingOrganization({ from } as never, recording)).resolves.toEqual({
       client: { color: "#112233", id: "client-1", name: "Acme" },
       folder: { color: null, id: "folder-1", name: "Calls" },
-      project: { color: "#445566", id: "project-1", name: "Web" },
+      project: { color: null, id: "project-1", name: "Web" },
       tags: [
         { color: "#ABCDEF", id: "tag-1", name: "A" },
         { color: null, id: "tag-2", name: "B" }
       ]
     });
-    for (const query of [clientQuery, projectQuery, folderQuery]) {
-      expect(query.eq).toHaveBeenCalledWith("user_id", userId);
+    for (const query of [clientQuery, folderQuery]) {
+      expect(query.eq).not.toHaveBeenCalledWith("user_id", userId);
     }
-    expect(projectQuery.select).toHaveBeenCalledWith("id,name,color");
+    expect(projectQuery.select).not.toHaveBeenCalled();
+    expect(linksQuery.in).toHaveBeenCalledWith("tag_id", ["tag-1", "tag-2"]);
     expect(folderQuery.select).toHaveBeenCalledWith("id,name,color");
   });
 

@@ -7,6 +7,7 @@ import { StructuredItemsContent } from "@/components/transcript-tabs/structured-
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("@/components/recording-capability-context", () => ({ useRecordingCapabilities: () => ({ capabilities: { editTaskStatus: true } }) }));
 
 const task: StructuredAiItems["tasks"][number] = {
   ai_output_id: "output-1",

@@ -1,5 +1,9 @@
+"use client";
 import { ChevronDown, FileText, Mic, Upload } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { CaptureScopePicker, privateCaptureScope } from "@/components/capture-scope-picker";
+import type { CaptureScope } from "@/lib/recordings/capture";
+import type { RecordingProjectRow } from "@/lib/recording-organization/types";
 import { PersistentRecorderSlot } from "@/components/persistent-recording-session";
 import {
   RecordingUploadForm,
@@ -13,11 +17,13 @@ import type { RecordingStorageConfig } from "@/lib/recordings/storage-config";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
 
 export type NewRecordingCaptureSlots = {
+  scope?: ReactNode;
   live: ReactNode;
   transcriptImport: ReactNode;
 };
 
 type NewRecordingWorkspaceProps = {
+  projects?: RecordingProjectRow[];
   captureSlots?: NewRecordingCaptureSlots;
   recordingStorageConfig: RecordingStorageConfig;
   uploadRedirectAfterSuccess?: "detail" | "list" | "stay";
@@ -27,12 +33,16 @@ type NewRecordingWorkspaceProps = {
 
 // NewRecordingWorkspace renders two primary capture methods and a secondary transcript import.
 export function NewRecordingWorkspace({
+  projects = [],
   captureSlots,
   recordingStorageConfig,
   uploadRedirectAfterSuccess = "detail",
   uploadTransport,
   userSettings = defaultUserSettings
 }: NewRecordingWorkspaceProps) {
+  const [captureScope, setCaptureScope] = useState<CaptureScope>(privateCaptureScope);
+  const [captureRequestId, setCaptureRequestId] = useState<string | undefined>();
+  const [scopeMounted, setScopeMounted] = useState(false);
   const maxFileSizeBytes = recordingStorageConfig.maxFileSizeBytes;
   const allowedMimeTypes = recordingStorageConfig.allowedMimeTypes;
   const liveAudioMaxFileSizeBytes = getLiveAudioMaxFileSizeBytes(maxFileSizeBytes);
@@ -47,20 +57,16 @@ export function NewRecordingWorkspace({
         <h1>Nová nahrávka</h1>
         <p>Začněte live nahráváním nebo nahrajte existující audio soubor.</p>
       </header>
+      <details className="capture-scope-disclosure" onToggle={(event) => { if (event.currentTarget.open) setScopeMounted(true); }}>
+        <summary>Projekt a pokročilé sdílení{!captureSlots?.scope && (captureScope.projectId || captureScope.visibility !== "private") ? " · vlastní výběr" : ""}</summary>
+        {scopeMounted ? captureSlots?.scope ?? <CaptureScopePicker projects={projects} value={captureScope} onChange={(scope, requestId) => { setCaptureScope(scope); setCaptureRequestId(requestId); }} /> : null}
+      </details>
 
       {storageLimitSummary.warning ? (
         <p className="recording-storage-alert" role="alert">
           {storageLimitSummary.warning}
         </p>
       ) : null}
-
-      <p className="recording-storage-info-row" aria-label="Limity úložiště">
-        <span><strong>Bucket recordings:</strong> {storageLimitSummary.bucketLimit}</span>
-        <span aria-hidden="true">·</span>
-        <span><strong>Globální limit:</strong> {storageLimitSummary.globalLimit}</span>
-        <span aria-hidden="true">·</span>
-        <span><strong>Preference:</strong> {storageLimitSummary.planLabel}</span>
-      </p>
 
       <div
         aria-label="Hlavní způsoby pořízení"
@@ -81,6 +87,8 @@ export function NewRecordingWorkspace({
           <div className="capture-card-body">
             {captureSlots?.live ?? (
               <PersistentRecorderSlot
+                captureScope={captureScope}
+                captureRequestId={captureRequestId}
                 allowTranscriptOnly
                 captionMode
                 liveAudioQuality={userSettings.liveAudioQuality}
@@ -103,6 +111,8 @@ export function NewRecordingWorkspace({
           </div>
           <div className="upload-console">
             <RecordingUploadForm
+              captureScope={captureScope}
+              captureRequestId={captureRequestId}
               allowedMimeTypes={allowedMimeTypes}
               maxFileSizeBytes={maxFileSizeBytes}
               redirectAfterUpload={uploadRedirectAfterSuccess}
@@ -111,6 +121,11 @@ export function NewRecordingWorkspace({
           </div>
         </article>
       </div>
+
+      <p className="recording-storage-info-row" aria-label="Limity úložiště">
+        Limit audia: {storageLimitSummary.liveAudioLimit}. Maximální velikost souboru: {storageLimitSummary.manualUploadLimit}.
+      </p>
+      <p className="capture-sharing-note">{captureSlots?.scope ? "Přístup odpovídá výběru v pokročilém nastavení. Sdílení můžete upravit v detailu po uložení." : captureScope.visibility === "private" ? "Nahrávka se uloží soukromě. Sdílení můžete nastavit v detailu po uložení." : "Nahrávka se uloží s vybraným přístupem."}</p>
 
       <article className="capture-card transcript-import-card" data-secondary-capture="transcript">
         <details aria-label="Import hotového přepisu" className="transcript-import-disclosure">
@@ -122,14 +137,14 @@ export function NewRecordingWorkspace({
                 <small>Vedlejší možnost pro text bez audio souboru</small>
               </span>
             </span>
-            <ChevronDown aria-hidden="true" className="transcript-import-chevron" size={18} />
+            <ChevronDown aria-hidden="true" className="transcript-import-chevron" size={15} />
           </summary>
           <div className="upload-console transcript-import-console">
             <p>
               Vložte hotový přepis. Vosio ho uloží jako dokončený záznam a AI zpracování poběží
               stejně jako u přepisů ze Sonioxu.
             </p>
-            {captureSlots?.transcriptImport ?? <TranscriptImportForm redirectAfterImport="detail" />}
+            {captureSlots?.transcriptImport ?? <TranscriptImportForm captureScope={captureScope} captureRequestId={captureRequestId} redirectAfterImport="detail" />}
           </div>
         </details>
       </article>

@@ -10,11 +10,16 @@ export type AiModelOption = {
   price: string;
   provider: AiProviderId;
   providerModel: string;
-  reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+  reasoningEffort?: AiReasoningEffort;
+  reasoningEfforts?: readonly AiReasoningEffort[];
   supportsTemperature?: boolean;
 };
 
-export const DEFAULT_AI_MODEL_ID = "gpt-5.6-terra";
+export const aiReasoningEfforts = ["low", "medium", "high", "xhigh", "max"] as const;
+export type AiReasoningEffort = (typeof aiReasoningEfforts)[number];
+export const DEFAULT_AI_REASONING_EFFORT: AiReasoningEffort = "medium";
+export const DEFAULT_AI_TEMPERATURE = 0.3;
+export const DEFAULT_AI_MODEL_ID = "gpt-6.1-sol";
 export const DEFAULT_GEMINI_MODEL_ID = "gemini-3.6-flash";
 
 // AI_MODEL_QUALITY_GUIDANCE explains the practical quality and review tradeoff shared by AI surfaces.
@@ -22,18 +27,11 @@ export const AI_MODEL_QUALITY_GUIDANCE =
   "Silnější modely obvykle zachytí více souvislostí. Menším a levnějším modelům může uniknout více detailů, úkolů nebo důkazů; žádný model nezaručuje úplnost.";
 
 export const aiModelIds = [
-  "gpt-5.6-sol",
-  "gpt-5.6-terra",
-  "gpt-5.6-luna",
-  "gemini-3.6-flash",
-  "gemini-3.8-flash",
-  "gpt-6-astra-low",
-  "gpt-6-astra-medium",
-  "mistral-small-2603",
-  "mistral-large-2512"
+  "gpt-6.1-sol", "gpt-6-astra", "gemini-3.6-flash", "gemini-3.8-flash",
+  "mistral-small-2603", "mistral-large-2512"
 ] as const;
 
-export const aiModelOptions = [
+export const legacyAiModelOptions = [
   {
     description: "Nejsilnější GPT-5.6 model pro nejnáročnější zápisy, důkazy a práci s dlouhým přepisem; používá reasoning XHigh.",
     id: "gpt-5.6-sol",
@@ -142,6 +140,42 @@ export const aiModelOptions = [
   }
 ] satisfies AiModelOption[];
 
+export const aiModelOptions: AiModelOption[] = [
+  {
+    id: "gpt-6.1-sol", label: "GPT-6.1 Sol", provider: "openai", providerModel: "gpt-6.1-sol",
+    description: "Vyvážený model pro zápisy a práci s dlouhým přepisem.",
+    inputUsdPerMillionTokens: 2, outputUsdPerMillionTokens: 10,
+    price: "$2.00 input / $10.00 output za 1M tokenů",
+    reasoningEffort: "medium", reasoningEfforts: aiReasoningEfforts, supportsTemperature: false
+  },
+  {
+    id: "gpt-6-astra", label: "GPT-6 Astra", provider: "openai", providerModel: "gpt-6-astra",
+    description: "Silný model pro složité hovory, souvislosti a důkazy.",
+    inputUsdPerMillionTokens: 10, outputUsdPerMillionTokens: 50,
+    price: "$10.00 input / $50.00 output za 1M tokenů",
+    reasoningEffort: "medium", reasoningEfforts: aiReasoningEfforts, supportsTemperature: false
+  },
+  ...legacyAiModelOptions.filter((option) => option.provider !== "openai")
+    .map((option) => ({ ...option, supportsTemperature: true }))
+];
+
+// getActiveAiModelOption restricts new requests to the current picker catalogue.
+export function getActiveAiModelOption(modelId: string) {
+  return aiModelOptions.find((option) => option.id === modelId) ?? null;
+}
+
+// resolveNewAiModelSelection rejects unsupported effort instead of silently changing a request.
+export function resolveNewAiModelSelection(modelId: string, effort?: unknown) {
+  const option = getActiveAiModelOption(modelId);
+  if (!option) return null;
+  if (option.reasoningEfforts) {
+    const reasoningEffort = effort ?? DEFAULT_AI_REASONING_EFFORT;
+    return option.reasoningEfforts.includes(reasoningEffort as AiReasoningEffort)
+      ? { ...option, reasoningEffort: reasoningEffort as AiReasoningEffort } : null;
+  }
+  return effort === undefined || effort === null ? option : null;
+}
+
 export const openAiModelOptions = aiModelOptions.filter((option) => option.provider === "openai");
 
 export const sonioxRealtimeModelOptions = [
@@ -159,6 +193,11 @@ const legacyAiModelAliases: Readonly<Record<string, (typeof aiModelIds)[number]>
   "gemini-3.1-flash-lite": DEFAULT_GEMINI_MODEL_ID,
   "gemini-3.1-pro-preview": DEFAULT_GEMINI_MODEL_ID,
   "gemini-3.5-flash": DEFAULT_GEMINI_MODEL_ID,
+  "gpt-5.6-sol": DEFAULT_AI_MODEL_ID,
+  "gpt-5.6-terra": DEFAULT_AI_MODEL_ID,
+  "gpt-5.6-luna": DEFAULT_AI_MODEL_ID,
+  "gpt-6-astra-low": "gpt-6-astra",
+  "gpt-6-astra-medium": "gpt-6-astra",
   "gpt-4.1-mini": DEFAULT_AI_MODEL_ID,
   "gpt-4.1-nano": DEFAULT_AI_MODEL_ID,
   "gpt-5.4": DEFAULT_AI_MODEL_ID,
@@ -179,7 +218,7 @@ export function normalizeAiModelId(value: unknown) {
 
 // getAiModelOption finds known model metadata for routing, price display and usage estimates.
 export function getAiModelOption(modelId: string) {
-  return aiModelOptions.find((option) => option.id === modelId) ?? null;
+  return getActiveAiModelOption(modelId) ?? legacyAiModelOptions.find((option) => option.id === modelId) ?? null;
 }
 
 export type ResolvedAiModelExecution = {
@@ -195,7 +234,8 @@ export function resolveAiModelExecution(input: {
   provider: unknown;
   providerConfig: unknown;
 }): ResolvedAiModelExecution | null {
-  const option = getAiModelOption(input.model);
+  const option: AiModelOption | null | undefined = legacyAiModelOptions.find((candidate) => candidate.id === input.model)
+    ?? getActiveAiModelOption(input.model);
 
   if (!option || input.provider !== option.provider) {
     return null;
@@ -219,7 +259,9 @@ export function resolveAiModelExecution(input: {
     return null;
   }
 
-  if (snapshottedReasoning !== undefined && snapshottedReasoning !== null && snapshottedReasoning !== option.reasoningEffort) {
+  if (snapshottedReasoning !== undefined && snapshottedReasoning !== null && !(option.reasoningEfforts
+    ? option.reasoningEfforts.includes(snapshottedReasoning as AiReasoningEffort)
+    : snapshottedReasoning === option.reasoningEffort)) {
     return null;
   }
 
@@ -228,7 +270,8 @@ export function resolveAiModelExecution(input: {
   }
 
   return {
-    option,
+    option: { ...option, supportsTemperature: option.provider === "gemini"
+      ? providerConfig.sampling_temperature_supported === true : option.supportsTemperature },
     profileId: option.id,
     provider: option.provider,
     providerModel: option.providerModel

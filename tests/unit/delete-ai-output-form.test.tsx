@@ -14,7 +14,7 @@ async function renderTarget(action: (formData: FormData) => Promise<void>, child
   await act(async () => root.render(
     <article data-ai-output-delete-target>
       {children}
-      <DeleteAiOutputForm deleteAction={action} next="/ai?type=summary" outputId={outputId} />
+      <DeleteAiOutputForm canDelete deleteAction={action} next="/ai?type=summary" outputId={outputId} />
     </article>
   ));
 }
@@ -39,7 +39,7 @@ describe("AI archive delete", () => {
     const onDeleted = vi.fn();
     await act(async () => root.render(
       <article data-ai-output-delete-target>
-        <DeleteAiOutputForm deleteAction={action} next="/recordings/test" onDeleted={onDeleted} outputId={outputId} />
+        <DeleteAiOutputForm canDelete deleteAction={action} next="/recordings/test" onDeleted={onDeleted} outputId={outputId} />
       </article>
     ));
     const form = container.querySelector<HTMLFormElement>("form")!;
@@ -53,6 +53,10 @@ describe("AI archive delete", () => {
     expect(onDeleted).toHaveBeenCalledExactlyOnceWith([outputId]);
   });
 
+  it("hides delete without server-resolved permission", async () => {
+    await act(async () => root.render(<DeleteAiOutputForm deleteAction={vi.fn()} next="/ai" outputId={outputId} />));
+    expect(container.querySelector("form")).toBeNull();
+  });
   it("restores the exact target and shows a sanitized alert after unexpected rejection", async () => {
     const action = vi.fn().mockRejectedValue(new Error("private provider secret"));
     await renderTarget(action, <span>Archivní výstup</span>);

@@ -11,4 +11,6 @@
 @import "./styles/appica-recordings.css";
 @import "./styles/appica-workflow.css";
 @import "./styles/appica-utilities.css";
+@import "./styles/ai-model-picker.css";
+@import "./styles/compact-recordings.css";
 @import "./styles/control-hit-targets.css";

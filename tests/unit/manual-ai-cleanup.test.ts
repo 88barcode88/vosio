@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MANUAL_AI_CLEANUP_BATCH_LIMIT } from "@/lib/ai/manual-job-cleanup-contract";
+vi.mock("@/lib/recording-sharing/resolve-capabilities", () => ({ resolveRecordingCapabilities: vi.fn(async () => ({ delete: true })) }));
 
 const routeMocks = vi.hoisted(() => ({
   cleanupManualAiJobs: vi.fn(),

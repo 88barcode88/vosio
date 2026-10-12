@@ -3,6 +3,8 @@ import { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TranscriptAiStateProvider, useTranscriptAiState, type TranscriptAiStateContextValue } from "@/components/transcript-tabs/use-transcript-ai-state";
+import type { StructuredAiItems, StructuredTaskRow } from "@/lib/ai/structured-types";
+import type { AiOutputView } from "@/lib/ai/types";
 import { classifyAutomaticJob } from "@/lib/ai/automatic-job-state";
 import type { ManualAiJobSummary } from "@/lib/ai/manual-job-state";
 
@@ -60,6 +62,134 @@ function ExportHarness({ observe }: { observe: (state: TranscriptAiStateContextV
   useEffect(() => observe(state), [observe, state]);
   return <><input aria-label="draft" defaultValue="kept" /><audio src="/synthetic.mp3" /></>;
 }
+
+it("keeps checklist tombstones through late hydration and exports while allowing a new output", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let state!: TranscriptAiStateContextValue;
+  const observe = (next: TranscriptAiStateContextValue) => { state = next; };
+  let outputIds = ["old"];
+  let resolveOld!: (response: Response) => void;
+  const oldResponse = new Promise<Response>((resolve) => { resolveOld = resolve; });
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.includes("/ai-state")) return Response.json({ jobs: [], automaticGenerationKey: "generation", outputs: outputIds.map((id) => ({
+      id, transcript_id: "t", processing_job_id: `${id}-job`, processing_type: "action_items", created_at: id === "new" ? "2026-10-04" : "2026-10-03", body_loaded: false
+    })) });
+    const id = url.split("/").at(-1)!.split("?")[0];
+    if (id === "old") return oldResponse;
+    return Response.json({ output: { id, output_text: "New source" }, structuredItems: { chapters: [], decisions: [], risks: [], tasks: [{ id: "new-task", ai_output_id: id, title: "Same title", position: 1 }] } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const container = document.createElement("div"); document.body.append(container); const root = createRoot(container);
+  try {
+    await act(async () => root.render(<TranscriptAiStateProvider transcriptId="t"><ExportHarness observe={observe} /></TranscriptAiStateProvider>));
+    await act(async () => state.loadForPurpose("metadata"));
+    let pending!: ReturnType<TranscriptAiStateContextValue["loadOutput"]>;
+    await act(async () => { pending = state.loadOutput("old"); });
+    await act(async () => state.confirmChecklistDeletion(["old-task"], ["old"]));
+    await act(async () => {
+      resolveOld(Response.json({ output: { id: "old", output_text: "Original source still exists" }, structuredItems: {
+        chapters: [], decisions: [{ id: "decision", ai_output_id: "old" }], risks: [], tasks: [{ id: "old-task", ai_output_id: "old", title: "Same title", position: 1 }]
+      } }));
+      expect((await pending)?.structuredItems.tasks).toEqual([]);
+    });
+    expect(state.loadedOutputs.map((output) => output.id)).toEqual(["old"]);
+    expect(state.structuredItems.tasks).toEqual([]); expect(state.structuredItems.decisions).toHaveLength(1);
+    let exported: Awaited<ReturnType<TranscriptAiStateContextValue["loadAllOutputs"]>>;
+    await act(async () => { exported = await state.loadAllOutputs(); });
+    expect(exported!.structuredItems.tasks).toEqual([]);
+    outputIds = ["new", "old"];
+    await act(async () => state.loadForPurpose("ai"));
+    expect(state.structuredItems.tasks.map((task) => task.id)).toEqual(["new-task"]);
+    expect(state.loadedOutputs.map((output) => output.id)).toContain("old");
+  } finally { await act(async () => root.unmount()); }
+});
+
+// taskFixture gives repeated generations the same logical identity but distinct source custody.
+function taskFixture(id: string, outputId: string, status: StructuredTaskRow["status"]): StructuredTaskRow {
+  return { id, ai_output_id: outputId, status, title: "Same title", position: 1, owner_category: "Moje práce",
+    deadline: null, deadline_normalized: null, deadline_confidence: null, description: null, evidence_end_ms: null,
+    evidence_quote: null, evidence_start_ms: null, owner_name: null, processing_job_id: `${outputId}-job`,
+    raw_item: {}, source_type: "explicit", transcript_id: "t", user_id: "owner" };
+}
+
+it.each([
+  ["late body", false], ["stale props", false], ["late body", true], ["stale props", true]
+] as const)("keeps a new task after %s arrives following checklist deletion (old override %s)", async (scenario, oldOverride) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let state!: TranscriptAiStateContextValue;
+  const observe = (next: TranscriptAiStateContextValue) => { state = next; };
+  const oldTask = taskFixture("old-task", "old", "done");
+  const newTask = taskFixture("new-task", "new", "new");
+  const oldItems: StructuredAiItems = { tasks: [oldTask], chapters: [], decisions: [], risks: [] };
+  const oldOutput = { id: "old", output_text: "Original source retained" } as AiOutputView;
+  let resolveOld!: (response: Response) => void;
+  const oldResponse = new Promise<Response>((resolve) => { resolveOld = resolve; });
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.includes("/ai-state")) return Response.json({ jobs: [], outputs: ["old", "new"].map((id) => ({
+      id, transcript_id: "t", processing_job_id: `${id}-job`, processing_type: "action_items", created_at: "2026-10-03", body_loaded: false
+    })) });
+    if (url.includes("/ai-outputs/old?")) return oldResponse;
+    return Response.json({ output: { id: "new", output_text: "New source" }, structuredItems: { ...oldItems, tasks: [newTask] } });
+  }));
+  const container = document.createElement("div"); document.body.append(container); const root = createRoot(container);
+  try {
+    await act(async () => root.render(<TranscriptAiStateProvider transcriptId="t" initialStructuredItems={oldItems}><ExportHarness observe={observe} /></TranscriptAiStateProvider>));
+    await act(async () => state.loadForPurpose("metadata"));
+    let pending: ReturnType<TranscriptAiStateContextValue["loadOutput"]> | undefined;
+    if (scenario === "late body") await act(async () => { pending = state.loadOutput("old"); });
+    if (oldOverride) await act(async () => state.confirmTaskStatus(oldTask, "done"));
+    await act(async () => state.confirmChecklistDeletion(["old-task"], ["old"]));
+    await act(async () => state.loadOutput("new"));
+    expect(state.structuredItems.tasks).toMatchObject([{ id: "new-task", status: "new" }]);
+    if (scenario === "late body") {
+      await act(async () => {
+        resolveOld(Response.json({ output: oldOutput, structuredItems: oldItems }));
+        await pending;
+      });
+    } else {
+      await act(async () => root.render(<TranscriptAiStateProvider transcriptId="t" initialAiOutputs={[oldOutput]} initialStructuredItems={{ ...oldItems }}><ExportHarness observe={observe} /></TranscriptAiStateProvider>));
+    }
+    expect(state.structuredItems.tasks).toMatchObject([{ id: "new-task", status: "new" }]);
+    expect(state.loadedOutputs.map((output) => output.id)).toContain("old");
+    let exported: Awaited<ReturnType<TranscriptAiStateContextValue["loadAllOutputs"]>>;
+    await act(async () => { exported = await state.loadAllOutputs(); });
+    expect(exported!.structuredItems.tasks).toMatchObject([{ id: "new-task", status: "new" }]);
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("rejects a late old-source status receipt after checklist deletion", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let state!: TranscriptAiStateContextValue;
+  const observe = (next: TranscriptAiStateContextValue) => { state = next; };
+  const oldTask = taskFixture("old-task", "old", "new");
+  const newTask = taskFixture("new-task", "new", "new");
+  const items: StructuredAiItems = { tasks: [oldTask], chapters: [], decisions: [], risks: [] };
+  const container = document.createElement("div"); document.body.append(container); const root = createRoot(container);
+  try {
+    await act(async () => root.render(<TranscriptAiStateProvider transcriptId="t" initialStructuredItems={items}><ExportHarness observe={observe} /></TranscriptAiStateProvider>));
+    const pendingStatusReceipt = state.confirmTaskStatus;
+    await act(async () => state.confirmChecklistDeletion(["old-task"], ["old"]));
+    await act(async () => root.render(<TranscriptAiStateProvider transcriptId="t" initialStructuredItems={{ ...items, tasks: [newTask] }}><ExportHarness observe={observe} /></TranscriptAiStateProvider>));
+    await act(async () => pendingStatusReceipt(oldTask, "done"));
+    expect(state.structuredItems.tasks).toMatchObject([{ id: "new-task", status: "new" }]);
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("retains a new source status edit when an older checklist deletion settles", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let state!: TranscriptAiStateContextValue;
+  const observe = (next: TranscriptAiStateContextValue) => { state = next; };
+  const newTask = taskFixture("new-task", "new", "new");
+  const items: StructuredAiItems = { tasks: [newTask], chapters: [], decisions: [], risks: [] };
+  const container = document.createElement("div"); document.body.append(container); const root = createRoot(container);
+  try {
+    await act(async () => root.render(<TranscriptAiStateProvider transcriptId="t" initialStructuredItems={items}><ExportHarness observe={observe} /></TranscriptAiStateProvider>));
+    await act(async () => state.confirmTaskStatus(newTask, "done"));
+    await act(async () => state.confirmChecklistDeletion(["old-task"], ["old"]));
+    await act(async () => root.render(<TranscriptAiStateProvider transcriptId="t" initialStructuredItems={{ ...items }}><ExportHarness observe={observe} /></TranscriptAiStateProvider>));
+    expect(state.structuredItems.tasks).toMatchObject([{ id: "new-task", status: "done" }]);
+  } finally { await act(async () => root.unmount()); }
+});
 
 it.each(["stale deferred page", "new generation page", "stale deferred refresh after new page"])("aborts export across %s without mixing cached bodies or projections", async (scenario) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

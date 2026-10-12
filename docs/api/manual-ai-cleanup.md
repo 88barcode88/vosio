@@ -1,32 +1,34 @@
-# Manual AI cleanup
+# Manual AI cleanup and rollout
 
-This source feature removes only recoverably classified manual jobs without outputs or projections. It does not run providers and does not introduce a scheduler.
+This source feature removes only recoverably classified manual jobs without outputs or projections. It does not run providers or introduce a scheduler.
 
-## API contract
+## API
 
-- Authenticated owner-only `GET /api/transcripts/{transcriptId}/manual-ai/cleanup?cursor=...` returns at most 50 candidates with an opaque owner/transcript-bound keyset cursor.
-- `POST` accepts one to 50 exact job UUIDs. It returns per-ID `deleted`, `protected`, `busy`, `reconciled`, `missing` or `conflict` results, plus only server-confirmed removed IDs and changed jobs.
-- The UI alternates bounded GET and POST pages. An absent item in a status response is never deletion evidence.
-- AI state exposes server-owned `poll_eligible`, `actions` and `cleanup_reason`; it never serializes prompts or provider configuration.
-- Authentication failure is `401`, a missing or non-owned transcript is `404`, an invalid or cross-owner cursor is `400`, and an unavailable database contract is `503`. Errors are sanitized.
+- Authenticated owner-only `GET /api/transcripts/{transcriptId}/manual-ai/cleanup?cursor=...` returns `candidates: [{job_id, cleanup_reason}]` and `next_cursor`, at most 50 per page. The opaque keyset cursor binds owner/transcript and orders by created_at/id.
+- `POST` accepts `{job_ids: UUID[]}`, 1 to 50 exact IDs. It returns per-ID `results` with `deleted|protected|busy|reconciled|missing|conflict`, plus `removed_job_ids` and `changed_jobs`. Repeated calls are idempotent.
+- The UI alternates bounded GET/POST pages, removes only confirmed IDs and merges changed jobs. Missing entries in a status page are never deletion evidence.
+- AI state exposes server-owned `poll_eligible`, `actions` and `cleanup_reason`. It does not serialize prompts or provider configuration.
+- Authentication failure is 401, non-owned transcript 404, invalid/cross-owner cursor 400, unavailable DB contract 503. Errors are sanitized.
 
 ## Safety boundary
 
-All new RPCs are `SECURITY INVOKER`, use an empty `search_path`, and are executable only by `service_role`. They are scoped to the exact owner, transcript and manual job. Cleanup locks parents in deterministic ID order, then their dependencies. Any linked AI output, task, chapter, decision or risk protects its parent job.
+All new RPCs are invoker, empty-search-path, service-role-only and owner/transcript/manual scoped. Cleanup locks parents in deterministic ID order, then dependencies. Any linked `ai_outputs`, tasks, chapters, decisions or risks protect the parent. The settlement RPC uses the same parent lock. A late dependent insert either wins and protects the job or fails its foreign key after deletion; it must never silently disappear through a cascade.
 
-Terminal failed, cancelled or done jobs with no dependencies may be eligible. Only the exact recognized single-attempt expired-lease or stale-unclaimed lifecycle can be reconciled or cleaned. Historical queued or running jobs without that recognized snapshot and lease contract remain `unsupported_legacy`, stop polling and are not silently deleted. The feature does not claim to repair every historical stuck job.
+Terminal failed/cancelled/done jobs with no dependencies are eligible. Only the exact recognized single-attempt expired-lease/unclaimed lifecycle can be reconciled or cleaned automatically. Historical queued/running jobs without a recognized snapshot/lease contract remain `unsupported_legacy` and stop polling; they are not silently deleted. A protected output-bearing legacy row is retained. This feature does not claim to repair every historical stuck job.
 
-## Source migrations and verification boundary
+## Source migrations and non-Docker proof
 
-The ordered source files are:
+After the existing canonical migration chain, the new source files are:
 
-1. `20260908101824_add_mistral_ai_provider.sql`, which adds only the Mistral provider enum value. PostgreSQL requires committing that enum change before a transaction uses it.
-2. `20260908103000_add_manual_ai_job_cleanup.sql`, which adds the classifier, cursor listing, cleanup and locked settlement functions.
+1. `20260908101824_add_mistral_ai_provider.sql`: adds only the Mistral provider enum value. Commit this enum change before transactions that use the value.
+2. `20260908103000_add_manual_ai_job_cleanup.sql`: classifier, cursor listing, cleanup and locked settlement functions.
 
-Source presence is not applied, deployed or live verification. Each installation requires separate authorization, schema and ledger comparison, forward apply and postflight. Do not run `supabase db push` blindly or alter a migration ledger to make it appear canonical.
+Source presence is not applied/deployed/live verification. Before any target apply, obtain explicit authorization, compare its ledger and actual schema with the repository, and reconcile drift using the existing manual-forward decision. Do not blindly run `supabase db push`. Verify forced RLS, narrow grants, function signatures and owner/dependency safeguards before exposing cleanup.
 
-Before exposing cleanup, inspect actual enums, tables, triggers, constraints, policies, function bodies, grants and foreign-key delete actions. Verify forced RLS, narrow function grants, owner/dependency safeguards and aggregate candidate/protected counts without logging row IDs, content or secrets. No bulk cleanup runs automatically.
+Inspect actual enums, tables, triggers, constraints, policies, function bodies/ACL and foreign-key delete actions, independently of the ledger. Dry-run aggregate candidate/protected counts by owner/transcript without logging row IDs, content or secrets. After separately approved apply, verify enum membership and exact function/lease/dependency behavior again. No bulk cleanup runs automatically.
 
-The application may be rolled back while leaving additive enum and compatible RPC changes in place. Removing the enum value is not a rollback strategy, and stopping cleanup cannot restore an eligible job already deleted. Report source-only, applied, deployed, provider-account verified and live-browser verified as separate states.
+After separately approved deployment, use a disposable owned fixture and classify first; run one cleanup only with explicit authorization. Prove output/projection protection and concurrent completion separately. Verify provider account access independently from key presence, without unapproved paid calls. Each self-hosted/public target needs its own evidence.
 
-`node scripts/verify-manual-ai-cleanup-postgres.mjs` is limited to a disposable native local PostgreSQL database. It requires a loopback `VOSIO_DISPOSABLE_DATABASE_URL` whose database name ends in `_vosio_cleanup_test`, plus `psql` or `PSQL_PATH`. The harness refuses missing or incompatible roles and creates fixtures only in that disposable database. Docker is not part of this verification path.
+Rollback the app to the prior build while leaving the additive enum and compatible RPCs in place. Do not remove the enum value or promise recovery of deleted eligible jobs: stopping further cleanup cannot restore them. Report source-only, applied, deployed, provider-account verified and live-browser verified separately. ChatGPT/Codex subscription OAuth remains out of this phase.
+
+Run `node scripts/verify-manual-ai-cleanup-postgres.mjs` only on a disposable native local PostgreSQL database. It requires `VOSIO_DISPOSABLE_DATABASE_URL` on loopback with database-name suffix `_vosio_cleanup_test`, and `psql` or `PSQL_PATH`. Keep connection values out of command history/logs. The cluster must already have compatible non-superuser anon/authenticated (no BYPASSRLS) and service_role (BYPASSRLS) roles. The harness refuses missing/incompatible roles and never creates or alters cluster-global roles. It creates fixture schemas/data only in that disposable database.

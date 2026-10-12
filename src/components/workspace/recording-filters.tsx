@@ -2,8 +2,8 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { Search } from "lucide-react";
-import { Disclosure } from "@/components/ui/disclosure";
+import { Filter, Search } from "lucide-react";
+import { CompactPopover } from "@/components/ui/compact-popover";
 import {
   buildRecordingFilterSearchParams,
   type RecordingOrganizationFilters
@@ -152,12 +152,12 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
             Vyčistit hledání
           </button>
         ) : null}
-        <Disclosure
+        <CompactPopover
           className="recording-filter-advanced"
-          disabled={isNavigationPending}
+          busy={isNavigationPending}
           keepMounted
           label="Pokročilé filtry nahrávek"
-          triggerLabel={`Filtry (${activeAdvancedFilterCount})`}
+          trigger={<><Filter aria-hidden="true" size={15} />Filtry ({activeAdvancedFilterCount})</>}
         >
           <div className="recording-filter-grid">
             <label>
@@ -250,7 +250,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
               </button>
             </div>
           </div>
-        </Disclosure>
+        </CompactPopover>
       </div>
       <span aria-live="polite" className="visually-hidden">
         {isNavigationPending ? "Aktualizuji seznam nahrávek." : ""}

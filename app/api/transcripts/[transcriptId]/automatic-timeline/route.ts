@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { scheduleAutomaticOutputs } from "@/lib/ai/automatic-timeline.server";
+import { scheduleAutomaticOutputs, scheduleCaptureTimelineIntent } from "@/lib/ai/automatic-timeline.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
+import { resolveAutomaticOutputTypes } from "@/lib/settings/metadata";
 
 const routeParamsSchema = z.object({
   transcriptId: z.uuid()
@@ -16,7 +18,7 @@ type RouteContext = {
   }>;
 };
 
-// POST resumes only a server-snapshotted automatic timeline job for one owned transcript.
+// POST requires current personal AI authority before creating any admin/provider recovery path.
 export async function POST(_request: NextRequest, context: RouteContext) {
   const params = routeParamsSchema.safeParse(await context.params);
 
@@ -36,20 +38,24 @@ export async function POST(_request: NextRequest, context: RouteContext) {
 
   const { data: transcript, error: transcriptError } = await supabase
     .from("transcripts")
-    .select("id")
+    .select("id,recording_id")
     .eq("id", params.data.transcriptId)
-    .eq("user_id", user.id)
     .single();
 
   if (transcriptError || !transcript) {
     return NextResponse.json({ error: "Přepis nebyl nalezen." }, { status: 404 });
   }
+  if (!(await resolveRecordingCapabilities(supabase, transcript.recording_id)).runPersonalAi) {
+    return NextResponse.json({ error: "AI zpracování není povoleno." }, { status: 403 });
+  }
 
   try {
+    await scheduleCaptureTimelineIntent(supabase, transcript.id, user);
     const result = await scheduleAutomaticOutputs({
       admin: createAdminClient(),
       transcriptId: transcript.id,
-      userId: user.id
+      userId: user.id,
+      allowedProcessingTypes: resolveAutomaticOutputTypes(user.user_metadata)
     });
 
     return NextResponse.json(result);

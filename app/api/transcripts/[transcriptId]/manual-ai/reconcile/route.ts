@@ -4,6 +4,7 @@ import { runManualAiJob } from "@/lib/ai/manual-processing.server";
 import { reconcileManualAiJob } from "@/lib/ai/manual-reconciliation.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
 
 // Next requires a statically analyzable literal; the runtime contract test locks it to the shared budget.
 export const maxDuration = 300;
@@ -25,9 +26,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) return NextResponse.json({ error: "Nejste přihlášený." }, { status: 401 });
-  const { data: transcript } = await supabase.from("transcripts").select("id")
-    .eq("id", params.data.transcriptId).eq("user_id", user.id).maybeSingle<{ id: string }>();
+  const { data: transcript } = await supabase.from("transcripts").select("id,recording_id")
+    .eq("id", params.data.transcriptId).eq("user_id", user.id).maybeSingle<{ id: string; recording_id: string }>();
   if (!transcript) return NextResponse.json({ error: "Přepis nebyl nalezen." }, { status: 404 });
+  if (!(await resolveRecordingCapabilities(supabase, transcript.recording_id)).runPersonalAi) {
+    return NextResponse.json({ error: "AI zpracování není povoleno." }, { status: 403 });
+  }
 
   const admin = createAdminClient();
   try {

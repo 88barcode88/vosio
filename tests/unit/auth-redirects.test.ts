@@ -88,7 +88,7 @@ describe("getSafeNextPath", () => {
 
 describe("GET /auth/callback", () => {
   beforeEach(() => {
-    exchangeCodeForSession.mockReset();
+    exchangeCodeForSession.mockReset().mockResolvedValue({ error: null });
   });
 
   it("keeps a query-decoded malicious redirect on the request origin", async () => {
@@ -109,5 +109,12 @@ describe("GET /auth/callback", () => {
 
     expect(exchangeCodeForSession).toHaveBeenCalledWith("safe-code");
     expect(response.headers.get("location")).toBe(`${requestOrigin}/recordings/123?tab=ai`);
+  });
+
+  it("allowlists invitation fragments and rejects normalization and arbitrary-route redirects", () => {
+    expect(getSafeNextPath("/invitations/accept#token=example")).toBe("/invitations/accept#token=example");
+    for (const path of ["/\\evil.test", "/%5cevil.test", "/unknown", "/auth/callback", "/\nevil.test", "/recordings/../../auth/callback"]) {
+      expect(getSafeNextPath(path)).toBe("/");
+    }
   });
 });

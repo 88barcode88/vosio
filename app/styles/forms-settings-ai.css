@@ -1301,3 +1301,36 @@
   background: var(--accent-bg);
   font-weight: 800;
 }
+/* Sharing controls reuse the approved warm surface tokens and bounded touch targets. */
+.capture-scope-picker, .bulk-recording-sharing {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.capture-scope-picker label, .bulk-recording-sharing label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+.capture-scope-picker select, .bulk-recording-sharing select,
+.capture-scope-picker button, .bulk-recording-sharing button {
+  min-height: 44px;
+  max-width: 100%;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.capture-scope-picker :focus-visible, .bulk-recording-sharing :focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+.bulk-recording-sharing fieldset { min-width: 0; }

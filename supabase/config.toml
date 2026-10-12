@@ -416,3 +416,7 @@ enabled = true
 # The function authenticates every request with its own opaque scheduler token.
 [functions.trash-retention]
 verify_jwt = false
+
+# The MCP handler authenticates its own opaque OAuth tokens and current user permissions.
+[functions.vosio-mcp]
+verify_jwt = false

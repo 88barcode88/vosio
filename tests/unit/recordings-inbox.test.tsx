@@ -8,6 +8,9 @@ import { createSaveError, type SaveAction, type SaveActionState } from "@/lib/fo
 import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
 import type { RecordingStatusCounts } from "@/lib/recordings/queries";
 import type { ActiveRecordingStatus, RecordingRow, RecordingStatus } from "@/lib/recordings/types";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 vi.mock("@/components/live-recording-recovery-panel", () => ({
   LiveRecordingRecoveryPanel: () => null
@@ -60,6 +63,7 @@ const organizationActions = {
 function createRecording(id: string, status: RecordingStatus, clientId: string | null): RecordingRow {
   return {
     client_id: clientId,
+    capabilities: { ...NO_RECORDING_CAPABILITIES, read: true, editTitle: true, delete: true },
     created_at: timestamp,
     duration_seconds: 65,
     error_message: null,
