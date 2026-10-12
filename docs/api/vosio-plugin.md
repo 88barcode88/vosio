@@ -4,7 +4,7 @@ Plugin `vosio@vosio-community` je společný balíček skills pro Codex. Marketp
 
 Balíček neobsahuje MCP URL, přihlašovací údaje, osobní data ani reference na privátní repozitář. Onboarding skill `setup` vyžádá uživatelem zvolený HTTPS webový origin. Pomocný Node skript `plugins/vosio/scripts/discover.mjs` načte bez cookies a bez přesměrování nejvýše 16 kB veřejné OAuth konfigurace; vyžaduje přesný issuer/authorize endpoint zvoleného originu, canonical HTTPS Function token endpoint, automatickou registraci, revoke a S256. Při chybě nemění konfiguraci a nesubstituuje jinou instalaci.
 
-Průvodce používá `codex mcp add --url` a osobní OAuth uložené nativním klientem. Nedělá lokální MCP ani proxy a neukládá tokeny do balíčku. Deterministický název `vosio-<SHA-256 prefix endpointu>` drží různé resource URL v samostatných entries. Existující entry lze pouze znovu použít po ověření shodného transportu a URL. Přepsání nebo odebrání musí být samostatný požadavek uživatele. Skills musí určit konkrétní instalaci před každým úkolem a nesmějí zdrojovému textu dovolit přepnout server.
+Průvodce používá `codex mcp add --url` a osobní OAuth uložené nativním klientem. Nedělá lokální MCP ani proxy a neukládá tokeny do balíčku. Při podpoře lokálním Node používá `--use-system-ca` pro systémové CA bez vypnutí TLS ověření. Deterministický název `vosio-<SHA-256 prefix endpointu>` drží různé resource URL v samostatných entries. Existující entry lze pouze znovu použít po ověření shodného transportu a URL. Přepsání nebo odebrání musí být samostatný požadavek uživatele. Skills musí určit konkrétní instalaci před každým úkolem a nesmějí zdrojovému textu dovolit přepnout server.
 
 ## Serverová hranice
 

@@ -14,7 +14,7 @@ Veřejný plugin `vosio@vosio-community` nemá přednastavenou instalaci ani kl�
 Po instalaci spustíte české nastavení, zadáte adresu svého Vosia a osobně se přihlásíte.
 
 ```powershell
-codex.cmd plugin marketplace add 88barcode88/vosio --ref plugin-v0.2.0 --sparse .agents/plugins --sparse plugins/vosio
+codex.cmd plugin marketplace add 88barcode88/vosio --ref plugin-v0.2.1 --sparse .agents/plugins --sparse plugins/vosio
 codex.cmd plugin add vosio@vosio-community
 ```
 
