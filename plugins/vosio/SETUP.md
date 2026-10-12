@@ -4,7 +4,7 @@ Tento postup provádí správce vlastní instalace jednou. Běžný uživatel pa
 
 ## 1. Připravte aplikaci a databázi
 
-Použijte celou aktuální veřejnou aplikaci a všechny migrace v `supabase/migrations`, v pořadí podle názvu. Pro nový prázdný projekt postupujte podle [Supabase návodu](../../supabase/README.md). U existující databáze nejprve ověřte migrační historii a schéma; nepoužívejte reset ani nepřepisujte už aplikované migrace.
+Použijte celou aktuální veřejnou aplikaci a všechny migrace v `supabase/migrations`, v pořadí podle názvu. Pro nový prázdný projekt postupujte podle [Supabase návodu](https://github.com/88barcode88/vosio/blob/main/supabase/README.md). U existující databáze nejprve ověřte migrační historii a schéma; nepoužívejte reset ani nepřepisujte už aplikované migrace.
 
 Nasazení webu musí mít vlastní kanonickou HTTPS adresu a běžné Supabase/provider proměnné z `.env.example`. `NEXT_PUBLIC_APP_URL` je adresa tohoto webu. MCP secrets patří do Edge Function, nikoli do Vercelu nebo prohlížeče. Zdroj obsahuje webové stránky `/mcp/consent`, `/mcp/upstream-consent` a `/mcp/connections` i discovery a OAuth adaptéry.
 
@@ -110,6 +110,6 @@ Vypnutí je `mcp_installation_v1('enable', '{"enabled":false}')`; custody ani na
 
 Pro správce je také dostupný `npm run setup:mcp`. Bez `--apply`, `--enable` nebo `--disable` provede preflight/dry-run, nikoli zápis. Hosted režim používá scoped `SUPABASE_ACCESS_TOKEN` pouze z process environment, `--project-ref`, `--web-origin`, `--supabase-url` a owned `--receipt` pod `.tmp/mcp-setup`; secrets se nevypisují. `--apply` je samostatný opt-in, který může vytvořit klienta a první secrets. Ruční dashboard postup výše není pokyn k jeho dalšímu spuštění proti aktivní instalaci. Po nejistém výsledku se nejprve rekonciluje receipt.
 
-Self-hosted Supabase musí prokázat kompatibilní Auth OAuth, sessions/JWT, web cookie bridge, veřejný issuer, gateway cesty a Edge Runtime. Použijte `--service-url` a `--self-hosted-preflight` pouze po této kontrole; helper neaktualizuje platformu ani neslibuje kompatibilitu z čísla verze. Přesný kontrakt a preflight formát jsou v [MCP API dokumentaci](../../docs/api/mcp-plugin.md).
+Self-hosted Supabase musí prokázat kompatibilní Auth OAuth, sessions/JWT, web cookie bridge, veřejný issuer, gateway cesty a Edge Runtime. Použijte `--service-url` a `--self-hosted-preflight` pouze po této kontrole; helper neaktualizuje platformu ani neslibuje kompatibilitu z čísla verze. Přesný kontrakt a preflight formát jsou v [MCP API dokumentaci](https://github.com/88barcode88/vosio/blob/main/docs/api/mcp-plugin.md).
 
 Oficiální zdroje: [Supabase OAuth server](https://supabase.com/docs/guides/auth/oauth-server/getting-started), [Function secrets](https://supabase.com/docs/guides/functions/secrets), [Function authentication](https://supabase.com/docs/guides/functions/auth).
