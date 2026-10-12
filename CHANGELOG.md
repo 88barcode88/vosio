@@ -23,6 +23,13 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 - Next.js a dependency lock zahrnují ověřené bezpečnostní opravy; produkční audit převzatého locku je bez nálezů.
 - Původní veřejná baseline a její správná česká diakritika zůstávají zachované; nepřepisuje se historie existujících instalací.
 
+### Release verification
+
+- Typecheck, lint, 2 333 unit testů, produkční build a MCP/Deno kontroly prošly. Produkční dependency audit má nula nálezů.
+- Nový řetězec všech 41 migrací i upgrade 17 + 24 prošly na disposable PostgreSQL; 12 pgTAP souborů ověřilo 1 146 assertions. Desktop/mobile fixture testy: 48 prošlo.
+- MCP má 67 ověřených SQL případů a 9 skutečných závodů; recovery prošlo 12 skupinami. Setup čtyř isolation fixtures prošel, jejich permutace čekají na `isolationtester`.
+- [Český MCP setup](plugins/vosio/SETUP.md) a [univerzální plugin](plugins/vosio/README.md) používají vlastní instalaci a osobní OAuth. Zveřejnění zdroje neaplikuje migrace ani nenasazuje web/Function na vzdálený target; živý Auth/Storage/provider běh se ověřuje samostatně.
+
 ## [0.3.1] - 2026-09-05
 
 ### Changed
