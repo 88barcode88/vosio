@@ -41,7 +41,7 @@ function createCompleteSettingsForm(region: "eu" | "global") {
 }
 
 describe("settings form", () => {
-  it("updates a storage preference without dropping the saved temperature or unrelated metadata", async () => {
+  it("updates a storage preference while fixing new temperature to 0.3 and preserving unrelated metadata", async () => {
     const updateUser = vi.fn().mockResolvedValue({ error: null });
     mocks.createClient.mockResolvedValue({
       auth: {
@@ -89,13 +89,14 @@ describe("settings form", () => {
         display_name: "Marie",
         onboarding_complete: true,
         vosio_settings: {
-          aiTemperature: 0.7,
+          aiTemperature: 0.3,
+          defaultReasoningEffort: "medium",
           audioRetentionPolicy: "delete_audio_after_transcription",
           autoProcessAfterTranscription: true,
           autoTimelineAfterTranscription: true,
           autoProcessingTypes: ["summary", "action_items"],
           automaticOutputTypes: [],
-          defaultOpenaiModel: "gpt-5.6-terra",
+          defaultOpenaiModel: "gpt-6.1-sol",
           outputLanguage: "cs",
           sonioxRegion: "eu",
           sonioxRealtimeLanguage: "de",
@@ -211,7 +212,7 @@ describe("settings form", () => {
   });
 
   it("uses the default AI temperature when the field is missing", () => {
-    expect(parseSettingsForm(new FormData()).aiTemperature).toBe(0.2);
+    expect(parseSettingsForm(new FormData()).aiTemperature).toBe(0.3);
   });
 
   it("defaults legacy form submissions to automatic Supabase plan detection", () => {

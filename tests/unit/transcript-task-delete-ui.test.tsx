@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StructuredItemsContent } from "@/components/transcript-tabs/structured-items-content";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
+let mayDelete = true;
+vi.mock("@/components/recording-capability-context", () => ({ useRecordingCapabilities: () => ({ capabilities: { delete: mayDelete, editTaskStatus: mayDelete } }) }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/recordings/detail",
@@ -50,6 +52,7 @@ const siblingTask = {
 };
 
 beforeEach(() => {
+  mayDelete = true;
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement("div");
   document.body.append(container);
@@ -66,6 +69,14 @@ afterEach(async () => {
 });
 
 describe("individual structured task delete", () => {
+  it("disables destructive controls and sends no request for readers/editors", async () => {
+    mayDelete = false;
+    await act(async () => root.render(<StructuredItemsContent items={items} onOpenEvidence={vi.fn()} />));
+    const button = container.querySelector<HTMLButtonElement>(".structured-task-delete")!;
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("shows one compact trash icon per task and no whole checklist delete", async () => {
     await act(async () => root.render(
       <StructuredItemsContent items={items} onOpenEvidence={vi.fn()} />

@@ -20,6 +20,15 @@ const navigationMocks = vi.hoisted(() => ({
   refresh: vi.fn()
 }));
 
+const captureMocks = vi.hoisted(() => ({
+  getCaptureState: vi.fn(async () => ({ captureRevision: 4 }))
+}));
+vi.mock("@/lib/supabase/browser", () => ({ createClient: () => ({}) }));
+vi.mock("@/lib/recordings/capture", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/recordings/capture")>(),
+  getCaptureState: captureMocks.getCaptureState
+}));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => navigationMocks
 }));
@@ -42,6 +51,7 @@ beforeEach(() => {
   root = createRoot(container);
   navigationMocks.push.mockReset();
   navigationMocks.refresh.mockReset();
+  captureMocks.getCaptureState.mockClear();
   window.history.replaceState(null, "", "/");
 });
 
@@ -167,6 +177,9 @@ describe("transcript search warning contract", () => {
   });
 
   it("keeps recovery successful and carries the warning to the recovered recording", async () => {
+    const requestLock = vi.fn(async (name: string, _options: LockOptions, callback: LockGrantedCallback<unknown>) =>
+      callback({ name, mode: "exclusive" } as Lock));
+    vi.stubGlobal("navigator", { locks: { request: requestLock } });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         json: vi.fn().mockResolvedValue({
@@ -174,6 +187,9 @@ describe("transcript search warning contract", () => {
             created_at: "2026-08-05T10:00:00.000Z",
             duration_seconds: 12,
             id: "recording-2",
+            captureRevision: 3,
+            canRecover: true,
+            phase: null,
             segment_count: 0,
             storage_bytes: 0,
             title: "Obnovitelný call",
@@ -195,7 +211,8 @@ describe("transcript search warning contract", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    const button = container?.querySelector<HTMLButtonElement>("button");
+    await act(async () => container?.querySelector<HTMLElement>(".live-recovery-popover > summary")?.click());
+    const button = container?.querySelector<HTMLButtonElement>(".live-recovery-panel article button");
 
     await act(async () => {
       button?.click();
@@ -203,6 +220,13 @@ describe("transcript search warning contract", () => {
       await Promise.resolve();
     });
 
+    expect(captureMocks.getCaptureState).toHaveBeenCalledExactlyOnceWith({}, "recording-2");
+    expect(requestLock).toHaveBeenCalledExactlyOnceWith("vosio-durable-recording:recording-2",
+      { mode: "exclusive", ifAvailable: true }, expect.any(Function));
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/recordings/recording-2/recover-live");
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      captureRevision: 4, requestId: expect.any(String)
+    });
     expect(container?.querySelector('[role="status"]')?.textContent)
       .toBe(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
     expect(navigationMocks.push).toHaveBeenCalledWith(
@@ -229,7 +253,7 @@ describe("transcript search warning contract", () => {
       await Promise.resolve();
     });
 
-    expect(container?.textContent).toContain("Stav Soniox jobu: hotovo.");
+    expect(container?.textContent).toContain("Stav přepisu: hotovo.");
     expect(container?.querySelector('[role="status"]')?.textContent)
       .toBe(TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE);
     expect(navigationMocks.refresh).toHaveBeenCalled();
@@ -237,7 +261,7 @@ describe("transcript search warning contract", () => {
 
   it("checks immediately after returning to the tab and clears a stale lookup error", async () => {
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    const fetchMock = vi.fn()
+    const statusMock = vi.fn()
       .mockResolvedValueOnce({
         json: vi.fn().mockResolvedValue({
           error: "Nahrávku se teď nepodařilo načíst. Zkuste kontrolu znovu."
@@ -248,6 +272,8 @@ describe("transcript search warning contract", () => {
         json: vi.fn().mockResolvedValue({ job: { status: "done" }, transcript: { id: "transcript-4" } }),
         ok: true
       });
+    const fetchMock = vi.fn((url: unknown) => String(url).endsWith("/reconcile")
+      ? Promise.resolve({ ok: false, status: 503 }) : statusMock());
     vi.stubGlobal("fetch", fetchMock);
 
     await renderClient(createElement(TranscriptionControls, {
@@ -267,7 +293,8 @@ describe("transcript search warning contract", () => {
       await Promise.resolve();
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(statusMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(container?.textContent).not.toContain("Nahrávku se teď nepodařilo načíst");
     expect(container?.textContent).toContain("Přepis je hotový");
     expect(navigationMocks.refresh).toHaveBeenCalled();

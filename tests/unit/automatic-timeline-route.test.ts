@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 
 const mocks = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
@@ -10,7 +11,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 vi.mock("@/lib/ai/automatic-timeline.server", () => ({
-  scheduleAutomaticOutputs: mocks.scheduleAutomaticOutputs
+  scheduleAutomaticOutputs: mocks.scheduleAutomaticOutputs,
+  scheduleCaptureTimelineIntent: vi.fn(async () => false)
 }));
 
 import { POST } from "@/../app/api/transcripts/[transcriptId]/automatic-timeline/route";
@@ -46,10 +48,11 @@ describe("automatic timeline route", () => {
   });
 
   it("ignores browser-supplied provider configuration and reconciles only the owned persisted job", async () => {
-    const transcriptQuery = createTranscriptQuery({ data: { id: transcriptId }, error: null });
+    const transcriptQuery = createTranscriptQuery({ data: { id: transcriptId, recording_id: "recording-id" }, error: null });
     mocks.createClient.mockResolvedValue({
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "user-id" } }, error: null })) },
-      from: vi.fn(() => transcriptQuery)
+      from: vi.fn(() => transcriptQuery),
+      rpc: vi.fn().mockResolvedValue({ data: { ...NO_RECORDING_CAPABILITIES, read: true, runPersonalAi: true }, error: null })
     });
     const admin = { serviceRole: true };
     mocks.createAdminClient.mockReturnValue(admin);
@@ -65,8 +68,19 @@ describe("automatic timeline route", () => {
       admin,
       transcriptId,
       userId: "user-id"
+      ,allowedProcessingTypes: []
     });
     expect(JSON.stringify(mocks.scheduleAutomaticOutputs.mock.calls)).not.toContain("attacker");
+  });
+
+  it.each(["reader", "editor", "foreign-founder", "revoked"])("never creates a provider/admin path for %s", async () => {
+    const query = createTranscriptQuery({ data: { id: transcriptId, recording_id: "shared" }, error: null });
+    mocks.createClient.mockResolvedValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "author" } }, error: null }) },
+      from: vi.fn(() => query), rpc: vi.fn().mockResolvedValue({ data: { ...NO_RECORDING_CAPABILITIES, read: true }, error: null }) });
+    const response = await POST(new NextRequest("http://localhost/test", { method: "POST" }), { params: Promise.resolve({ transcriptId }) });
+    expect(response.status).toBe(403);
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
+    expect(mocks.scheduleAutomaticOutputs).not.toHaveBeenCalled();
   });
 
   it("does not cross the admin boundary for an unowned transcript", async () => {

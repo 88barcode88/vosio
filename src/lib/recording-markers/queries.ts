@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllRows } from "@/lib/supabase/pagination";
 import {
   pickRecordingMarkerRow,
   RECORDING_MARKER_COLUMNS,
@@ -10,17 +11,14 @@ export async function listRecordingMarkers(
   supabase: SupabaseClient,
   recordingId: string
 ): Promise<RecordingMarkerRow[]> {
-  const { data, error } = await supabase
+  const rows = await fetchAllRows<RecordingMarkerRow>("Unable to load recording markers", (from, to) => supabase
     .from("recording_markers")
-    .select(RECORDING_MARKER_COLUMNS)
+    .select(RECORDING_MARKER_COLUMNS.split(",").filter((column) => column !== "user_id").join(","))
     .eq("recording_id", recordingId)
     .order("offset_ms", { ascending: true })
     .order("id", { ascending: true })
-    .returns<RecordingMarkerRow[]>();
+    .range(from, to)
+    .returns<RecordingMarkerRow[]>());
 
-  if (error) {
-    throw new Error(`Unable to load recording markers: ${error.message}`);
-  }
-
-  return (data ?? []).map(pickRecordingMarkerRow);
+  return rows.map(pickRecordingMarkerRow);
 }

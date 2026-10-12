@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   summarizeAiUsageRows,
-  summarizeRecordingUsageRows,
   summarizeSonioxUsageRows,
   type AiUsageRow,
-  type RecordingUsageRow,
+  type RecordingDurationRow,
   type TranscriptionUsageRow
 } from "@/lib/usage/summary";
 
@@ -12,6 +11,8 @@ const createdAt = "2026-05-24T10:00:00.000Z";
 
 describe("usage summary calculations", () => {
   it.each([
+    ["gpt-6.1-sol", 12],
+    ["gpt-6-astra", 60],
     ["gpt-5.6-sol", 24],
     ["gpt-5.6-terra", 14],
     ["gpt-5.6-luna", 1.4],
@@ -20,7 +21,7 @@ describe("usage summary calculations", () => {
     ["gemini-3.8-flash", 4.5],
     ["mistral-small-2603", 0.75],
     ["mistral-large-2512", 2]
-  ])("prices %s from the current catalog", (model, expectedCost) => {
+  ])("prices current or historical model %s without preference remapping", (model, expectedCost) => {
     const summary = summarizeAiUsageRows([{
       created_at: createdAt,
       input_token_count: 1_000_000,
@@ -60,34 +61,6 @@ describe("usage summary calculations", () => {
     expect(summary.unpricedModelIds).toEqual(["custom-model"]);
   });
 
-  it("keeps deleted recordings in month usage counts and tracks metadata coverage", () => {
-    const rows: RecordingUsageRow[] = [
-      {
-        created_at: createdAt,
-        duration_seconds: 120,
-        file_size_bytes: 2048,
-        id: "recording-1",
-        status: "completed"
-      },
-      {
-        created_at: createdAt,
-        duration_seconds: null,
-        file_size_bytes: null,
-        id: "recording-2",
-        status: "deleted"
-      }
-    ];
-
-    const summary = summarizeRecordingUsageRows(rows);
-
-    expect(summary.count).toBe(2);
-    expect(summary.deletedCount).toBe(1);
-    expect(summary.totalDurationSeconds).toBe(120);
-    expect(summary.totalFileSizeBytes).toBe(2048);
-    expect(summary.withDurationCount).toBe(1);
-    expect(summary.withFileSizeCount).toBe(1);
-  });
-
   it("estimates Soniox async and realtime cost only for jobs with known duration", () => {
     const jobs: TranscriptionUsageRow[] = [
       {
@@ -112,20 +85,14 @@ describe("usage summary calculations", () => {
         status: "done"
       }
     ];
-    const recordings: RecordingUsageRow[] = [
+    const recordings: RecordingDurationRow[] = [
       {
-        created_at: createdAt,
         duration_seconds: 3600,
-        file_size_bytes: 2048,
-        id: "recording-1",
-        status: "completed"
+        id: "recording-1"
       },
       {
-        created_at: createdAt,
         duration_seconds: 1800,
-        file_size_bytes: 1024,
-        id: "recording-2",
-        status: "completed"
+        id: "recording-2"
       }
     ];
 

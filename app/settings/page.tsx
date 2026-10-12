@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { WorkspaceLoading } from "@/components/workspace/loading";
 import { getInstallationStatus } from "@/lib/installation-status.server";
 import { getRecordingStorageConfig } from "@/lib/recordings/storage-config.server";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
@@ -14,14 +15,14 @@ type SettingsPageProps = {
 // AccountEmailUnavailable renders a stable authenticated error without exposing a password form.
 function AccountEmailUnavailable() {
   return (
-    <main className="content-area content-area-document">
+    <WorkspaceLoading view="settings">
       <section className="utility-panel settings-panel" aria-label="Nastavení účtu">
         <div className="settings-section">
           <h1>Nastavení účtu není dostupné</h1>
           <p role="alert">Přihlášený účet nemá použitelný e-mail. Obraťte se na správce účtu.</p>
         </div>
       </section>
-    </main>
+    </WorkspaceLoading>
   );
 }
 

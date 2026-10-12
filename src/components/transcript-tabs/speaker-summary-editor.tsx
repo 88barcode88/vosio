@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRecordingCapabilities } from "@/components/recording-capability-context";
 import {
   getSpeakerClassName,
   getSpeakerSummaryMeta
@@ -39,6 +40,9 @@ export function SpeakerSummaryEditor({
   speakers: TranscriptSpeakerSummary[];
   transcriptId: string;
 }) {
+  const { capabilities, speakerVersions } = useRecordingCapabilities();
+  const versionsRef = useRef({ ...speakerVersions });
+  const conflictsRef = useRef(new Set<string>());
   const [drafts, setDrafts] = useState(speakers);
   const [statuses, setStatuses] = useState<Record<string, SaveStatus>>({});
   const draftsRef = useRef(speakers);
@@ -64,8 +68,10 @@ export function SpeakerSummaryEditor({
     setDrafts(nextDrafts);
   }
 
-  // enqueueSave serializes whole-JSON writes and applies a settlement only to its matching revision.
-  function enqueueSave(speakerId: string) {
+  // Queue slot patches with the latest confirmed DB version; conflicts require explicit retry.
+  function enqueueSave(speakerId: string, retry = false) {
+    if (!capabilities.editSpeakers || (conflictsRef.current.has(speakerId) && !retry)) return;
+    if (retry) conflictsRef.current.delete(speakerId);
     const speaker = draftsRef.current.find((candidate) => candidate.id === speakerId);
 
     if (!speaker) {
@@ -75,6 +81,7 @@ export function SpeakerSummaryEditor({
     const revision = (revisionsRef.current[speakerId] ?? 0) + 1;
     revisionsRef.current[speakerId] = revision;
     const input: TranscriptSpeakerSaveInput = {
+      expectedVersion: versionsRef.current[speakerId] ?? 0,
       name: speaker.name?.trim() || null,
       revision,
       role: speaker.role,
@@ -87,6 +94,8 @@ export function SpeakerSummaryEditor({
     }));
 
     queueRef.current = queueRef.current.catch(() => undefined).then(async () => {
+      if (conflictsRef.current.has(speakerId)) return;
+      input.expectedVersion = versionsRef.current[speakerId] ?? 0;
       let result: TranscriptSpeakerSaveResult;
       try {
         result = await saveTranscriptSpeakerAutosaveAction(input);
@@ -94,10 +103,17 @@ export function SpeakerSummaryEditor({
         result = { message: SPEAKER_SAVE_ERROR, revision, status: "error" };
       }
 
-      if (result.status === "success") {
+      if (result.status === "success" || result.status === "conflict") {
+        versionsRef.current[speakerId] = result.version;
         confirmedRef.current = confirmedRef.current.map((candidate) => candidate.id === speakerId
           ? result.savedSpeaker
           : candidate);
+      }
+      if (result.status === "conflict") {
+        conflictsRef.current.add(speakerId);
+        setStatuses((current) => ({ ...current, [speakerId]: { kind: "error", revision,
+          message: `${result.message} Aktuálně: ${result.savedSpeaker.name ?? result.savedSpeaker.label} · ${result.savedSpeaker.roleLabel}.` } }));
+        return;
       }
 
       if (revisionsRef.current[speakerId] !== result.revision) {
@@ -137,6 +153,7 @@ export function SpeakerSummaryEditor({
             <label className="speaker-summary-field">
               <span>Jméno</span>
               <input
+                disabled={!capabilities.editSpeakers}
                 aria-label={`Jméno ${speaker.label}`}
                 autoComplete="off"
                 maxLength={80}
@@ -153,6 +170,7 @@ export function SpeakerSummaryEditor({
             <label className="speaker-summary-field">
               <span>Role</span>
               <select
+                disabled={!capabilities.editSpeakers}
                 aria-label={`Role ${speaker.label}`}
                 onChange={(event) => {
                   updateDraft(speaker.id, { role: event.target.value as TranscriptSpeakerRole });
@@ -171,7 +189,7 @@ export function SpeakerSummaryEditor({
               {status?.kind === "error" ? (
                 <button
                   aria-label={`Zkusit znovu uložit ${speaker.label}`}
-                  onClick={() => enqueueSave(speaker.id)}
+                  onClick={() => enqueueSave(speaker.id, true)}
                   type="button"
                 >
                   Zkusit znovu

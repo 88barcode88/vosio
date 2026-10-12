@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Coffee, FileAudio, FileText, LogOut, Menu, Plus, Settings2, X } from "lucide-react";
@@ -100,6 +100,7 @@ export function WorkspaceNavigation({
 
   return (
     <nav className="nav-list" aria-label="Hlavní sekce">
+      <NewRecordingNavigationLink compact={compact} hrefOverrides={hrefOverrides} />
       {primaryNavigationItems.map((item) => {
         const isActive = isNavigationItemActive(item, activeView, pathname);
         const isPending = pendingHref === item.href;
@@ -110,8 +111,8 @@ export function WorkspaceNavigation({
         ].filter(Boolean).join(" ");
 
         return (
-          <Fragment key={item.label}>
             <Link
+              key={item.label}
               aria-label={compact ? item.label : undefined}
               aria-current={isActive ? "page" : undefined}
               className={className}
@@ -125,10 +126,6 @@ export function WorkspaceNavigation({
               <item.icon size={16} />
               <span className="navigation-label">{item.label}</span>
             </Link>
-            {item.href === "/recordings" ? (
-              <NewRecordingNavigationLink compact={compact} hrefOverrides={hrefOverrides} />
-            ) : null}
-          </Fragment>
         );
       })}
     </nav>
@@ -231,7 +228,7 @@ function MobileMoreDrawer({
           <span>Workspace a účet</span>
         </div>
         <button aria-label="Zavřít další možnosti" className="mobile-more-close" onClick={onClose} type="button">
-          <X size={18} />
+          <X aria-hidden="true" size={15} />
         </button>
       </header>
 
@@ -251,7 +248,7 @@ function MobileMoreDrawer({
                 onClose();
               }}
             >
-              <item.icon size={18} />
+              <item.icon aria-hidden="true" size={16} />
               {item.label}
             </Link>
           );
@@ -262,7 +259,7 @@ function MobileMoreDrawer({
           rel="noopener noreferrer"
           target="_blank"
         >
-          <Coffee size={18} />
+          <Coffee aria-hidden="true" size={16} />
           Kup mi kafe
         </a>
       </nav>
@@ -326,7 +323,7 @@ export function MobileNav({
                 setPendingHref(item.href);
               }}
             >
-              <item.icon size={18} />
+              <item.icon aria-hidden="true" size={16} />
               <span>{item.label}</span>
             </Link>
           );
@@ -343,7 +340,7 @@ export function MobileNav({
           onClick={() => setMoreOpen(true)}
           type="button"
         >
-          <Menu size={18} />
+          <Menu aria-hidden="true" size={15} />
           <span>Více</span>
         </button>
       </nav>

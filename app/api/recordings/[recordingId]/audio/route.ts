@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAudioPlaybackEligibility } from "@/lib/recordings/audio-playback";
 import { RECORDINGS_BUCKET } from "@/lib/recordings/types";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthorizedAudioLocator } from "@/lib/recordings/audio-locator.server";
 
 const routeParamsSchema = z.object({
   recordingId: z.uuid()
@@ -14,13 +15,6 @@ type RouteContext = {
   params: Promise<{
     recordingId: string;
   }>;
-};
-
-type PlaybackRecording = {
-  id: string;
-  mime_type: string | null;
-  storage_path: string | null;
-  user_id: string;
 };
 
 type SettledOperation<T> =
@@ -61,7 +55,7 @@ function isValidSignedAudioUrl(value: unknown): value is string {
   }
 }
 
-// GET signs one user-owned audio object only after request-scoped auth and ownership checks.
+// GET authorizes the exact recording then signs its canonical object through session Storage RLS.
 export async function GET(_request: NextRequest, context: RouteContext) {
   const params = routeParamsSchema.safeParse(await context.params);
 
@@ -91,24 +85,13 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return privateJson({ error: "Nejste přihlášený." }, 401);
   }
 
-  const recordingResult = await settleOperation(() => supabase
-    .from("recordings")
-    .select("id,user_id,storage_path,mime_type")
-    .eq("id", params.data.recordingId)
-    .eq("user_id", user.id)
-    .maybeSingle());
+  const recordingResult = await settleOperation(() => getAuthorizedAudioLocator(supabase, params.data.recordingId));
 
   if (!recordingResult.ok) {
     return privateJson({ error: "Audio se nepodařilo načíst." }, 500);
   }
 
-  const { data, error } = recordingResult.value;
-
-  if (error) {
-    return privateJson({ error: "Audio se nepodařilo načíst." }, 500);
-  }
-
-  const recording = data as PlaybackRecording | null;
+  const recording = recordingResult.value;
 
   if (!recording) {
     return privateJson({ error: "Nahrávka nebyla nalezena." }, 404);

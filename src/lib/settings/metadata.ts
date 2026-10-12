@@ -34,7 +34,10 @@ export function getUserSettingsFromMetadata(metadata: User["user_metadata"]): Us
 
   return {
     ...defaultUserSettings,
-    ...parsed.data
+    ...parsed.data,
+    aiTemperature: 0.3,
+    defaultReasoningEffort: parsed.data.defaultReasoningEffort
+      ?? (candidate?.defaultOpenaiModel === "gpt-6-astra-low" ? "low" : "medium")
   };
 }
 

@@ -14,7 +14,8 @@ export default [
       "node_modules/**",
       "playwright-report/**",
       "test-results/**",
-      "tsconfig.tsbuildinfo"
+      "tsconfig.tsbuildinfo",
+      "supabase/functions/vosio-mcp/**"
     ]
   },
   js.configs.recommended,

@@ -1,4 +1,8 @@
 const trashErrorMessages = {
+  forbidden: "Tato akce není povolena nebo nahrávka již není dostupná.",
+  conflict: "Stav nahrávky se změnil nebo probíhá mazání. Obnovte stránku a zkuste to znovu.",
+  internal: "Akci se nepodařilo dokončit. Zkuste to znovu.",
+  invalid_item: "Požadavek nebyl platný. Obnovte stránku a zkuste to znovu.",
   invalid_purge: "Požadavek na trvalé smazání nebyl platný.",
   invalid_restore: "Požadavek na obnovení nebyl platný.",
   purge_failed: "Nahrávku se nepodařilo trvale smazat. Zkuste to znovu.",

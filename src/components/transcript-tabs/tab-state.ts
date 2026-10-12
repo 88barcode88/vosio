@@ -84,7 +84,7 @@ export function getTranscriptStatusLabel(
     created: "Nahrávka se připravuje",
     deleted: "Nahrávka je v koši",
     failed: "Přepis selhal",
-    transcribing: "Soniox zpracovává přepis",
+    transcribing: "Přepis zatím není dokončený",
     uploaded: "Připraveno ke spuštění přepisu",
     uploading: "Audio se nahrává"
   };

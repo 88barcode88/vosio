@@ -93,7 +93,7 @@ describe("Gemini client generation config", () => {
     expectGeminiContentOrder(body, context.messages.map((message) => message.content));
   });
 
-  it("uses Gemini 3.6 thinking without deprecated temperature", () => {
+  it("uses Gemini 3.6 thinking with supported temperature", () => {
     expect(createGeminiGenerationConfig({
       model: "gemini-3.6-flash",
       outputSchema: { type: "object" },
@@ -101,6 +101,7 @@ describe("Gemini client generation config", () => {
       temperature: 0.2
     })).toEqual({
       responseMimeType: "application/json",
+      temperature: 0.2,
       thinkingConfig: {
         thinkingLevel: "medium"
       }

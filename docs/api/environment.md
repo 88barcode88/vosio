@@ -28,7 +28,7 @@ Vosio expects the required variables below. `GEMINI_API_KEY` and `MISTRAL_API_KE
 | `SONIOX_API_KEY` | Server only | Creates async transcription jobs and mints temporary realtime keys. Never expose it to the browser. |
 | `OPENAI_API_KEY` | Server only | Runs OpenAI AI processing over completed transcripts. Models are selected in the app, not through Vercel. |
 | `GEMINI_API_KEY` | Server only, optional | Required only when the app user selects a Gemini model for AI processing. Never expose it to the browser. |
-| `MISTRAL_API_KEY` | Server only, optional | Required only when the app user selects a Mistral model for AI processing. Never expose it to the browser. |
+| `MISTRAL_API_KEY` | Server only, optional | Required for Mistral manual/automatic processing and chat. Never expose it to the browser. |
 
 ## Safe configuration diagnostics
 
@@ -84,14 +84,14 @@ Vosio expects the required variables below. `GEMINI_API_KEY` and `MISTRAL_API_KE
 - Optional.
 - Required only when users select Gemini models in `/settings` or the recording AI tab.
 - Server-only Google Gemini API key.
-- Gemini options are `gemini-3.6-flash` and `gemini-3.8-flash`, both with thinking level `medium`; provider billing remains the source of truth.
+- Gemini options are `gemini-3.6-flash` and `gemini-3.8-flash`, both thinking `medium`. Gemini 3.8 catalog pricing is introductory through 2026-12-31; verify provider billing.
 - Paid Gemini API content is not used to improve Google's products according to the current Google AI pricing/data-use table; do not use Gemini Free tier for sensitive production call content.
 
 `MISTRAL_API_KEY`
 
 - Optional server-only paid API key for `mistral-small-2603` and `mistral-large-2512`.
-- Use the commercial API, not a consumer subscription or preview model, for sensitive transcripts. The operator must verify account terms, data-use opt-ins and any retention requirement; key presence does not prove these settings or funded model access.
-- Missing key maps to a safe configuration error. The app never falls back to another provider automatically.
+- Use the commercial API, not a consumer subscription or Labs/Preview model, for sensitive transcripts. Operator must verify account terms, data-use opt-ins and any retention/ZDR requirement; key presence does not prove these settings or funded model access.
+- No credentials are changed by the application. Missing key maps to a safe configuration error; no cross-provider fallback is automatic.
 
 ### App-managed model preferences
 
@@ -104,6 +104,10 @@ Vosio expects the required variables below. `GEMINI_API_KEY` and `MISTRAL_API_KE
 - Region is not selected through a Vercel environment variable.
 
 The browser-safe Soniox temporary key has a fixed internal connection lifetime of 60 seconds. It is not configurable. The lifetime controls how soon the browser must establish its realtime connection after minting; it does not cap the duration of an established recording.
+
+Live STT authenticates when opening the browser WebSocket with subprotocols `soniox-api-key` and the fresh temporary key (`snx_temp_...`), for both Global and EU. The first configuration message contains transcription options only. The SDK configuration and `/api/soniox/realtime-key` response still use the field `api_key`; the permanent provider key remains server-only. See [Soniox WebSocket authentication](https://soniox.com/docs/guides/websocket-authentication).
+
+The official `@soniox/client` 2.3.0 still sends the key in the first message. Vosio pins this version and applies `scripts/patch-soniox-websocket-auth.mjs` to its ESM and CommonJS STT bundles during `npm install` / `npm ci`. Do not skip install scripts; after an intentional `--ignore-scripts` install, run `npm run postinstall`. Unexpected SDK versions or source blocks fail installation instead of silently retaining legacy authentication. When upgrading to an SDK with official connection authentication, remove the patch only after `tests/unit/soniox-websocket-auth.test.ts` passes with the unpatched SDK. Soniox stops accepting first-message-only authentication on 15 January 2027.
 
 `SONIOX_REALTIME_MODEL`
 
@@ -135,7 +139,7 @@ The browser-safe Soniox temporary key has a fixed internal connection lifetime o
 - The worker performs claims only when the secret value is exactly `true`; missing, empty or any other value means disabled.
 - Keep it disabled until the source migration has been separately applied and postflighted, the function has been deployed to the same Supabase project, and a scheduler has been explicitly approved.
 
-Supabase provides `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Edge Function runtime. `trash-retention` uses those same-project values for its service-only RPC and Storage API calls. Its local function config disables the Supabase JWT gateway because the opaque scheduler credential is not a user JWT; the function's own complete-token check is therefore the mandatory fail-closed request boundary. A source checkout never sets these secrets, deploys the function, enables it or creates a schedule by itself; use the disabled-first deployment runbook in `supabase/README.md`. The current private Vosio target is deploynutý, but remains disabled and unscheduled.
+Supabase provides `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Edge Function runtime. `trash-retention` uses those same-project values for its service-only RPC and Storage API calls. Its local function config disables the Supabase JWT gateway because the opaque scheduler credential is not a user JWT; the function's own complete-token check is therefore the mandatory fail-closed request boundary. A source checkout never sets these secrets, deploys the function, enables it or creates a schedule by itself; use the disabled-first deployment runbook in `supabase/README.md`. Each installation deploys and verifies the worker separately; keep it disabled and unscheduled until its own activation is approved.
 
 ### App behavior constants
 

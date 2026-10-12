@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Download } from "lucide-react";
+import { CompactPopover } from "@/components/ui/compact-popover";
 import { getAiOutputTitle } from "@/components/transcript-tabs/ai-output-formatting";
 import {
   copyTextToClipboard,
@@ -36,6 +37,7 @@ export function ExportControls({
   );
   const [selectedTargetId, setSelectedTargetId] = useState(targets[0]?.id ?? "recording");
   const [message, setMessage] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const selectedTarget = useMemo(
     () => targets.find((target) => target.id === selectedTargetId) ?? targets[0],
     [selectedTargetId, targets]
@@ -106,16 +108,13 @@ export function ExportControls({
   }
 
   return (
-    <details
-      className="export-controls"
-      onToggle={(event) => {
-        if (event.currentTarget.open) void lazyAiState?.loadForPurpose("metadata");
+    <CompactPopover label="Export" className="export-controls" open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) void lazyAiState?.loadForPurpose("metadata");
       }}
+      trigger={<><Download aria-hidden="true" size={15} /><span>Export</span></>}
     >
-      <summary>
-        <Download size={16} />
-        <span>Export</span>
-      </summary>
       <div className="export-controls-menu">
         <label>
           <span>Co exportovat</span>
@@ -142,6 +141,6 @@ export function ExportControls({
         </div>
         {message ? <p>{message}</p> : null}
       </div>
-    </details>
+    </CompactPopover>
   );
 }

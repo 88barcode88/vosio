@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, Upload } from "lucide-react";
+import { captureScopeSchema } from "@/lib/recordings/capture";
 import {
   IMPORTED_TRANSCRIPT_FILE_ACCEPT,
   getImportedTranscriptFileValidationError,
@@ -21,16 +22,20 @@ type ImportState = {
 };
 
 type TranscriptImportFormProps = {
+  captureScope?: import("@/lib/recordings/capture").CaptureScope;
+  captureRequestId?: string;
   redirectAfterImport?: "detail" | "list";
 };
 
 // TranscriptImportForm creates a text-only recording from a pasted or uploaded completed transcript.
-export function TranscriptImportForm({ redirectAfterImport = "detail" }: TranscriptImportFormProps) {
+export function TranscriptImportForm({ captureScope, captureRequestId, redirectAfterImport = "detail" }: TranscriptImportFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const [importState, setImportState] = useState<ImportState | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const requestRef = useRef<{ body: BodyInit; headers?: HeadersInit } | null>(null);
+  const [lostAccess, setLostAccess] = useState(false);
 
   // handleFileChange validates the selected transcript document before submit.
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -56,16 +61,23 @@ export function TranscriptImportForm({ redirectAfterImport = "detail" }: Transcr
 
   // buildImportRequest creates the correct request payload for pasted text or file import.
   function buildImportRequest(form: HTMLFormElement) {
+    if (requestRef.current) return requestRef.current;
     const formData = new FormData(form);
     const file = fileInputRef.current?.files?.[0] ?? null;
+    const scope = captureScopeSchema.parse(captureScope ?? { projectId: null, visibility: "private", recipients: [] });
+    const requestId = captureRequestId ?? crypto.randomUUID();
+    const transitionRequestId = crypto.randomUUID();
 
     if (file) {
       const uploadData = new FormData();
 
       uploadData.set("title", String(formData.get("title") ?? ""));
       uploadData.set("transcriptFile", file);
+      uploadData.set("scope", JSON.stringify(scope));
+      uploadData.set("requestId", requestId);
+      uploadData.set("transitionRequestId", transitionRequestId);
 
-      return {
+      return requestRef.current = {
         body: uploadData,
         headers: undefined
       };
@@ -79,8 +91,8 @@ export function TranscriptImportForm({ redirectAfterImport = "detail" }: Transcr
       throw new Error(validationError);
     }
 
-    return {
-      body: JSON.stringify({ rawText, title }),
+    return requestRef.current = {
+      body: JSON.stringify({ rawText, title, scope, requestId, transitionRequestId }),
       headers: { "Content-Type": "application/json" }
     };
   }
@@ -111,10 +123,11 @@ export function TranscriptImportForm({ redirectAfterImport = "detail" }: Transcr
         method: "POST"
       });
       const payload = (await response.json().catch(() => null)) as
-        | { error?: string; recordingId?: string; warnings?: unknown }
+        | { code?: string; error?: string; recordingId?: string; warnings?: unknown }
         | null;
 
       if (!response.ok || !payload?.recordingId) {
+        setLostAccess(payload?.code === "42501");
         throw new Error(payload?.error ?? "Import přepisu selhal.");
       }
 
@@ -147,12 +160,18 @@ export function TranscriptImportForm({ redirectAfterImport = "detail" }: Transcr
   }
 
   return (
-    <form
-      aria-busy={isImporting}
-      aria-label="Import hotového přepisu"
-      className="transcript-import-form"
-      onSubmit={handleSubmit}
-    >
+    <form aria-busy={isImporting} aria-label="Import hotového přepisu" className="transcript-import-form" onSubmit={handleSubmit}>
+      {lostAccess ? <button type="button" onClick={() => {
+        const pending = requestRef.current;
+        if (!pending) return;
+        if (pending.body instanceof FormData) {
+          pending.body.set("scope", JSON.stringify({ projectId: null, visibility: "private", recipients: [] }));
+          pending.body.set("requestId", crypto.randomUUID()); pending.body.set("transitionRequestId", crypto.randomUUID());
+        } else if (typeof pending.body === "string") {
+          pending.body = JSON.stringify({ ...JSON.parse(pending.body), scope: { projectId: null, visibility: "private", recipients: [] }, requestId: crypto.randomUUID(), transitionRequestId: crypto.randomUUID() });
+        }
+        setLostAccess(false); setImportState({ tone: "working", message: "Soukromá kopie je připravená. Potvrďte Uložit přepis." });
+      }}>Připravit novou soukromou kopii</button> : null}
       <label>
         <span>Název</span>
         <input disabled={isImporting} maxLength={160} name="title" placeholder="Volitelný název" />
@@ -168,7 +187,7 @@ export function TranscriptImportForm({ redirectAfterImport = "detail" }: Transcr
           type="file"
         />
         <button disabled={isImporting} onClick={() => fileInputRef.current?.click()} type="button">
-          <Upload size={18} />
+          <Upload aria-hidden="true" size={15} />
           Vybrat TXT/MD/DOCX
         </button>
         <span>{selectedFileName ?? "Soubor je volitelný"}</span>
@@ -183,7 +202,7 @@ export function TranscriptImportForm({ redirectAfterImport = "detail" }: Transcr
         />
       </label>
       <button disabled={isImporting} type="submit">
-        <FileText size={18} />
+        <FileText aria-hidden="true" size={15} />
         {isImporting ? "Ukládám..." : "Uložit přepis"}
       </button>
       {importState ? (

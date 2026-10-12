@@ -4,8 +4,18 @@ import { after } from "next/server";
 import { automaticOutputTypes, type AutomaticOutputType } from "@/lib/settings/types";
 import type { User } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+// Schedule only a new capture's consent-tagged generation through a currently authorized session.
+export async function scheduleCaptureTimelineIntent(client: SupabaseClient, transcriptId: string, user: User) {
+  if (!resolveAutomaticOutputTypes(user.user_metadata).length) return false;
+  const { data, error } = await client.rpc("schedule_capture_automatic_intents_v2", {
+    p_transcript_id: transcriptId
+  });
+  if (error) throw new Error("Automatic timeline not authorized");
+  return data === true;
+}
 import { executePersistedAiProcessing } from "@/lib/ai/processing-service.server";
-import { getAiModelOption, type AiProviderId } from "@/lib/model-options";
+import { resolveNewAiModelSelection, type AiProviderId } from "@/lib/model-options";
 import {
   getUserSettingsFromMetadata,
   hasAutomaticTimelineConsent,
@@ -17,7 +27,7 @@ const AUTOMATIC_TIMELINE_PROCESSING_TYPE = "timeline_chapters";
 const AUTOMATIC_TIMELINE_SAFE_ERROR = "Automatické vytvoření časové osy selhalo.";
 
 // scheduleAutomaticOutputs restores only persisted current intents, then dispatches at most six independent workers.
-export async function scheduleAutomaticOutputs(input: { admin: SupabaseClient; transcriptId: string; userId: string }) {
+export async function scheduleAutomaticOutputs(input: { admin: SupabaseClient; transcriptId: string; userId: string; allowedProcessingTypes?: AutomaticOutputType[] }) {
   const { data: transcript, error: transcriptError } = await input.admin.from("transcripts")
     .select("completion_generation_key").eq("id", input.transcriptId).eq("user_id", input.userId).single();
   if (transcriptError) throw new Error("Generaci přepisu se nepodařilo načíst.");
@@ -27,7 +37,8 @@ export async function scheduleAutomaticOutputs(input: { admin: SupabaseClient; t
     .eq("completion_generation_key", transcript.completion_generation_key)
     .in("processing_type", [...automaticOutputTypes]).limit(6);
   if (error) throw new Error("Automatické výstupy se nepodařilo načíst.");
-  const intents = (data ?? []) as AutomaticTimelineIntentRow[];
+  const intents = ((data ?? []) as AutomaticTimelineIntentRow[]).filter((intent) =>
+    (input.allowedProcessingTypes ?? [...automaticOutputTypes]).includes(intent.processing_type ?? "timeline_chapters"));
   if (!intents.length) return { status: "not_scheduled" };
   const results = await Promise.allSettled(intents.map(async (intent) => ({
     intent, job: await enqueueAutomaticTimelineJob(getAutomaticTimelineJobInput(intent), input.admin)
@@ -229,7 +240,7 @@ async function enqueueAutomaticTimelineJob(
   return data;
 }
 
-// completeTranscriptGeneration persists completion, generation arbitration and exact prompt intent atomically.
+// DEPRECATED for capture: historical completion compatibility only; receipt settlement preserves history instead.
 async function completeTranscriptGeneration(input: CompleteGenerationInput) {
   const { data, error } = await input.admin
     .rpc("complete_transcript_generation_v2", {
@@ -269,7 +280,7 @@ export async function persistTranscriptCompletionTransition(
 ) {
   const settings = getUserSettingsFromMetadata(input.user.user_metadata);
   const model = settings.defaultOpenaiModel;
-  const modelOption = getAiModelOption(model);
+  const modelOption = resolveNewAiModelSelection(model, model.startsWith("gpt-") ? settings.defaultReasoningEffort : undefined);
   if (!modelOption) {
     throw new Error("Výchozí AI model není podporovaný.");
   }
@@ -277,6 +288,8 @@ export async function persistTranscriptCompletionTransition(
   const providerConfig = {
     provider,
     provider_model: modelOption.providerModel,
+    ...(modelOption.supportsTemperature ? { temperature: 0.3 } : {}),
+    ...(provider === "gemini" ? { sampling_temperature_supported: true } : {}),
     reasoning_effort: modelOption.reasoningEffort ?? null,
     thinking_level: modelOption.geminiThinkingLevel ?? null
   };

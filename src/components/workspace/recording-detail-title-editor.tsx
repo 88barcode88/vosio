@@ -2,6 +2,8 @@
 
 import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { Pencil, Save, X } from "lucide-react";
+import { CompactPopover } from "@/components/ui/compact-popover";
 import { useCloseOnSuccessfulSave } from "@/components/use-close-on-successful-save";
 import { createInitialSaveActionState, type SaveAction } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
@@ -24,6 +26,7 @@ function RecordingDetailSaveButton() {
 
   return (
     <button disabled={pending} type="submit">
+      <Save aria-hidden="true" size={15} />
       {pending ? "Ukládám…" : "Uložit"}
     </button>
   );
@@ -118,25 +121,9 @@ export function RecordingDetailTitleEditor({
 
   return (
     <div className="recording-inline-edit-shell" ref={containerRef}>
-      <details className="recording-inline-edit" open={isOpen}>
-        <summary
-          aria-disabled={isPending}
-          onClick={(event) => {
-            event.preventDefault();
-            if (isPending) {
-              return;
-            }
-
-            if (isOpen) {
-              dismissEditor();
-            } else {
-              setIsOpen(true);
-            }
-          }}
-          ref={triggerRef}
-        >
-          Upravit název
-        </summary>
+      <CompactPopover className="recording-inline-edit" label="Upravit název" open={isOpen} busy={isPending}
+        onOpenChange={(next) => next ? setIsOpen(true) : dismissEditor()} triggerRef={triggerRef}
+        trigger={<><Pencil aria-hidden="true" size={15} />Upravit název</>}>
         <form
           action={formAction}
           aria-busy={isPending}
@@ -173,11 +160,12 @@ export function RecordingDetailTitleEditor({
           <div className="recording-title-popover-actions">
             <RecordingDetailSaveButton />
             <button disabled={isPending} onClick={dismissEditor} type="button">
+              <X aria-hidden="true" size={15} />
               Zrušit
             </button>
           </div>
         </form>
-      </details>
+      </CompactPopover>
       <span aria-atomic="true" aria-live="polite" className="visually-hidden recording-title-save-status">
         {isCurrentSettlement && actionState.status === "success" && !isPending
           ? actionState.message

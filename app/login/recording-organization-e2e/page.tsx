@@ -46,7 +46,12 @@ export default async function RecordingOrganizationE2EPage({
   if (!access.ok) notFound();
   const scopeValue = access.scope;
 
-  const snapshot = getOrganizationFixtureSnapshot(scopeValue);
+  const storedSnapshot = getOrganizationFixtureSnapshot(scopeValue);
+  // Compact layout fixtures expose only synthetic founder access controls; browser tests intercept their API.
+  const snapshot = params.fixture === "compact" ? {
+    ...storedSnapshot,
+    options: { ...storedSnapshot.options, projects: storedSnapshot.options.projects.map((project) => ({ ...project, can_manage_access: true })) }
+  } : storedSnapshot;
   const current = createRecordingSearchParams(params);
   const canonical = canonicalizeRecordingOrganizationFilters(current, snapshot.options);
   if (canonical.changed) {
@@ -76,6 +81,7 @@ export default async function RecordingOrganizationE2EPage({
         page: 1,
         pageSize: 25,
         results: recordings.map((recording) => ({
+          capabilities: recording.capabilities,
           clientId: recording.client_id,
           createdAt: recording.created_at,
           durationSeconds: recording.duration_seconds,

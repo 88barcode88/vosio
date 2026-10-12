@@ -4,9 +4,16 @@ import {
   listStorageObjectsToExhaustion,
   summarizeSafetyPartStorageObjects
 } from "@/lib/live-recording/recovery";
-import { summarizeStorageObjects } from "../../app/api/recordings/recoverable/route";
-import { summarizeSegments } from "../../app/api/recordings/[recordingId]/recover-live/route";
-import { listSegmentStoragePaths } from "../../app/api/recordings/[recordingId]/transcription/route";
+
+// summarizeStorageObjects verifies shared pagination/part validation independently of retired route exports.
+async function summarizeStorageObjects(input: { admin: ReturnType<typeof createPagedAdmin>["admin"]; storagePrefix: string }) {
+  const bucket = input.admin.storage.from();
+  const objects = await listStorageObjectsToExhaustion({
+    folder: input.storagePrefix.replace(/\/$/, ""),
+    listPage: (folder, options) => bucket.list(folder, options)
+  });
+  return summarizeSafetyPartStorageObjects(objects);
+}
 
 // createPartObject builds one canonical Storage object for pagination validation.
 function createPartObject(index: number, extension = "webm") {
@@ -65,7 +72,7 @@ describe("live recovery storage listings", () => {
     ];
     const { admin } = createPagedAdmin(items);
 
-    await expect(summarizeSegments({
+    await expect(summarizeStorageObjects({
       admin: admin as never,
       storagePrefix: "owner/recording/live/"
     })).rejects.toBeInstanceOf(InvalidSafetyPartListingError);
@@ -78,7 +85,7 @@ describe("live recovery storage listings", () => {
     ];
     const { admin } = createPagedAdmin(items);
 
-    await expect(listSegmentStoragePaths(admin as never, "owner/recording/live/"))
+    await expect(summarizeStorageObjects({ admin, storagePrefix: "owner/recording/live/" }))
       .rejects.toBeInstanceOf(InvalidSafetyPartListingError);
   });
 

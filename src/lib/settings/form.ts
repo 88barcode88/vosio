@@ -40,7 +40,8 @@ function getProcessingTypes(formData: FormData) {
 // parseSettingsForm converts the settings form into a validated user settings object.
 export function parseSettingsForm(formData: FormData): UserSettings {
   const parsed = userSettingsSchema.safeParse({
-    aiTemperature: getNumberField(formData, "aiTemperature", 0.2),
+    aiTemperature: 0.3,
+    defaultReasoningEffort: getStringField(formData, "defaultReasoningEffort", "medium"),
     audioRetentionPolicy: getStringField(formData, "audioRetentionPolicy", "keep_audio"),
     autoProcessAfterTranscription: formData.get("autoProcessAfterTranscription") === "on",
     autoProcessingTypes: getProcessingTypes(formData),

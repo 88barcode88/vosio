@@ -2,6 +2,7 @@
 
 import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { Save, X } from "lucide-react";
 import { useCloseOnSuccessfulSave } from "@/components/use-close-on-successful-save";
 import { createInitialSaveActionState, type SaveAction } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
@@ -24,6 +25,7 @@ function RecordingTitleSaveButton() {
 
   return (
     <button disabled={pending} type="submit">
+      <Save aria-hidden="true" size={15} />
       {pending ? "Ukládám…" : "Uložit"}
     </button>
   );
@@ -184,6 +186,7 @@ export function RecordingTitleEditor({
           <div className="recording-title-popover-actions">
             <RecordingTitleSaveButton />
             <button disabled={isPending} onClick={dismissEditor} type="button">
+              <X aria-hidden="true" size={15} />
               Zrušit
             </button>
           </div>

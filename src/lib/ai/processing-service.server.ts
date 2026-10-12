@@ -112,6 +112,7 @@ async function runConfiguredProvider(input: Parameters<RunProvider>[0]) {
   if (input.provider === "gemini") {
     return runGeminiProcessing({
       ...input,
+      supportsTemperature: input.providerConfig.sampling_temperature_supported === true,
       thinkingLevel: thinkingLevel === "medium" || thinkingLevel === "high"
         ? thinkingLevel
         : thinkingLevel === null ? null : undefined
@@ -124,7 +125,7 @@ async function runConfiguredProvider(input: Parameters<RunProvider>[0]) {
 
   return runOpenAIProcessing({
       ...input,
-      reasoningEffort: reasoningEffort === "low" || reasoningEffort === "medium" || reasoningEffort === "high" || reasoningEffort === "xhigh"
+      reasoningEffort: reasoningEffort === "low" || reasoningEffort === "medium" || reasoningEffort === "high" || reasoningEffort === "xhigh" || reasoningEffort === "max"
         ? reasoningEffort
         : reasoningEffort === null ? null : undefined
   });
@@ -183,7 +184,8 @@ export async function executePersistedAiProcessing(
     provider: input.job.provider,
     profileId: execution.profileId,
     providerConfig: input.job.providerConfig,
-    temperature: input.temperature ?? 0.2
+    temperature: typeof input.job.providerConfig.temperature === "number"
+      ? input.job.providerConfig.temperature : input.temperature ?? 0.2
   });
   const persistenceInput: CompletedAiProcessingInput = {
     admin: input.admin,

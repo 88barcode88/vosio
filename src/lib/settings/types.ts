@@ -2,6 +2,7 @@ import { z } from "zod";
 import { liveAudioQualityIds, normalizeLiveAudioQuality } from "@/lib/recordings/types";
 import {
   aiModelIds,
+  aiReasoningEfforts,
   DEFAULT_AI_MODEL_ID,
   normalizeAiModelId,
   sonioxRealtimeModelIds
@@ -39,7 +40,8 @@ const aiModelSchema = z.preprocess(normalizeAiModelId, z.enum(aiModelIds));
 const liveAudioQualitySchema = z.preprocess(normalizeLiveAudioQuality, z.enum(liveAudioQualityIds));
 
 export const defaultUserSettings = {
-  aiTemperature: 0.2,
+  aiTemperature: 0.3,
+  defaultReasoningEffort: "medium",
   audioRetentionPolicy: "keep_audio",
   autoProcessAfterTranscription: false,
   autoProcessingTypes: ["summary"],
@@ -63,6 +65,7 @@ export const userSettingsSchema = z.object({
   autoTimelineAfterTranscription: z.boolean(),
   automaticOutputTypes: z.array(z.enum(settingsProcessingTypes)),
   defaultOpenaiModel: aiModelSchema,
+  defaultReasoningEffort: z.enum(aiReasoningEfforts).optional(),
   liveAudioQuality: liveAudioQualitySchema,
   outputLanguage: z.enum(outputLanguages),
   sonioxRegion: sonioxRegionSchema,

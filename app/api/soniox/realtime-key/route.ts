@@ -9,6 +9,7 @@ import {
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import type { SonioxRegion } from "@/lib/soniox/region";
 import { createClient } from "@/lib/supabase/server";
+import { z } from "zod";
 
 // Generous per-user cap: live sessions re-request keys on reconnects, abuse loops do not.
 const realtimeKeyRateLimit = createRateLimiter({ limit: 20, windowMs: 60_000 });
@@ -45,7 +46,7 @@ function getRealtimeKeyErrorCode(error: unknown, region: SonioxRegion) {
 }
 
 // POST creates a short-lived Soniox key scoped only to realtime websocket transcription.
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -55,6 +56,10 @@ export async function POST() {
   if (userError || !user) {
     return NextResponse.json({ error: "Nejste přihlášený." }, { status: 401 });
   }
+  const body = z.object({ recordingId: z.uuid() }).strict().safeParse(await request.json().catch(() => null));
+  if (!body.success) return NextResponse.json({ error: "Neplatná nahrávka." }, { status: 400 });
+  const authority = await supabase.rpc("can_write_recording_capture_v1", { p_recording_id: body.data.recordingId });
+  if (authority.error || authority.data !== true) return NextResponse.json({ code: "capture_access_lost", error: "Nahrávání už není povoleno." }, { status: 403 });
 
   const region = getUserSettingsFromMetadata(user.user_metadata).sonioxRegion;
   const rateLimit = realtimeKeyRateLimit(user.id);

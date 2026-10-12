@@ -80,7 +80,8 @@ describe("automatic timeline source migration", () => {
   it("documents the exact read-only duplicate preflight and blocks blind rollout in every operator surface", () => {
     for (const path of [
       "docs/api/supabase-schema.md",
-      "docs/gotchas.md"
+      "docs/gotchas.md",
+      "docs/requirements/release-checklist.md"
     ]) {
       const document = readFileSync(join(process.cwd(), path), "utf8");
 

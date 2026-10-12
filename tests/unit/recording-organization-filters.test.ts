@@ -102,7 +102,7 @@ describe("recording organization filter URLs", () => {
     expect(result.searchParams.getAll("tag")).toEqual([tagB, tagA]);
   });
 
-  it("removes repeated or foreign singles and a project outside the selected client", () => {
+  it("keeps exact UUID project filters for server scope checks even without a general project listing", () => {
     const repeatedClient = new URLSearchParams([
       ["client", clientA],
       ["client", clientB],
@@ -111,12 +111,12 @@ describe("recording organization filter URLs", () => {
     expect(parseRecordingOrganizationFilters(repeatedClient, options)).toEqual({
       clientId: null,
       folderId: null,
-      projectId: null,
+      projectId: projectA,
       tagIds: []
     });
 
     const mismatchedProject = new URLSearchParams({ client: clientA, project: projectB });
-    expect(parseRecordingOrganizationFilters(mismatchedProject, options).projectId).toBeNull();
+    expect(parseRecordingOrganizationFilters(mismatchedProject, options).projectId).toBe(projectB);
   });
 
   it("replaces only organization keys while preserving q and unrelated pagination keys", () => {
@@ -177,12 +177,12 @@ describe("recording organization list query", () => {
       p_status: "failed",
       p_tag_ids: [tagA, tagB]
     };
-    expect(rpc).toHaveBeenNthCalledWith(1, "list_own_recordings_v2", {
+    expect(rpc).toHaveBeenNthCalledWith(1, "list_accessible_recordings_v1", {
       ...expectedFilters,
       p_before_created_at: null,
       p_before_id: null
     });
-    expect(rpc).toHaveBeenNthCalledWith(2, "list_own_recordings_v2", {
+    expect(rpc).toHaveBeenNthCalledWith(2, "list_accessible_recordings_v1", {
       ...expectedFilters,
       p_before_created_at: firstPage[999].created_at,
       p_before_id: firstPage[999].id
@@ -210,16 +210,14 @@ describe("recording organization list query", () => {
     });
   });
 
-  it("deduplicates an overlapping boundary on a short final page without changing first-seen order", async () => {
+  it("rejects duplicate server rows instead of filtering an already paginated page", async () => {
     const firstPage = Array.from({ length: 1000 }, (_, index) => createCursorRecording(index));
     const finalRow = createCursorRecording(1000);
     const rpc = vi.fn()
       .mockResolvedValueOnce({ data: firstPage, error: null })
       .mockResolvedValueOnce({ data: [firstPage[999], finalRow], error: null });
 
-    const result = await listRecordings({ rpc } as never);
-    expect(result).toHaveLength(1001);
-    expect(result.slice(-2).map((row) => row.id)).toEqual([firstPage[999].id, finalRow.id]);
+    await expect(listRecordings({ rpc } as never)).rejects.toThrow("duplicate RPC row");
   });
 
   it("propagates a later-page RPC error and rejects a full page with a stalled cursor", async () => {
@@ -233,7 +231,7 @@ describe("recording organization list query", () => {
 
     const stalledRpc = vi.fn().mockResolvedValue({ data: fullPage, error: null });
     await expect(listRecordings({ rpc: stalledRpc } as never)).rejects.toThrow(
-      "recording pagination cursor did not advance"
+      "duplicate RPC row"
     );
     expect(stalledRpc).toHaveBeenCalledTimes(2);
   });
@@ -251,7 +249,7 @@ describe("recording organization list query", () => {
       organizationFilters: { clientId: clientA, folderId: null, projectId: null, tagIds: [tagA] },
       searchQuery: "lucern"
     })).resolves.toMatchObject({ completed: 7, failed: 3, deleted: 0 });
-    expect(rpc).toHaveBeenCalledWith("count_own_recording_statuses_v1", {
+    expect(rpc).toHaveBeenCalledWith("count_accessible_recording_statuses_v1", {
       p_client_id: clientA,
       p_folder_id: null,
       p_project_id: null,
@@ -259,13 +257,9 @@ describe("recording organization list query", () => {
       p_tag_ids: [tagA]
     });
 
-    const eq = vi.fn().mockResolvedValue({ count: 2, error: null });
-    const select = vi.fn().mockReturnValue({ eq });
-    const from = vi.fn().mockReturnValue({ select });
-    await expect(countDeletedRecordings({ from } as never)).resolves.toBe(2);
-    expect(from).toHaveBeenCalledWith("recordings");
-    expect(select).toHaveBeenCalledWith("id", { count: "exact", head: true });
-    expect(eq).toHaveBeenCalledWith("status", "deleted");
+    rpc.mockResolvedValue({ data: [{ status: "deleted", total_count: 2 }], error: null });
+    await expect(countDeletedRecordings({ rpc } as never)).resolves.toBe(2);
+    expect(rpc).toHaveBeenLastCalledWith("count_accessible_recording_statuses_v1", { p_client_id: null, p_folder_id: null, p_project_id: null, p_query: null, p_tag_ids: [] });
   });
 
 });

@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRecordingCapabilities } from "@/components/recording-capability-context";
+import { AiModelPicker, createAiModelSelection, getAiModelReasoningEffort } from "@/components/ai-model-picker";
 import { ArrowUp, MessageCircle, RotateCw } from "lucide-react";
 import { getAiMarkdownLines } from "@/components/transcript-tabs/markdown-utils";
 import type { TranscriptTarget } from "@/components/transcript-tabs/types";
 import type { SafeRecordingChatThread, SafeRecordingChatTurn } from "@/lib/ai/chat-types";
-import { aiModelOptions, getAiModelOption } from "@/lib/model-options";
+import { getActiveAiModelOption, getAiModelOption, type AiReasoningEffort } from "@/lib/model-options";
 
 type ChatHistory = {
   thread: SafeRecordingChatThread | null;
@@ -15,12 +17,14 @@ type ChatHistory = {
 type ChatContentProps = {
   activeTranscriptId: string | null;
   defaultModel: string;
+  defaultReasoningEffort?: AiReasoningEffort;
   onOpenEvidence: (target: TranscriptTarget) => void;
 };
 
 type PendingChatSubmission = {
   clientTurnId: string;
   model: string;
+  reasoningEffort?: AiReasoningEffort;
   question: string;
   transcriptId: string;
 };
@@ -65,19 +69,26 @@ function mergeChatTurn(turns: SafeRecordingChatTurn[], nextTurn: SafeRecordingCh
 }
 
 // ChatContent loads and submits the single persisted transcript chat without sending transcript audio or context.
-export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }: ChatContentProps) {
+export function ChatContent({ activeTranscriptId, defaultModel, defaultReasoningEffort, onOpenEvidence }: ChatContentProps) {
+  const { capabilities } = useRecordingCapabilities();
   const [history, setHistory] = useState<ChatHistory>(emptyHistory);
   const [isHydrated, setIsHydrated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadedTranscriptId, setLoadedTranscriptId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [draft, setDraft] = useState("");
-  const [model, setModel] = useState(defaultModel);
+  const activeDefaultSelection = createAiModelSelection(defaultModel, defaultReasoningEffort);
+  const activeDefaultModel = activeDefaultSelection.model;
+  const activeDefaultReasoningEffort = activeDefaultSelection.reasoningEffort;
+  const [selection, setSelection] = useState(activeDefaultSelection);
+  const { model } = selection;
   const [message, setMessage] = useState<string | null>(null);
   const [transportUncertain, setTransportUncertain] = useState(false);
   const [pendingSubmission, setPendingSubmission] = useState<PendingChatSubmission | null>(null);
   const activeTranscriptRef = useRef<string | null>(activeTranscriptId);
   const pendingTurnRef = useRef<PendingChatSubmission | null>(null);
-  const submitInFlightRef = useRef(false);
+  const submitInFlightRef = useRef<PendingChatSubmission | null>(null);
+  const reconcileInFlightRef = useRef<PendingChatSubmission | null>(null);
   const pollControllerRef = useRef<AbortController | null>(null);
   const pollInFlightRef = useRef(false);
 
@@ -108,6 +119,8 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       return;
     }
     setHistory(nextHistory);
+    setLoadedTranscriptId(transcriptId);
+    setMessage(null);
     const pending = pendingTurnRef.current;
     if (pending?.transcriptId === transcriptId && nextHistory.turns.some(
       (turn) => turn.clientTurnId === pending.clientTurnId
@@ -118,6 +131,11 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     }
   }, [updatePendingSubmission]);
 
+  // Account defaults affect only the next model choice, not transcript history or an immutable pending request.
+  useEffect(() => {
+    setSelection({ model: activeDefaultModel, reasoningEffort: activeDefaultReasoningEffort });
+  }, [activeTranscriptId, activeDefaultModel, activeDefaultReasoningEffort]);
+
   // This hydration gate prevents pre-hydration form changes from being overwritten by the first controlled render.
   useEffect(() => {
     setIsHydrated(true);
@@ -127,8 +145,9 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     setMessage(null);
     setTransportUncertain(false);
     updatePendingSubmission(null);
-    submitInFlightRef.current = false;
-    setModel(defaultModel);
+    submitInFlightRef.current = null;
+    reconcileInFlightRef.current = null;
+    setIsSubmitting(false);
 
     if (!activeTranscriptId) {
       setIsLoading(false);
@@ -156,11 +175,14 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       });
 
     return () => controller.abort();
-  }, [activeTranscriptId, applyHistory, defaultModel, loadHistory, updatePendingSubmission]);
+  }, [activeTranscriptId, applyHistory, loadHistory, updatePendingSubmission]);
 
-  const hasServerRunningTurn = history.turns.some((turn) => turn.status === "queued" || turn.status === "running");
+  const visibleTurns = loadedTranscriptId === activeTranscriptId ? history.turns : [];
+  const hasServerRunningTurn = visibleTurns.some((turn) => turn.status === "queued" || turn.status === "running");
   const hasPendingSubmission = pendingSubmission?.transcriptId === activeTranscriptId;
-  const isComposerDisabled = !isHydrated || !activeTranscriptId || isLoading || isSubmitting || hasServerRunningTurn || transportUncertain || hasPendingSubmission;
+  const visiblePending = hasPendingSubmission && pendingSubmission
+    && !visibleTurns.some((turn) => turn.clientTurnId === pendingSubmission.clientTurnId) ? pendingSubmission : null;
+  const isComposerDisabled = !isHydrated || !capabilities.usePrivateChat || !capabilities.runPersonalAi || !activeTranscriptId || loadedTranscriptId !== activeTranscriptId || isLoading || isSubmitting || hasServerRunningTurn || transportUncertain || hasPendingSubmission;
 
   useEffect(() => {
     if (!activeTranscriptId || !hasServerRunningTurn) {
@@ -246,37 +268,45 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
   // reconcilePendingTurn checks a transport-uncertain UUID before the user can submit another request.
   async function reconcilePendingTurn() {
     const pending = pendingTurnRef.current;
-    if (!pending || pending.transcriptId !== activeTranscriptId) {
+    if (!pending || pending.transcriptId !== activeTranscriptId || reconcileInFlightRef.current) {
       return;
     }
 
+    reconcileInFlightRef.current = pending;
     setIsLoading(true);
     setMessage("Ověřuji stav posledního odeslání…");
     try {
       const nextHistory = await loadHistory(pending.transcriptId);
-      if (activeTranscriptRef.current !== pending.transcriptId) return;
+      if (activeTranscriptRef.current !== pending.transcriptId || pendingTurnRef.current !== pending
+        || reconcileInFlightRef.current !== pending) return;
       setHistory(nextHistory);
-      const recognized = nextHistory.turns.some((turn) => turn.clientTurnId === pending.clientTurnId);
+      const recognized = nextHistory.turns.find((turn) => turn.clientTurnId === pending.clientTurnId);
       setTransportUncertain(false);
-      setMessage(recognized ? "Odeslání bylo uloženo v historii." : "Odeslání nebylo potvrzeno. Můžete zopakovat původní odeslání.");
+      setMessage(recognized?.status === "failed" || recognized?.status === "interrupted"
+        ? recognized.safeError ?? "Chat nedokončil odpověď."
+        : recognized ? null : "Odeslání nebylo potvrzeno. Můžete zopakovat původní odeslání.");
       if (recognized) {
         updatePendingSubmission(null);
         setDraft("");
       }
     } catch (error) {
+      if (activeTranscriptRef.current !== pending.transcriptId || pendingTurnRef.current !== pending
+        || reconcileInFlightRef.current !== pending) return;
+      setTransportUncertain(true);
       setMessage(error instanceof Error ? error.message : "Stav posledního odeslání se nepodařilo ověřit.");
     } finally {
-      if (activeTranscriptRef.current === pending.transcriptId) {
+      if (activeTranscriptRef.current === pending.transcriptId && reconcileInFlightRef.current === pending) {
         setIsLoading(false);
+        reconcileInFlightRef.current = null;
       }
     }
   }
 
   // submitPendingTurn posts one immutable idempotency snapshot, including its original question and model.
   async function submitPendingTurn(pending: PendingChatSubmission) {
-    if (activeTranscriptRef.current !== pending.transcriptId || submitInFlightRef.current) return;
+    if (!capabilities.usePrivateChat || !capabilities.runPersonalAi || activeTranscriptRef.current !== pending.transcriptId || submitInFlightRef.current) return;
 
-    submitInFlightRef.current = true;
+    submitInFlightRef.current = pending;
     setIsSubmitting(true);
     setMessage(null);
 
@@ -285,13 +315,14 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
         body: JSON.stringify({
           clientTurnId: pending.clientTurnId,
           model: pending.model,
-          question: pending.question
+          question: pending.question,
+          ...(pending.reasoningEffort ? { reasoningEffort: pending.reasoningEffort } : {})
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST"
       });
       const payload = await response.json().catch(() => null) as unknown;
-      if (activeTranscriptRef.current !== pending.transcriptId) return;
+      if (activeTranscriptRef.current !== pending.transcriptId || submitInFlightRef.current !== pending) return;
 
       if (!response.ok) {
         setMessage(getChatError(payload));
@@ -310,18 +341,18 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       updatePendingSubmission(null);
       setDraft("");
       setTransportUncertain(false);
-      setMessage(result.turn.status === "failed"
+      setMessage(result.turn.status === "failed" || result.turn.status === "interrupted"
         ? result.turn.safeError ?? "Chat selhal."
-        : "Odpověď je uložená.");
+        : result.turn.status === "completed" ? "Odpověď je uložená." : null);
     } catch {
-      if (activeTranscriptRef.current !== pending.transcriptId) return;
+      if (activeTranscriptRef.current !== pending.transcriptId || submitInFlightRef.current !== pending) return;
       setTransportUncertain(true);
       setMessage("Spojení bylo přerušeno. Nejdřív ověřte stav posledního odeslání.");
     } finally {
-      if (activeTranscriptRef.current === pending.transcriptId) {
-        setIsSubmitting(false);
+      if (submitInFlightRef.current === pending) {
+        if (activeTranscriptRef.current === pending.transcriptId) setIsSubmitting(false);
+        submitInFlightRef.current = null;
       }
-      submitInFlightRef.current = false;
     }
   }
 
@@ -330,13 +361,19 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     event.preventDefault();
     const question = draft.trim();
     if (!activeTranscriptId || !question || isComposerDisabled || submitInFlightRef.current || pendingTurnRef.current) return;
-    const submittedModel = new FormData(event.currentTarget).get("model");
+    const formData = new FormData(event.currentTarget);
+    const submittedModel = formData.get("model");
+    const selectedModel = typeof submittedModel === "string" && getActiveAiModelOption(submittedModel) ? submittedModel : model;
+    const submittedEffort = formData.get("reasoningEffort");
+    const reasoningEffort = getAiModelReasoningEffort({
+      model: selectedModel,
+      reasoningEffort: typeof submittedEffort === "string" ? submittedEffort as AiReasoningEffort : selection.reasoningEffort
+    });
 
     const pending = {
       clientTurnId: crypto.randomUUID(),
-      model: typeof submittedModel === "string" && getAiModelOption(submittedModel)
-        ? submittedModel
-        : model,
+      model: selectedModel,
+      ...(reasoningEffort ? { reasoningEffort } : {}),
       question,
       transcriptId: activeTranscriptId
     };
@@ -359,6 +396,17 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
     await submitPendingTurn(pending);
   }
 
+  // retryHistory repeats the read only and preserves the mounted composer after an initial load failure.
+  async function retryHistory() {
+    if (!activeTranscriptId || isLoading) return;
+    const transcriptId = activeTranscriptId;
+    setIsLoading(true);
+    setMessage(null);
+    try { applyHistory(transcriptId, await loadHistory(transcriptId)); }
+    catch { if (activeTranscriptRef.current === transcriptId) setMessage("Historii chatu se nepodařilo načíst."); }
+    finally { if (activeTranscriptRef.current === transcriptId) setIsLoading(false); }
+  }
+
   if (!activeTranscriptId) {
     return <div className="recording-chat-empty">Chat je dostupný po uložení přepisu.</div>;
   }
@@ -366,23 +414,33 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
   return (
     <section aria-label="Chat nad přepisem" className="recording-chat-content">
       <div aria-live="polite" className="recording-chat-status">
-        {isLoading ? "Načítám historii chatu…" : message}
+        {(isLoading || loadedTranscriptId !== activeTranscriptId) && !message ? "Načítám historii chatu…" : message}
       </div>
-      {history.turns.length === 0 && !isLoading ? (
+      {message && !isLoading && loadedTranscriptId !== activeTranscriptId ? <button className="recording-chat-reconcile" onClick={() => void retryHistory()} type="button">Zkusit znovu</button> : null}
+      <div className="recording-chat-history" aria-busy={isLoading || loadedTranscriptId !== activeTranscriptId}>
+      {visibleTurns.length === 0 && !visiblePending && !isLoading && loadedTranscriptId === activeTranscriptId ? (
         <div className="recording-chat-empty">
           <MessageCircle aria-hidden="true" size={16} />
           <p>Zeptejte se na tento přepis.</p>
         </div>
       ) : null}
-      <ol className="recording-chat-turns">
-        {history.turns.map((turn) => <ChatTurn key={turn.id} onOpenEvidence={onOpenEvidence} transcriptId={activeTranscriptId} turn={turn} />)}
+      <ol className="recording-chat-turns" aria-busy={loadedTranscriptId !== activeTranscriptId}>
+        {visibleTurns.map((turn) => <ChatTurn key={turn.id} onOpenEvidence={onOpenEvidence} transcriptId={activeTranscriptId} turn={turn} />)}
+        {visiblePending ? <li className="recording-chat-turn recording-chat-turn-pending">
+          <div className="recording-chat-question"><strong>Vy</strong><p>{visiblePending.question}</p></div>
+          <div className="recording-chat-answer">
+            <header><strong>Vosio AI</strong><small>{getModelLabel(visiblePending.model)}</small></header>
+            {isSubmitting ? <ChatAnswering /> : <p>Odeslání zatím není potvrzené. Ověřte stav nebo zopakujte původní odeslání.</p>}
+          </div>
+        </li> : null}
       </ol>
+      </div>
       {transportUncertain ? (
         <button className="recording-chat-reconcile" onClick={() => void reconcilePendingTurn()} type="button">
           <RotateCw aria-hidden="true" size={15} /> Ověřit poslední odeslání
         </button>
       ) : null}
-      {hasPendingSubmission && !transportUncertain ? (
+      {hasPendingSubmission && !transportUncertain && !isSubmitting && !isLoading ? (
         <button className="recording-chat-reconcile recording-chat-retry" onClick={() => void retryPendingSubmission()} type="button">
           <RotateCw aria-hidden="true" size={15} /> Zopakovat původní odeslání
         </button>
@@ -400,12 +458,13 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
         />
         <small id="recording-chat-keyboard-hint">Enter odešle zprávu · Shift+Enter vloží nový řádek</small>
         <div className="recording-chat-composer-controls">
-          <label>
-            Model
-            <select disabled={isComposerDisabled} name="model" onChange={(event) => setModel(event.currentTarget.value)} value={model}>
-              {aiModelOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-            </select>
-          </label>
+          <AiModelPicker
+            disabled={isComposerDisabled}
+            modelLabel="Model"
+            onChange={setSelection}
+            scope="Pro následující otázku v chatu."
+            value={selection}
+          />
           <button disabled={isComposerDisabled || !draft.trim()} type="submit">
             <ArrowUp aria-hidden="true" size={16} /> Odeslat
           </button>
@@ -413,6 +472,16 @@ export function ChatContent({ activeTranscriptId, defaultModel, onOpenEvidence }
       </form>
     </section>
   );
+}
+
+// The same accessible three-dot state spans an optimistic POST and a persisted queued/running turn.
+function ChatAnswering() {
+  return <p className="recording-chat-answering" role="status">
+    <span className="visually-hidden">AI připravuje odpověď…</span>
+    <span aria-hidden="true" className="recording-chat-answering-dots">
+      {[0, 1, 2].map((index) => <span className="recording-chat-answering-dot" key={index}>·</span>)}
+    </span>
+  </p>;
 }
 
 // ChatTurn renders one server-authoritative turn without interpreting raw HTML or inventing evidence.
@@ -432,7 +501,7 @@ function ChatTurn({
       <div className="recording-chat-question"><strong>Vy</strong><p>{turn.question}</p></div>
       <div className="recording-chat-answer">
         <header><strong>Vosio AI</strong><small>{getModelLabel(turn.model)}</small></header>
-        {turn.status === "queued" || turn.status === "running" ? <p>AI připravuje odpověď…</p> : null}
+        {turn.status === "queued" || turn.status === "running" ? <ChatAnswering /> : null}
         {turn.status === "failed" || turn.status === "interrupted" ? <p role="alert">{turn.safeError ?? "Chat nedokončil odpověď."}</p> : null}
         {markdown.length > 0 ? <div className="ai-markdown-preview recording-chat-markdown">
           {markdown.map((line, index) => line.kind === "heading"

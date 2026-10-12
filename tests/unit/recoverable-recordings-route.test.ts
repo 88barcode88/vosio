@@ -14,7 +14,7 @@ import { GET } from "../../app/api/recordings/recoverable/route";
 const userId = "00000000-0000-4000-8000-000000000001";
 const recordingId = "00000000-0000-4000-8000-000000000002";
 
-function createClientDouble() {
+function createClientDouble(result: { data: unknown; error: unknown } = { data: [], error: null }) {
   const query = {
     eq: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
@@ -37,6 +37,7 @@ function createClientDouble() {
   return {
     auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: userId } }, error: null }) },
     from: vi.fn(() => query)
+    ,rpc: vi.fn().mockResolvedValue(result)
   };
 }
 
@@ -69,13 +70,14 @@ describe("GET /api/recordings/recoverable", () => {
   it("returns retryable 503 instead of hiding a transcript query failure as empty recovery", async () => {
     const { admin } = createAdminDouble({ data: null, error: { message: "sensitive database detail" } });
     mocks.createAdminClient.mockReturnValue(admin);
+    mocks.createClient.mockResolvedValue(createClientDouble({ data: null, error: { message: "sensitive database detail" } }));
 
     const response = await GET();
 
     expect(response).toBeInstanceOf(NextResponse);
     expect(response.status).toBe(503);
     const body = await response.text();
-    expect(JSON.parse(body)).toEqual({ error: "Nepodařilo se načíst obnovitelnou nahrávku. Zkuste to znovu." });
+    expect(JSON.parse(body)).toEqual({ error: "Obnovu nelze načíst." });
     expect(body).not.toContain("sensitive database detail");
   });
 

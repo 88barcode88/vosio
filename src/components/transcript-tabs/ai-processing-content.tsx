@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Copy, Download, Mail, Settings2, Sparkles } from "lucide-react";
 import { AiProcessingControls } from "@/components/ai-processing-controls";
 import { DeleteAiOutputForm } from "@/components/delete-ai-output-form";
+import { DeleteTranscriptChecklistButton } from "@/components/delete-transcript-checklist-button";
 import {
   getAiOutputMarkdownText,
   getAiOutputPreview,
@@ -53,6 +54,7 @@ export function AiProcessingContent({
   aiOutputs,
   classifications = [],
   cleanup = { eligible_count: 0, next_cursor: null },
+  isLoaded = true,
   isLoading,
   jobs,
   loadOutput,
@@ -65,6 +67,7 @@ export function AiProcessingContent({
   resolveEvidenceTarget,
   structuredItems,
   onTaskDeleted,
+  onChecklistDeleted,
   onTaskStatusConfirmed,
   stateError,
   userSettings
@@ -73,6 +76,7 @@ export function AiProcessingContent({
   aiOutputs: AiOutputView[];
   classifications?: ManualAiCleanupClassification[];
   cleanup?: ManualAiCleanupMetadata;
+  isLoaded?: boolean;
   isLoading?: boolean;
   jobs?: ManualAiJobSummary[];
   loadOutput?: (outputId: string) => Promise<unknown>;
@@ -85,11 +89,16 @@ export function AiProcessingContent({
   resolveEvidenceTarget: (reference: TranscriptEvidenceReference) => TranscriptTarget | null;
   structuredItems: StructuredAiItems;
   onTaskDeleted?: Parameters<typeof StructuredItemsContent>[0]["onTaskDeleted"];
+  onChecklistDeleted?: (taskIds: string[], outputIds: string[]) => void;
   onTaskStatusConfirmed?: Parameters<typeof StructuredItemsContent>[0]["onTaskStatusConfirmed"];
   stateError?: string | null;
   userSettings: UserSettings;
 }) {
   const retryProcessing = useAiProcessingRun(activeTranscript?.id ?? null, onJobAccepted);
+  const [pendingChecklist, setPendingChecklist] = useState<{ transcriptId: string; ids: string[] | null } | null>(null);
+  const pendingChecklistIds = pendingChecklist?.transcriptId === activeTranscript?.id ? pendingChecklist?.ids : null;
+  const visibleStructuredItems = pendingChecklistIds ? { ...structuredItems,
+    tasks: structuredItems.tasks.filter((task) => !task.id || !pendingChecklistIds.includes(task.id)) } : structuredItems;
   const hasStructuredItems = hasAnyStructuredItems(structuredItems);
   const artifacts = outputMetadata ?? aiOutputs.map((output) => ({
     body_loaded: true,
@@ -107,7 +116,7 @@ export function AiProcessingContent({
           <Sparkles size={15} />
           <strong>AI zpracování</strong>
         </div>
-        <span>{artifacts.length} výstupů</span>
+        <span>{isLoaded ? `${artifacts.length} výstupů` : "Načítání…"}</span>
       </header>
       <section className="ai-tab-actions">
         <div className="ai-tab-actions-title">
@@ -128,7 +137,7 @@ export function AiProcessingContent({
           jobs={jobs ?? []}
           onCleanupMutation={onCleanupMutation}
           onReload={onReload}
-          onRetry={(job) => retryProcessing.run({ model: job.model, processingType: job.processing_type as AiProcessingType })}
+          onRetry={(job) => retryProcessing.run({ processingType: job.processing_type as AiProcessingType, retryOfJobId: job.id })}
           transcriptId={activeTranscript?.id ?? null}
         />
       ) : null}
@@ -138,8 +147,8 @@ export function AiProcessingContent({
           {stateError} <button onClick={() => void onReload?.()} type="button">Zkusit znovu</button>
         </p>
       ) : null}
-      {isLoading && artifacts.length === 0 ? <p className="ai-state">Načítám AI stav…</p> : null}
-      {!isLoading && !stateError && artifacts.length === 0 ? (
+      {(!isLoaded || isLoading) && !stateError && artifacts.length === 0 ? <div className="ai-empty-card" aria-busy="true"><p role="status">Načítám AI stav…</p></div> : null}
+      {isLoaded && !isLoading && !stateError && artifacts.length === 0 ? (
         <div className="ai-empty-card">
           <Settings2 size={16} />
           <strong>Zatím žádné AI výstupy</strong>
@@ -147,8 +156,10 @@ export function AiProcessingContent({
         </div>
       ) : null}
       <section className="notes-list ai-output-list" aria-label="Uložené AI výstupy">
+        {activeTranscript ? <DeleteTranscriptChecklistButton key={activeTranscript.id} transcriptId={activeTranscript.id}
+          onDeleted={onChecklistDeleted} onPending={(ids) => setPendingChecklist({ transcriptId: activeTranscript.id, ids })} /> : null}
         <StructuredItemsContent
-          items={structuredItems}
+          items={visibleStructuredItems}
           onTaskDeleted={onTaskDeleted}
           onTaskStatusConfirmed={onTaskStatusConfirmed}
           onOpenEvidence={onOpenEvidence}
@@ -488,7 +499,8 @@ function AiOutputCard({
         </span>
         <em>{output ? getAiOutputSummary(output) : "Detail se načte po otevření."}</em>
       </summary>
-      {output ? <div className="ai-output-actions">
+      <div className="ai-output-actions">
+        {output ? <>
         <button onClick={copyAiOutput} type="button">
           <Copy size={14} />
           <span>Kopírovat</span>
@@ -506,10 +518,13 @@ function AiOutputCard({
             <span>Otevřít e-mail</span>
           </a>
         ) : null}
-        <DeleteAiOutputForm next={pathname} onDeleted={onOutputsRemoved} outputId={output.id} />
         {copyMessage ? <small>{copyMessage}</small> : null}
-      </div> : null}
+        </> : null}
+        <DeleteAiOutputForm next={pathname} onDeleted={onOutputsRemoved} outputId={metadata.id}
+          confirmationMessage={`Smazat tento výstup (${getAiOutputTitle(metadata.processing_type)}, ${formatRecordingDate(metadata.created_at)}) a jeho odvozené úkoly, kapitoly, rozhodnutí a rizika? Nahrávka, přepis a ostatní AI výstupy zůstanou.`} />
+      </div>
       <div className="ai-markdown-preview">
+        <small>Původní AI výstup. Aktivní úkoly jsou v pracovním checklistu.</small>
         {!output && loadState === "loading" ? <p>Načítám uložený AI výstup…</p> : null}
         {!output && loadState === "error" ? (
           <p role="alert">

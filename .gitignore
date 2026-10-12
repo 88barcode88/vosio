@@ -38,6 +38,7 @@ Thumbs.db
 # Supabase local runtime
 supabase/.branches/
 supabase/.temp/
+supabase/functions/vosio-mcp/generated/
 
 # Local code intelligence indexes
 .codegraph/

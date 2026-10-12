@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAiProcessingRun } from "@/components/transcript-tabs/use-ai-processing-run";
 
 const refresh = vi.fn();
+let allowPersonalAi = true;
+vi.mock("@/components/recording-capability-context", () => ({ useRecordingCapabilities: () => ({ capabilities: { runPersonalAi: allowPersonalAi } }) }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh })
@@ -69,6 +71,7 @@ describe("useAiProcessingRun", () => {
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.restoreAllMocks();
+    allowPersonalAi = true;
     refresh.mockReset();
     container = document.createElement("div");
     document.body.append(container);
@@ -79,6 +82,15 @@ describe("useAiProcessingRun", () => {
     await act(async () => root.unmount());
     document.body.replaceChildren();
     vi.unstubAllGlobals();
+  });
+
+  it("does not issue provider requests when the server capability denies personal AI", async () => {
+    allowPersonalAi = false;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => root.render(<Harness />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-run="timeline"]')?.click());
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("posts a stable request id with keepalive and accepts queued work without refresh", async () => {

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/recording-sharing/resolve-capabilities", () => ({ resolveRecordingCapabilities: vi.fn(async () => ({ runPersonalAi: true })) }));
 
 const mocks = vi.hoisted(() => ({
   afterCallbacks: [] as Array<() => unknown>,

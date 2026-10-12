@@ -6,7 +6,7 @@ export async function listTranscripts(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from("transcripts")
     .select(
-      "id,created_at,language,raw_text,recording_id,segments,speakers,transcription_job_id,user_id"
+      "id,created_at,language,raw_text,recording_id,segments,speakers,speaker_versions,search_version,transcription_job_id"
     )
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
@@ -24,7 +24,7 @@ export async function listTranscriptsForRecording(supabase: SupabaseClient, reco
   const { data, error } = await supabase
     .from("transcripts")
     .select(
-      "id,created_at,language,raw_text,recording_id,segments,speakers,transcription_job_id,user_id"
+      "id,created_at,language,raw_text,recording_id,segments,speakers,speaker_versions,search_version,transcription_job_id"
     )
     .eq("recording_id", recordingId)
     .order("created_at", { ascending: false })

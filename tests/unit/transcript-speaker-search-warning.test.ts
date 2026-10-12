@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { saveTranscriptSpeakerAutosaveAction } from "@/lib/transcripts/actions";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 
 const mocks = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
@@ -40,6 +41,7 @@ function createQuery(result: unknown, terminal: "maybeSingle" | "single") {
 }
 
 const speakerSave = {
+  expectedVersion: 0,
   name: "Miroslav Coufalík",
   revision: 3,
   role: "delivery_team" as const,
@@ -82,13 +84,23 @@ describe("speaker update search warning", () => {
     mocks.createClient.mockResolvedValue({
       auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: userId } }, error: null }) },
       from: vi.fn().mockReturnValue(lookup)
+      ,rpc: vi.fn(async (name: string) => ({ data: name === "recording_capabilities_v1"
+        ? { ...NO_RECORDING_CAPABILITIES, read: true, editSpeakers: true }
+        : { outcome: "saved", version: 1, searchVersion: 1, speaker: { id: "1", name: speakerSave.name, role: speakerSave.role } }, error: null }))
     });
     mocks.createAdminClient.mockReturnValue({ from: vi.fn().mockReturnValue(update) });
-    mocks.replaceTranscriptSearchChunks.mockResolvedValue({ status: "incomplete", warning: "index" });
+    let releaseIndex!: (result: { status: "incomplete"; warning: string }) => void;
+    mocks.replaceTranscriptSearchChunks.mockReturnValue(new Promise((resolve) => { releaseIndex = resolve; }));
+    let completed = false;
+    const save = saveTranscriptSpeakerAutosaveAction(speakerSave).then((result) => { completed = true; return result; });
+    await vi.waitFor(() => expect(mocks.replaceTranscriptSearchChunks).toHaveBeenCalledTimes(1));
+    expect(completed).toBe(false);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+    releaseIndex({ status: "incomplete", warning: "index" });
+    const result = await save;
+    expect(mocks.replaceTranscriptSearchChunks).toHaveBeenCalledTimes(1);
 
-    const result = await saveTranscriptSpeakerAutosaveAction(speakerSave);
-
-    expect(update.update).toHaveBeenCalled();
+    expect(update.update).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       revision: 3,
       searchWarning: "Mluvčí je uložený, ale vyhledávací index se nepodařilo obnovit.",

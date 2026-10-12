@@ -6,8 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PurgeRecordingForm } from "@/components/purge-recording-form";
 import { RestoreRecordingForm } from "@/components/restore-recording-form";
 import { TrashRecordingsManager } from "@/components/workspace/trash-recordings-manager";
-import type { RecordingClientView } from "@/lib/recordings/client-view";
+import { toRecordingClientView, type RecordingClientView } from "@/lib/recordings/client-view";
+import { listDeletedRecordings } from "@/lib/recordings/queries";
 import type { TrashItemResult } from "@/lib/recordings/actions";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const recordingId = "00000000-0000-4000-8000-000000000701";
 let container: HTMLDivElement;
@@ -28,6 +32,8 @@ function createDeferred<T = void>() {
 function createDeletedRecording(index: number): RecordingClientView {
   return {
     audioAvailability: "single",
+    capabilities: { ...NO_RECORDING_CAPABILITIES, read: true, restore: true, purge: true },
+    purge_phase: "none",
     created_at: "2026-08-01T10:00:00.000Z",
     deleted_at: "2026-08-10T10:00:00.000Z",
     duration_seconds: 60,
@@ -44,6 +50,7 @@ function createDeletedRecording(index: number): RecordingClientView {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement("div");
   document.body.append(container);
@@ -57,6 +64,15 @@ afterEach(async () => {
 });
 
 describe("trash recording actions", () => {
+  it.each([["single", "jeden soubor"], ["segmented", "po částech"], ["none", "bez audia"]])("renders safe v2 audio %s without a storage locator", async (availability, label) => {
+    const safeRow = { ...createDeletedRecording(1), audioAvailability: undefined };
+    const rpc = vi.fn(async (name: string) => ({ data: name === "list_accessible_recordings_v1" ? [safeRow] : name === "get_managed_recording_trash_v2" ? [{ recording_id: safeRow.id, deleted_at: safeRow.deleted_at, trash_retention_hours: 720, purge_after: safeRow.purge_after, purge_phase: "none", audio_availability: availability }] : safeRow.capabilities, error: null }));
+    const rows = await listDeletedRecordings({ rpc } as never);
+    await act(async () => root.render(<TrashRecordingsManager recordings={rows.map(toRecordingClientView)} nowMs={Date.parse("2026-08-13T10:00:00Z")} />));
+    expect(container.textContent).toContain(label);
+    expect(rows[0]).not.toHaveProperty("storage_path");
+    expect(rows[0]?.audioAvailability).toBe(availability);
+  });
   it("caps manual selection at 100 and retains real selected ids after invalid bulk input", async () => {
     const recordings = Array.from({ length: 101 }, (_, index) => createDeletedRecording(index + 1));
     const restoreBulkAction = vi.fn().mockResolvedValue({
@@ -297,7 +313,7 @@ describe("trash recording actions", () => {
     await act(async () => root.render(
       <article className="trash-recording-row" data-recording-id={recordingId}>
         <span>Mazaná nahrávka</span>
-        <PurgeRecordingForm purgeAction={purgeAction} recordingId={recordingId} />
+        <PurgeRecordingForm expectedUpdatedAt="2026-08-10T10:00:00.000Z" purgeAction={purgeAction} recordingId={recordingId} />
       </article>
     ));
 

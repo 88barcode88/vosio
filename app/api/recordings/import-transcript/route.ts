@@ -1,171 +1,44 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import {
-  createAutomaticTimelineGenerationIdentity,
-  persistTranscriptCompletionTransition,
-  scheduleAutomaticOutputs
-} from "@/lib/ai/automatic-timeline.server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { extractImportedTranscriptFromFile } from "@/lib/transcripts/import-file";
-import { replaceTranscriptSearchChunks } from "@/lib/transcripts/search-index";
+import { captureScopeSchema, createCaptureAttempt, createCaptureDraft, applyCaptureTransition, CaptureError } from "@/lib/recordings/capture";
+import { captureFailure } from "@/lib/recordings/capture-route.server";
+import { assertInvitationOrigin } from "@/lib/recording-sharing/invitation-http.server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { indexCapturedTranscript } from "@/lib/transcripts/capture-index.server";
 import { getTranscriptSearchWarningPayload } from "@/lib/transcripts/search-warning";
-import {
-  getImportedTranscriptValidationError,
-  normalizeImportedTranscriptText,
-  normalizeImportedTranscriptTitle
-} from "@/lib/transcripts/manual-import";
+import { extractImportedTranscriptFromFile } from "@/lib/transcripts/import-file";
+import { getImportedTranscriptValidationError, normalizeImportedTranscriptText, normalizeImportedTranscriptTitle } from "@/lib/transcripts/manual-import";
 
 export const runtime = "nodejs";
+const inputSchema = z.object({ requestId: z.uuid(), transitionRequestId: z.uuid(), scope: captureScopeSchema, title: z.string().optional(), rawText: z.string() });
 
-// Automatic providers run within this bounded after() host budget.
-export const maxDuration = 300;
-
-const bodySchema = z.object({
-  rawText: z.string(),
-  title: z.string().optional()
-});
-
-type ParsedImportRequest = {
-  rawText: string;
-  title: string | null;
-};
-
-// parseImportRequest reads either JSON pasted text or multipart transcript file uploads.
-async function parseImportRequest(request: NextRequest): Promise<ParsedImportRequest | { error: NextResponse }> {
-  const contentType = request.headers.get("content-type") ?? "";
-
-  if (contentType.includes("multipart/form-data")) {
-    const formData = await request.formData();
-    const title = String(formData.get("title") ?? "");
-    const rawText = String(formData.get("rawText") ?? "");
-    const file = formData.get("transcriptFile");
-
-    if (file instanceof File && file.size > 0) {
-      try {
-        return {
-          rawText: await extractImportedTranscriptFromFile(file),
-          title: title || file.name.replace(/\.[^.]+$/, "")
-        };
-      } catch (error) {
-        return {
-          error: NextResponse.json(
-            { error: error instanceof Error ? error.message : "Soubor s přepisem nejde přečíst." },
-            { status: 400 }
-          )
-        };
-      }
-    }
-
-    return { rawText: normalizeImportedTranscriptText(rawText), title };
-  }
-
-  const body = bodySchema.safeParse(await request.json().catch(() => null));
-
-  if (!body.success) {
-    return { error: NextResponse.json({ error: "Neplatná data přepisu." }, { status: 400 }) };
-  }
-
-  return {
-    rawText: normalizeImportedTranscriptText(body.data.rawText),
-    title: body.data.title ?? null
-  };
+// Parse file/text import with the caller's preallocated immutable scope and request identifiers.
+async function parseImport(request: NextRequest) {
+  if (!(request.headers.get("content-type") ?? "").includes("multipart/form-data")) return inputSchema.parse(await request.json());
+  const form = await request.formData();
+  const file = form.get("transcriptFile");
+  const rawText = file instanceof File && file.size > 0 ? await extractImportedTranscriptFromFile(file) : String(form.get("rawText") ?? "");
+  return inputSchema.parse({ requestId: form.get("requestId"), transitionRequestId: form.get("transitionRequestId"), scope: JSON.parse(String(form.get("scope") ?? "{}")), title: String(form.get("title") ?? "") || (file instanceof File ? file.name.replace(/\.[^.]+$/, "") : ""), rawText });
 }
 
-// POST creates a completed text-only recording from a pasted or uploaded transcript.
+// Import creates exactly one scoped draft and finalizes through an idempotent session transaction.
 export async function POST(request: NextRequest) {
-  const parsed = await parseImportRequest(request);
-
-  if ("error" in parsed) {
-    return parsed.error;
-  }
-
-  const validationError = getImportedTranscriptValidationError(parsed.rawText);
-
-  if (validationError) {
-    return NextResponse.json({ error: validationError }, { status: 400 });
-  }
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: userError
-  } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    return NextResponse.json({ error: "Nejste přihlášený." }, { status: 401 });
-  }
-
-  const admin = createAdminClient();
-  const { data: recording, error: recordingError } = await admin
-    .from("recordings")
-    .insert({
-      file_size_bytes: 0,
-      source_type: "realtime",
-      status: "transcribing",
-      title: normalizeImportedTranscriptTitle(parsed.title),
-      user_id: user.id
-    })
-    .select("id")
-    .single();
-
-  if (recordingError || !recording) {
-    return NextResponse.json({ error: "Nepodařilo se vytvořit záznam přepisu." }, { status: 500 });
-  }
-
-  const { data: transcript, error: transcriptError } = await admin
-    .from("transcripts")
-    .insert({
-      raw_text: parsed.rawText,
-      recording_id: recording.id,
-      segments: [],
-      speakers: [],
-      transcription_job_id: null,
-      user_id: user.id
-    })
-    .select("id,recording_id,user_id,raw_text,segments,speakers")
-    .single();
-
-  if (transcriptError || !transcript) {
-    await admin.from("recordings").delete().eq("id", recording.id).eq("user_id", user.id);
-    return NextResponse.json({ error: "Nepodařilo se uložit přepis." }, { status: 500 });
-  }
-
-  const indexResult = await replaceTranscriptSearchChunks(admin, transcript);
-
-  const completion = await persistTranscriptCompletionTransition({
-    admin,
-    durationSeconds: null,
-    generationIdentity: createAutomaticTimelineGenerationIdentity({
-      kind: "import",
-      transcriptId: transcript.id
-    }),
-    generationKind: "import",
-    transcriptId: transcript.id,
-    transcriptionJobId: null,
-    user
-  }).catch(() => null);
-
-  if (!completion) {
-    return NextResponse.json({
-      error: "Nepodařilo se atomicky dokončit import přepisu.",
-      recordingId: recording.id
-    }, { status: 503 });
-  }
-
-  if ((completion.scheduled_types?.length || completion.automatic_timeline_scheduled)) {
-    await scheduleAutomaticOutputs({
-      admin,
-      transcriptId: transcript.id,
-      userId: user.id
-    }).catch(() => {
-      console.error("[Vosio automatic timeline] Post-completion enqueue failed.");
-    });
-  }
-
-  return NextResponse.json({
-    recordingId: recording.id,
-    transcriptId: transcript.id,
-    ...getTranscriptSearchWarningPayload(indexResult)
-  });
+  try { assertInvitationOrigin(request); } catch { return NextResponse.json({ error: "Požadavek není povolený." }, { status: 403 }); }
+  let body: z.infer<typeof inputSchema>;
+  try { body = await parseImport(request); } catch { return NextResponse.json({ error: "Neplatná data přepisu." }, { status: 400 }); }
+  const text = normalizeImportedTranscriptText(body.rawText);
+  const validation = getImportedTranscriptValidationError(text);
+  if (validation) return NextResponse.json({ error: validation }, { status: 400 });
+  const client = await createClient();
+  const auth = await client.auth.getUser();
+  if (auth.error || !auth.data.user) return NextResponse.json({ error: "Nejste přihlášený." }, { status: 401 });
+  try {
+    const attempt = createCaptureAttempt(body.scope, body.requestId);
+    const id = await createCaptureDraft(client, attempt, normalizeImportedTranscriptTitle(body.title), "realtime");
+    attempt.requests.final = { requestId: body.transitionRequestId, revision: 0, payload: { transition: "import_final", rawText: text, segments: [], speakers: [] } };
+    const receipt = await applyCaptureTransition(client, attempt, "final", attempt.requests.final.payload);
+    const index = receipt.transcriptId ? await indexCapturedTranscript(createAdminClient(), receipt.transcriptId) : { status: "ready" };
+    return NextResponse.json({ recordingId: id, transcriptId: receipt.transcriptId, ...getTranscriptSearchWarningPayload(index) }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) { return captureFailure(error instanceof CaptureError ? error.code : undefined); }
 }

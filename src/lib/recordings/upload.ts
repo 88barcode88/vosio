@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/browser";
+import { queueLiveCapture } from "@/lib/recordings/live-capture-queue";
+import { applyCaptureTransition, captureReceiptSchema, CaptureError, createCaptureAttempt, createCaptureDraft, getCaptureState, type CaptureAttempt } from "@/lib/recordings/capture";
 import {
   RECORDINGS_BUCKET,
   SEGMENTED_RECORDING_STORAGE_FOLDER,
@@ -23,6 +25,7 @@ import {
 } from "@/lib/recordings/resumable-upload";
 
 export type UploadRecordingInput = {
+  capture?: CaptureAttempt;
   allowedMimeTypes: readonly string[];
   file: File;
   maxFileSizeBytes: number;
@@ -41,6 +44,7 @@ export type UploadRecordingResult = {
 };
 
 export type LiveRecordingDraft = {
+  capture?: CaptureAttempt;
   id: string;
   storagePrefix: string;
   userId: string;
@@ -147,21 +151,18 @@ function getUploadErrorMessage(message: string, maxFileSizeBytes: number) {
   return "Nahrání souboru se nepodařilo. Zkuste to znovu.";
 }
 
-// markRecordingUploadFailed records a recoverable terminal state and reports a failed recovery update.
+// Check recovery authority after interruption; retain uploading state and the exact resumable object.
 async function markRecordingUploadFailed(input: {
   id: string;
   message: string;
   supabase: ReturnType<typeof createClient>;
 }) {
   try {
-    const { error } = await input.supabase
-      .from("recordings")
-      .update({ error_message: input.message, status: "failed" })
-      .eq("id", input.id);
-
-    return error ? new Error(error.message) : null;
+    // An interrupted transfer stays uploading so the same fixed TUS object can resume.
+    await getCaptureState(input.supabase, input.id);
+    return null;
   } catch (error) {
-    return error instanceof Error ? error : new Error("Nepodařilo se označit nahrávku jako neúspěšnou.");
+    return error instanceof Error ? error : new Error("Stav nahrávky se nepodařilo ověřit.");
   }
 }
 
@@ -184,25 +185,20 @@ export async function uploadRecording(input: UploadRecordingInput): Promise<Uplo
     throw new Error("Přihlášení vypršelo. Přihlaste se znovu.");
   }
 
-  const title = input.title?.trim() || getRecordingTitle(input.file);
-  const { data: recording, error: insertError } = await supabase
-    .from("recordings")
-    .insert({
-      file_size_bytes: input.file.size,
-      mime_type: contentType,
-      source_type: input.sourceType,
-      status: "uploading",
-      title,
-      user_id: user.id
-    })
-    .select("id")
-    .single();
-
-  if (insertError || !recording) {
-    throw new Error("Nepovedlo se vytvořit záznam nahrávky.");
+  const capture = input.capture ?? createCaptureAttempt();
+  const id = await createCaptureDraft(supabase, capture, input.title?.trim() || getRecordingTitle(input.file), input.sourceType);
+  const recording = { id };
+  const state = await getCaptureState(supabase, id);
+  capture.captureRevision = state.captureRevision;
+  const filename = `${capture.requestId}-${sanitizeFilename(input.file.name).slice(-150)}`;
+  if (state.status === "uploaded" && capture.requests.upload_complete) {
+    await applyCaptureTransition(supabase, capture, "upload_complete", capture.requests.upload_complete.payload);
+    return { id, storagePath: `${user.id}/${id}/${filename}` };
   }
-
-  const storagePath = `${user.id}/${recording.id}/${Date.now()}-${sanitizeFilename(input.file.name)}`;
+  const { data: storagePath, error: prepareError } = await supabase.rpc("prepare_recording_upload_v1", {
+    p_recording_id: id, p_filename: filename, p_mime_type: contentType, p_file_size_bytes: input.file.size
+  });
+  if (prepareError || typeof storagePath !== "string") throw new CaptureError(prepareError?.code ?? "invalid_response");
   let transferCompleted = false;
 
   try {
@@ -228,10 +224,11 @@ export async function uploadRecording(input: UploadRecordingInput): Promise<Uplo
         message,
         supabase
       });
+      if (failedUpdateError instanceof CaptureError && failedUpdateError.code === "42501") throw failedUpdateError;
 
       if (error instanceof RecordingUploadCancelledError) {
         if (failedUpdateError) {
-          error.message = `${error.message} Záznam se nepodařilo označit jako neúspěšný.`;
+          error.message = `${error.message} Stav nahrávky se nepodařilo ověřit. Obnovte stav před dalším pokusem.`;
           error.cause = failedUpdateError;
         }
 
@@ -240,7 +237,7 @@ export async function uploadRecording(input: UploadRecordingInput): Promise<Uplo
 
       const uploadErrorMessage = getUploadErrorMessage(message, input.maxFileSizeBytes);
       if (failedUpdateError) {
-        throw new Error(`${uploadErrorMessage} Záznam se nepodařilo označit jako neúspěšný.`);
+        throw new Error(`${uploadErrorMessage} Stav nahrávky se nepodařilo ověřit. Obnovte stav před dalším pokusem.`);
       }
 
       throw new Error(uploadErrorMessage);
@@ -249,25 +246,7 @@ export async function uploadRecording(input: UploadRecordingInput): Promise<Uplo
     throw error;
   }
 
-  const { error: updateError } = await supabase
-    .from("recordings")
-    .update({ status: "uploaded", storage_path: storagePath })
-    .eq("id", recording.id);
-
-  if (updateError) {
-    const message = "Soubor je uložený, ale metadata se neuložila.";
-    const failedUpdateError = await markRecordingUploadFailed({
-      id: recording.id,
-      message,
-      supabase
-    });
-
-    if (failedUpdateError) {
-      throw new Error(`${message} Záznam se nepodařilo označit jako neúspěšný.`);
-    }
-
-    throw new Error(message);
-  }
+  await applyCaptureTransition(supabase, capture, "upload_complete", { transition: "upload_complete", mimeType: contentType, fileSizeBytes: input.file.size });
 
   return {
     id: recording.id,
@@ -277,6 +256,8 @@ export async function uploadRecording(input: UploadRecordingInput): Promise<Uplo
 
 // createLiveRecordingDraft creates one recoverable DB row before live recording starts.
 export async function createLiveRecordingDraft(input: {
+  capture?: CaptureAttempt;
+  sourceType?: "in_app_recording" | "realtime";
   contentType: string;
   title: string;
 }): Promise<LiveRecordingDraft> {
@@ -290,26 +271,13 @@ export async function createLiveRecordingDraft(input: {
     throw new Error("Přihlášení vypršelo. Přihlaste se znovu.");
   }
 
-  const { data: recording, error } = await supabase
-    .from("recordings")
-    .insert({
-      file_size_bytes: 0,
-      mime_type: input.contentType,
-      source_type: "in_app_recording",
-      status: "uploading",
-      title: input.title,
-      user_id: user.id
-    })
-    .select("id")
-    .single();
-
-  if (error || !recording) {
-    throw new Error("Nepovedlo se vytvořit záznam live nahrávky.");
-  }
+  const capture = input.capture ?? createCaptureAttempt();
+  const recording = { id: await createCaptureDraft(supabase, capture, input.title, input.sourceType ?? "in_app_recording") };
 
   const storagePrefix = getLiveRecordingStoragePrefix(user.id, recording.id as string);
 
   return {
+    capture,
     id: recording.id as string,
     storagePrefix,
     userId: user.id
@@ -327,10 +295,11 @@ export async function uploadLiveRecording(input: LiveRecordingUploadInput) {
   }
 
   const supabase = createClient();
-  const storagePath = getLiveRecordingStoragePath({
-    extension: input.extension,
-    storagePrefix: input.recording.storagePrefix
+  const { data: storagePath, error: prepareError } = await supabase.rpc("prepare_recording_upload_v1", {
+    p_recording_id: input.recording.id, p_filename: `live/recording.${sanitizeFilename(input.extension)}`,
+    p_mime_type: input.contentType, p_file_size_bytes: input.blob.size
   });
+  if (prepareError || typeof storagePath !== "string") throw new CaptureError(prepareError?.code ?? "invalid_response");
   const { error } = await supabase.storage.from(RECORDINGS_BUCKET).upload(storagePath, input.blob, {
     cacheControl: "3600",
     contentType: input.contentType,
@@ -359,6 +328,26 @@ function getStoragePartMetadata(item: { metadata?: unknown }) {
   return { mimeType: normalizeAudioMimeType(metadata.mimetype), size: metadata.size };
 }
 
+// adoptLegacyLiveRecordingParts registers the complete browser scope before any legacy part is resumed.
+export async function adoptLegacyLiveRecordingParts(manifest: DurableSafetyManifest) {
+  const parts = validateSafetyPartListing(manifest.parts).map(({ item }) => item);
+  if (parts.length !== manifest.partCount || parts.some((part) => part.ownerId !== manifest.ownerId
+    || part.recordingId !== manifest.recordingId || part.generationId !== manifest.generationId
+    || part.size !== part.blob.size || part.name !== formatSafetyPartName(part.index, part.extension))) {
+    throw new CaptureError("invalid_manifest");
+  }
+  const client = createClient();
+  const auth = await client.auth.getUser();
+  if (auth.error || auth.data.user?.id !== manifest.ownerId) throw new CaptureError("42501");
+  const state = await getCaptureState(client, manifest.recordingId);
+  const { data, error } = await client.rpc("adopt_legacy_live_parts_v1", {
+    p_recording_id: manifest.recordingId, p_expected_capture_revision: state.captureRevision,
+    p_parts: parts.map((part) => ({ index: part.index, mimeType: normalizeAudioMimeType(part.mimeType), bytes: part.size }))
+  });
+  if (error) throw new CaptureError(error.code ?? "unknown");
+  if (data?.recordingId !== manifest.recordingId || data?.captureRevision !== state.captureRevision) throw new CaptureError("invalid_response");
+}
+
 // uploadLiveRecordingPart uploads one durable part idempotently without overwriting an existing object.
 export async function uploadLiveRecordingPart(input: LiveRecordingPartUploadInput) {
   if (input.blob.size <= 0 || input.blob.size > input.maxFileSizeBytes) {
@@ -376,6 +365,16 @@ export async function uploadLiveRecordingPart(input: LiveRecordingPartUploadInpu
   }
 
   const storagePath = getLiveRecordingPartStoragePath(input);
+  const partMimeType = normalizeAudioMimeType(input.contentType);
+  const capture = input.recording.capture ??= createCaptureAttempt();
+  await queueLiveCapture(capture, async () => {
+    const state = await getCaptureState(supabase, input.recording.id);
+    const { data, error } = await supabase.rpc("prepare_recording_live_part_v1", {
+      p_recording_id: input.recording.id, p_expected_capture_revision: state.captureRevision,
+      p_part_index: input.partIndex, p_mime_type: partMimeType, p_file_size_bytes: input.blob.size
+    });
+    if (error || data !== storagePath) throw new CaptureError(error?.code ?? "invalid_response");
+  });
   const name = storagePath.slice(input.recording.storagePrefix.length);
   const folder = input.recording.storagePrefix.replace(/\/$/, "");
   const bucket = supabase.storage.from(RECORDINGS_BUCKET);
@@ -412,7 +411,7 @@ export async function uploadLiveRecordingPart(input: LiveRecordingPartUploadInpu
 
   const { error: uploadError } = await bucket.upload(storagePath, input.blob, {
     cacheControl: "3600",
-    contentType: input.contentType,
+    contentType: partMimeType,
     upsert: false
   });
 
@@ -497,25 +496,27 @@ export async function completeLiveRecordingUpload(input: {
   totalBytes: number;
 }) {
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from("recordings")
-    .update({
-      duration_seconds: input.durationSeconds,
-      file_size_bytes: input.totalBytes,
-      mime_type: input.contentType,
-      status: "uploaded",
-      storage_path: input.storagePath
-    })
-    .eq("id", input.recording.id)
-    .eq("user_id", input.recording.userId)
-    .select("id")
-    .maybeSingle();
-
-  if (error || data?.id !== input.recording.id) {
-    throw new Error("Audio je uložené, ale metadata nahrávky se neuložila.");
-  }
-
-  return { id: data.id as string };
+  const session = input.recording.capture ??= createCaptureAttempt();
+  await queueLiveCapture(session, async () => {
+    const capture = await captureForDraft(input.recording);
+    if (input.storagePath === input.recording.storagePrefix) {
+      const pending = capture.requests.live_parts_complete ??= {
+        requestId: crypto.randomUUID(), revision: capture.captureRevision,
+        payload: { transition: "upload_complete", durationSeconds: input.durationSeconds }
+      };
+      const { data, error } = await supabase.rpc("complete_recording_live_parts_v1", {
+        p_recording_id: input.recording.id, p_request_id: pending.requestId,
+        p_expected_capture_revision: pending.revision, p_duration_seconds: pending.payload.durationSeconds
+      });
+      if (error) throw new CaptureError(error.code ?? "unknown");
+      const receipt = captureReceiptSchema.parse(data);
+      if (receipt.recordingId !== input.recording.id) throw new CaptureError("invalid_response");
+      capture.captureRevision = Math.max(capture.captureRevision, receipt.captureRevision);
+    } else {
+      await applyCaptureTransition(supabase, capture, "upload_complete", { transition: "upload_complete", durationSeconds: input.durationSeconds, mimeType: input.contentType, fileSizeBytes: input.totalBytes });
+    }
+  });
+  return { id: input.recording.id };
 }
 
 // completeLiveRecordingWithoutAudio converts an oversized live capture into a text-only recording.
@@ -524,22 +525,11 @@ export async function completeLiveRecordingWithoutAudio(input: {
   recording: LiveRecordingDraft;
 }) {
   const supabase = createClient();
-  const { error } = await supabase
-    .from("recordings")
-    .update({
-      duration_seconds: input.durationSeconds,
-      error_message: null,
-      file_size_bytes: 0,
-      source_type: "realtime",
-      status: "uploaded",
-      storage_path: null
-    })
-    .eq("id", input.recording.id)
-    .eq("user_id", input.recording.userId);
-
-  if (error) {
-    throw new Error("Přepis je připravený, ale metadata nahrávky se neuložila.");
-  }
+  const session = input.recording.capture ??= createCaptureAttempt();
+  await queueLiveCapture(session, async () => {
+    const capture = await captureForDraft(input.recording);
+    await applyCaptureTransition(supabase, capture, "text_only", { transition: "text_only", durationSeconds: input.durationSeconds });
+  });
 }
 
 // failLiveRecordingUpload stores a safe failure state for a started live recording.
@@ -553,9 +543,19 @@ export async function failLiveRecordingUpload(input: {
 
   const supabase = createClient();
 
-  await supabase
-    .from("recordings")
-    .update({ error_message: input.message, status: "failed" })
-    .eq("id", input.recording.id)
-    .eq("user_id", input.recording.userId);
+  const recording = input.recording;
+  const session = recording.capture ??= createCaptureAttempt();
+  await queueLiveCapture(session, async () => {
+    const capture = await captureForDraft(recording);
+    await applyCaptureTransition(supabase, capture, "capture_failed", { transition: "capture_failed" });
+  });
+}
+
+// Keep a live draft's revision on the persistent session object, refreshing only before a new transition.
+export async function captureForDraft(recording: LiveRecordingDraft) {
+  const capture = recording.capture ??= createCaptureAttempt();
+  capture.recordingId = recording.id;
+  const state = await getCaptureState(createClient(), recording.id);
+  capture.captureRevision = state.captureRevision;
+  return capture;
 }

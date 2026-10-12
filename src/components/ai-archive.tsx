@@ -107,8 +107,10 @@ export function AiArchive({
                   </Link>
                 </div>
                 <DeleteAiOutputForm
+                  canDelete={item.capabilities?.delete ?? false}
                   deleteAction={deleteAction}
                   label={`Smazat celý AI výstup: ${getAiOutputTitle(item.processing_type)}`}
+                  confirmationMessage={`Smazat tento výstup (${getAiOutputTitle(item.processing_type)}, ${formatRecordingDate(item.created_at)}) a jeho odvozené projekce? Nahrávka, přepis a ostatní AI výstupy zůstanou.`}
                   next={nextPath}
                   outputId={item.id}
                 />

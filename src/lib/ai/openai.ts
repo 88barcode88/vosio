@@ -25,7 +25,7 @@ type RunOpenAIProcessingInput = {
   model: string;
   outputSchema: unknown;
   prompt: string;
-  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | null;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
   temperature: number;
 };
 
@@ -33,7 +33,7 @@ type RunOpenAIChatInput = {
   messages: RecordingChatMessage[];
   model: string;
   outputSchema: unknown;
-  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | null;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max" | null;
   systemInstruction: string;
 };
 

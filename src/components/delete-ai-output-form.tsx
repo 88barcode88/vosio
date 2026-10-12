@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useRef, useState } from "react";
+import { useRecordingCapabilities } from "@/components/recording-capability-context";
 import { Trash2 } from "lucide-react";
 import { deleteAiOutputAction } from "@/lib/ai/actions";
 import {
@@ -10,6 +11,7 @@ import {
 } from "@/components/optimistic-delete";
 
 type DeleteAiOutputFormProps = {
+  canDelete?: boolean;
   confirmationMessage?: string;
   deleteAction?: (formData: FormData) => Promise<void | { removed_output_ids: string[] }>;
   label?: string;
@@ -22,6 +24,7 @@ type DeleteAiOutputFormProps = {
 
 // DeleteAiOutputForm removes one or more saved AI generations after explicit confirmation.
 export function DeleteAiOutputForm({
+  canDelete,
   confirmationMessage,
   deleteAction = deleteAiOutputAction,
   label = "Smazat",
@@ -31,6 +34,8 @@ export function DeleteAiOutputForm({
   outputIds,
   targetSelector = "[data-ai-output-delete-target], .ai-output-detail"
 }: DeleteAiOutputFormProps) {
+  const { capabilities } = useRecordingCapabilities();
+  const allowed = canDelete ?? capabilities.delete;
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const optimisticTargetRef = useRef<HTMLElement | null>(null);
@@ -38,6 +43,7 @@ export function DeleteAiOutputForm({
 
   // handleSubmit prevents accidental deletion and hides only the nearest output card optimistically.
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (!allowed) { event.preventDefault(); return; }
     const confirmed = window.confirm(
       confirmationMessage ?? "Smazat tento AI výstup? Přepis a nahrávka zůstanou uložené."
     );
@@ -57,6 +63,7 @@ export function DeleteAiOutputForm({
 
   // runDelete restores the exact target when an unexpected action rejection settles.
   async function runDelete(formData: FormData) {
+    if (!allowed) return;
     try {
       const result = await deleteAction(formData);
       const removedIds = result && "removed_output_ids" in result ? result.removed_output_ids : ids;
@@ -70,6 +77,7 @@ export function DeleteAiOutputForm({
     }
   }
 
+  if (!allowed) return null;
   return (
     <>
       <form action={runDelete} className="ai-output-delete-form" onSubmit={handleSubmit}>

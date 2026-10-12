@@ -45,19 +45,19 @@ describe("recording organization validation", () => {
     });
   });
 
-  it("accepts a complete assignment and enforces project-client ownership shape", () => {
+  it("accepts complete and clientless project assignments; DB validates their scope", () => {
     expect(parseRecordingAssignment({
       clientId,
       folderId,
       projectId,
       tagIds: [tagId]
     })).toEqual({ clientId, folderId, projectId, tagIds: [tagId] });
-    expect(() => parseRecordingAssignment({
+    expect(parseRecordingAssignment({
       clientId: "",
       folderId,
       projectId,
       tagIds: []
-    })).toThrow("Projekt vyžaduje klienta");
+    })).toEqual({ clientId: null, folderId, projectId, tagIds: [] });
   });
 
   it("rejects malformed UUIDs anywhere in the assignment", () => {

@@ -20,6 +20,8 @@ Designová reference:
 - kompaktní seznamy a konkrétní pracovní kroky jako Appica-inspired workspace,
 - neutrální světlé plátno, bílé panely, jemné rámečky a důraz na obsah.
 
+Uživatel 5. 10. 2026 schválil kompaktní variantu A: zachovat současný inbox a jeho tokeny, zmenšit vizuální ovládání a přesunout vedlejší formuláře do malých popupů. Reference [Linear](https://getdesign.md/design-md/linear.app/preview), [Cal](https://getdesign.md/design-md/cal/preview) a [Notion](https://getdesign.md/design-md/notion/preview) slouží pouze pro hustotu, hierarchii a klidné kontextové ovládání; nekopíruje se jejich značka ani typografie.
+
 Memorable detail:
 
 - nahrávka jako pracovní objekt,
@@ -249,21 +251,28 @@ Nepatří sem:
 
 `/recordings` je jeden kompaktní pracovní inbox, ne sestava panelů nebo tabulek vložených do sebe.
 
-- Nad obsahem je jeden kompaktní toolbar: pružné hledání s vlastní ikonou, ovládání pokročilých filtrů a `Spravovat`.
+- Nad obsahem je jeden kompaktní toolbar: pružné hledání s vlastní ikonou, `Filtry`, hned za nimi `Spravovat` a případně `Nedokončené · N`. Akce mají stejně jako detail 30px viditelnou plochu uvnitř nejméně 44px cíle a 15px ikony.
+- Nedokončené nahrávky patří do kontextového popupu, ne do dominantního banneru nad seznamem. Zavření popupu nikdy nemaže místní bezpečnostní kopii ani serverový záznam. Odstranění musí být samostatně potvrzené, odlišovat místní kopii od serverové nahrávky a respektovat aktivního zapisovatele.
+- Hromadné sdílení začíná checkboxem přímo u autorizované soukromé nahrávky. Teprve neprázdný výběr zobrazí malý action toolbar `Vybráno N`, `Sdílet`, `Zrušit výběr`; sdílení nepatří mezi filtry. Výběr nejvýše 100 položek a stejný request při nejistém retry zůstávají zachované.
 - Stavové facety tvoří měkký segmentovaný řádek; seznam je jeden bílý 16px panel s jemnými skupinovými oddělovači a neobaluje jednotlivé desktopové řádky dalšími kartami.
 - Název je pružný sloupec. Řádek končí úzkou ellipsis akcí a editace názvu s Košem jsou dostupné až v jejím přístupném menu.
 - Inbox používá studené `#f7f8fa` pozadí a bílý `--surface-raised`, bez původního teplého béžového tónu; dark mode zůstává plnohodnotný.
-- Existující filtry `q`, `status`, `client`, `project`, `folder` a opakovatelný `tag` zůstávají URL-backed. Pokročilá organizační část zůstává keep-mounted, aby neztrácela draft ani stav při zavření.
+- Existující filtry `q`, `status`, `client`, `project`, `folder` a opakovatelný `tag` zůstávají URL-backed. Pokročilá organizační část používá keep-mounted ukotvený popup do 360 px, ne plnošířkový panel. Zachovává draft, focus trap, Escape, návrat focusu a blokování zavření během aktualizace filtrů.
 - Zdroj a datum nejsou nové filtry tohoto UI-only řezu.
-- Při viewportu 900 px a méně se toolbar složí a `Spravovat` zabere celou šířku. Samotný seznam přechází na karty podle skutečné šířky content containeru 680 px a méně, ne pouze podle viewportu.
+- Při viewportu 900 px a méně se hledání přesune na vlastní řádek; `Filtry` a `Spravovat` zůstávají kompaktní sousední akce. Stavové počty mají 30px viditelný segment uvnitř 44px cíle. Samotný seznam přechází na karty podle skutečné šířky content containeru 680 px a méně, ne pouze podle viewportu.
+- Správa zařazení používá Drawer do 640 px. Název má vlastní čitelný sloupec, akce pružný vedlejší sloupec a správa přístupu celý řádek pod nimi. Do 480 px se název, akce a formulář skládají pod sebe; krátká jména se nelámou po jednotlivých písmenech.
 
 ### Recording Detail
 
 Detail nahrávky je pracovní objekt, ne hero.
 
 - Header drž kompaktní: název, stav, metadata a destruktivní akce.
-- Export, úprava názvu a organizace se rozbalují v toku hlavičky a odsouvají další obsah; přehrávač je nesmí zakrýt.
+- `Upravit název`, `Export` a `Sdílet` mají stabilní umístění v jedné action liště. `Upravit zařazení` používá stejný keep-mounted kontextový popup u organizačních chipů. Popupy neodsouvají přehrávač ani ostatní akce.
+- Viditelná geometrie drobných akcí má výšku přibližně 30 px, ikony 15 px a titul detailu 21 px; skutečný hit target zůstává nejméně 44 × 44 px. Popup má šířku nejvýše 360 px, 16px okraje viewportu a vlastní scroll na krátké obrazovce.
+- Stejný malý action surface používají uložení/zrušení, prompt editor, nastavení, Koš a upload akce. Velikost přehrávače, capture a datových ikon se tím nemění. Přepis má stabilní společnou geometrii textu i ikony během pending a rezervovaný scrollovatelný status slot; request ani provider guard se vzhledem nemění.
+- Popupy mají přístupný název, focus trap, Escape a návrat focusu na trigger. Pending mutaci nelze zavřít; chyba ponechá draft a nejisté sdílení zachovává stejný payload. Obsah po prvním otevření zůstává připojený.
 - Přehrávač začíná jako sbalený řádek s play/pause, časem a rozbalením posuvníku. Rozbalení ani změna záložky nesmí zastavit nebo znovu načíst audio; sbalení se resetuje až při změně nahrávky.
+- Připojený stavový řádek audia rezervuje kompaktní místo i pro prázdný stav. Načítání, úspěch a chyba neposouvají záložky ani chatový formulář; text se zalomí a není oříznutý ani vložený do druhého scrolleru.
 - Na mobilu je přehrávač součástí horní sticky plochy se záložkami, aby nepřekrýval obsah ani spodní navigaci.
 - Záložky musí fungovat jako rychlé pracovní režimy, ne jako nové stránky.
 - AI zpracování má být vertikální workflow: nastavení a quick actions nahoře, uložené výstupy pod tím.
@@ -279,6 +288,8 @@ Detail nahrávky je pracovní objekt, ne hero.
 - file upload.
 
 Karty mají být akční, ne prezentační. Nadpis stránky má být malý. Live a upload mají být vedle sebe na desktopu, aby uživatel okamžitě viděl dvě hlavní cesty: zapnout live nahrávání nebo vložit soubor.
+
+Výchozí osobní nahrávání je soukromé; běžná cesta je pořídit obsah, uložit a sdílet až v detailu. Volitelný keep-mounted disclosure `Projekt a pokročilé sdílení` zachovává autorizované projektové a editor scope bez dominantního formuláře. Externí capture slot nesmí zobrazovat tvrzení odvozené z jiného lokálního scope. Zobrazují se skutečné použitelné limity audia a souboru a důležité chyby, ne raw bucket/globální/preference diagnostika. Desktopová navigace začíná `Nová nahrávka`; pět mobilních navigačních cílů se nemění.
 
 ### Recording Detail Header
 
@@ -315,9 +326,25 @@ AI zpracování je tab v detailu nahrávky.
 Obsah:
 
 - quick actions,
-- model/temperature jako pokročilé nastavení,
+- model a samostatná podporovaná úroveň uvažování jako pokročilé nastavení,
 - uložené výstupy,
 - detail vybraného výstupu.
+
+### Shared AI Model Picker
+
+Uživatel 3. 10. 2026 vybral variantu A: model nad diskrétním posuvníkem
+uvažování. AI detail, Nastavení a Chat používají tutéž komponentu v existujících
+neutrálních plochách a tokenech; mění se pouze ovládání modelu.
+
+- Nativní model select nad nativním range se samostatným viditelným popiskem.
+- Pět kroků: Nízké (low), Střední (medium), Vysoké (high), Velmi vysoké (xhigh),
+  Maximum (max). Aktuální úroveň je textová i přes `aria-valuetext`, bez procent.
+- Klávesnice i dotyk, nejméně 44px cíle, desktop/mobile a light/dark.
+- Podporu určuje katalog modelů; nepodporované modely místo posuvníku zobrazí
+  „U tohoto modelu nelze uvažování nastavit.“ Uložená OpenAI preference zůstává.
+- Scope nápověda odlišuje nový ruční výstup, ukládaný default a následující otázku.
+- Žádný posuvník teploty: podporované nové požadavky mají pevnou hodnotu 0,3,
+  Sol/Astra parametr vynechávají.
 
 ### Timeline Tab
 

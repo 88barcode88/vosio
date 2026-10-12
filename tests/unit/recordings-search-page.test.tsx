@@ -55,7 +55,7 @@ beforeEach(() => {
   mocks.countStatuses.mockResolvedValue({
     completed: 5,
     created: 1,
-    deleted: 0,
+    deleted: 2,
     failed: 3,
     transcribing: 4,
     uploaded: 6,
@@ -159,7 +159,7 @@ describe("recordings search page routing", () => {
     await vi.waitFor(() => expect(mocks.countStatuses).toHaveBeenCalledOnce());
 
     expect(mocks.listRecordings).toHaveBeenCalledOnce();
-    expect(mocks.countDeleted).toHaveBeenCalledOnce();
+    expect(mocks.countDeleted).not.toHaveBeenCalled();
 
     releaseOptions();
     await pagePromise;
@@ -177,7 +177,7 @@ describe("recordings search page routing", () => {
 
     const target = new URL(mocks.redirect.mock.calls[0]?.[0] as string, "https://vosio.local");
     expect(target.searchParams.get("client")).toBeNull();
-    expect(target.searchParams.get("project")).toBeNull();
+    expect(target.searchParams.get("project")).toBe(projectId);
     expect(mocks.listRecordings).not.toHaveBeenCalled();
     expect(mocks.countStatuses).not.toHaveBeenCalled();
   });
@@ -191,7 +191,7 @@ describe("recordings search page routing", () => {
 
     expect(mocks.listRecordings).toHaveBeenCalledTimes(2);
     expect(mocks.countStatuses).toHaveBeenCalledTimes(2);
-    expect(mocks.countDeleted).toHaveBeenCalledTimes(2);
+    expect(mocks.countDeleted).not.toHaveBeenCalled();
     expect(mocks.listOptions).toHaveBeenCalledTimes(2);
   });
 

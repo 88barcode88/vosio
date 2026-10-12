@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   NewRecordingWorkspace,
   type NewRecordingCaptureSlots
@@ -49,6 +50,7 @@ import type {
 } from "@/components/workspace/trash-recordings-manager";
 
 type VosioWorkspaceProps = {
+  pendingContent?: ReactNode;
   activeRecordingId?: string;
   aiOutputs: AiOutputView[];
   aiArchiveBaseHref?: string;
@@ -131,6 +133,7 @@ export function getContentAreaClassName({
 
 // VosioWorkspace composes the workspace shell and routes each view into its working area.
 export function VosioWorkspace({
+  pendingContent,
   activeRecordingId,
   aiOutputs,
   aiArchiveActionAlert,
@@ -231,8 +234,9 @@ export function VosioWorkspace({
         <div className="workspace-content">
           {transcriptSearchWarning ? <TranscriptSearchWarningNotice /> : null}
           <div className="workspace-grid workspace-grid-wide">
-            {isCreatingRecording ? (
+            {pendingContent ?? (isCreatingRecording ? (
               <NewRecordingWorkspace
+                projects={recordingOrganizationOptions.projects}
                 captureSlots={newRecordingCaptureSlots}
                 recordingStorageConfig={recordingStorageConfig}
                 uploadRedirectAfterSuccess={newRecordingUploadRedirectAfterSuccess}
@@ -300,7 +304,7 @@ export function VosioWorkspace({
                 recordingOrganizationOptions={recordingOrganizationOptions}
                 userSettings={userSettings}
               />
-            )}
+            ))}
           </div>
         </div>
       </section>

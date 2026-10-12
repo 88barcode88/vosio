@@ -32,6 +32,7 @@ type RunGeminiProcessingInput = {
   outputSchema: unknown;
   prompt: string;
   temperature: number;
+  supportsTemperature?: boolean;
   thinkingLevel?: "medium" | "high" | null;
 };
 
@@ -71,7 +72,7 @@ export function createGeminiGenerationConfig(input: RunGeminiProcessingInput) {
     ...(thinkingLevel
       ? { thinkingConfig: { thinkingLevel } }
       : {}),
-    ...(supportsModelTemperature(input.model) ? { temperature: input.temperature } : {})
+    ...((input.supportsTemperature ?? supportsModelTemperature(input.model)) ? { temperature: input.temperature } : {})
   };
 }
 
@@ -101,7 +102,7 @@ export function createGeminiChatRequestBody(input: RunGeminiChatInput) {
         model: input.model,
         outputSchema: input.outputSchema,
         prompt: "",
-        temperature: 0.2
+        temperature: 0.3
       }),
       ...(input.outputSchema ? { responseJsonSchema: input.outputSchema } : {})
     },

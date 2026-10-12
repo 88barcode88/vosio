@@ -1,32 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
 import type { RecordingOrganizationFilters } from "@/lib/recording-organization/filters";
 import type {
   ActiveRecordingStatus,
   RecordingRow,
   RecordingStatus
 } from "@/lib/recordings/types";
-import { fetchAllRows } from "@/lib/supabase/pagination";
-
-const recordingColumns = `
-  id,
-  user_id,
-  client_id,
-  project_id,
-  folder_id,
-  title,
-  source_type,
-  storage_path,
-  mime_type,
-  duration_seconds,
-  file_size_bytes,
-  status,
-  error_message,
-  created_at,
-  deleted_at,
-  trash_retention_hours,
-  purge_after,
-  updated_at
-`;
 
 const ORGANIZATION_RECORDING_PAGE_SIZE = 1000;
 
@@ -46,12 +25,12 @@ function recordingCursorFromRow(recording: RecordingRow): RecordingCursor {
   return { createdAt: recording.created_at, id: recording.id };
 }
 
-// listRecordings loads the current user's ordinary organization list through Supabase RLS.
+// listRecordings preserves the accessible RPC's stable, already-deduplicated keyset pages.
 export async function listRecordings(
   supabase: SupabaseClient,
   options: {
     organizationFilters?: RecordingOrganizationFilters;
-    status?: ActiveRecordingStatus | null;
+    status?: ActiveRecordingStatus | "deleted" | null;
   } = {}
 ) {
   const filters = options.organizationFilters ?? {
@@ -66,7 +45,7 @@ export async function listRecordings(
   let cursor: RecordingCursor | null = null;
 
   for (;;) {
-    const { data, error } = await supabase.rpc("list_own_recordings_v2", {
+    const { data, error } = await supabase.rpc("list_accessible_recordings_v1", {
       p_before_created_at: cursor?.createdAt ?? null,
       p_before_id: cursor?.id ?? null,
       p_client_id: filters.clientId,
@@ -86,7 +65,7 @@ export async function listRecordings(
 
     const page = data as RecordingRow[];
     for (const recording of page) {
-      if (seenRecordingIds.has(recording.id)) continue;
+      if (seenRecordingIds.has(recording.id)) throw new Error("Unable to load recordings: duplicate RPC row");
       seenRecordingIds.add(recording.id);
       recordings.push(recording);
     }
@@ -104,12 +83,12 @@ export async function listRecordings(
   return recordings;
 }
 
-// countOwnRecordingStatuses returns complete active-status facets for current q and organization scope.
+// countOwnRecordingStatuses reads server-scoped facets, including the unfiltered manager Trash count.
 export async function countOwnRecordingStatuses(
   supabase: SupabaseClient,
   options: { organizationFilters: RecordingOrganizationFilters; searchQuery: string }
 ): Promise<RecordingStatusCounts> {
-  const { data, error } = await supabase.rpc("count_own_recording_statuses_v1", {
+  const { data, error } = await supabase.rpc("count_accessible_recording_statuses_v1", {
     p_client_id: options.organizationFilters.clientId,
     p_folder_id: options.organizationFilters.folderId,
     p_project_id: options.organizationFilters.projectId,
@@ -134,42 +113,48 @@ export async function countOwnRecordingStatuses(
   return counts;
 }
 
-// countDeletedRecordings returns only the current user's soft-deleted row count through RLS.
+// countDeletedRecordings returns the current manager's Trash count from the same accessible contract.
 export async function countDeletedRecordings(supabase: SupabaseClient) {
-  const { count, error } = await supabase
-    .from("recordings")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "deleted");
-  if (error || count === null) throw new Error("Unable to count deleted recordings");
-  return count;
+  const counts = await countOwnRecordingStatuses(supabase, {
+    organizationFilters: { clientId: null, projectId: null, folderId: null, tagIds: [] }, searchQuery: ""
+  });
+  return counts.deleted;
 }
 
 // getRecordingById loads one recording for a detail route through Supabase RLS.
 export async function getRecordingById(supabase: SupabaseClient, recordingId: string) {
-  const { data, error } = await supabase
-    .from("recordings")
-    .select(recordingColumns)
-    .eq("id", recordingId)
-    .neq("status", "deleted")
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("get_accessible_recording_v1", { p_recording_id: recordingId });
 
   if (error) {
     throw new Error(`Unable to load recording: ${error.message}`);
   }
 
-  return data as RecordingRow | null;
+  if (!Array.isArray(data) || data.length > 1) throw new Error("Unable to load recording: invalid response");
+  const recording = data[0] as RecordingRow | undefined;
+  return recording?.status === "deleted" ? null : recording ?? null;
 }
 
-// listDeletedRecordings loads soft-deleted recordings for the trash page through Supabase RLS.
+// Enriches the server-scoped Trash list in bounded safe batches without changing list membership or order.
 export async function listDeletedRecordings(supabase: SupabaseClient) {
-  return fetchAllRows<RecordingRow>("Unable to load deleted recordings", (from, to) =>
-    supabase
-      .from("recordings")
-      .select(recordingColumns)
-      .eq("status", "deleted")
-      .order("deleted_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(from, to)
-      .returns<RecordingRow[]>()
-  );
+  const rows = await listRecordings(supabase, { status: "deleted" });
+  for (let offset = 0; offset < rows.length; offset += 100) {
+    const page = rows.slice(offset, offset + 100);
+    const { data, error } = await supabase.rpc("get_managed_recording_trash_v2", { p_recording_ids: page.map((row) => row.id) });
+    if (error || !Array.isArray(data)) throw new Error("Unable to load Trash metadata");
+    if (data.length !== page.length || data.some((row) => !row || typeof row !== "object"
+      || !["none", "segmented", "single"].includes(row.audio_availability))) throw new Error("Invalid Trash audio metadata");
+    const metadata = new Map(data.map((row) => [row.recording_id, row]));
+    if (metadata.size !== data.length || data.some((row) => !page.some((recording) => recording.id === row.recording_id))) throw new Error("Invalid Trash metadata");
+    await Promise.all(page.map(async (row) => {
+      const item = metadata.get(row.id);
+      if (!item) throw new Error("Missing Trash metadata");
+      row.capabilities = await resolveRecordingCapabilities(supabase, row.id);
+      row.deleted_at = item.deleted_at ?? null;
+      row.trash_retention_hours = item.trash_retention_hours ?? null;
+      row.purge_after = item.purge_after ?? null;
+      row.purge_phase = item.purge_phase ?? null;
+      row.audioAvailability = item.audio_availability;
+    }));
+  }
+  return rows;
 }

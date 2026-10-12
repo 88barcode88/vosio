@@ -31,15 +31,7 @@ export const recordingAssignmentSchema = z.object({
   folderId: nullableUuidSchema,
   projectId: nullableUuidSchema,
   tagIds: tagIdListSchema.default([])
-}).strict().superRefine((value, context) => {
-  if (value.projectId && !value.clientId) {
-    context.addIssue({
-      code: "custom",
-      message: "Projekt vyžaduje klienta",
-      path: ["projectId"]
-    });
-  }
-});
+}).strict();
 
 // parseOrganizationName trims and bounds names according to the selected entity kind.
 export function parseOrganizationName(value: unknown, kind: RecordingOrganizationEntityKind) {

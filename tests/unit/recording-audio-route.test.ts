@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 
 const mocks = vi.hoisted(() => ({
-  createClient: vi.fn()
+  createClient: vi.fn(), createAdminClient: vi.fn()
 }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: mocks.createAdminClient }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: mocks.createClient
@@ -29,7 +31,7 @@ function createSupabaseMock({
     data: {
       id: recordingId,
       mime_type: "audio/webm",
-      storage_path: "user/recording/audio.webm",
+      storage_path: `${userId}/${recordingId}/audio.webm`,
       user_id: userId
     },
     error: null
@@ -51,7 +53,7 @@ function createSupabaseMock({
 } = {}) {
   const maybeSingle = vi.fn().mockResolvedValue(recordingResult);
   const eqUserId = vi.fn(() => ({ maybeSingle }));
-  const eqRecordingId = vi.fn(() => ({ eq: eqUserId }));
+  const eqRecordingId = vi.fn(() => ({ eq: eqUserId, maybeSingle }));
   const select = vi.fn(() => ({ eq: eqRecordingId }));
   const from = vi.fn(() => ({ select }));
   const createSignedUrl = vi.fn().mockResolvedValue(signedUrlResult);
@@ -61,10 +63,12 @@ function createSupabaseMock({
     error: userError
   });
   const supabase = {
+    rpc: vi.fn().mockResolvedValue({ data: { ...NO_RECORDING_CAPABILITIES, read: true }, error: null }),
     auth: { getUser },
     from,
     storage: { from: storageFrom }
   };
+  mocks.createAdminClient.mockReturnValue({ from });
 
   return {
     createSignedUrl,
@@ -88,6 +92,7 @@ function callRoute(id: string) {
 
 beforeEach(() => {
   mocks.createClient.mockReset();
+  mocks.createAdminClient.mockReset();
 });
 
 describe("GET recording audio", () => {
@@ -148,7 +153,7 @@ describe("GET recording audio", () => {
     expect(response.status).toBe(404);
     expect(mock.select).toHaveBeenCalledWith("id,user_id,storage_path,mime_type");
     expect(mock.eqRecordingId).toHaveBeenCalledWith("id", recordingId);
-    expect(mock.eqUserId).toHaveBeenCalledWith("user_id", userId);
+    expect(mock.eqUserId).not.toHaveBeenCalled();
     expect(mock.createSignedUrl).not.toHaveBeenCalled();
   });
 
@@ -169,7 +174,7 @@ describe("GET recording audio", () => {
 
   it.each([
     [null, "no_audio"],
-    ["user/recording/live/", "segmented"]
+    [`${userId}/${recordingId}/live/`, "segmented"]
   ])("returns 409 for ineligible storage %s", async (storagePath, reason) => {
     const mock = createSupabaseMock({
       recordingResult: {
@@ -254,11 +259,34 @@ describe("GET recording audio", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(mock.storageFrom).toHaveBeenCalledWith("recordings");
-    expect(mock.createSignedUrl).toHaveBeenCalledWith("user/recording/audio.webm", 300);
+    expect(mock.createSignedUrl).toHaveBeenCalledWith(`${userId}/${recordingId}/audio.webm`, 300);
     expect(await response.json()).toEqual({
       expiresIn: 300,
       mimeType: "audio/webm",
       url: "https://signed.example/audio"
     });
+  });
+  it("denies revoked access before creating an admin client", async () => {
+    const mock = createSupabaseMock();
+    mock.supabase.rpc.mockResolvedValue({ data: { ...NO_RECORDING_CAPABILITIES }, error: null });
+    mocks.createClient.mockResolvedValue(mock.supabase);
+    expect((await callRoute(recordingId)).status).toBe(404);
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
+    expect(mock.createSignedUrl).not.toHaveBeenCalled();
+  });
+  it("authorizes first, resolves only the exact locator, and signs with session Storage", async () => {
+    const mock = createSupabaseMock();
+    mocks.createClient.mockResolvedValue(mock.supabase);
+    expect((await callRoute(recordingId)).status).toBe(200);
+    expect(mock.supabase.rpc.mock.invocationCallOrder[0]).toBeLessThan(mocks.createAdminClient.mock.invocationCallOrder[0]);
+    expect(mock.maybeSingle.mock.invocationCallOrder[0]).toBeLessThan(mock.createSignedUrl.mock.invocationCallOrder[0]);
+    expect(mocks.createAdminClient.mock.results[0].value).not.toHaveProperty("storage");
+  });
+  it("rejects a stored alias outside the exact technical owner/recording prefix", async () => {
+    const mock = createSupabaseMock({ recordingResult: { data: { id: recordingId, user_id: userId,
+      storage_path: "another-owner/another-recording/audio.webm", mime_type: "audio/webm" }, error: null } });
+    mocks.createClient.mockResolvedValue(mock.supabase);
+    expect((await callRoute(recordingId)).status).toBe(404);
+    expect(mock.createSignedUrl).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,8 @@
 "use client";
 
 import { type CSSProperties, useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Eraser, Pencil, Save, X } from "lucide-react";
+import { CompactPopover } from "@/components/ui/compact-popover";
 import { useCloseOnSuccessfulSave } from "@/components/use-close-on-successful-save";
 import { createInitialSaveActionState, type SaveAction } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
@@ -72,9 +74,8 @@ export function RecordingOrganizationEditor({
   const [folderId, setFolderId] = useState(persistedDraft.folderId);
   const [tagIds, setTagIds] = useState(persistedDraft.tagIds);
   const [dismissedError, setDismissedError] = useState<DismissedSaveError | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const firstControlRef = useRef<HTMLSelectElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
   const persistedDraftRef = useRef(persistedDraft);
   const persistedSignatureRef = useRef(persistedSignature);
   const lastSyncedPersistedSignatureRef = useRef(persistedSignature);
@@ -108,7 +109,7 @@ export function RecordingOrganizationEditor({
     createInitialSaveActionState()
   );
   const matchingProjects = useMemo(
-    () => options.projects.filter((project) => project.client_id === clientId),
+    () => options.projects.filter((project) => (project.client_id ?? "") === clientId),
     [clientId, options.projects]
   );
   const closeAfterSuccess = useCallback(() => {
@@ -178,28 +179,7 @@ export function RecordingOrganizationEditor({
       return;
     }
     firstControlRef.current?.focus();
-
-    // closeOnPointer dismisses an idle assignment editor clicked from outside.
-    function closeOnPointer(event: PointerEvent) {
-      if (!isPending && !containerRef.current?.contains(event.target as Node)) {
-        dismissEditor();
-      }
-    }
-
-    // closeOnEscape dismisses an idle assignment editor for keyboard users.
-    function closeOnEscape(event: KeyboardEvent) {
-      if (!isPending && event.key === "Escape") {
-        dismissEditor();
-      }
-    }
-
-    document.addEventListener("pointerdown", closeOnPointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnPointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [dismissEditor, isOpen, isPending]);
+  }, [isOpen]);
 
   // toggleTag updates the controlled many-to-many selection without mutating prior state.
   function toggleTag(tagId: string) {
@@ -219,7 +199,7 @@ export function RecordingOrganizationEditor({
   ].filter((chip): chip is { color: string | null; id: string; label: string } => chip !== null);
 
   return (
-    <div className="recording-organization-editor" ref={containerRef}>
+    <div className="recording-organization-editor">
       <div className="recording-organization-summary" aria-label="Zařazení nahrávky">
         {chips.length > 0
           ? chips.map((chip) => (
@@ -234,21 +214,15 @@ export function RecordingOrganizationEditor({
             </span>
           ))
           : <span className="organization-chip organization-chip-muted">Bez zařazení</span>}
-        <button
-          aria-expanded={isOpen}
-          disabled={isPending}
-          onClick={() => {
-            if (isOpen) dismissEditor();
-            else setIsOpen(true);
-          }}
-          ref={triggerRef}
-          type="button"
+        <CompactPopover
+          busy={isPending}
+          className="recording-organization-popover"
+          label="Zařazení nahrávky"
+          onOpenChange={(next) => { if (next) setIsOpen(true); else dismissEditor(); }}
+          open={isOpen}
+          trigger={<><Pencil aria-hidden="true" size={15} />Upravit zařazení</>}
+          triggerRef={triggerRef}
         >
-          Upravit zařazení
-        </button>
-      </div>
-      {isOpen ? (
-        <div className="recording-organization-editor-panel">
           <form
             action={formAction}
             aria-busy={isPending}
@@ -285,7 +259,6 @@ export function RecordingOrganizationEditor({
               <label>
                 <span>Projekt</span>
                 <select
-                  disabled={!clientId}
                   name="projectId"
                   onChange={(event) => setProjectId(event.target.value)}
                   value={projectId}
@@ -332,6 +305,7 @@ export function RecordingOrganizationEditor({
                 disabled={isPending}
                 type="submit"
               >
+                <Save aria-hidden="true" size={15} />
                 {isPending ? "Ukládám…" : "Uložit"}
               </button>
               <button
@@ -344,13 +318,14 @@ export function RecordingOrganizationEditor({
                 }}
                 type="button"
               >
+                <Eraser aria-hidden="true" size={15} />
                 Vyčistit zařazení
               </button>
-              <button disabled={isPending} onClick={dismissEditor} type="button">Zrušit</button>
+              <button disabled={isPending} onClick={dismissEditor} type="button"><X aria-hidden="true" size={15} />Zrušit</button>
             </div>
           </form>
-        </div>
-      ) : null}
+        </CompactPopover>
+      </div>
       <span aria-atomic="true" aria-live="polite" className="visually-hidden">
         {isCurrentSettlement && actionState.status === "success" && !isPending
           ? actionState.message

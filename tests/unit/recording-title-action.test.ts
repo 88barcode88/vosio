@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialSaveActionState, type SaveActionState } from "@/lib/forms/save-action-state";
 import { updateRecordingTitleStateAction } from "@/lib/recordings/actions";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 
 const mocks = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
@@ -77,9 +78,15 @@ function arrangeSupabase({
   const query = createUpdateQuery(queryResult);
   const getUser = vi.fn().mockResolvedValue({ data: { user }, error: userError });
   const from = vi.fn().mockReturnValue(query);
-  mocks.createClient.mockResolvedValue({ auth: { getUser }, from });
+  const rpc = vi.fn(async (name: string) => {
+    if (name === "recording_capabilities_v1") return { data: { ...NO_RECORDING_CAPABILITIES, read: true, editTitle: true }, error: null };
+    if (queryResult instanceof Error) throw queryResult;
+    return name === "get_accessible_recording_v1" ? { data: queryResult.data ? [queryResult.data] : [], error: queryResult.error }
+      : { data: null, error: queryResult.error };
+  });
+  mocks.createClient.mockResolvedValue({ auth: { getUser }, from, rpc });
 
-  return { from, getUser, query };
+  return { from, getUser, query, rpc };
 }
 
 beforeEach(() => {
@@ -119,7 +126,7 @@ describe("updateRecordingTitleStateAction", () => {
   });
 
   it("updates only the owned, non-deleted recording and returns success", async () => {
-    const { from, query } = arrangeSupabase();
+    const { from, rpc } = arrangeSupabase();
     const previousState: SaveActionState = {
       message: "Starší chyba.",
       revision: 6,
@@ -136,12 +143,8 @@ describe("updateRecordingTitleStateAction", () => {
       status: "success"
     });
 
-    expect(from).toHaveBeenCalledWith("recordings");
-    expect(query.update).toHaveBeenCalledWith({ title: "Nový název" });
-    expect(query.eq).toHaveBeenNthCalledWith(1, "id", recordingId);
-    expect(query.eq).toHaveBeenNthCalledWith(2, "user_id", userId);
-    expect(query.neq).toHaveBeenCalledWith("status", "deleted");
-    expect(query.select).toHaveBeenCalledWith("id,title");
+    expect(from).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith("edit_recording_title_v1", { p_recording_id: recordingId, p_title: "Nový název" });
     expect(mocks.revalidatePath.mock.calls).toEqual([
       ["/"],
       ["/recordings"],

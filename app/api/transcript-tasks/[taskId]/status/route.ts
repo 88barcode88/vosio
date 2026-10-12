@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { structuredTaskStatusSchema } from "@/lib/ai/structured-status";
 import { createClient } from "@/lib/supabase/server";
+import { ContentEditError, setContentTaskStatus } from "@/lib/recording-sharing/content-edits.server";
 
 const routeParamsSchema = z.object({
   taskId: z.uuid()
@@ -18,7 +19,7 @@ type RouteContext = {
   }>;
 };
 
-// PATCH updates one user-owned structured checklist status without redirecting the page.
+// PATCH authorizes the recording, uses the locked status-only RPC, then requires a matched persisted result.
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const params = routeParamsSchema.safeParse(await context.params);
 
@@ -42,23 +43,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Nejste prihlaseny." }, { status: 401 });
   }
 
-  const { data: updatedTask, error } = await supabase
-    .from("transcript_tasks")
-    .update({ status: body.data.status })
-    .eq("id", params.data.taskId)
-    .eq("user_id", user.id)
-    .select("id,status")
-    .maybeSingle<{ id: string; status: string }>();
-
-  if (error) {
-    return NextResponse.json({ error: "Stav ukolu se nepodarilo ulozit." }, { status: 500 });
-  }
-
-  if (!updatedTask) {
-    return NextResponse.json({ error: "Úkol nebyl nalezen." }, { status: 404 });
+  let saved;
+  try {
+    saved = await setContentTaskStatus(supabase, { taskId: params.data.taskId, status: body.data.status });
+  } catch (error) {
+    const failure = error instanceof ContentEditError ? error : new ContentEditError("unavailable");
+    const status = failure.stage === "lookup" ? 404 : failure.code === "denied" ? 403 : failure.code === "conflict" ? 409 : 500;
+    const message = failure.stage === "lookup" ? "Úkol nebyl nalezen." : failure.stage === "permission" ? "Úprava není povolena." : failure.stage === "readback" ? "Uložení úkolu se nepodařilo potvrdit." : "Stav ukolu se nepodarilo ulozit.";
+    return NextResponse.json({ error: message }, { status });
   }
 
   revalidatePath("/recordings");
 
-  return NextResponse.json({ ok: true, status: updatedTask.status });
+  return NextResponse.json({ ok: true, status: saved.status });
 }

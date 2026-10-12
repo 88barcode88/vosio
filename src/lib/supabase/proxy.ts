@@ -9,7 +9,9 @@ const PUBLIC_PATHS = ["/login", "/auth"];
 
 // isPublicPath returns whether the request may run without an authenticated user.
 function isPublicPath(pathname: string) {
-  return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+  return pathname === "/invitations/accept"
+    || pathname === "/api/recording-invitations" || pathname.startsWith("/api/recording-invitations/")
+    || PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 // createLoginRedirect builds a safe login redirect that preserves the requested path.
@@ -22,6 +24,15 @@ function createLoginRedirect(request: NextRequest) {
 
 // updateSession refreshes Supabase auth cookies and protects private app routes.
 export async function updateSession(request: NextRequest) {
+  // Exact cookie-less scheduler and per-job callback POSTs use their own Bearer/HMAC guards.
+  const schedulerPaths = ["/api/jobs/manual-recording-purge", "/api/jobs/recording-transcription"];
+  const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+  const callbackPath = new RegExp(`^/api/jobs/recording-transcription/${uuid}/${uuid}$`, "i").test(request.nextUrl.pathname);
+  if (request.method === "POST" && (schedulerPaths.includes(request.nextUrl.pathname) || callbackPath)
+    && request.url === new URL(request.nextUrl.pathname, request.url).href) {
+    return NextResponse.next({ request });
+  }
+
   if (isDevelopmentWorkspaceShellFixture(request.nextUrl.pathname)) {
     return NextResponse.next({ request });
   }

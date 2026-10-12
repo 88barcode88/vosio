@@ -135,6 +135,8 @@ export function PersistentRecorderSlot(config: PersistentRecorderConfig) {
   const context = useContext(PersistentRecordingSessionContext);
   const slotRef = useRef<HTMLDivElement | null>(null);
   const {
+    captureScope,
+    captureRequestId,
     allowTranscriptOnly,
     captionMode,
     developmentRecordingFactory,
@@ -161,6 +163,8 @@ export function PersistentRecorderSlot(config: PersistentRecorderConfig) {
     }
 
     return attachRecorderSlot(element, {
+      captureScope,
+      captureRequestId,
       allowTranscriptOnly,
       captionMode,
       developmentRecordingFactory,
@@ -171,6 +175,8 @@ export function PersistentRecorderSlot(config: PersistentRecorderConfig) {
       redirectAfterSave
     });
   }, [
+    captureScope,
+    captureRequestId,
     allowTranscriptOnly,
     attachRecorderSlot,
     captionMode,

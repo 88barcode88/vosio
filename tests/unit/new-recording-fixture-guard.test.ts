@@ -15,7 +15,7 @@ describe("new recording E2E fixture guard", () => {
     expect(validateNewRecordingFixtureAccess("production", "a1b2c3d4e5f6", "success")).toBeNull();
   });
 
-  it("uses only inert live and transcript slots in fixture source", () => {
+  it("uses only inert scope, live and transcript slots in fixture source", () => {
     const source = readFileSync(
       join(process.cwd(), "app", "login", "new-recording-e2e", "new-recording-fixture.tsx"),
       "utf8"
@@ -23,6 +23,8 @@ describe("new recording E2E fixture guard", () => {
 
     expect(source).not.toMatch(/BrowserRecorder|PersistentRecorderSlot|PersistentRecordingSessionProvider/u);
     expect(source).not.toMatch(/TranscriptImportForm/u);
+    expect(source).not.toMatch(/CaptureScopePicker|createClient/u);
+    expect(source).toContain("scope: <InertCaptureScope />");
     expect(source).not.toMatch(/fetch\s*\(|\/api\/|supabase|soniox/iu);
   });
 });

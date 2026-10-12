@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const read = (path: string) => readFileSync(path, "utf8");
 
 describe("recording status documentation contract", () => {
-  it("documents V1 list and search RPCs as compatibility-only and the current UI as V2", () => {
+  it("documents accessible shared read paths as current and owner-only RPCs as historical", () => {
     const documents = [
       "docs/gotchas.md",
       "docs/requirements/real-workspace.md",
@@ -16,12 +16,17 @@ describe("recording status documentation contract", () => {
     for (const path of documents) {
       const source = read(path);
 
-      expect(source, path).toContain("list_own_recordings_v2");
-      expect(source, path).toContain("search_own_recordings_v2");
-      expect(source, path).toContain("count_own_recording_statuses_v1");
-      expect(source, path).toMatch(/V1[^\n]*(compatibility-only|pouze pro kompatibilitu)/iu);
-      expect(source, path).toMatch(/(current|současné) UI[^\n]*(unconditionally|bezpodmínečně)[^\n]*V2/iu);
+      expect(source, path).toContain("list_accessible_recordings_v1");
+      expect(source, path).toContain("search_accessible_recordings_v1");
+      expect(source, path).toContain("count_accessible_recording_statuses_v1");
     }
+    const queries = read("src/lib/recordings/queries.ts");
+    expect(queries).toContain('rpc("list_accessible_recordings_v1"');
+    expect(queries).toContain('rpc("count_accessible_recording_statuses_v1"');
+    expect(queries).not.toContain('rpc("list_own_recordings_v2"');
+    const contract = read("docs/api/project-sharing-read-paths.md");
+    expect(contract).toContain("source-only");
+    expect(contract).toContain("authenticated");
   });
 
   it("keeps facets full-scope and the deleted count separate", () => {

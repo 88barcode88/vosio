@@ -9,6 +9,7 @@ import {
   recordingMarkerRouteParamsSchema
 } from "@/lib/recording-markers/validation";
 import { createClient } from "@/lib/supabase/server";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
 
 type RouteContext = {
   params: Promise<{
@@ -70,6 +71,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (authResult.error || !user) {
     return NextResponse.json({ error: "Nejste přihlášený." }, { status: 401 });
   }
+  if (!(await resolveRecordingCapabilities(supabase, params.data.recordingId)).runPersonalAi) {
+    return NextResponse.json({ error: "Úprava momentů není povolena." }, { status: 403 });
+  }
 
   let recordingResult;
 
@@ -78,7 +82,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
       .from("recordings")
       .select("id")
       .eq("id", params.data.recordingId)
-      .eq("user_id", user.id)
       .neq("status", "deleted")
       .maybeSingle();
   } catch {

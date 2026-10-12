@@ -19,9 +19,13 @@ vi.mock("@/lib/soniox/client", async (importOriginal) => ({
 
 import { POST } from "../../app/api/soniox/realtime-key/route";
 
+// Bind key creation to the authorized draft before contacting the provider.
+function keyRequest() { return new Request("http://localhost/api/soniox/realtime-key", { method: "POST", body: JSON.stringify({ recordingId: "00000000-0000-4000-8000-000000000010" }) }); }
+
 // mockAuthenticatedUser configures the route's trusted Supabase Auth result.
 function mockAuthenticatedUser(region: "global" | "eu") {
   mocks.createClient.mockResolvedValue({
+    rpc: vi.fn().mockResolvedValue({ data: true, error: null }),
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: {
@@ -51,13 +55,18 @@ beforeEach(() => {
 });
 
 describe("POST /api/soniox/realtime-key regional routing", () => {
+  it("rejects revoked capture authority before creating a provider key", async () => {
+    mocks.createClient.mockResolvedValue({ auth: { getUser: async () => ({ data: { user: { id: "revoked" } }, error: null }) }, rpc: vi.fn().mockResolvedValue({ data: false, error: null }) });
+    expect((await POST(keyRequest())).status).toBe(403);
+    expect(mocks.createSonioxTemporaryKey).not.toHaveBeenCalled();
+  });
   it.each([
     ["global", "wss://stt-rt.soniox.com/transcribe-websocket"],
     ["eu", "wss://stt-rt.eu.soniox.com/transcribe-websocket"]
   ] as const)("routes an authenticated %s user through the exact provider region", async (region, websocketUrl) => {
     mockAuthenticatedUser(region);
 
-    const response = await POST();
+    const response = await POST(keyRequest());
     const payload = await response.json();
 
     expect(response.status).toBe(200);
@@ -83,7 +92,7 @@ describe("POST /api/soniox/realtime-key regional routing", () => {
       status: 403
     }));
 
-    const response = await POST();
+    const response = await POST(keyRequest());
     const payload = await response.json();
 
     expect(response.status).toBe(500);
@@ -103,7 +112,7 @@ describe("POST /api/soniox/realtime-key regional routing", () => {
       status: 401
     }));
 
-    const response = await POST();
+    const response = await POST(keyRequest());
     const payload = await response.json();
 
     expect(payload).toEqual({
@@ -122,7 +131,7 @@ describe("POST /api/soniox/realtime-key regional routing", () => {
       status: 500
     }));
 
-    const response = await POST();
+    const response = await POST(keyRequest());
     const payload = await response.json();
 
     expect(payload).toEqual({
@@ -141,7 +150,7 @@ describe("POST /api/soniox/realtime-key regional routing", () => {
       status: 401
     }));
 
-    const response = await POST();
+    const response = await POST(keyRequest());
     const payload = await response.json();
 
     expect(payload).toEqual({

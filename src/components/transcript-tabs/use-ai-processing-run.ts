@@ -2,6 +2,8 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ManualAiJobStatus } from "@/lib/ai/manual-job-state";
+import { useRecordingCapabilities } from "@/components/recording-capability-context";
+import type { AiReasoningEffort } from "@/lib/model-options";
 
 export type AiProcessingType =
   | "summary"
@@ -12,8 +14,10 @@ export type AiProcessingType =
   | "timeline_chapters";
 
 export type AiProcessingRunInput = {
-  model: string;
+  model?: string;
   processingType: AiProcessingType;
+  reasoningEffort?: AiReasoningEffort;
+  retryOfJobId?: string;
 };
 
 type ActiveAiRun = AiProcessingRunInput & { id: string };
@@ -41,6 +45,7 @@ export function useAiProcessingRun(
   transcriptId: string | null,
   onAccepted?: (job: { id: string; status: ManualAiJobStatus }, processingType: AiProcessingType) => void
 ) {
+  const { capabilities } = useRecordingCapabilities();
   const [state, setState] = useState<AiProcessingState>({ activeRuns: [], message: null, transcriptId });
   const messageOwnerRef = useRef<string | null>(null);
   const scopeRef = useRef({ generation: 0, transcriptId: null as string | null });
@@ -65,7 +70,7 @@ export function useAiProcessingRun(
   // run posts one identity-tracked request while allowing parallel runs of any processing type.
   async function run(input: AiProcessingRunInput) {
     const scope = scopeRef.current;
-    if (!transcriptId || scope.transcriptId !== transcriptId) {
+    if (!capabilities.runPersonalAi || !transcriptId || scope.transcriptId !== transcriptId) {
       return false;
     }
 

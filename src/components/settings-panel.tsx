@@ -1,9 +1,10 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { CheckCircle2, Settings2, TriangleAlert } from "lucide-react";
+import { CheckCircle2, Save, Settings2, TriangleAlert } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AccountSecurityPanel } from "@/components/account-security-panel";
+import { AiModelPicker, createAiModelSelection } from "@/components/ai-model-picker";
 import { Disclosure } from "@/components/ui/disclosure";
 import { APP_VERSION } from "@/lib/app-version";
 import type { InstallationEnvironment, InstallationStatus } from "@/lib/installation-status.server";
@@ -21,8 +22,6 @@ import {
 } from "@/lib/settings/types";
 import {
   AI_MODEL_QUALITY_GUIDANCE,
-  aiModelOptions,
-  getAiModelDescription,
   sonioxRealtimeModelOptions
 } from "@/lib/model-options";
 import { sonioxRealtimeLanguageOptions } from "@/lib/soniox/languages";
@@ -46,6 +45,7 @@ type VisibleSettingsDraft = Pick<
   | "autoTimelineAfterTranscription"
   | "automaticOutputTypes"
   | "defaultOpenaiModel"
+  | "defaultReasoningEffort"
   | "liveAudioQuality"
   | "sonioxRealtimeLanguage"
   | "sonioxRealtimeModel"
@@ -56,10 +56,12 @@ type VisibleSettingsDraft = Pick<
 
 // createVisibleSettingsDraft copies only the settings represented by editable form controls.
 function createVisibleSettingsDraft(settings: UserSettings): VisibleSettingsDraft {
+  const selection = createAiModelSelection(settings.defaultOpenaiModel, settings.defaultReasoningEffort);
   return {
     autoTimelineAfterTranscription: settings.autoTimelineAfterTranscription,
     automaticOutputTypes: settings.automaticOutputTypes ?? [],
-    defaultOpenaiModel: settings.defaultOpenaiModel,
+    defaultOpenaiModel: selection.model as UserSettings["defaultOpenaiModel"],
+    defaultReasoningEffort: selection.reasoningEffort,
     liveAudioQuality: settings.liveAudioQuality,
     sonioxRealtimeLanguage: settings.sonioxRealtimeLanguage,
     sonioxRealtimeModel: settings.sonioxRealtimeModel,
@@ -78,6 +80,7 @@ function getVisibleSettingsKey(settings: UserSettings) {
 function SettingsSaveButton({ disabled, pending }: { disabled: boolean; pending: boolean }) {
   return (
     <button className="settings-save-button" disabled={disabled || pending} type="submit">
+      <Save aria-hidden="true" size={15} />
       {pending ? "Ukládám nastavení…" : "Uložit nastavení"}
     </button>
   );
@@ -312,21 +315,20 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         <section className="settings-section" aria-labelledby="settings-ai">
           <div className="settings-section-heading"><h2 id="settings-ai">AI a výstupy</h2><p>Model se používá pro ruční AI zpracování i pro novou automatickou časovou osu.</p></div>
           <div className="settings-grid settings-model-row">
-            <label>
-              <span>Výchozí AI model</span>
-              <select
-                disabled={disableSave}
-                name="defaultOpenaiModel"
-                onChange={(event) => {
-                  const value = event.currentTarget.value as UserSettings["defaultOpenaiModel"];
-                  setVisibleDraft((draft) => ({ ...draft, defaultOpenaiModel: value }));
-                }}
-                value={visibleDraft.defaultOpenaiModel}
-              >
-                {aiModelOptions.map((model) => <option key={model.id} value={model.id}>{model.label} - {model.price}</option>)}
-              </select>
-              <small>{getAiModelDescription(visibleDraft.defaultOpenaiModel)}</small>
-            </label>
+            <AiModelPicker
+              disabled={disableSave || pending}
+              modelLabel="Výchozí AI model"
+              modelName="defaultOpenaiModel"
+              onChange={(selection) => setVisibleDraft((draft) => ({
+                ...draft,
+                defaultOpenaiModel: selection.model as UserSettings["defaultOpenaiModel"],
+                defaultReasoningEffort: selection.reasoningEffort
+              }))}
+              preserveReasoningPreference
+              reasoningName="defaultReasoningEffort"
+              scope="Výchozí volba pro nové AI požadavky."
+              value={createAiModelSelection(visibleDraft.defaultOpenaiModel, visibleDraft.defaultReasoningEffort)}
+            />
             <aside aria-labelledby="settings-model-guidance-title" className="settings-model-guidance">
               <strong id="settings-model-guidance-title">Model a kvalita</strong>
               <p>{AI_MODEL_QUALITY_GUIDANCE}</p>

@@ -7,14 +7,16 @@ import {
   getRecordingChatHistory,
   submitRecordingChatTurn
 } from "@/lib/ai/chat-service.server";
-import { aiModelIds } from "@/lib/model-options";
+import { aiModelIds, aiReasoningEfforts, legacyAiModelOptions } from "@/lib/model-options";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const routeParamsSchema = z.object({ transcriptId: z.uuid() });
 const requestBodySchema = z.object({
   clientTurnId: z.uuid(),
-  model: z.enum(aiModelIds),
+  // Historical UUID replay is admitted by the service; new turns require the active catalogue.
+  model: z.enum([...aiModelIds, ...legacyAiModelOptions.map((option) => option.id)]),
+  reasoningEffort: z.enum(aiReasoningEfforts).optional(),
   question: z.string().trim().min(1).max(CHAT_QUESTION_MAX_CHARS)
 }).strict();
 
@@ -100,6 +102,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const result = await submitRecordingChatTurn({
       clientTurnId: body.data.clientTurnId,
       model: body.data.model,
+      reasoningEffort: body.data.reasoningEffort,
       question: body.data.question,
       transcriptId: auth.transcriptId,
       userId: auth.user.id

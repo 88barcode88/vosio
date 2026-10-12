@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getSafeNextPath } from "@/lib/auth/redirects";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
 
 const aiOutputDeleteFormSchema = z.object({
   next: z.string().optional(),
@@ -41,7 +41,7 @@ function parseAiOutputDeleteForm(formData: FormData) {
   return parsed.data;
 }
 
-// deleteAiOutputAction removes user-owned AI outputs while keeping processing usage metadata.
+// Deletes exact manager-authorized saved artifacts through locked session RPCs, retaining job metadata.
 export async function deleteAiOutputAction(formData: FormData) {
   const parsed = parseAiOutputDeleteForm(formData);
   const uniqueOutputIds = Array.from(new Set(parsed.outputIds));
@@ -56,25 +56,30 @@ export async function deleteAiOutputAction(formData: FormData) {
     redirect(`/login?next=${encodeURIComponent(nextPath)}`);
   }
 
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("ai_outputs")
-    .delete()
-    .in("id", uniqueOutputIds)
-    .eq("user_id", user.id)
-    .select("id,transcript_id")
-    .returns<Array<{ id: string; transcript_id: string }>>();
-
-  if (error || !data || data.length !== uniqueOutputIds.length) {
-    redirect(appendQueryStatus(nextPath, "error", "ai_output_delete_failed"));
-  }
+  let failed = false;
+  const removedOutputIds: string[] = [];
+  try {
+    for (const outputId of uniqueOutputIds) {
+      const { data: output, error: outputError } = await supabase.from("ai_outputs")
+        .select("id,transcript_id").eq("id", outputId).maybeSingle();
+      if (outputError || !output) { failed = true; break; }
+      const { data: transcript, error: transcriptError } = await supabase.from("transcripts")
+        .select("recording_id").eq("id", output.transcript_id).maybeSingle();
+      if (transcriptError || !transcript || !(await resolveRecordingCapabilities(supabase, transcript.recording_id)).delete) { failed = true; break; }
+      const { data, error } = await supabase.rpc("delete_managed_ai_output_v1", { p_output_id: outputId });
+      if (error || data?.deletedId !== outputId || data?.recordingId !== transcript.recording_id) { failed = true; break; }
+      removedOutputIds.push(outputId);
+      revalidatePath(`/recordings/${transcript.recording_id}`);
+    }
+  } catch { failed = true; }
+  if (failed) redirect(appendQueryStatus(nextPath, "error", "ai_output_delete_failed"));
 
   revalidatePath("/");
   revalidatePath("/ai");
   revalidatePath("/recordings");
   revalidatePath(nextPath);
   if (formData.get("completion") === "quiet") {
-    return { removed_output_ids: data.map((row) => row.id) };
+    return { removed_output_ids: removedOutputIds };
   }
   redirect(nextPath);
 }

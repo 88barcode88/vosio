@@ -1,5 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const recordingId = "00000000-0000-4000-8000-000000000711";
+// captureRpc models current session authority and exact receipts, not owner-only direct row writes.
+function captureRpc(failCompletion = false) {
+  return vi.fn(async (name: string, args: Record<string, unknown>) => {
+    if (name === "get_recording_capture_state_v1") return { data: { recordingId, status: "uploading", captureRevision: 4 }, error: null };
+    if (name === "prepare_recording_live_part_v1") return {
+      data: `owner-1/${recordingId}/live/part-${String(args.p_part_index).padStart(6, "0")}.webm`, error: null
+    };
+    return { data: failCompletion ? null : { recordingId, status: "uploaded", captureRevision: 5, transcriptId: null, jobId: null },
+      error: failCompletion ? { code: "42501" } : null };
+  });
+}
 const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
 
 vi.mock("@/lib/supabase/browser", () => ({ createClient: mocks.createClient }));
@@ -53,12 +65,12 @@ function createPart(index: number, ownerId = "owner-1"): DurableAudioPartRecord 
     extension: "webm",
     generationId: "generation-1",
     index,
-    key: `${ownerId}/recording-1/generation-1/${index}`,
+    key: `${ownerId}/00000000-0000-4000-8000-000000000711/generation-1/${index}`,
     mimeType: "audio/webm",
     name: `part-${String(index).padStart(6, "0")}.webm`,
     offsetMs: index * 5_000,
     ownerId,
-    recordingId: "recording-1",
+    recordingId: "00000000-0000-4000-8000-000000000711",
     size: blob.size,
     uploadedAt: null
   };
@@ -86,7 +98,7 @@ describe("durable live audio", () => {
         offsetMs: 0,
         size: blob.size
       },
-      recordingId: "recording-1",
+      recordingId: "00000000-0000-4000-8000-000000000711",
       repository
     });
 
@@ -97,7 +109,7 @@ describe("durable live audio", () => {
       index: 0,
       offsetMs: 0,
       ownerId: "owner-1",
-      recordingId: "recording-1",
+      recordingId: "00000000-0000-4000-8000-000000000711",
       size: blob.size,
       uploadedAt: null
     });
@@ -154,7 +166,7 @@ describe("durable live audio", () => {
       ownerId: "owner-1",
       partCount: 2,
       pendingPartCount: 1,
-      recordingId: "recording-1",
+      recordingId: "00000000-0000-4000-8000-000000000711",
       totalBytes: 2
     });
     expect(manifests[0]?.parts.map((part) => part.index)).toEqual([0, 1]);
@@ -173,7 +185,7 @@ describe("durable live audio", () => {
     await cleanupDurableSafetyGeneration({
       generationId: "generation-1",
       ownerId: "owner-1",
-      recordingId: "recording-1",
+      recordingId: "00000000-0000-4000-8000-000000000711",
       repository
     });
 
@@ -189,6 +201,7 @@ describe("idempotent safety part upload", () => {
       error: null
     }));
     mocks.createClient.mockReturnValue({
+      rpc: captureRpc(),
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
       storage: { from: vi.fn(() => ({ list, upload })) }
     });
@@ -199,13 +212,13 @@ describe("idempotent safety part upload", () => {
       maxFileSizeBytes: 1_000,
       partIndex: 0,
       recording: {
-        id: "recording-1",
-        storagePrefix: "owner-1/recording-1/live/",
+        id: "00000000-0000-4000-8000-000000000711",
+        storagePrefix: "owner-1/00000000-0000-4000-8000-000000000711/live/",
         userId: "owner-1"
       }
     });
 
-    expect(result).toEqual({ bytes: 5, reused: true, storagePath: "owner-1/recording-1/live/part-000000.webm" });
+    expect(result).toEqual({ bytes: 5, reused: true, storagePath: "owner-1/00000000-0000-4000-8000-000000000711/live/part-000000.webm" });
     expect(upload).not.toHaveBeenCalled();
   });
 
@@ -217,6 +230,7 @@ describe("idempotent safety part upload", () => {
       error: null
     }));
     mocks.createClient.mockReturnValue({
+      rpc: captureRpc(),
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
       storage: { from: vi.fn(() => ({ remove })) }
     });
@@ -234,8 +248,8 @@ describe("idempotent safety part upload", () => {
       }
     })).resolves.toEqual({ removed: 2 });
     expect(remove).toHaveBeenCalledWith([
-      "owner-1/recording-1/live/part-000000.webm",
-      "owner-1/recording-1/live/part-000001.webm"
+      "owner-1/00000000-0000-4000-8000-000000000711/live/part-000000.webm",
+      "owner-1/00000000-0000-4000-8000-000000000711/live/part-000001.webm"
     ]);
   });
 
@@ -243,10 +257,11 @@ describe("idempotent safety part upload", () => {
     const first = { ...createPart(0), uploadedAt: "2026-09-03T12:05:00.000Z" };
     const second = { ...createPart(1), uploadedAt: "2026-09-03T12:06:00.000Z" };
     mocks.createClient.mockReturnValue({
+      rpc: captureRpc(),
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
       storage: { from: vi.fn(() => ({
         remove: vi.fn(async () => ({
-          data: [{ name: "owner-1/recording-1/live/part-000000.webm" }],
+          data: [{ name: "owner-1/00000000-0000-4000-8000-000000000711/live/part-000000.webm" }],
           error: null
         }))
       })) }
@@ -270,11 +285,12 @@ describe("idempotent safety part upload", () => {
     const first = { ...createPart(0), uploadedAt: "2026-09-03T12:05:00.000Z" };
     const second = { ...createPart(1), uploadedAt: "2026-09-03T12:06:00.000Z" };
     mocks.createClient.mockReturnValue({
+      rpc: captureRpc(),
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
       storage: { from: vi.fn(() => ({
         remove: vi.fn(async () => ({
           data: [
-            { name: "owner-1/recording-1/live/part-000000.webm" },
+            { name: "owner-1/00000000-0000-4000-8000-000000000711/live/part-000000.webm" },
             { name: "owner-1/stale-recording/live/part-000001.webm" }
           ],
           error: null
@@ -300,12 +316,13 @@ describe("idempotent safety part upload", () => {
     const first = { ...createPart(0), uploadedAt: "2026-09-03T12:05:00.000Z" };
     const second = { ...createPart(1), uploadedAt: "2026-09-03T12:06:00.000Z" };
     mocks.createClient.mockReturnValue({
+      rpc: captureRpc(),
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
       storage: { from: vi.fn(() => ({
         remove: vi.fn(async () => ({
           data: [
-            { name: "owner-1/recording-1/live/part-000000.webm" },
-            { name: "owner-1/recording-1/live/part-000000.webm" }
+            { name: "owner-1/00000000-0000-4000-8000-000000000711/live/part-000000.webm" },
+            { name: "owner-1/00000000-0000-4000-8000-000000000711/live/part-000000.webm" }
           ],
           error: null
         }))
@@ -326,35 +343,38 @@ describe("idempotent safety part upload", () => {
     })).rejects.toThrow("nepotvrdilo odstranění všech bezpečnostních částí");
   });
 
-  it("confirms the exact owner-scoped metadata row before completing live upload", async () => {
+  it("confirms the exact authorized capture receipt before completing live upload", async () => {
     const query = {
       eq: vi.fn(),
-      maybeSingle: vi.fn(async () => ({ data: { id: "recording-1" }, error: null })),
+      maybeSingle: vi.fn(async () => ({ data: { id: "00000000-0000-4000-8000-000000000711" }, error: null })),
       select: vi.fn(),
       update: vi.fn()
     };
     query.eq.mockReturnValue(query);
     query.select.mockReturnValue(query);
     query.update.mockReturnValue(query);
-    mocks.createClient.mockReturnValue({ from: vi.fn(() => query) });
+    const rpc = captureRpc();
+    mocks.createClient.mockReturnValue({ rpc, from: vi.fn(() => query) });
 
     await expect(completeLiveRecordingUpload({
       contentType: "audio/webm",
       durationSeconds: 30,
       recording: {
-        id: "recording-1",
-        storagePrefix: "owner-1/recording-1/live/",
+        id: "00000000-0000-4000-8000-000000000711",
+        storagePrefix: "owner-1/00000000-0000-4000-8000-000000000711/live/",
         userId: "owner-1"
       },
-      storagePath: "owner-1/recording-1/archive.webm",
+      storagePath: "owner-1/00000000-0000-4000-8000-000000000711/archive.webm",
       totalBytes: 42
-    })).resolves.toEqual({ id: "recording-1" });
-    expect(query.eq).toHaveBeenNthCalledWith(1, "id", "recording-1");
-    expect(query.eq).toHaveBeenNthCalledWith(2, "user_id", "owner-1");
-    expect(query.select).toHaveBeenCalledWith("id");
+    })).resolves.toEqual({ id: "00000000-0000-4000-8000-000000000711" });
+    expect(rpc).toHaveBeenLastCalledWith("apply_recording_capture_transition_v1", expect.objectContaining({
+      p_recording_id: recordingId, p_expected_capture_revision: 4, p_transition: "upload_complete",
+      p_mime_type: "audio/webm", p_file_size_bytes: 42
+    }));
+    expect(query.update).not.toHaveBeenCalled();
   });
 
-  it("rejects live upload completion when no owned metadata row is returned", async () => {
+  it("rejects live upload completion after canonical current authority is revoked", async () => {
     const query = {
       eq: vi.fn(),
       maybeSingle: vi.fn(async () => ({ data: null, error: null })),
@@ -364,23 +384,24 @@ describe("idempotent safety part upload", () => {
     query.eq.mockReturnValue(query);
     query.select.mockReturnValue(query);
     query.update.mockReturnValue(query);
-    mocks.createClient.mockReturnValue({ from: vi.fn(() => query) });
+    mocks.createClient.mockReturnValue({ rpc: captureRpc(true), from: vi.fn(() => query) });
 
     await expect(completeLiveRecordingUpload({
       contentType: "audio/webm",
       durationSeconds: 30,
       recording: {
-        id: "recording-1",
-        storagePrefix: "owner-1/recording-1/live/",
+        id: "00000000-0000-4000-8000-000000000711",
+        storagePrefix: "owner-1/00000000-0000-4000-8000-000000000711/live/",
         userId: "owner-1"
       },
-      storagePath: "owner-1/recording-1/archive.webm",
+      storagePath: "owner-1/00000000-0000-4000-8000-000000000711/archive.webm",
       totalBytes: 42
-    })).rejects.toThrow("Audio je uložené, ale metadata nahrávky se neuložila.");
+    })).rejects.toMatchObject({ code: "42501" });
   });
 
   it("fails safely when the deterministic path already has different bytes", async () => {
     mocks.createClient.mockReturnValue({
+      rpc: captureRpc(),
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
       storage: { from: vi.fn(() => ({
         list: vi.fn(async () => ({
@@ -397,8 +418,8 @@ describe("idempotent safety part upload", () => {
       maxFileSizeBytes: 1_000,
       partIndex: 0,
       recording: {
-        id: "recording-1",
-        storagePrefix: "owner-1/recording-1/live/",
+        id: "00000000-0000-4000-8000-000000000711",
+        storagePrefix: "owner-1/00000000-0000-4000-8000-000000000711/live/",
         userId: "owner-1"
       }
     })).rejects.toThrow("Uložená část audia neodpovídá tomuto záznamu.");

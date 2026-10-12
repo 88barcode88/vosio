@@ -62,7 +62,7 @@ const fixtureMarkers: RecordingMarkerRow[] = [{
   user_id: userId
 }];
 const fixtureScopePattern = /^[0-9a-f]{12}$/;
-const fixtureModes = ["blocks", "raw", "ai", "ai-many", "timeline", "files", "chat"] as const;
+const fixtureModes = ["blocks", "raw", "ai", "ai-many", "timeline", "files", "chat", "transcription", "transcribing"] as const;
 type FixtureMode = (typeof fixtureModes)[number];
 
 // createFixtureSegments produces alternating speaker blocks that overflow the detail viewport.
@@ -118,7 +118,11 @@ function createFixtureRecording(): RecordingRow {
     storage_path: `${userId}/${recordingId}/fixture.wav`,
     title: "Dlouhý testovací hovor",
     updated_at: "2026-08-06T10:01:00.000Z",
-    user_id: userId
+    user_id: userId,
+    visibility: "private",
+    canReadPrivateChat: true,
+    capabilities: { read: true, editTitle: true, editSpeakers: true, editTaskStatus: true,
+      manageAccess: true, delete: true, restore: true, purge: true, runPersonalAi: true, usePrivateChat: true }
   };
 }
 
@@ -130,6 +134,7 @@ function isFixtureMode(value: string | undefined): value is FixtureMode {
 // getFixtureInitialTab maps transcript-content fixture modes to the transcript tab.
 function getFixtureInitialTab(mode: FixtureMode): TranscriptTab {
   if (mode === "ai-many") return "ai";
+  if (mode === "transcription" || mode === "transcribing") return "transcript";
   return mode === "blocks" || mode === "raw" ? "transcript" : mode;
 }
 
@@ -164,9 +169,9 @@ export default async function RecordingLayoutE2EPage({
       recordingMarkers={fixtureMarkers}
       recordingOrganization={{ client: null, folder: null, project: null, tags: [] }}
       recordingOrganizationOptions={{ clients: [], folders: [], projects: [], tags: [] }}
-      recordings={[createFixtureRecording()]}
+      recordings={[{ ...createFixtureRecording(), ...(mode === "transcription" ? { status: "uploaded" } : mode === "transcribing" ? { status: "transcribing" } : {}) }]}
       structuredItems={mode === "ai-many" ? emptyFixtureStructuredItems : fixtureStructuredItems}
-      transcripts={[createFixtureTranscript(fixtureMode)]}
+      transcripts={mode === "transcription" || mode === "transcribing" ? [] : [createFixtureTranscript(fixtureMode)]}
       userSettings={defaultUserSettings}
       userEmail="detail-e2e@vosio.local"
     />

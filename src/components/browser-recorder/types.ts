@@ -40,6 +40,8 @@ export type LiveMarkerFeedback = {
 };
 export type DevelopmentRecordingFactory = (options: RecordOptions) => Recording;
 export type BrowserRecorderProps = {
+  captureScope?: import("@/lib/recordings/capture").CaptureScope;
+  captureRequestId?: string;
   allowTranscriptOnly?: boolean;
   captionMode?: boolean;
   compact?: boolean;

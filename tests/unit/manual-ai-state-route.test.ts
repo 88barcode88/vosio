@@ -19,6 +19,7 @@ import {
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
+vi.mock("@/lib/recording-sharing/resolve-capabilities", () => ({ resolveRecordingCapabilities: vi.fn(async () => ({ read: true, runPersonalAi: true })) }));
 
 const routeMocks = vi.hoisted(() => ({
   createAdminClient: vi.fn(() => ({})),
@@ -406,7 +407,9 @@ describe("manual AI state contract", () => {
     expect(stateRoute).toContain("execution_mode");
     expect(stateRoute).not.toMatch(/output_text|output_json|prompt_text_snapshot|provider_config|raw_text|error_message|lease_token/);
     expect(outputRoute).toContain('.eq("transcript_id", transcriptId)');
-    expect(outputRoute).toContain('.eq("user_id", user.id)');
+    expect(outputRoute).toContain("resolveRecordingCapabilities");
+    expect(outputRoute).toContain("getAccessibleOutputTypes");
+    expect(outputRoute).not.toContain('.select("*")');
     expect(outputRoute).toContain("transcript_tasks");
   });
 
@@ -425,7 +428,7 @@ describe("manual AI state contract", () => {
 
     expect(response.status).toBe(404);
     expect(outputQuery.eq).toHaveBeenCalledWith("transcript_id", "00000000-0000-4000-8000-000000000921");
-    expect(outputQuery.eq).toHaveBeenCalledWith("user_id", "user-1");
+    expect(outputQuery.eq).not.toHaveBeenCalledWith("user_id", "user-1");
   });
 
   it("returns a bounded later metadata page with an advancing export offset", async () => {

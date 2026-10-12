@@ -1,10 +1,12 @@
 {
   "name": "vosio-app",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "license": "SEE LICENSE IN LICENSE.md",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/patch-soniox-websocket-auth.mjs",
     "assets:favicon": "node scripts/generate-favicon.mjs",
+    "build:plugin": "node scripts/build-vosio-plugin.mjs",
     "dev": "next dev --hostname 127.0.0.1 --port 3047",
     "build": "next build",
     "check": "npm run typecheck && npm run lint && npm run test",
@@ -14,14 +16,18 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "node scripts/run-isolated-playwright.mjs",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "build:mcp": "node scripts/build-mcp-edge.mjs",
+    "check:mcp": "node scripts/check-mcp-edge.mjs",
+    "setup:mcp": "node scripts/setup-vosio-mcp.mjs"
   },
   "dependencies": {
-    "@soniox/client": "^2.1.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
+    "@soniox/client": "2.3.0",
     "@supabase/ssr": "0.10.2",
     "@supabase/supabase-js": "2.104.0",
     "lucide-react": "1.14.0",
-    "next": "16.3.4",
+    "next": "16.3.8",
     "react": "19.2.5",
     "react-dom": "19.2.5",
     "server-only": "^0.0.1",
@@ -30,7 +36,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@next/eslint-plugin-next": "16.3.4",
+    "@next/eslint-plugin-next": "16.3.8",
     "@playwright/test": "1.62.1",
     "@types/node": "24.10.1",
     "@types/react": "19.2.14",

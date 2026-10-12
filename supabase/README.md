@@ -2,9 +2,13 @@
 
 This folder contains the canonical database and Storage setup expected by Vosio.
 
+## MCP and current application
+
+The public source includes project sharing/capture/recovery, model/checklist forwards, and the remote MCP OAuth bridge/Function. For your own installation follow the Czech [MCP setup](../plugins/vosio/SETUP.md); no author target, secrets or OAuth client are supplied. Source publication never activates MCP, retention or a scheduler.
+
 ## Fresh Project
 
-A new empty project must apply every migration in timestamp order:
+A new empty project must apply all 41 migrations in timestamp order:
 
 1. `20260617000000_initial_schema.sql`
 2. `20260804100000_add_evidence_locations.sql`
@@ -20,8 +24,35 @@ A new empty project must apply every migration in timestamp order:
 12. `20260828130631_add_transcript_chat.sql`
 13. `20260828131010_add_transcript_chat_schema.sql`
 14. `20260904140126_harden_manual_ai_job_recovery.sql`
+15. `20260908101824_add_mistral_ai_provider.sql`
+16. `20260908103000_add_manual_ai_job_cleanup.sql`
+17. `20260915170017_add_automatic_ai_outputs.sql`
+18. `20260922190000_add_project_sharing.sql`
+19. `20260922200000_add_project_sharing_read_paths.sql`
+20. `20260922210000_add_shared_ai_output_types.sql`
+21. `20260922220000_add_shared_recording_trash.sql`
+22. `20260922230000_add_owned_usage_and_trash_audio.sql`
+23. `20260923000000_add_bulk_recording_sharing.sql`
+24. `20260923010000_add_capture_operation_contracts.sql`
+25. `20261002000000_list_selected_capture_authorizations.sql`
+26. `20261002010000_capture_personal_intents_and_contacts.sql`
+27. `20261002020000_capture_index_and_speaker_repairs.sql`
+28. `20261002030000_founder_owned_private_sharing.sql`
+29. `20261002040000_release_absent_purge_requests.sql`
+30. `20261002050000_owned_job_usage.sql`
+31. `20261002060000_integrate_dev_capture_features.sql`
+32. `20261002070000_guard_manual_ai_destructive_admission.sql`
+33. `20261003010000_add_atomic_checklist_delete.sql`
+34. `20261003020000_future_ai_model_selection.sql`
+35. `20261003143836_vosio_mcp_oauth_bridge.sql`
+36. `20261005010000_adopt_legacy_live_recovery.sql`
+37. `20261005020000_complete_saved_transcript_and_dispatch.sql`
+38. `20261006113000_vosio_mcp_installation.sql`
+39. `20261006122518_add_transcription_recovery.sql`
+40. `20261006140000_add_transcription_recovery_read.sql`
+41. `20261007100000_vosio_mcp_dynamic_registration.sql`
 
-The baseline is not the complete current schema by itself. The complete source contract is the baseline plus all thirteen forward migrations.
+The baseline alone is not the current schema. Preserve existing migration bytes and apply the complete ordered chain.
 
 Apply the chain with the Supabase CLI:
 
@@ -97,13 +128,13 @@ supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-For a disposable local database, use `supabase start` followed by `supabase db reset`. The CLI records the full fourteen-file chain in timestamp order.
+For a disposable local database, use `supabase start` followed by `supabase db reset`. The CLI records the full 41-file chain in timestamp order.
 
 An existing target with unknown or non-canonical history must first be inspected; apply reviewed migrations one at a time only after target-specific preflight is green. Never delete history rows, run `db reset`, or mark versions as applied merely to silence the CLI.
 
 ### 2. Mandatory preflight for an existing target
 
-Run these read-only queries before applying the two latest migrations. Every query must return zero rows. Any row blocks the apply until a person reviews its lineage; do not deduplicate or delete data automatically.
+Run these read-only queries before applying the automatic-timeline and Trash-retention forwards to an existing target. Every query must return zero rows. Any row blocks the apply until a person reviews its lineage; do not deduplicate or delete data automatically. Later forwards additionally require their own schema, grants and RLS preflight.
 
 ```sql
 -- Automatic-timeline unique output guard.
@@ -348,6 +379,8 @@ Enter `commit;` only after exactly one returned row and the approval evidence ar
 ### 5. Schedule separately through Vault and Cron
 
 Create the scheduler only after deployment, disabled-first tests, explicit enable approval and a reviewed runbook. Keep the raw token in Edge Function secrets and separately in Supabase Vault. The cron command must read the token from Vault at run time, never embed plaintext in `cron.job`.
+
+Until that separate activation, require no `trash-retention-scheduler-token` secret in Vault and no scheduled retention job. This is a setup requirement, not a claim about any existing installation.
 
 Example administrator SQL, after placing the token in Vault under `trash-retention-scheduler-token` through an approved secret-entry workflow:
 

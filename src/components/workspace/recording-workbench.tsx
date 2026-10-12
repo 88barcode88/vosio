@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RecordingSharingPopover } from "@/components/workspace/recording-sharing-popover";
 import { ChevronLeft } from "lucide-react";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { TranscriptTabs } from "@/components/transcript-tabs";
@@ -7,6 +8,7 @@ import { TranscriptAiStateProvider } from "@/components/transcript-tabs/use-tran
 import { TranscriptionControls } from "@/components/transcription-controls";
 import { RecordingDetailTitleEditor } from "@/components/workspace/recording-detail-title-editor";
 import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
+import { RecordingCapabilityProvider } from "@/components/recording-capability-context";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 import {
@@ -67,6 +69,7 @@ export function RecordingWorkbench({
     : null;
 
   return (
+    <RecordingCapabilityProvider capabilities={activeRecording?.capabilities} speakerVersions={activeTranscript?.speaker_versions} canReadPrivateChat={activeRecording?.canReadPrivateChat}>
     <TranscriptAiStateProvider
       initialAiOutputs={activeAiOutputs}
       initialStructuredItems={activeStructuredItems}
@@ -98,6 +101,7 @@ export function RecordingWorkbench({
         />
       </section>
     </TranscriptAiStateProvider>
+    </RecordingCapabilityProvider>
   );
 }
 
@@ -153,30 +157,31 @@ function RecordingCard({
               activeRecording={activeRecordingView}
               activeTranscript={activeTranscript}
             />
-            <RecordingDetailTitleEditor
+            {activeRecordingRow.capabilities?.editTitle ? <RecordingDetailTitleEditor
               key={activeRecordingRow.id}
               recordingId={activeRecordingRow.id}
               title={activeRecordingRow.title}
-            />
-            <DeleteRecordingForm
+            /> : null}
+            <RecordingSharingPopover key={`sharing-${activeRecordingRow.id}`} recording={activeRecordingRow} />
+            {activeRecordingRow.capabilities?.delete ? <DeleteRecordingForm
               label="Smazat nahrávku"
               next="/recordings"
               recordingId={activeRecordingRow.id}
               variant="danger"
-            />
+            /> : null}
           </div>
         ) : null}
       </div>
       {activeRecordingRow ? (
         <>
-          <RecordingOrganizationEditor
+          {activeRecordingRow.visibility === "private" && activeRecordingRow.capabilities?.manageAccess ? <RecordingOrganizationEditor
             key={`organization-${activeRecordingRow.id}`}
             options={recordingOrganizationOptions}
             organization={activeRecordingOrganization}
             recording={activeRecordingRow}
-          />
+          /> : null}
           <div className="recording-header-operations" aria-label="Akce přepisu">
-            <CommandBar activeRecording={activeRecordingView} activeTranscript={activeTranscript} />
+            {activeRecordingRow.capabilities?.runPersonalAi ? <CommandBar activeRecording={activeRecordingView} activeTranscript={activeTranscript} /> : null}
           </div>
         </>
       ) : null}
@@ -241,6 +246,7 @@ function CommandBar({
   return (
     <div className="command-bar">
       <TranscriptionControls
+        key={activeRecording?.id ?? "new-recording"}
         storedAudioMode={storedAudioMode}
         hasTranscript={Boolean(activeTranscript)}
         recordingId={activeRecording?.id ?? null}

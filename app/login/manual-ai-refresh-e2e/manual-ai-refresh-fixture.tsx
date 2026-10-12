@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { TranscriptTabs } from "@/components/transcript-tabs";
+import { RecordingCapabilityProvider } from "@/components/recording-capability-context";
 import {
   TranscriptAiStateProvider,
   useTranscriptAiState
@@ -92,6 +93,9 @@ export function ManualAiRefreshFixture() {
 
   return (
     <main className="recording-detail" style={{ minHeight: 1_400 }}>
+      <RecordingCapabilityProvider capabilities={{ read: true, editTitle: true, editSpeakers: true,
+        editTaskStatus: true, manageAccess: true, delete: true, restore: true, purge: true,
+        runPersonalAi: true, usePrivateChat: true }} canReadPrivateChat>
       <TranscriptAiStateProvider
         initialAiOutputs={serverProps.outputs}
         initialStructuredItems={serverProps.structuredItems}
@@ -108,6 +112,7 @@ export function ManualAiRefreshFixture() {
           userSettings={defaultUserSettings}
         />
       </TranscriptAiStateProvider>
+      </RecordingCapabilityProvider>
     </main>
   );
 }

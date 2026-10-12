@@ -2,16 +2,19 @@
 
 import { useEffect } from "react";
 
-// AutomaticTimelineReconciler performs one owner-authenticated recovery attempt only in the active timeline.
+
+// AutomaticTimelineReconciler restores consent-snapshotted output types only under current personal authority.
 export function AutomaticTimelineReconciler({
   onReconciled,
+  canRunPersonalAi = false,
   transcriptId
 }: {
   onReconciled?: () => Promise<void>;
+  canRunPersonalAi?: boolean;
   transcriptId: string | null;
 }) {
   useEffect(() => {
-    if (!transcriptId) {
+    if (!transcriptId || !canRunPersonalAi) {
       return;
     }
     let disposed = false;
@@ -50,7 +53,7 @@ export function AutomaticTimelineReconciler({
       document.removeEventListener("visibilitychange", reconcile);
       window.removeEventListener("online", reconcile);
     };
-  }, [onReconciled, transcriptId]);
+  }, [onReconciled, transcriptId, canRunPersonalAi]);
 
   return null;
 }

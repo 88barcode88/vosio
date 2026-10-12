@@ -1,41 +1,28 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-
-describe("automatic timeline completion entry points", () => {
-  it.each([
-    ["async and segmented", "app/api/recordings/[recordingId]/transcription/route.ts", ["kind: \"async\"", "kind: \"segmented\""]],
-    ["live", "app/api/recordings/[recordingId]/live-transcript/route.ts", ["kind: \"live\""]],
-    ["import", "app/api/recordings/import-transcript/route.ts", ["kind: \"import\""]]
-  ])("uses one atomic transition after persisted %s transcript content", (_label, path, identities) => {
-    const source = readFileSync(path, "utf8");
-
-    expect(source).toContain("persistTranscriptCompletionTransition");
-    expect(source).not.toContain("enqueueAutomaticTimelineAfterCompletion");
-    for (const identity of identities) {
-      expect(source).toContain(identity);
-    }
+const snapshot = readFileSync("supabase/migrations/20261002010000_capture_personal_intents_and_contacts.sql", "utf8");
+describe("capture automatic timeline authorization boundary", () => {
+  it("stores a bounded immutable completion snapshot privately without jobs or providers", () => {
+    expect(snapshot).toContain("force row level security");
+    expect(snapshot).toContain("revoke all on table public.capture_timeline_snapshots");
+    expect(snapshot).toContain("on conflict(transcript_id) do nothing");
+    expect(snapshot).toContain("gpt-5.6-sol");
+    expect(snapshot).not.toContain("insert into public.automatic_timeline_jobs");
+    expect(snapshot).not.toContain("delete from");
   });
-
-  it("regular and segmented repeats reconcile durable intent without resnapshotting current consent", () => {
-    const source = readFileSync(
-      "app/api/recordings/[recordingId]/transcription/route.ts",
-      "utf8"
-    );
-
-    expect(source).toContain("persistTranscriptCompletionTransition");
-    expect(source).toContain("scheduleAutomaticOutputs");
-    expect(source).not.toContain("deleteAiDataForTranscriptReplacement");
+  it("creates an intent only from stored snapshot after current personal owner/read/manage and consent", () => {
+    const schedule = snapshot.slice(snapshot.indexOf("create function public.schedule_capture_timeline_intent_v1"), snapshot.indexOf("-- Return only contacts"));
+    expect(schedule).toContain("r.user_id=auth.uid()");
+    expect(schedule).toContain("public.can_read_recording(v_recording)");
+    expect(schedule).toContain("public.can_manage_recording(v_recording)");
+    expect(schedule).toContain("from public.capture_timeline_snapshots");
+    expect(schedule).not.toContain("p_model");
+    expect(schedule).not.toContain("p_provider_config");
   });
-
-  it("live repeats reconcile durable intent while each new import snapshots completion consent", () => {
-    const liveSource = readFileSync(
-      "app/api/recordings/[recordingId]/live-transcript/route.ts",
-      "utf8"
-    );
-    const importSource = readFileSync("app/api/recordings/import-transcript/route.ts", "utf8");
-
-    expect(liveSource).toContain("persistTranscriptCompletionTransition");
-    expect(liveSource).toContain("scheduleAutomaticOutputs");
-    expect(importSource).toContain("persistTranscriptCompletionTransition");
+  it.each(["app/api/recordings/[recordingId]/transcription/route.ts","app/api/recordings/import-transcript/route.ts","src/lib/recordings/capture-route.server.ts","src/lib/recordings/transcription-worker.server.ts"])("capture completion %s never starts personal AI or destructive legacy completion", (path) => {
+    const source = readFileSync(path,"utf8");
+    expect(source).not.toContain("persistTranscriptCompletionTransition");
+    expect(source).not.toContain("reconcileAutomaticTimeline");
+    expect(source).not.toContain("complete_transcript_generation_v1");
   });
 });

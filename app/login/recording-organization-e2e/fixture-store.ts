@@ -11,6 +11,7 @@ import type {
 } from "@/lib/recording-organization/types";
 import type { RecordingOrganizationFilters } from "@/lib/recording-organization/filters";
 import type { RecordingRow } from "@/lib/recordings/types";
+import { getRecordingCapabilities } from "@/lib/recording-sharing/capabilities";
 
 const fixtureUserId = "00000000-0000-4000-8000-000000000001";
 const foreignUserId = "00000000-0000-4000-8000-000000000099";
@@ -396,5 +397,20 @@ export function listOrganizationFixtureRecordings(
       && (!filters.folderId || recording.folder_id === filters.folderId)
       && filters.tagIds.every((tagId) => assignedTagIds.includes(tagId))
       && fixtureRecordingMatchesSearch(recording, normalizedQuery);
-  });
+  }).map((recording) => ({
+    ...recording,
+    visibility: "private" as const,
+    capabilities: getRecordingCapabilities({
+      actorId: fixtureUserId,
+      ownerId: fixtureUserId,
+      createdBy: fixtureUserId,
+      projectId: recording.project_id,
+      founderId: recording.project_id ? fixtureUserId : null,
+      visibility: "private",
+      status: recording.status,
+      memberRole: null,
+      grantRole: null,
+      grantScopeProjectId: null
+    })
+  }));
 }

@@ -7,6 +7,9 @@ import {
   VOSIO_ACTIVE_RECORDING_TAB_COOKIE
 } from "@/components/transcript-tabs/tab-state";
 import { getRecordingById } from "@/lib/recordings/queries";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
+import { getAuthorizedAudioLocator } from "@/lib/recordings/audio-locator.server";
+import { getAudioPlaybackEligibility } from "@/lib/recordings/audio-playback";
 import { listRecordingMarkers } from "@/lib/recording-markers/queries";
 import {
   getRecordingOrganization,
@@ -58,16 +61,24 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
     redirect(`/recordings/${encodeURIComponent(recordingId)}${suffix ? `?${suffix}` : ""}`);
   }
 
-  const [recording, recordingMarkers, transcripts, organizationOptions] = await Promise.all([
+  const capabilities = await resolveRecordingCapabilities(supabase, recordingId);
+  if (!capabilities.read) notFound();
+  const [recording, recordingMarkers, transcripts, organizationOptions, audioLocator, ownThread] = await Promise.all([
     getRecordingById(supabase, recordingId),
     listRecordingMarkers(supabase, recordingId),
     listTranscriptsForRecording(supabase, recordingId),
-    listRecordingOrganizationOptions(supabase)
+    listRecordingOrganizationOptions(supabase),
+    getAuthorizedAudioLocator(supabase, recordingId),
+    supabase.from("transcript_chat_threads").select("id").eq("recording_id", recordingId).eq("user_id", user.id).limit(1)
   ]);
 
   if (!recording) {
     notFound();
   }
+  recording.capabilities = capabilities;
+  recording.canReadPrivateChat = capabilities.usePrivateChat || (!ownThread.error && Boolean(ownThread.data?.length));
+  const audio = getAudioPlaybackEligibility(audioLocator ?? { storage_path: null });
+  recording.audioAvailability = audio.eligible ? "single" : audio.reason === "segmented" ? "segmented" : "none";
 
   const currentTranscript = transcripts[0] ?? null;
   const initialDeepLink = parsedDeepLink.request && currentTranscript

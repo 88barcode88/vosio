@@ -31,6 +31,7 @@ import {
 } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
 import { OrganizationColorPicker } from "@/components/workspace/organization-color-picker";
+import { ProjectAccessManager } from "@/components/workspace/project-access-manager";
 
 export type OrganizationManagerActions = {
   createClient: SaveAction;
@@ -192,7 +193,7 @@ function OrganizationSaveEditor({
     <div className="organization-save-editor" ref={containerRef}>
       <button
         aria-expanded={isOpen}
-        disabled={isPending || (mode === "create" && kind === "project" && clients.length === 0)}
+        disabled={isPending}
         onClick={() => isOpen ? dismissEditor() : setIsOpen(true)}
         ref={triggerRef}
         type="button"
@@ -217,10 +218,9 @@ function OrganizationSaveEditor({
                 name="clientId"
                 onChange={(event) => setClientId(event.target.value)}
                 ref={clientSelectRef}
-                required
                 value={clientId}
               >
-                <option value="">Vyberte klienta</option>
+                <option value="">Bez klienta</option>
                 {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
               </select>
             </label>
@@ -393,9 +393,9 @@ export function OrganizationManager({
                 {group.rows.map((row) => {
                   const clientName = group.kind === "project"
                     ? options.clients.find((client) => client.id === (row as RecordingProjectRow).client_id)?.name
-                      ?? "Neznámý klient"
+                      ?? null
                     : null;
-                  const contextualName = group.kind === "project" ? `${row.name} · ${clientName}` : row.name;
+                  const contextualName = group.kind === "project" && clientName ? `${row.name} · ${clientName}` : row.name;
                   return (
                     <li key={row.id}>
                       <div className="organization-manager-row-label">
@@ -408,7 +408,7 @@ export function OrganizationManager({
                           {contextualName}
                         </strong>
                       </div>
-                      <div className="organization-manager-row-actions">
+                      {group.kind !== "project" || (row as RecordingProjectRow).can_manage_access ? <div className="organization-manager-row-actions">
                         <OrganizationSaveEditor
                           action={group.renameAction}
                           clients={options.clients}
@@ -425,7 +425,8 @@ export function OrganizationManager({
                           name={contextualName}
                           rowId={row.id}
                         />
-                      </div>
+                      </div> : null}
+                      {group.kind === "project" && (row as RecordingProjectRow).can_manage_access ? <ProjectAccessManager projectId={row.id} canManageAccess /> : null}
                     </li>
                   );
                 })}

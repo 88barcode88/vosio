@@ -10,7 +10,7 @@ describe("settings metadata", () => {
       [USER_SETTINGS_METADATA_KEY]: { aiTemperature: 0.7, liveAudioQuality: "lossless" }
     });
 
-    expect(settings).toEqual(expect.objectContaining({ aiTemperature: 0.7, liveAudioQuality: "standard" }));
+    expect(settings).toEqual(expect.objectContaining({ aiTemperature: 0.3, liveAudioQuality: "standard" }));
   });
 
   it.each(["economy", "standard", "high"] as const)("keeps the supported %s live audio quality", (quality) => {
@@ -78,7 +78,7 @@ describe("settings metadata", () => {
     expect(getUserSettingsFromMetadata({
       [USER_SETTINGS_METADATA_KEY]: { sonioxRegion: "jp" }
     })).toEqual(expect.objectContaining({
-      aiTemperature: 0.2,
+      aiTemperature: 0.3,
       sonioxRegion: "global",
       supabaseStoragePlan: "auto"
     }));
@@ -133,24 +133,24 @@ describe("settings metadata", () => {
       }
     });
 
-    expect(settings.aiTemperature).toBe(0.7);
+    expect(settings.aiTemperature).toBe(0.3);
     expect(settings.sonioxRealtimeModel).toBe("stt-rt-v5");
   });
 
   it("migrates removed AI models to the new provider defaults", () => {
-    expect(DEFAULT_AI_MODEL_ID).toBe("gpt-5.6-terra");
+    expect(DEFAULT_AI_MODEL_ID).toBe("gpt-6.1-sol");
 
     expect(getUserSettingsFromMetadata({
       [USER_SETTINGS_METADATA_KEY]: { defaultOpenaiModel: "gpt-4.1-mini" }
-    }).defaultOpenaiModel).toBe("gpt-5.6-terra");
+    }).defaultOpenaiModel).toBe("gpt-6.1-sol");
 
     expect(getUserSettingsFromMetadata({
       [USER_SETTINGS_METADATA_KEY]: { defaultOpenaiModel: "gpt-5.4" }
-    }).defaultOpenaiModel).toBe("gpt-5.6-terra");
+    }).defaultOpenaiModel).toBe("gpt-6.1-sol");
 
     expect(getUserSettingsFromMetadata({
       [USER_SETTINGS_METADATA_KEY]: { defaultOpenaiModel: "gpt-5.4-mini" }
-    }).defaultOpenaiModel).toBe("gpt-5.6-terra");
+    }).defaultOpenaiModel).toBe("gpt-6.1-sol");
 
     expect(getUserSettingsFromMetadata({
       [USER_SETTINGS_METADATA_KEY]: { defaultOpenaiModel: "gemini-3.5-flash" }

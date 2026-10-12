@@ -105,7 +105,7 @@ function createBatchFetcher(client) {
   return async (cursor, batchSize) => {
     let query = client
       .from("transcripts")
-      .select("id,recording_id,user_id,raw_text,segments,speakers")
+      .select("id,recording_id,user_id,raw_text,segments,speakers,search_version")
       .order("id", { ascending: true })
       .limit(batchSize);
 
@@ -123,10 +123,14 @@ function createBatchFetcher(client) {
   };
 }
 
-// createChunkReplacer invokes the atomic service-only RPC for one transcript.
-function createChunkReplacer(client) {
+// createChunkReplacer requires the exact indexed snapshot version and a matched service RPC outcome.
+export function createChunkReplacer(client) {
   return async (transcript, chunks) => {
-    const { error } = await client.rpc("replace_transcript_search_chunks_v1", {
+    if (!Number.isSafeInteger(transcript.search_version) || transcript.search_version < 0) {
+      throw new Error("Unable to replace transcript search chunks");
+    }
+    const { data, error } = await client.rpc("replace_transcript_search_chunks_v2", {
+      p_expected_version: transcript.search_version,
       p_chunks: chunks.map((chunk) => ({
         end_ms: chunk.endMs,
         position: chunk.position,
@@ -137,7 +141,7 @@ function createChunkReplacer(client) {
       p_transcript_id: transcript.id
     });
 
-    if (error) {
+    if (error || data !== true) {
       throw new Error("Unable to replace transcript search chunks");
     }
   };

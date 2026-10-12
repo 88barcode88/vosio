@@ -160,6 +160,8 @@ export function mapRecordingSearchRow(row: unknown): RecordingSearchResult {
   }
 
   return {
+    projectName: typeof getObjectField(row, "project_name") === "string" ? getObjectField(row, "project_name") as string : null,
+    visibility: getObjectField(row, "visibility") as RecordingSearchResult["visibility"],
     clientId: getNullableString(row, "client_id"),
     createdAt,
     durationSeconds: getNullableSafeInteger(row, "duration_seconds"),
@@ -211,7 +213,7 @@ export async function searchOwnRecordings(
   }
 
   const offset = (options.page - 1) * RECORDING_SEARCH_PAGE_SIZE;
-  const { data, error } = await supabase.rpc("search_own_recordings_v2", {
+  const { data, error } = await supabase.rpc("search_accessible_recordings_v1", {
     p_client_id: options.organizationFilters.clientId,
     p_folder_id: options.organizationFilters.folderId,
     p_limit: RECORDING_SEARCH_PAGE_SIZE,

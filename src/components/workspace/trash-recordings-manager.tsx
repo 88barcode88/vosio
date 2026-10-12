@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { PurgeRecordingForm, type TrashRecordingAction } from "@/components/purge-recording-form";
 import { RestoreRecordingForm } from "@/components/restore-recording-form";
 import { Modal } from "@/components/ui/modal";
+import { PurgeRecoveryPanel } from "@/components/workspace/purge-recovery-panel";
+import { retainPurgeRequest, forgetPurgeRequest } from "@/lib/recordings/purge-request-retention";
 import {
   purgeRecordingMutationAction,
   restoreRecordingsBulkAction,
@@ -85,7 +87,7 @@ export function TrashRecordingsManager({
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const cancelPurgeRef = useRef(false);
-  const selectableIds = recordings.slice(0, BULK_SELECTION_LIMIT).map((recording) => recording.id);
+  const selectableIds = recordings.filter((recording) => (recording.capabilities?.restore || recording.capabilities?.purge) && recording.purge_phase === "none").slice(0, BULK_SELECTION_LIMIT).map((recording) => recording.id);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
   const selectedRecordings = recordings.filter((recording) => selectedIds.has(recording.id));
   const hasRecentSelection = selectedRecordings.some((recording) => {
@@ -118,7 +120,7 @@ export function TrashRecordingsManager({
   // runBulkRestore applies successful optimistic removals and retains only failed selection.
   async function runBulkRestore() {
     const recordingIds = recordings.map((recording) => recording.id).filter((id) => selectedIds.has(id));
-    if (recordingIds.length === 0 || restorePending || purgeProgress) return;
+    if (recordingIds.length === 0 || restorePending || purgeProgress || selectedRecordings.some((row) => !row.capabilities?.restore || row.purge_phase !== "none")) return;
     setRestorePending(true);
     setActionError(null);
     setActionNotice(null);
@@ -172,8 +174,13 @@ export function TrashRecordingsManager({
         formData.append("recordingId", recordingId);
         appendActionContext(formData, actionContext);
         try {
+          const recording = recordings.find((row) => row.id === recordingId);
+          if (!recording?.capabilities?.purge) throw new Error("Purge unavailable");
+          const request = retainPurgeRequest(recordingId, recording.updated_at);
+          formData.set("requestId", request.requestId);
+          formData.set("expectedUpdatedAt", request.expectedUpdatedAt);
           const result = await purgeItemAction(formData);
-          if (result.ok) succeededIds.push(recordingId);
+          if (result.ok) { forgetPurgeRequest(recordingId, request.requestId); succeededIds.push(recordingId); }
           else failures.push({ id: recordingId, code: result.code });
         } catch {
           failures.push({ id: recordingId, code: "purge_failed" });
@@ -203,6 +210,7 @@ export function TrashRecordingsManager({
 
   return (
     <div className="trash-manager-surface" data-utility-surface="trash-recordings">
+      <PurgeRecoveryPanel />
       {recordings.length > 0 ? (
         <>
           <p className="trash-retention-note">
@@ -218,11 +226,11 @@ export function TrashRecordingsManager({
                 type="checkbox"
               />
             </label>
-            <button disabled={selectedIds.size === 0 || restorePending || Boolean(purgeProgress)} onClick={runBulkRestore} type="button">
+            <button disabled={selectedIds.size === 0 || selectedRecordings.some((row) => !row.capabilities?.restore || row.purge_phase !== "none") || restorePending || Boolean(purgeProgress)} onClick={runBulkRestore} type="button">
               {restorePending ? "Obnovuji…" : `Obnovit vybrané (${selectedIds.size})`}
             </button>
             <button
-              disabled={selectedIds.size === 0 || hasRecentSelection || restorePending || Boolean(purgeProgress)}
+              disabled={selectedIds.size === 0 || hasRecentSelection || selectedRecordings.some((row) => !row.capabilities?.purge || row.purge_phase !== "none") || restorePending || Boolean(purgeProgress)}
               onClick={() => setPurgeModalOpen(true)}
               type="button"
             >
@@ -248,6 +256,7 @@ export function TrashRecordingsManager({
               <input
                 aria-label={`Vybrat ${recording.title}`}
                 checked={selectedIds.has(recording.id)}
+                disabled={!selectableIds.includes(recording.id)}
                 onChange={() => toggleRecording(recording.id)}
                 type="checkbox"
               />
@@ -261,8 +270,9 @@ export function TrashRecordingsManager({
               {formatRecordingDate(recording.deleted_at ?? recording.updated_at)}
             </time>
             <div className="trash-recording-actions">
-              <RestoreRecordingForm actionContext={actionContext} recordingId={recording.id} restoreAction={restoreAction} />
-              <PurgeRecordingForm actionContext={actionContext} purgeAction={purgeAction} recordingId={recording.id} />
+              {recording.capabilities?.restore && recording.purge_phase === "none" ? <RestoreRecordingForm actionContext={actionContext} recordingId={recording.id} restoreAction={restoreAction} /> : null}
+              {recording.capabilities?.purge && recording.purge_phase === "none" && recording.deleted_at && Date.parse(recording.deleted_at) <= nowMs - PURGE_DELAY_MS ? <PurgeRecordingForm actionContext={actionContext} expectedUpdatedAt={recording.updated_at} purgeAction={purgeAction} recordingId={recording.id} /> : null}
+              {recording.purge_phase === "started" ? <span>Mazání probíhá</span> : null}
             </div>
           </article>
         ))}

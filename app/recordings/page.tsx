@@ -8,7 +8,6 @@ import {
 } from "@/lib/recording-organization/filters";
 import { canonicalizeRecordingStatusFilter } from "@/lib/recordings/list-filters";
 import {
-  countDeletedRecordings,
   countOwnRecordingStatuses,
   listRecordings
 } from "@/lib/recordings/queries";
@@ -21,6 +20,7 @@ import {
   searchOwnRecordings
 } from "@/lib/recordings/search";
 import { listRecordingOrganizationOptions } from "@/lib/recording-organization/queries";
+import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
 import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
@@ -116,12 +116,11 @@ async function loadRecordingReadPhase(
       return { redirectHref: queryString ? `/recordings?${queryString}` : "/recordings" };
     }
 
-    const [statusCounts, deletedCount, recordingData] = await Promise.all([
+    const [statusCounts, recordingData] = await Promise.all([
       countOwnRecordingStatuses(supabase, {
         organizationFilters: canonical.filters,
         searchQuery
       }),
-      countDeletedRecordings(supabase),
       loadRecordingData(
         supabase,
         canonical.filters,
@@ -133,7 +132,7 @@ async function loadRecordingReadPhase(
     return {
       canonicalSearch,
       canonicalStatus,
-      deletedCount,
+      deletedCount: statusCounts.deleted,
       filters: canonical.filters,
       organizationOptions,
       recordingData,
@@ -154,16 +153,15 @@ async function loadRecordingReadPhase(
     projectId: null,
     tagIds: []
   };
-  const [organizationOptions, statusCounts, deletedCount, recordingData] = await Promise.all([
+  const [organizationOptions, statusCounts, recordingData] = await Promise.all([
     listRecordingOrganizationOptions(supabase),
     countOwnRecordingStatuses(supabase, { organizationFilters: filters, searchQuery }),
-    countDeletedRecordings(supabase),
     loadRecordingData(supabase, filters, searchQuery, canonicalSearch.page, canonicalStatus.status)
   ]);
   return {
     canonicalSearch,
     canonicalStatus,
-    deletedCount,
+    deletedCount: statusCounts.deleted,
     filters,
     organizationOptions,
     recordingData,
@@ -215,6 +213,9 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
   }
 
   const paginationSearchParams = new URLSearchParams(canonicalStatus.searchParams);
+  await Promise.all([...recordings, ...(recordingSearchPage?.results ?? [])].map(async (recording) => {
+    recording.capabilities = await resolveRecordingCapabilities(supabase, recording.id);
+  }));
   paginationSearchParams.delete("warning", TRANSCRIPT_SEARCH_INDEX_WARNING);
   const recordingSearchPreviousHref = searchQuery && canonicalSearch.page > 1
     ? buildRecordingSearchPageHref(paginationSearchParams, canonicalSearch.page - 1)

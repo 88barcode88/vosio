@@ -30,12 +30,14 @@ import type { AiOutputView } from "@/lib/ai/types";
 
 export type AiStatePurpose = "ai" | "metadata" | "timeline";
 type ExactOutputPayload = { output: AiOutputView; structuredItems: StructuredAiItems };
+type TaskStatusOverride = Pick<StructuredTaskRow, "id" | "ai_output_id" | "status">;
 const OUTPUT_BODY_LOAD_CONCURRENCY = 8;
 
 export type TranscriptAiStateContextValue = LoadedManualAiState & {
   acceptJob: (job: { id: string; status: ManualAiJobStatus }, processingType: string) => void;
   applyCleanupMutation: (mutation: ManualAiCleanupMutationResponse) => void;
   confirmTaskDeletion: (task: StructuredTaskRow) => void;
+  confirmChecklistDeletion: (taskIds: string[], outputIds: string[]) => void;
   confirmTaskStatus: (task: StructuredTaskRow, status: StructuredTaskRow["status"]) => void;
   error: string | null;
   isLoaded: boolean;
@@ -77,7 +79,7 @@ export function TranscriptAiStateProvider({
   const outputTombstonesRef = useRef(new Set<string>());
   const jobTombstonesRef = useRef(new Set<string>());
   const taskDeletionTombstonesRef = useRef(new Set<string>());
-  const taskStatusOverridesRef = useRef(new Map<string, StructuredTaskRow["status"]>());
+  const taskStatusOverridesRef = useRef(new Map<string, TaskStatusOverride>());
   const isLoadedRef = useRef(initialAiOutputs.length > 0);
   const lastCompletedCheckRef = useRef(0);
   const serverPropsRef = useRef({ initialAiOutputs, initialStructuredItems });
@@ -127,8 +129,10 @@ export function TranscriptAiStateProvider({
     serverPropsRef.current = { initialAiOutputs, initialStructuredItems };
     if (previous.initialAiOutputs === initialAiOutputs && previous.initialStructuredItems === initialStructuredItems) return;
     if (scopeRef.current.transcriptId !== transcriptId) return;
+    const incoming = applyClientGuards(createInitialState(initialAiOutputs, initialStructuredItems),
+      outputTombstonesRef.current, jobTombstonesRef.current, taskDeletionTombstonesRef.current, taskStatusOverridesRef.current);
     replaceState(applyClientGuards(
-      mergeInitialManualAiState(stateRef.current, createInitialState(initialAiOutputs, initialStructuredItems)),
+      mergeInitialManualAiState(stateRef.current, incoming),
       outputTombstonesRef.current,
       jobTombstonesRef.current,
       taskDeletionTombstonesRef.current,
@@ -158,14 +162,16 @@ export function TranscriptAiStateProvider({
         if (stateRef.current.automaticGenerationKey !== completionGeneration) return null;
         if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId) return null;
         if (outputTombstonesRef.current.has(outputId)) return null;
+        const incoming = applyClientGuards(createInitialState([payload.output], payload.structuredItems),
+          outputTombstonesRef.current, jobTombstonesRef.current, taskDeletionTombstonesRef.current, taskStatusOverridesRef.current);
         replaceState(applyClientGuards(
-          mergeLoadedManualAiOutput(stateRef.current, payload.output, payload.structuredItems),
+          mergeLoadedManualAiOutput(stateRef.current, payload.output, incoming.structuredItems),
           outputTombstonesRef.current,
           jobTombstonesRef.current,
           taskDeletionTombstonesRef.current,
           taskStatusOverridesRef.current
         ));
-        return payload;
+        return { output: payload.output, structuredItems: stateRef.current.structuredItems };
       } finally {
         if (scopeRef.current.generation === scope.generation) outputRequestsRef.current.delete(outputId);
       }
@@ -355,13 +361,20 @@ export function TranscriptAiStateProvider({
   // removeOutputs makes an explicit successful deletion authoritative across stale metadata and body requests.
   const removeOutputs = useCallback((outputIds: string[]) => {
     outputIds.forEach((outputId) => outputTombstonesRef.current.add(outputId));
+    taskStatusOverridesRef.current.forEach((override, key) => {
+      if (outputIds.includes(override.ai_output_id)) taskStatusOverridesRef.current.delete(key);
+    });
     replaceState(removeManualAiOutputs(stateRef.current, outputIds));
   }, [replaceState]);
 
   // confirmTaskStatus overlays a successful checklist mutation across older hydrated output bodies.
   const confirmTaskStatus = useCallback((task: StructuredTaskRow, status: StructuredTaskRow["status"]) => {
+    if (!transcriptId || scopeRef.current.transcriptId !== transcriptId) return;
     const key = getTaskDedupeKey(task);
-    taskStatusOverridesRef.current.set(key, status);
+    if (outputTombstonesRef.current.has(task.ai_output_id) || taskDeletionTombstonesRef.current.has(key)
+      || taskDeletionTombstonesRef.current.has(`id:${task.id}`)
+      || taskDeletionTombstonesRef.current.has(`output:${task.ai_output_id}`)) return;
+    taskStatusOverridesRef.current.set(key, { id: task.id, ai_output_id: task.ai_output_id, status });
     replaceState(applyClientGuards(
       stateRef.current,
       outputTombstonesRef.current,
@@ -369,7 +382,7 @@ export function TranscriptAiStateProvider({
       taskDeletionTombstonesRef.current,
       taskStatusOverridesRef.current
     ));
-  }, [replaceState]);
+  }, [replaceState, transcriptId]);
 
   // confirmTaskDeletion keeps a logical task absent after the owner-scoped delete endpoint confirms success.
   const confirmTaskDeletion = useCallback((task: StructuredTaskRow) => {
@@ -384,6 +397,20 @@ export function TranscriptAiStateProvider({
   }, [replaceState]);
 
   const hasPollEligibleJobs = state.classifications.some((classification) => classification.poll_eligible);
+
+  // confirmChecklistDeletion fences exactly reviewed old sources while allowing later new AI generations.
+  const confirmChecklistDeletion = useCallback((taskIds: string[], outputIds: string[]) => {
+    if (!transcriptId || scopeRef.current.transcriptId !== transcriptId) return;
+    taskIds.forEach((id) => taskDeletionTombstonesRef.current.add(`id:${id}`));
+    outputIds.forEach((id) => taskDeletionTombstonesRef.current.add(`output:${id}`));
+    taskStatusOverridesRef.current.forEach((override, key) => {
+      if ((override.id && taskIds.includes(override.id)) || outputIds.includes(override.ai_output_id)) {
+        taskStatusOverridesRef.current.delete(key);
+      }
+    });
+    replaceState(applyClientGuards(stateRef.current, outputTombstonesRef.current, jobTombstonesRef.current,
+      taskDeletionTombstonesRef.current, taskStatusOverridesRef.current));
+  }, [replaceState, transcriptId]);
 
   useEffect(() => {
     if (!transcriptId || !isLoaded || !activePurpose || !hasPollEligibleJobs) return;
@@ -496,6 +523,7 @@ export function TranscriptAiStateProvider({
     acceptJob,
     applyCleanupMutation,
     confirmTaskDeletion,
+    confirmChecklistDeletion,
     confirmTaskStatus,
     error,
     isLoaded,
@@ -507,7 +535,7 @@ export function TranscriptAiStateProvider({
     removeOutputs,
     setActivePurpose,
     stateRevision
-  }), [acceptJob, applyCleanupMutation, confirmTaskDeletion, confirmTaskStatus, error, isLoaded, isLoading, isRefreshing, loadAllOutputs, loadForPurpose, loadOutput, removeOutputs, state, stateRevision]);
+  }), [acceptJob, applyCleanupMutation, confirmChecklistDeletion, confirmTaskDeletion, confirmTaskStatus, error, isLoaded, isLoading, isRefreshing, loadAllOutputs, loadForPurpose, loadOutput, removeOutputs, state, stateRevision]);
 
   // The callbacks read refs only after user/effect invocation; createElement does not execute them during render.
   // eslint-disable-next-line react-hooks/refs
@@ -569,7 +597,7 @@ function applyClientGuards(
   outputTombstones: Set<string>,
   jobTombstones: Set<string>,
   taskDeletionTombstones: Set<string>,
-  taskStatusOverrides: Map<string, StructuredTaskRow["status"]>
+  taskStatusOverrides: Map<string, TaskStatusOverride>
 ): LoadedManualAiState {
   const withoutOutputs = removeManualAiOutputs(state, Array.from(outputTombstones));
   return {
@@ -579,9 +607,10 @@ function applyClientGuards(
     structuredItems: {
       ...withoutOutputs.structuredItems,
       tasks: withoutOutputs.structuredItems.tasks
-        .filter((task) => !taskDeletionTombstones.has(getTaskDedupeKey(task)))
+        .filter((task) => !taskDeletionTombstones.has(getTaskDedupeKey(task))
+          && !taskDeletionTombstones.has(`id:${task.id}`) && !taskDeletionTombstones.has(`output:${task.ai_output_id}`))
         .map((task) => {
-          const status = taskStatusOverrides.get(getTaskDedupeKey(task));
+          const status = taskStatusOverrides.get(getTaskDedupeKey(task))?.status;
           return status ? { ...task, status } : task;
         })
     }

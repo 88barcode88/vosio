@@ -1,12 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
+import { AiModelPicker, createAiModelSelection, getAiModelReasoningEffort } from "@/components/ai-model-picker";
+import { useRecordingCapabilities } from "@/components/recording-capability-context";
 import {
   type AiProcessingType,
   useAiProcessingRun
 } from "@/components/transcript-tabs/use-ai-processing-run";
 import { defaultUserSettings, type UserSettings } from "@/lib/settings/types";
-import { aiModelOptions, getAiModelDescription } from "@/lib/model-options";
+import { getActiveAiModelOption } from "@/lib/model-options";
 import { quickActions } from "@/lib/workspace-data";
 import type { ManualAiJobStatus } from "@/lib/ai/manual-job-state";
 
@@ -15,11 +17,6 @@ type AiProcessingControlsProps = {
   settings?: UserSettings;
   transcriptId: string | null;
 };
-
-// getAiProcessingModelHint renders a short model price and quality hint below the selector.
-function getAiProcessingModelHint(modelId: string) {
-  return getAiModelDescription(modelId);
-}
 
 // getQuickActionDescription explains what each AI action creates in the recording detail tab.
 function getQuickActionDescription(processingType: AiProcessingType) {
@@ -40,69 +37,40 @@ function getQuickActionLabel(processingType: AiProcessingType) {
   return quickActions.find((action) => action.processingType === processingType)?.label ?? "AI výstup";
 }
 
-// getSelectedModelOption returns UI metadata for the currently selected model id.
-function getSelectedModelOption(modelId: string) {
-  return aiModelOptions.find((option) => option.id === modelId) ?? aiModelOptions[0];
-}
-
 // AiProcessingControls runs stored prompt templates against a completed transcript.
 export function AiProcessingControls({
   onJobAccepted,
   settings = defaultUserSettings,
   transcriptId
 }: AiProcessingControlsProps) {
-  const modelPickerRef = useRef<HTMLDetailsElement>(null);
-  const modelOptions = aiModelOptions;
-  const [model, setModel] = useState<string>(settings.defaultOpenaiModel);
+  const { capabilities } = useRecordingCapabilities();
+  const [selection, setSelection] = useState(() => createAiModelSelection(settings.defaultOpenaiModel, settings.defaultReasoningEffort));
+  const { model } = selection;
   const processing = useAiProcessingRun(transcriptId, onJobAccepted);
-  const selectedModel = getSelectedModelOption(model);
-  const canProcess = Boolean(transcriptId);
+  const selectedModel = getActiveAiModelOption(model)!;
+  const reasoningEffort = getAiModelReasoningEffort(selection);
+  const canProcess = Boolean(transcriptId) && capabilities.runPersonalAi;
 
   // processTranscript delegates one existing quick action to the shared request lifecycle.
   async function processTranscript(processingType: AiProcessingType) {
-    await processing.run({ model, processingType });
+    await processing.run({ model, processingType, ...(reasoningEffort ? { reasoningEffort } : {}) });
   }
 
-  // selectModel updates the local model and closes the custom picker popover.
-  function selectModel(modelId: string) {
-    setModel(modelId);
-    if (modelPickerRef.current) {
-      modelPickerRef.current.open = false;
-    }
-  }
-
+  if (!capabilities.runPersonalAi) return <p>Uložené AI výstupy jsou dostupné ke čtení.</p>;
   return (
     <>
       <details className="ai-settings-details">
         <summary>
           <span>Model</span>
-          <strong>{selectedModel.label}</strong>
+          <strong>{selectedModel.label}{reasoningEffort ? ` · ${reasoningEffort}` : ""}</strong>
         </summary>
         <div className="ai-settings" aria-label="Nastavení AI modelu">
-          <div className="model-picker">
-            <span>Model AI</span>
-            <details ref={modelPickerRef}>
-              <summary>
-                <strong>{selectedModel.label}</strong>
-                <small>{selectedModel.price}</small>
-              </summary>
-              <div className="model-picker-menu">
-                {modelOptions.map((option) => (
-                  <button
-                    className={option.id === model ? "model-picker-option model-picker-option-active" : "model-picker-option"}
-                    key={option.id}
-                    onClick={() => selectModel(option.id)}
-                    type="button"
-                  >
-                    <strong>{option.label}</strong>
-                    <span>{option.price}</span>
-                    <small>{option.description}</small>
-                  </button>
-                ))}
-              </div>
-            </details>
-            <small>{getAiProcessingModelHint(model)}</small>
-          </div>
+          <AiModelPicker
+            disabled={!canProcess}
+            onChange={setSelection}
+            scope="Pro nové ruční výstupy této nahrávky."
+            value={selection}
+          />
         </div>
       </details>
       <div className="quick-grid">

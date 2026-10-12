@@ -48,6 +48,26 @@ test.afterEach(async ({ request }) => {
   }
 });
 
+test("mobile inbox keeps status facets horizontal and first recording visible", async ({ page }, testInfo) => {
+  await page.route("**/api/**", (route) => route.fulfill({ json: { ownerId: null, recordings: [] } }));
+  await page.goto(`/login/recording-organization-e2e?scope=${fixtureScope}`);
+  await expect(page.locator(".recordings-row")).toHaveCount(2);
+  for (const width of [320, 375, 390, 768]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ["dark", "light"]) {
+      await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
+      const facets = page.getByRole("navigation", { name: "Filtrovat podle stavu" });
+      expect(await facets.evaluate((element) => getComputedStyle(element).flexDirection)).toBe("row");
+      expect(await facets.evaluate((element) => getComputedStyle(element).flexWrap)).toBe("nowrap");
+      expect((await facets.boundingBox())!.height).toBeLessThanOrEqual(54);
+      for (const facet of await facets.locator("a").all()) expect((await facet.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      await expect(page.locator(".recordings-row-title > a").first()).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+      if (width === 390) await page.screenshot({ path: testInfo.outputPath(`compact-inbox-${width}-${theme}.png`) });
+    }
+  }
+});
+
 test("creates, assigns and preserves canonical ALL-tag filters across refresh", async ({ page }) => {
   test.slow();
   const scope = fixtureScope;

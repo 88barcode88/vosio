@@ -1,14 +1,17 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 import { FilesContent } from "@/components/transcript-tabs/files-content";
 import { UtilityWorkspaceView } from "@/components/workspace/utility-workspace-view";
 import { toRecordingClientView } from "@/lib/recordings/client-view";
 import type { RecordingRow } from "@/lib/recordings/types";
 import { defaultUserSettings } from "@/lib/settings/types";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 
 const recordingWithStoragePath: RecordingRow = {
   client_id: null,
+  capabilities: { ...NO_RECORDING_CAPABILITIES, read: true, restore: true, purge: true },
   created_at: "2026-08-05T08:00:00.000Z",
   deleted_at: "2026-08-05T08:30:00.000Z",
   duration_seconds: 60,
@@ -35,6 +38,7 @@ describe("recording client view", () => {
 
     expect(Object.keys(view).sort()).toEqual([
       "audioAvailability",
+      "capabilities",
       "created_at",
       "deleted_at",
       "duration_seconds",
@@ -42,6 +46,7 @@ describe("recording client view", () => {
       "id",
       "mime_type",
       "purge_after",
+      "purge_phase",
       "source_type",
       "status",
       "title",

@@ -96,7 +96,7 @@ test("stored settings save with pending, safe failure drafts and a no-JS EU warn
 
   await page.goto(fixturePath({ installation: "missing", region: "global", save: "error", surface: "settings" }));
   const failedDraft = {
-    defaultOpenaiModel: "gpt-5.6-sol",
+    defaultOpenaiModel: "gpt-6-astra",
     sonioxRealtimeLanguage: "de",
     sonioxRealtimeModel: "stt-rt-v5",
     sonioxRegion: "eu",
@@ -140,7 +140,7 @@ test("stored settings save with pending, safe failure drafts and a no-JS EU warn
   );
   await page.reload();
   await expect(page.getByLabel("Region Soniox")).toHaveValue("global");
-  await expect(page.locator('select[name="defaultOpenaiModel"]')).toHaveValue("gpt-5.6-terra");
+  await expect(page.locator('select[name="defaultOpenaiModel"]')).toHaveValue("gpt-6.1-sol");
   await expect(page.locator('select[name="sonioxRealtimeLanguage"]')).toHaveValue("auto");
   await expect(page.locator('select[name="sonioxRealtimeModel"]')).toHaveValue("stt-rt-v5");
   await expect(page.locator('select[name="supabaseStoragePlan"]')).toHaveValue("free");
