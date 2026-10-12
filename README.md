@@ -8,6 +8,20 @@ Current source release: `0.2.1`
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2F88barcode88%2Fvosio&project-name=vosio&repository-name=vosio&env=NEXT_PUBLIC_SUPABASE_URL%2CNEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY%2CSUPABASE_SERVICE_ROLE_KEY%2CSONIOX_API_KEY%2COPENAI_API_KEY&envDescription=Vosio%20requires%20your%20own%20Supabase%2C%20Soniox%2C%20and%20OpenAI%20projects.&envLink=https%3A%2F%2Fgithub.com%2F88barcode88%2Fvosio%23vercel-environment-variables)
 
+## Codex plugin pro vlastní Vosio
+
+Veřejný plugin `vosio@vosio-community` nemá přednastavenou instalaci ani klíče.
+Po instalaci spustíte české nastavení, zadáte adresu svého Vosia a osobně se přihlásíte.
+
+```powershell
+codex.cmd plugin marketplace add 88barcode88/vosio --ref plugin-v0.2.0 --sparse .agents/plugins --sparse plugins/vosio
+codex.cmd plugin add vosio@vosio-community
+```
+
+Plugin vyžaduje již nasazené a zapnuté Vosio MCP. Tato veřejná aplikace zatím MCP
+server neobsahuje; samotné naklonování webu k připojení nestačí.
+[Instalace a použití pluginu](plugins/vosio/README.md).
+
 ## Stack
 
 - Next.js App Router

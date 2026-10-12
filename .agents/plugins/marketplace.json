@@ -1,0 +1,12 @@
+{
+  "name": "vosio-community",
+  "interface": { "displayName": "Vosio Community" },
+  "plugins": [
+    {
+      "name": "vosio",
+      "source": { "source": "local", "path": "./plugins/vosio" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

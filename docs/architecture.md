@@ -10,6 +10,12 @@ Repo je source-available pod vlastní licencí v `LICENSE.md`. Soukromé a inter
 
 ## Hlavní komponenty
 
+Veřejný Codex plugin v `plugins/vosio` obsahuje skills a český průvodce nastavením.
+Každý uživatel vybírá vlastní instalaci; vzdálené MCP a osobní OAuth spravuje nativní
+Codex. Balíček nemá přednastavený server. Tato veřejná aplikace zatím MCP server
+neobsahuje; plugin vyžaduje již připravenou kompatibilní instalaci.
+Kontrakt a oddělené stavy ověření: [Vosio plugin](api/vosio-plugin.md).
+
 | Komponenta | Úloha |
 | --- | --- |
 | Next.js PWA | UI, mobilní/desktop přístup, auth flow, krátké API akce |

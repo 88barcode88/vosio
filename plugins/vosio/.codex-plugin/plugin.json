@@ -1,0 +1,15 @@
+{
+  "name": "vosio",
+  "version": "0.2.0",
+  "description": "Work with recordings, transcripts and saved tasks in your own Vosio installation.",
+  "skills": "./skills/",
+  "extensions": {
+    "com.openai": { "onboardingSkill": "./skills/setup/SKILL.md" }
+  },
+  "interface": {
+    "displayName": "Vosio",
+    "shortDescription": "Vaše nahrávky, přepisy a úkoly",
+    "longDescription": "Připojte vlastní instalaci Vosia osobním přihlášením. Vyhledávejte nahrávky, přepisy a uložené úkoly; měňte názvy, mluvčí a stav úkolů podle svých oprávnění.",
+    "capabilities": ["Read", "Write"]
+  }
+}

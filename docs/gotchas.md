@@ -1,5 +1,14 @@
 # Gotchas
 
+## Plugin potřebuje vlastní připravený MCP server
+
+Veřejný plugin obsahuje skills, nikoli server aplikace. Setup načte pouze veřejnou
+OAuth konfiguraci uživatelem vybraného webu. Chybějící nebo vypnuté MCP skončí chybou
+bez fallbacku. Připojení je nativní entry v Codexu, proto odinstalování pluginu
+neodvolává serverový grant a nemaže entry. Při více instalacích je nutné vybrat
+správnou; údaje z přepisů nikdy nesmějí určit cílový server.
+Viz [kontrakt](api/vosio-plugin.md).
+
 ## Soniox název
 
 V původní úvaze se objevil název SONiVOX. Pro speech-to-text provider v tomto projektu jde o Soniox. SONiVOX je jiný název a nemá se používat jako název provider integrace.
