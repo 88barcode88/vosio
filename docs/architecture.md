@@ -6,6 +6,8 @@ Vosio je cílově robustní Next.js PWA pro audio nahrávky, přepisy a AI zprac
 
 Architektura musí podporovat mobil i desktop a nesmí předpokládat, že všechny dlouhé operace proběhnou uvnitř jednoho Vercel requestu.
 
+Seznam nahrávek načítá aktuální oprávnění každé vrácené položky souběžně s organizačními volbami a počty stavů. Detail nejdřív ověří právo číst, potom načítá zařazení hned po získání řádku souběžně s přepisem a ostatními daty. Capture a founder oprávnění projektu se ověřují souběžně; osobní metadata projektu se čtou až po potvrzení founder autority. Tyto úpravy pořadí nepřidávají cache oprávnění ani nemění RLS.
+
 Repo je source-available pod vlastní licencí v `LICENSE.md`. Soukromé a interní použití je povolené, ale placený hosted SaaS/subscription resale nebo white-label prodej vyžaduje písemné povolení. Aplikace obsahuje pouze pasivní license marker v HTML metadatech; neposílá žádný skrytý tracking ani licenční beacon.
 
 ## Hlavní komponenty

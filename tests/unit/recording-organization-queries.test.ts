@@ -60,6 +60,29 @@ const unclassifiedRecording: RecordingRow = {
 };
 
 describe("recording organization queries", () => {
+  it("checks capture and founder authority concurrently without reading founder metadata for a member", async () => {
+    const queries = new Map([
+      ["recording_clients", createListQuery([])],
+      ["recording_projects", createListQuery([{ id: "project-1", name: "Shared" }])],
+      ["recording_folders", createListQuery([])],
+      ["recording_tags", createListQuery([])]
+    ]);
+    let releaseCapture!: (value: { data: boolean; error: null }) => void;
+    const capture = new Promise<{ data: boolean; error: null }>((resolve) => { releaseCapture = resolve; });
+    const rpc = vi.fn((name: string) => name === "can_capture_in_recording_project"
+      ? capture : Promise.resolve({ data: false, error: null }));
+    const load = listRecordingOrganizationOptions({ from: (table: string) => queries.get(table), rpc } as never);
+    try {
+      await vi.waitFor(() => expect(rpc).toHaveBeenCalledWith("is_recording_project_founder_v1", { p_project_id: "project-1" }));
+      expect(rpc).not.toHaveBeenCalledWith("get_personal_recording_project_v1", expect.anything());
+      releaseCapture({ data: true, error: null });
+      await expect(load).resolves.toMatchObject({ projects: [{ client_id: null, can_manage_access: false, can_capture: true }] });
+    } finally {
+      releaseCapture({ data: true, error: null });
+      await load;
+    }
+  });
+
   it("loads explicit organization option allowlists in stable order", async () => {
     const queries = new Map([
       ["recording_clients", createListQuery([{ id: "client-1", name: "Acme" }])],

@@ -66,8 +66,8 @@ async function loadWithSingleRetry<T>(load: () => Promise<T>) {
   }
 }
 
-// loadRecordingData preserves search RPC failures as inline workspace state rather than route failures.
-function loadRecordingData(
+// loadRecordingData resolves fresh row authority while other workspace reads run, preserving inline search failures.
+async function loadRecordingData(
   supabase: Awaited<ReturnType<typeof createClient>>,
   filters: RecordingOrganizationFilters,
   searchQuery: string,
@@ -81,7 +81,7 @@ function loadRecordingData(
     totalCount: 0
   } : null;
 
-  return searchQuery
+  const recordingData: RecordingData = await (searchQuery
     ? loadWithSingleRetry(() => searchOwnRecordings(supabase, {
         organizationFilters: filters,
         page,
@@ -96,7 +96,11 @@ function loadRecordingData(
         })
       )
     : listRecordings(supabase, { organizationFilters: filters, status })
-      .then((recordings) => ({ recordings, searchError: null, searchPage: null }));
+      .then((recordings) => ({ recordings, searchError: null, searchPage: null })));
+  await Promise.all([...recordingData.recordings, ...(recordingData.searchPage?.results ?? [])].map(async (recording) => {
+    recording.capabilities = await resolveRecordingCapabilities(supabase, recording.id);
+  }));
+  return recordingData;
 }
 
 // loadRecordingReadPhase canonicalizes filtered URLs before reads and starts no-filter reads together.
@@ -213,9 +217,6 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
   }
 
   const paginationSearchParams = new URLSearchParams(canonicalStatus.searchParams);
-  await Promise.all([...recordings, ...(recordingSearchPage?.results ?? [])].map(async (recording) => {
-    recording.capabilities = await resolveRecordingCapabilities(supabase, recording.id);
-  }));
   paginationSearchParams.delete("warning", TRANSCRIPT_SEARCH_INDEX_WARNING);
   const recordingSearchPreviousHref = searchQuery && canonicalSearch.page > 1
     ? buildRecordingSearchPageHref(paginationSearchParams, canonicalSearch.page - 1)

@@ -1,5 +1,17 @@
 # Gotchas
 
+## Region serveru a načítání workspace
+
+Při nasazení na Vercel zvol region serverových funkcí blízko vlastní Supabase databáze. CDN u uživatele sama neznamená, že i funkce běží v témže regionu; zkontroluj konfiguraci nasazení a hlavičku `x-vercel-id`. [Vercel konfigurace regionu](https://vercel.com/docs/functions/configuring-functions/region) podporuje `regions` v kořenovém `vercel.json`. Veřejná aplikace region konkrétní instalace nepředepisuje.
+
+Nezrychluj stránku odvozením oprávnění z vlastníka řádku nebo trvalou cache: seznam i detail dál používají čerstvou autoritu. Souběh čtení a pořadí autorizace ověřuje `tests/unit/recording-page-loading.test.tsx`; souběh projektových oprávnění `tests/unit/recording-organization-queries.test.ts`.
+
+Menu jednotlivé nahrávky nabízí `Upravit zařazení` pouze pro soukromý záznam
+s oprávněním `manageAccess`, stejně jako detail. Sdílené a projektové nahrávky
+se tímto editorem nepřesouvají. Výsledky hledání před prvním otevřením editoru
+načítají aktuální zařazení samostatnou autorizovanou akcí, protože search výsledek
+neobsahuje štítky; změna klienta/projektu tak zachová složku a štítky.
+
 ## Fronta přepisu a potvrzení uloženého textu
 
 `manual_required` je zablokovaný stav, ne běžící provider job. UI zastaví automatické kontroly a nabídne dohledání původní úlohy, bezpečné zastavení nebo výslovný nový pokus po uzavření starého. Soniox processing nelze zrušit; hotový výsledek se má převzít. 401/neúplný seznam/nejisté DELETE nikdy nepotvrdí nepřítomnost. Recovery musí používat původní provider účet, zvláště po rotaci klíče. Přesný kontrakt a native DB proof: [capture API](api/capture-operation-contracts.md).

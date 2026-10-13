@@ -302,7 +302,7 @@ for (const width of [375, 768, 901, 1024, 1440]) {
 
     const row = page.locator(".recordings-row").first();
     const actionsMenu = row.locator(".recordings-actions-menu");
-    const actionsMenuTrigger = actionsMenu.locator("summary");
+    const actionsMenuTrigger = actionsMenu.locator(":scope > summary");
     await expect(row).toBeVisible();
     await expect(search).toBeVisible();
     await expect(actionsMenuTrigger).toHaveAttribute("aria-label", /Možnosti nahrávky/u);
@@ -446,7 +446,7 @@ for (const width of [375, 901, 1024]) {
     const inbox = page.locator(".recordings-inbox");
     const row = page.locator(".recordings-row").last();
     const actionsMenu = row.locator(".recordings-actions-menu");
-    await actionsMenu.locator("summary").click();
+    await actionsMenu.locator(":scope > summary").click();
     await actionsMenu.locator(".recording-title-edit-button").click();
     const popover = row.locator(".recording-title-popover");
     await expect(popover).toBeVisible();
@@ -570,7 +570,7 @@ for (const width of [901, 1024]) {
     const inbox = page.locator(".recordings-inbox");
     const result = page.locator(".recording-search-result").first();
     const actionsMenu = result.locator(".recordings-actions-menu");
-    const actionsMenuTrigger = actionsMenu.locator("summary");
+    const actionsMenuTrigger = actionsMenu.locator(":scope > summary");
     await expect(actionsMenuTrigger).toHaveAttribute("aria-label", /Možnosti nahrávky/u);
     await actionsMenuTrigger.click();
     await expect(actionsMenu.locator(".recording-title-edit-button")).toHaveAccessibleName("Upravit");

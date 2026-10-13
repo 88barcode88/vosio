@@ -16,7 +16,9 @@ import type { RecordingRow } from "@/lib/recordings/types";
 type RecordingOrganizationEditorProps = {
   options: RecordingOrganizationOptions;
   organization: RecordingOrganization;
-  recording: RecordingRow;
+  recording: Pick<RecordingRow, "id" | "client_id" | "project_id" | "folder_id">;
+  showSummary?: boolean;
+  initiallyOpen?: boolean;
   saveAction?: SaveAction;
 };
 
@@ -33,7 +35,7 @@ type RecordingOrganizationDraft = {
 };
 
 // createPersistedSignature tracks meaningful persisted assignment changes without array identity.
-function createPersistedSignature(organization: RecordingOrganization, recording: RecordingRow) {
+function createPersistedSignature(organization: RecordingOrganization, recording: RecordingOrganizationEditorProps["recording"]) {
   return JSON.stringify([
     recording.id,
     recording.client_id,
@@ -58,6 +60,8 @@ export function RecordingOrganizationEditor({
   options,
   organization,
   recording,
+  showSummary = true,
+  initiallyOpen = false,
   saveAction = assignRecordingOrganizationAction
 }: RecordingOrganizationEditorProps) {
   const persistedTagIdsSignature = organization.tags.map((tag) => tag.id).sort().join("\u001f");
@@ -68,7 +72,7 @@ export function RecordingOrganizationEditor({
     tagIds: new Set(persistedTagIdsSignature ? persistedTagIdsSignature.split("\u001f") : [])
   }), [persistedTagIdsSignature, recording.client_id, recording.folder_id, recording.project_id]);
   const persistedSignature = createPersistedSignature(organization, recording);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(initiallyOpen);
   const [clientId, setClientId] = useState(persistedDraft.clientId);
   const [projectId, setProjectId] = useState(persistedDraft.projectId);
   const [folderId, setFolderId] = useState(persistedDraft.folderId);
@@ -201,7 +205,7 @@ export function RecordingOrganizationEditor({
   return (
     <div className="recording-organization-editor">
       <div className="recording-organization-summary" aria-label="Zařazení nahrávky">
-        {chips.length > 0
+        {showSummary ? chips.length > 0
           ? chips.map((chip) => (
             <span
               className={`organization-chip${chip.color ? " organization-chip-colored" : ""}`}
@@ -213,7 +217,7 @@ export function RecordingOrganizationEditor({
               {chip.label}
             </span>
           ))
-          : <span className="organization-chip organization-chip-muted">Bez zařazení</span>}
+          : <span className="organization-chip organization-chip-muted">Bez zařazení</span> : null}
         <CompactPopover
           busy={isPending}
           className="recording-organization-popover"
