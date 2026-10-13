@@ -1,7 +1,7 @@
 import { getMcpMetadata, readPendingView } from "@/lib/mcp/gateway.server";
 import { notFound } from "next/navigation";
 export const dynamic = "force-dynamic";
-export const metadata = { referrer: "no-referrer" as const };
+export const metadata = { referrer: "same-origin" as const };
 
 // Reuse the approved auth form shell for explicit downstream scope consent.
 export default async function McpConsentPage({ searchParams }: { searchParams: Promise<{ request?: string }> }) {

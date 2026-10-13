@@ -26,6 +26,13 @@ nesmějí změnit platný redirect ani OAuth chybu na `503 temporarily_unavailab
 Povolené cookies zůstávají host-only: atribut `Domain` se odmítá a jednotlivé
 hlavičky `Set-Cookie` se neslučují.
 
+MCP stránky se souhlasem a odebráním připojení používají referrer policy
+`same-origin`. Politika `no-referrer` u běžného POST formuláře způsobí
+`Origin: null`, který OAuth handler správně odmítá. `same-origin` zachovává
+původ vlastních formulářů a zároveň neposílá URL stránky cizím originům.
+Prohlížečovou regresi spustíš přes
+`npm run test -- --config tests/browser/vitest.config.ts` s nainstalovaným Chromium.
+
 ## MCP používá samostatnou upstream OAuth relaci
 
 Veřejná registrace běží pouze ve Vosio bridge, nikoli v upstream Supabase Auth.
