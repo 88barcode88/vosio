@@ -1,7 +1,7 @@
 import { getMcpMetadata, readUpstreamView } from "@/lib/mcp/gateway.server";
 import { notFound, redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
-export const metadata = { referrer: "no-referrer" as const };
+export const metadata = { referrer: "same-origin" as const };
 
 // Approve only this installation's dedicated upstream client and nonce-bound pending actor.
 export default async function McpUpstreamConsentPage({ searchParams }: { searchParams: Promise<{ authorization_id?: string }> }) {

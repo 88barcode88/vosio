@@ -3,7 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
-export const metadata = { referrer: "no-referrer" as const };
+export const metadata = { referrer: "same-origin" as const };
 
 // List bounded own connection metadata and offer only actor-scoped revocation.
 export default async function McpConnectionsPage() {
