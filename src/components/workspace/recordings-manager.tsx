@@ -13,6 +13,8 @@ import { OrganizationManagerDrawer } from "@/components/workspace/organization-m
 import { RecordingFilters } from "@/components/workspace/recording-filters";
 import { RecordingsSearchErrorActions } from "@/components/workspace/recordings-search-error-actions";
 import { RecordingTitleEditor } from "@/components/workspace/recording-title-editor";
+import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
+import { RecordingMenuOrganizationEditor } from "@/components/workspace/recording-menu-organization-editor";
 import {
   formatDuration,
   getRecordingCounts,
@@ -90,8 +92,12 @@ function getRecordingOrganizationMeta(
 }
 
 // RecordingActionsMenu keeps secondary row actions available without letting them dominate the inbox.
-function RecordingActionsMenu({ recordingId, title, capabilities }: { recordingId: string; title: string; capabilities?: RecordingRow["capabilities"] }) {
-  if (!capabilities?.editTitle && !capabilities?.delete) return null;
+function RecordingActionsMenu({ recordingId, title, capabilities, visibility, recording, options }: {
+  recordingId: string; title: string; capabilities?: RecordingRow["capabilities"];
+  visibility?: RecordingRow["visibility"]; recording?: RecordingRow; options: RecordingOrganizationOptions;
+}) {
+  const canEditOrganization = visibility === "private" && capabilities?.manageAccess;
+  if (!capabilities?.editTitle && !capabilities?.delete && !canEditOrganization) return null;
   return (
     <details className="recordings-actions-menu">
       <summary aria-label={`Možnosti nahrávky ${title}`} title="Možnosti nahrávky">
@@ -99,6 +105,18 @@ function RecordingActionsMenu({ recordingId, title, capabilities }: { recordingI
       </summary>
       <div className="recordings-actions-popover">
         {capabilities.editTitle ? <RecordingTitleEditor recordingId={recordingId} title={title} /> : null}
+        {canEditOrganization ? recording ? <RecordingOrganizationEditor
+          options={options}
+          organization={{
+            client: options.clients.find((item) => item.id === recording.client_id) ?? null,
+            project: options.projects.find((item) => item.id === recording.project_id) ?? null,
+            folder: options.folders.find((item) => item.id === recording.folder_id) ?? null,
+            tags: options.tags.filter((item) => recording.tag_ids?.includes(item.id))
+          }}
+          recording={{ id: recording.id, client_id: recording.client_id,
+            project_id: recording.project_id, folder_id: recording.folder_id }}
+          showSummary={false}
+        /> : <RecordingMenuOrganizationEditor recordingId={recordingId} options={options} /> : null}
         {capabilities.delete ? <DeleteRecordingForm recordingId={recordingId} variant="compact" /> : null}
       </div>
     </details>
@@ -215,7 +233,8 @@ function RecordingSearchResults({
                   aria-label={`Akce nahrávky ${result.title}`}
                   role="group"
                 >
-                  <RecordingActionsMenu recordingId={result.id} title={result.title} capabilities={result.capabilities} />
+                  <RecordingActionsMenu recordingId={result.id} title={result.title} capabilities={result.capabilities}
+                    visibility={result.visibility} options={options} />
                 </div>
               </article>
             );
@@ -376,7 +395,8 @@ export function RecordingsManager({
                           aria-label={`Akce nahrávky ${recording.title}`}
                           role="group"
                         >
-                          <RecordingActionsMenu recordingId={recording.id} title={recording.title} capabilities={recording.capabilities} />
+                          <RecordingActionsMenu recordingId={recording.id} title={recording.title} capabilities={recording.capabilities}
+                            visibility={recording.visibility} recording={recording} options={organizationOptions} />
                         </div>
                       </article>
                     );

@@ -103,9 +103,11 @@ export async function listRecordingOrganizationOptions(
   ]);
 
   const resolvedProjects = await Promise.all(projects.map(async (project) => {
-    const capture = await supabase.rpc("can_capture_in_recording_project", { p_project_id: project.id });
+    const [capture, { data: founder, error: founderError }] = await Promise.all([
+      supabase.rpc("can_capture_in_recording_project", { p_project_id: project.id }),
+      supabase.rpc("is_recording_project_founder_v1", { p_project_id: project.id })
+    ]);
     if (capture.error) throw new Error("Unable to load project capture authority");
-    const { data: founder, error: founderError } = await supabase.rpc("is_recording_project_founder_v1", { p_project_id: project.id });
     if (founderError) throw new Error("Unable to load project authority");
     if (founder !== true) return { ...project, client_id: null, can_manage_access: false, can_capture: capture.data === true };
     const { data, error } = await supabase.rpc("get_personal_recording_project_v1", { p_project_id: project.id });

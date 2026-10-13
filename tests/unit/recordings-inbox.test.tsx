@@ -126,6 +126,24 @@ afterEach(async () => {
 });
 
 describe("recordings inbox", () => {
+  it("opens the existing assignment editor from the row menu only for private managers", async () => {
+    const privateManager = { ...createRecording("private", "completed", clientA), visibility: "private" as const,
+      capabilities: { ...NO_RECORDING_CAPABILITIES, read: true, manageAccess: true } };
+    const sharedManager = { ...privateManager, id: "shared", visibility: "project" as const };
+    const reader = { ...privateManager, id: "reader", capabilities: { ...NO_RECORDING_CAPABILITIES, read: true } };
+    await renderInbox([privateManager, sharedManager, reader]);
+
+    const privateRow = container.querySelector('[data-recording-id="private"]');
+    const trigger = privateRow?.querySelector<HTMLElement>('.recording-organization-popover > summary');
+    expect(trigger?.textContent).toContain("Upravit zařazení");
+    expect(container.querySelector('[data-recording-id="shared"] .recording-organization-popover')).toBeNull();
+    expect(container.querySelector('[data-recording-id="reader"] .recording-organization-popover')).toBeNull();
+    await act(async () => trigger?.click());
+    const dialog = privateRow?.querySelector('[role="dialog"][aria-label="Zařazení nahrávky"]');
+    expect(dialog?.querySelector<HTMLSelectElement>('select[name="clientId"]')?.value).toBe(clientA);
+    expect(dialog?.querySelector('select[name="projectId"]')).not.toBeNull();
+  });
+
   it("exposes the compact toolbar and flat list as named workspace regions", async () => {
     await renderInbox([createRecording("recording-1", "completed", clientA)]);
 

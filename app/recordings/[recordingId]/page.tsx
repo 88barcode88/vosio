@@ -63,8 +63,11 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
 
   const capabilities = await resolveRecordingCapabilities(supabase, recordingId);
   if (!capabilities.read) notFound();
-  const [recording, recordingMarkers, transcripts, organizationOptions, audioLocator, ownThread] = await Promise.all([
-    getRecordingById(supabase, recordingId),
+  const [{ recording, recordingOrganization }, recordingMarkers, transcripts, organizationOptions, audioLocator, ownThread] = await Promise.all([
+    getRecordingById(supabase, recordingId).then(async (recording) => ({
+      recording,
+      recordingOrganization: recording ? await getRecordingOrganization(supabase, recording) : undefined
+    })),
     listRecordingMarkers(supabase, recordingId),
     listTranscriptsForRecording(supabase, recordingId),
     listRecordingOrganizationOptions(supabase),
@@ -93,7 +96,6 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
         transcriptId: currentTranscript.id
       })
     : null;
-  const recordingOrganization = await getRecordingOrganization(supabase, recording);
 
   return (
     <VosioWorkspace
