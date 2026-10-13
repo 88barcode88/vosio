@@ -20,6 +20,12 @@ zablokuje Function. Nová resource vyžaduje nové připojení, starý `/api/mcp
 Setup po nejistém zápisu vyžaduje ověřenou obnovu receiptu; nesmí vytvořit dalšího
 klienta ani přepsat klíč. Viz [runbook](api/mcp-plugin.md).
 
+OAuth web brána předává pouze vlastní Supabase auth cookies a MCP binding cookies.
+Ostatní cookies z upstream odpovědi, například Cloudflare `__cf_bm`, ignoruje;
+nesmějí změnit platný redirect ani OAuth chybu na `503 temporarily_unavailable`.
+Povolené cookies zůstávají host-only: atribut `Domain` se odmítá a jednotlivé
+hlavičky `Set-Cookie` se neslučují.
+
 ## MCP používá samostatnou upstream OAuth relaci
 
 Veřejná registrace běží pouze ve Vosio bridge, nikoli v upstream Supabase Auth.

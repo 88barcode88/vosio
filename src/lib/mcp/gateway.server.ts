@@ -47,7 +47,7 @@ export async function getMcpMetadata() {
   } catch { return null; }
 }
 
-// Proxy only fixed OAuth paths; preserve separate cookies and validated external redirect locations.
+// Proxy fixed OAuth paths with separate allowlisted host-only cookies and validated redirects.
 export async function proxyMcpOAuth(request: Request, action: "authorize" | "callback" | "consent" | "token" | "revoke" | "register") {
   try {
     const backend = target(); const metadata = await getMcpMetadata();
@@ -62,7 +62,8 @@ export async function proxyMcpOAuth(request: Request, action: "authorize" | "cal
     for (const name of ["content-type", "location", "retry-after"]) { const value = response.headers.get(name); if (value) result.headers.set(name, value); }
     for (const cookie of response.headers.getSetCookie()) {
       const name = cookie.slice(0, cookie.indexOf("="));
-      if (!filterMcpCookies(`${name}=value`, backend.publicUrl).length || /;\s*domain=/i.test(cookie)) throw new Error("Unexpected backend cookie.");
+      if (!filterMcpCookies(`${name}=value`, backend.publicUrl).length) continue;
+      if (/;\s*domain=/i.test(cookie)) throw new Error("Unexpected backend cookie.");
       result.headers.append("Set-Cookie", cookie);
     }
     return result;

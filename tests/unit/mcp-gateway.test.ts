@@ -35,6 +35,8 @@ describe("MCP web/Function boundary", () => {
     const response = new Response(null, { status: 303, headers: { Location: "https://client.example/callback?code=opaque" } });
     response.headers.append("Set-Cookie", `${MCP_NONCE_COOKIE}=nonce; Secure; HttpOnly; Path=/; SameSite=Lax`);
     response.headers.append("Set-Cookie", `${MCP_PENDING_COOKIE}=pending; Secure; HttpOnly; Path=/; SameSite=Lax`);
+    response.headers.append("Set-Cookie", "__cf_bm=edge-cookie; Secure; HttpOnly; Path=/; Domain=supabase.co; SameSite=None");
+    response.headers.append("Set-Cookie", "sb-other-auth-token=foreign; Secure; Path=/; Domain=other.example");
     const fetcher = vi.fn().mockResolvedValueOnce(Response.json(metadata)).mockResolvedValueOnce(response); vi.stubGlobal("fetch", fetcher);
     const result = await proxyMcpOAuth(new Request("https://web.example/api/mcp/oauth/consent", { method: "POST", headers: { Origin: row.webOrigin, Cookie: `${MCP_NONCE_COOKIE}=nonce; sb-sb-auth-token=own; sb-other-auth-token=foreign; unrelated=private`, Authorization: "Bearer should-not-forward", "Content-Type": "application/x-www-form-urlencoded" }, body: "action=approve" }), "consent");
     expect(result.status).toBe(303); expect(result.headers.getSetCookie()).toHaveLength(2);
@@ -42,6 +44,24 @@ describe("MCP web/Function boundary", () => {
     expect(outgoing.redirect).toBe("manual"); expect(outgoing.headers.get("cookie")).toContain("sb-sb-auth-token=own");
     expect(outgoing.headers.get("cookie")).not.toMatch(/foreign|private/); expect(outgoing.headers.has("authorization")).toBe(false);
     expect(fetcher.mock.calls[1][0]).toBe(`${metadata.resource}/oauth/consent`);
+  });
+  it("preserves an OAuth error when the Supabase gateway adds an unrelated cookie", async () => {
+    const metadata = web();
+    const response = Response.json({ error: "invalid_request" }, { status: 400 });
+    response.headers.append("Set-Cookie", "__cf_bm=edge-cookie; Secure; HttpOnly; Path=/; Domain=supabase.co");
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(metadata)).mockResolvedValueOnce(response); vi.stubGlobal("fetch", fetcher);
+    const result = await proxyMcpOAuth(new Request("https://web.example/api/mcp/oauth/authorize"), "authorize");
+    expect(result.status).toBe(400); expect(await result.json()).toEqual({ error: "invalid_request" });
+    expect(result.headers.getSetCookie()).toEqual([]);
+  });
+  it.each([MCP_NONCE_COOKIE, MCP_PENDING_COOKIE, "sb-sb-auth-token", "sb-sb-auth-token.0"])("rejects a Domain attribute on the allowed cookie %s", async (name) => {
+    const metadata = web();
+    const response = new Response(null, { status: 303, headers: { Location: "https://client.example/callback" } });
+    response.headers.append("Set-Cookie", `${name}=value; Secure; HttpOnly; Path=/; Domain=web.example`);
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(metadata)).mockResolvedValueOnce(response); vi.stubGlobal("fetch", fetcher);
+    const result = await proxyMcpOAuth(new Request("https://web.example/api/mcp/oauth/authorize"), "authorize");
+    expect(result.status).toBe(503); expect(await result.json()).toEqual({ error: "temporarily_unavailable" });
+    expect(result.headers.getSetCookie()).toEqual([]); expect(result.headers.has("location")).toBe(false);
   });
   it("cannot choose a backend target through query, Host or Forwarded headers", async () => {
     const metadata = web(); const fetcher = vi.fn().mockResolvedValueOnce(Response.json(metadata)).mockResolvedValueOnce(new Response(null, { status: 400 })); vi.stubGlobal("fetch", fetcher);
