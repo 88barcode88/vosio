@@ -17,7 +17,7 @@ const bounded = z.string().min(1).max(2000);
 export const authorizeSchema = z.object({ response_type: z.literal("code"), client_id: uuid, redirect_uri: bounded, state: z.string().max(1024).default(""), code_challenge: opaque, code_challenge_method: z.literal("S256"), resource: bounded, scope: z.string().max(100).default("vosio:read") }).strict();
 export const tokenSchema = z.discriminatedUnion("grant_type", [
   z.object({ grant_type: z.literal("authorization_code"), client_id: uuid, code: opaque, redirect_uri: bounded, resource: bounded, code_verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/) }).strict(),
-  z.object({ grant_type: z.literal("refresh_token"), client_id: uuid, refresh_token: opaque, resource: bounded }).strict()
+  z.object({ grant_type: z.literal("refresh_token"), client_id: uuid, refresh_token: opaque, resource: bounded, scope: z.string().max(100).optional() }).strict()
 ]);
 const metadataUrl = z.string().max(2000).refine((value) => isMcpAllowedUrl(value, false));
 export const registerSchema = z.object({ client_name: z.string().trim().min(1).max(100).default("MCP client"), redirect_uris: z.array(bounded).min(1).max(10), token_endpoint_auth_method: z.literal("none").default("none"), grant_types: z.array(z.enum(["authorization_code", "refresh_token"])).min(1).max(2).default(["authorization_code", "refresh_token"]), response_types: z.array(z.literal("code")).length(1).default(["code"]),
@@ -34,7 +34,7 @@ const requestLimit = createRateLimiter({ limit: 30, windowMs: 60000 });
 
 class OAuthFailure extends Error {
   // Return fixed OAuth errors without raw upstream or database information.
-  constructor(public readonly code: "invalid_request" | "invalid_grant" | "invalid_client" | "access_denied" | "temporarily_unavailable" | "unauthorized_client", public readonly status = 400, public readonly retryAfter?: number) { super("OAuth request could not be completed."); }
+  constructor(public readonly code: "invalid_request" | "invalid_grant" | "invalid_scope" | "invalid_client" | "access_denied" | "temporarily_unavailable" | "unauthorized_client", public readonly status = 400, public readonly retryAfter?: number) { super("OAuth request could not be completed."); }
 }
 
 // Resolve enabled configuration without revealing missing secret names or values.
@@ -170,11 +170,12 @@ async function upstreamExchange(config: McpConfig, values: Record<string, string
   return tokens.data;
 }
 
-// Issue opaque bridge tokens only after the one-use database fence is confirmed.
-async function issueBridgeTokens(config: McpConfig, raw: Record<string, unknown>, refresh: boolean) {
+// Issue fenced bridge tokens while preserving the grant's fixed scope set on refresh.
+async function issueBridgeTokens(config: McpConfig, raw: Record<string, unknown>, refresh: boolean, requestedScopes?: ReturnType<typeof normalizeMcpScopes>) {
   const grant = grantSchema.parse(raw);
   if (!grant.fence || grant.resource !== config.resourceUrl || !grant.scopes.includes("vosio:read")) throw new OAuthFailure("invalid_grant");
   try {
+    if (requestedScopes && (requestedScopes.length !== grant.scopes.length || requestedScopes.some((scope) => !grant.scopes.includes(scope)))) throw new OAuthFailure("invalid_scope");
     const old = upstreamTokens.parse(decryptCustody(config.encryptionKey, grant.id, grant.encrypted));
     const tokens = refresh ? await upstreamExchange(config, { grant_type: "refresh_token", refresh_token: old.refresh_token }) : old;
     const verified = await verifyUpstream(config, tokens.access_token, grant.user_id, grant.session_id);
@@ -185,9 +186,10 @@ async function issueBridgeTokens(config: McpConfig, raw: Record<string, unknown>
     const saved = refresh ? await custody("refresh_finish", { ...common, encrypted: encryptCustody(config.encryptionKey, grant.id, tokens), sessionId: verified.sessionId, upstreamExpiresAt: verified.expiresAt }) : await custody("token_issue", common);
     if (saved?.ok !== true) throw new OAuthFailure("invalid_grant");
     return { access_token: accessToken, refresh_token: refreshToken, token_type: "Bearer", expires_in: accessExpiresAt - now, scope: grant.scopes.join(" ") };
-  } catch {
+  } catch (error) {
     // External refresh uncertainty consumes the family; callers must authorize a new connection.
     await custody("revoke_grant", { grantId: grant.id }).catch(() => null);
+    if (error instanceof OAuthFailure && error.code === "invalid_scope") throw error;
     throw new OAuthFailure("invalid_grant");
   }
 }
@@ -231,9 +233,10 @@ export async function handleMcpOAuth(request: Request, action: "authorize" | "to
     } else if (action === "token") {
       const args = tokenSchema.parse(await body(request));
       if (args.resource !== config.resourceUrl) throw new OAuthFailure("invalid_grant");
+      const requestedScopes = args.grant_type === "refresh_token" && args.scope !== undefined ? normalizeMcpScopes(args.scope) : undefined;
       const raw = args.grant_type === "authorization_code" ? await custody("code_claim", { codeHash: hashToken(args.code), clientId: args.client_id, redirectUri: args.redirect_uri, resource: args.resource, challenge: pkceChallenge(args.code_verifier) }) : await custody("refresh_claim", { refreshHash: hashToken(args.refresh_token), clientId: args.client_id, resource: args.resource });
       if (!raw) throw new OAuthFailure("invalid_grant");
-      response = Response.json(await issueBridgeTokens(config, raw, args.grant_type === "refresh_token"));
+      response = Response.json(await issueBridgeTokens(config, raw, args.grant_type === "refresh_token", requestedScopes));
     } else if (action === "revoke") {
       const args = z.object({ token: opaque, client_id: uuid, token_type_hint: z.enum(["access_token", "refresh_token"]).optional() }).strict().parse(await body(request));
       await custody("revoke", { tokenHash: hashToken(args.token), clientId: args.client_id });

@@ -309,6 +309,41 @@ describe("OAuth consent, callback and single-use issuance", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, "vosio:read", "vosio:read vosio:read"])("refreshes the current grant with Codex's optional scope %s", async (scope) => {
+    const { config, fetchMock, tokens } = setup();
+    const response = await handleMcpOAuth(tokenRequest(config, { grant_type: "refresh_token", refresh_token: token, client_id: clientId, resource: config.resourceUrl, ...(scope === undefined ? {} : { scope }) }), "token");
+    expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ expires_in: 300, token_type: "Bearer", scope: "vosio:read" });
+    expect(mocks.custody.mock.calls[0][0]).toBe("refresh_claim");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(Object.fromEntries(fetchMock.mock.calls[0][1].body)).toEqual({ grant_type: "refresh_token", refresh_token: tokens.refresh_token });
+    expect(mocks.custody).toHaveBeenCalledWith("refresh_finish", expect.objectContaining({ grantId, fence, sessionId }));
+    expect(mocks.custody).not.toHaveBeenCalledWith("revoke_grant", expect.anything());
+  });
+
+  it("normalizes the requested write scope without changing the grant", async () => {
+    const { config, grant } = setup(); grant.scopes.push("vosio:write");
+    const response = await handleMcpOAuth(tokenRequest(config, { grant_type: "refresh_token", refresh_token: token, client_id: clientId, resource: config.resourceUrl, scope: "vosio:write vosio:read" }), "token");
+    expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ scope: "vosio:read vosio:write" });
+  });
+
+  it.each(["expand", "reduce"])("rejects requests to %s fixed grant scopes before upstream refresh and closes the claimed family", async (change) => {
+    const { config, grant, fetchMock } = setup();
+    if (change === "reduce") grant.scopes.push("vosio:write");
+    const scope = change === "reduce" ? "vosio:read" : "vosio:write";
+    const response = await handleMcpOAuth(tokenRequest(config, { grant_type: "refresh_token", refresh_token: token, client_id: clientId, resource: config.resourceUrl, scope }), "token");
+    expect(response.status).toBe(400); expect(await response.json()).toEqual({ error: "invalid_scope" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.custody).not.toHaveBeenCalledWith("refresh_finish", expect.anything());
+    expect(mocks.custody).toHaveBeenCalledWith("revoke_grant", { grantId });
+  });
+
+  it.each(["admin", "", "vosio:read ".repeat(10)])("rejects invalid refresh scopes before consuming a token", async (scope) => {
+    const { config, fetchMock } = setup();
+    const response = await handleMcpOAuth(tokenRequest(config, { grant_type: "refresh_token", refresh_token: token, client_id: clientId, resource: config.resourceUrl, scope }), "token");
+    expect(response.status).toBe(400); expect(await response.json()).toEqual({ error: "invalid_request" });
+    expect(mocks.custody).not.toHaveBeenCalled(); expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("claims refresh before network and revokes family on any upstream uncertainty without retry", async () => {
     const { config, fetchMock } = setup(); fetchMock.mockRejectedValue(new Error("secret transport detail"));
     const response = await handleMcpOAuth(tokenRequest(config, { grant_type: "refresh_token", refresh_token: token, client_id: clientId, resource: config.resourceUrl }), "token");
