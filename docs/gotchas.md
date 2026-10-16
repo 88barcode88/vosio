@@ -47,6 +47,11 @@ Prohlížečovou regresi spustíš přes
 
 ## MCP používá samostatnou upstream OAuth relaci
 
+Codex při obnově tokenu posílá také `scope`. Token endpoint musí přijmout jeho
+volitelnou podobu a porovnat normalizovaná oprávnění s uloženým grantem; jinak
+nové přihlášení funguje jen do expirace krátkodobého access tokenu. Změna
+oprávnění vyžaduje nový souhlas. Scope Vosia se do upstream obnovy neposílá.
+
 Veřejná registrace běží pouze ve Vosio bridge, nikoli v upstream Supabase Auth.
 Aktivní konfigurace oznamuje přesnou Function registrační URL. DB limit a úklid
 vyžadují forward `20261007100000`; nasazení samotného kódu ho neaplikuje.

@@ -40,6 +40,13 @@ blindly retry the upstream request. A valid access token does not survive a
 committed bridge revoke or upstream OAuth session deletion on the next request.
 This does not claim immediate parity for every Supabase inactivity/AAL policy.
 
+Refresh requests accept an optional bounded `scope`, as sent by Codex. Omitting
+it preserves the grant; supplying it must normalize to the same granted scope
+set. Scopes are fixed on the grant, so changing them requires a new consent.
+A different supported scope set returns `invalid_scope` and closes the claimed
+family before upstream exchange. Malformed scopes are rejected before claim.
+Refresh never forwards Vosio scopes to the upstream Supabase OAuth token endpoint.
+
 ## Surface and bounds
 
 | Tools | Contract |
