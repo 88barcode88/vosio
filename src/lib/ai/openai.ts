@@ -1,3 +1,4 @@
+import { fetchAiResponse } from "@/lib/ai/response.server";
 import { getOpenAIEnv } from "@/lib/env.server";
 import type { AiProviderProcessingResult } from "@/lib/ai/common";
 import type { RecordingChatMessage, RecordingChatProviderResult } from "@/lib/ai/chat-types";
@@ -113,7 +114,7 @@ export async function runOpenAIProcessing(input: RunOpenAIProcessingInput): Prom
   const env = getOpenAIEnv();
   let response: Response;
   try {
-    response = await fetch("https://api.openai.com/v1/responses", {
+    response = await fetchAiResponse("https://api.openai.com/v1/responses", {
       ...(input.signal ? { signal: input.signal } : {}),
       body: JSON.stringify(createOpenAIRequestBody(input)),
       headers: {
@@ -159,7 +160,7 @@ export async function runOpenAIChat(input: RunOpenAIChatInput): Promise<Recordin
   const env = getOpenAIEnv();
   let response: Response;
   try {
-    response = await fetch("https://api.openai.com/v1/responses", {
+    response = await fetchAiResponse("https://api.openai.com/v1/responses", {
       body: JSON.stringify(createOpenAIChatRequestBody(input)),
       headers: {
         Authorization: `Bearer ${env.openaiApiKey}`,

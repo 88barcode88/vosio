@@ -1,3 +1,4 @@
+import { fetchAiResponse } from "@/lib/ai/response.server";
 import "server-only";
 import { getMistralEnv } from "@/lib/env.server";
 import type { AiProviderProcessingResult } from "@/lib/ai/common";
@@ -90,7 +91,7 @@ async function requestMistral(body: unknown, signal?: AbortSignal) {
   let response: Response;
 
   try {
-    response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    response = await fetchAiResponse("https://api.mistral.ai/v1/chat/completions", {
       ...(signal ? { signal } : {}),
       body: JSON.stringify(body),
       headers: {

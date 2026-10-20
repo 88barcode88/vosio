@@ -570,3 +570,9 @@ Přesný receipt hromadného sdílení potvrzuje historickou transakci, ne dneš
 Po úspěchu obnov aktuální čtení. Po nejasné odpovědi drž stejný request a payload;
 neoznamuj rollback jen proto, že HTTP request selhal. Provozní akceptace a bezpečný
 backout jsou v [sharing runbooku](api/project-sharing-runbook.md).
+
+## Limity importu DOCX a AI odpovědí
+
+DOCX import skenuje značky jedním dopředným průchodem a odmítá neuzavřené nebo vnořené textové značky. Souborový limit 10 MiB a inflační limit 64 MiB samy nechrání proti kvadratickému regex parsování; token scanner nesmí opakovaně hledat konec textu pro každou neuzavřenou značku.
+
+OpenAI, Gemini i Mistral pro processing i chat používají společný transportní deadline 240 sekund od zahájení fetch až po dočtení těla a limit 2 MiB skutečně načtených (dekódovaných) bajtů JSON odpovědi. Limit platí i pro chybové odpovědi a nespoléhá na Content-Length. Překročení limitu nebo zrušení ukončí čtení streamu; dřívější caller AbortSignal zůstává účinný. Existující bezpečná normalizace provider chyb zůstává zachována, bez automatického opakování placeného požadavku. Timeout klienta není potvrzení, že provider zrušil výpočet nebo účtování. Tyto limity nenahrazují provider spend cap, output-token budget ani konfiguraci retence.
