@@ -137,7 +137,7 @@ function postActionItems(overrides: { metadata?: Record<string, unknown>; model?
         temperature: 0.7,
         ...overrides
       }),
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Origin: "https://vosio.test" },
       method: "POST",
     }),
     { params: Promise.resolve({ transcriptId }) },
@@ -168,7 +168,7 @@ function createRetryFixture(sourceOverrides: Record<string, unknown> = {}) {
 // postRetry uses lineage alone; the server supplies every model and prompt input from the source.
 function postRetry(overrides: Record<string, unknown> = {}) {
   return POST(new NextRequest(`https://vosio.test/api/transcripts/${transcriptId}/process`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json", Origin: "https://vosio.test" },
     body: JSON.stringify({ processingType: "action_items",
       requestId: "00000000-0000-4000-8000-000000000815",
       retryOfJobId: "00000000-0000-4000-8000-000000000816", ...overrides })

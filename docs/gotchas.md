@@ -1,5 +1,11 @@
 # Gotchas
 
+## Původ browserových AI požadavků
+
+POST pro AI zpracování, chat, automatickou časovou osu, obnovu a úklid manuálních AI úloh i vydání Soniox realtime klíče vyžaduje `Origin` přesně shodný s originem request URL. Chybějící nebo `null` origin, jiná subdoména, schéma či port a `Sec-Fetch-Site: cross-site` vrací 403 ještě před čtením těla nebo vytvořením DB klienta. Cesty používají existující `assertInvitationOrigin`; samotné `SameSite=Lax` cookies neoddělují nedůvěryhodnou sousední subdoménu na stejném site.
+
+Běžný browser fetch posílá Origin automaticky. Ruční HTTP klient nebo test musí poslat správný Origin i platnou session; samotná hlavička nenahrazuje autentizaci ani recording capabilities. Read-only GET a samostatné bearer/webhook rozhraní tento browserový kontrakt nepřebírají.
+
 ## Region serveru a načítání workspace
 
 Při nasazení na Vercel zvol region serverových funkcí blízko vlastní Supabase databáze. CDN u uživatele sama neznamená, že i funkce běží v témže regionu; zkontroluj konfiguraci nasazení a hlavičku `x-vercel-id`. [Vercel konfigurace regionu](https://vercel.com/docs/functions/configuring-functions/region) podporuje `regions` v kořenovém `vercel.json`. Veřejná aplikace region konkrétní instalace nepředepisuje.
