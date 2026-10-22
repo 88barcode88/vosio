@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Eraser, Pencil, Save, X } from "lucide-react";
 import { CompactPopover } from "@/components/ui/compact-popover";
 import { useCloseOnSuccessfulSave } from "@/components/use-close-on-successful-save";
@@ -14,6 +14,8 @@ import type {
 import type { RecordingRow } from "@/lib/recordings/types";
 
 type RecordingOrganizationEditorProps = {
+  embedded?: boolean;
+  onPendingChange?: (pending: boolean) => void;
   options: RecordingOrganizationOptions;
   organization: RecordingOrganization;
   recording: Pick<RecordingRow, "id" | "client_id" | "project_id" | "folder_id">;
@@ -57,6 +59,8 @@ function createSubmittedDraft(formData: FormData): RecordingOrganizationDraft {
 
 // RecordingOrganizationEditor atomically edits one recording's client, project, folder and tags.
 export function RecordingOrganizationEditor({
+  embedded = false,
+  onPendingChange,
   options,
   organization,
   recording,
@@ -112,6 +116,7 @@ export function RecordingOrganizationEditor({
     scopedSaveAction,
     createInitialSaveActionState()
   );
+  useEffect(() => { onPendingChange?.(isPending); }, [isPending, onPendingChange]);
   const matchingProjects = useMemo(
     () => options.projects.filter((project) => (project.client_id ?? "") === clientId),
     [clientId, options.projects]
@@ -123,8 +128,8 @@ export function RecordingOrganizationEditor({
     lastSyncedPersistedSignatureRef.current = persistedSignatureRef.current;
     submittedDraftRef.current = null;
     submittedPersistedSignatureRef.current = null;
-    setIsOpen(false);
-  }, [applyDraft]);
+    if (!embedded) setIsOpen(false);
+  }, [applyDraft, embedded]);
   const isCurrentSettlement = actionState.scopeKey === recording.id;
   const isCurrentErrorDismissed = dismissedError?.scopeKey === recording.id
     && actionState.revision <= dismissedError.revision;
@@ -166,11 +171,11 @@ export function RecordingOrganizationEditor({
   }, [applyDraft, recording.id]);
 
   useEffect(() => {
-    if (isOpen || isPending || previousRecordingIdRef.current !== recording.id) return;
+    if (embedded || isOpen || isPending || previousRecordingIdRef.current !== recording.id) return;
     if (lastSyncedPersistedSignatureRef.current === persistedSignature) return;
     applyDraft(persistedDraftRef.current);
     lastSyncedPersistedSignatureRef.current = persistedSignature;
-  }, [applyDraft, isOpen, isPending, persistedSignature, recording.id]);
+  }, [applyDraft, embedded, isOpen, isPending, persistedSignature, recording.id]);
 
   useEffect(() => {
     if (actionState.status === "error" && actionState.scopeKey === recording.id) {
@@ -202,6 +207,13 @@ export function RecordingOrganizationEditor({
     ...organization.tags.map((tag) => ({ color: tag.color, id: `tag-${tag.id}`, label: tag.name }))
   ].filter((chip): chip is { color: string | null; id: string; label: string } => chip !== null);
 
+  // renderEditor shares the form while leaving dismissal to the combined surface when embedded.
+  const renderEditor = (children: ReactNode) => embedded ? <section aria-label="Zařazení"><h3>Zařazení</h3>{children}</section> : (
+    <CompactPopover busy={isPending} className="recording-organization-popover" label="Zařazení nahrávky"
+      onOpenChange={(next) => { if (next) setIsOpen(true); else dismissEditor(); }} open={isOpen}
+      trigger={<><Pencil aria-hidden="true" size={15} />Upravit zařazení</>} triggerRef={triggerRef}>{children}</CompactPopover>
+  );
+
   return (
     <div className="recording-organization-editor">
       <div className="recording-organization-summary" aria-label="Zařazení nahrávky">
@@ -218,18 +230,11 @@ export function RecordingOrganizationEditor({
             </span>
           ))
           : <span className="organization-chip organization-chip-muted">Bez zařazení</span> : null}
-        <CompactPopover
-          busy={isPending}
-          className="recording-organization-popover"
-          label="Zařazení nahrávky"
-          onOpenChange={(next) => { if (next) setIsOpen(true); else dismissEditor(); }}
-          open={isOpen}
-          trigger={<><Pencil aria-hidden="true" size={15} />Upravit zařazení</>}
-          triggerRef={triggerRef}
-        >
+        {renderEditor(
           <form
             action={formAction}
             aria-busy={isPending}
+            aria-label="Zařazení"
             className="recording-organization-form"
             onSubmit={(event) => {
               if (isPending) event.preventDefault();
@@ -310,7 +315,7 @@ export function RecordingOrganizationEditor({
                 type="submit"
               >
                 <Save aria-hidden="true" size={15} />
-                {isPending ? "Ukládám…" : "Uložit"}
+                {isPending ? "Ukládám…" : embedded ? "Uložit zařazení" : "Uložit"}
               </button>
               <button
                 disabled={isPending}
@@ -325,10 +330,10 @@ export function RecordingOrganizationEditor({
                 <Eraser aria-hidden="true" size={15} />
                 Vyčistit zařazení
               </button>
-              <button disabled={isPending} onClick={dismissEditor} type="button"><X aria-hidden="true" size={15} />Zrušit</button>
+              {embedded ? null : <button disabled={isPending} onClick={dismissEditor} type="button"><X aria-hidden="true" size={15} />Zrušit</button>}
             </div>
           </form>
-        </CompactPopover>
+        )}
       </div>
       <span aria-atomic="true" aria-live="polite" className="visually-hidden">
         {isCurrentSettlement && actionState.status === "success" && !isPending

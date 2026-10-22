@@ -139,6 +139,7 @@ test("chat persists the selected model and opens its verified evidence through t
 
   await page.goto(`/login/recording-layout-e2e?scope=${createFixtureScope()}&mode=chat`);
   await expect(page.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true");
+  await page.locator(".recording-chat-model-settings > summary").click();
   const modelPicker = page.locator(".recording-chat-content").getByRole("combobox");
   await expect(modelPicker).toHaveValue("gpt-6.1-sol");
   await modelPicker.selectOption("gpt-6-astra");

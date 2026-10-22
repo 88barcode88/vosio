@@ -8,11 +8,12 @@ import {
   ListChecks,
   Mail,
   Settings2,
-  Trash2
+  Trash2,
+  Users
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type WorkspaceView = "recordings" | "ai" | "templates" | "documentation" | "trash" | "settings";
+export type WorkspaceView = "recordings" | "ai" | "templates" | "documentation" | "trash" | "settings" | "team";
 
 export type WorkspaceNavigationHref =
   | "/documentation"
@@ -20,7 +21,8 @@ export type WorkspaceNavigationHref =
   | "/recordings/new"
   | "/settings"
   | "/templates"
-  | "/trash";
+  | "/trash"
+  | "/team";
 
 export type NavigationItem = {
   href: WorkspaceNavigationHref;
@@ -35,6 +37,8 @@ export const primaryNavigationItems: NavigationItem[] = [
   { href: "/recordings", label: "Nahrávky", icon: FileAudio, view: "recordings" },
   { href: "/templates", label: "AI prompty", icon: FileText, view: "templates" }
 ];
+
+export const teamNavigationItem: NavigationItem = { href: "/team", label: "Tým", icon: Users, view: "team" };
 
 export const utilityNavigationItems: NavigationItem[] = [
   { href: "/trash", label: "Koš", icon: Trash2, view: "trash" },

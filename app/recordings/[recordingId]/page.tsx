@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { resolveTeamRole } from "@/lib/team/queries.server";
 import {
   parseTranscriptTabSearchParams,
   parseTranscriptTabCookieValue,
@@ -99,6 +100,7 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
 
   return (
     <VosioWorkspace
+      canManageTeam={Boolean(await resolveTeamRole(supabase))}
       activeRecordingId={recordingId}
       aiOutputs={[]}
       initialTranscriptDeepLink={initialDeepLink}

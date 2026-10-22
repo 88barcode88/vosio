@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { Pencil } from "lucide-react";
 import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
 import { assignRecordingOrganizationAction } from "@/lib/recording-organization/actions";
@@ -8,7 +8,9 @@ import { loadRecordingOrganizationAction } from "@/lib/recording-organization/lo
 import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
 
 // RecordingMenuOrganizationEditor lazily obtains tags missing from search results before editing.
-export function RecordingMenuOrganizationEditor({ recordingId, options }: {
+export function RecordingMenuOrganizationEditor({ recordingId, options, embedded = false, onPendingChange }: {
+  embedded?: boolean;
+  onPendingChange?: (pending: boolean) => void;
   recordingId: string;
   options: RecordingOrganizationOptions;
 }) {
@@ -16,7 +18,22 @@ export function RecordingMenuOrganizationEditor({ recordingId, options }: {
   const [error, setError] = useState(false);
   const [pending, startTransition] = useTransition();
 
+  // loadAssignment obtains the authorized tag snapshot before exposing any assignment inputs.
+  const loadAssignment = useCallback(() => {
+    startTransition(async () => {
+      setError(false);
+      try {
+        const snapshot = await loadRecordingOrganizationAction(recordingId);
+        if (snapshot) setRecording(snapshot); else setError(true);
+      } catch { setError(true); }
+    });
+  }, [recordingId]);
+  useEffect(() => { if (embedded) loadAssignment(); }, [embedded, loadAssignment]);
+  useEffect(() => { onPendingChange?.(pending); }, [onPendingChange, pending]);
+
   if (recording) return <RecordingOrganizationEditor
+    embedded={embedded}
+    onPendingChange={onPendingChange}
     initiallyOpen
     key={recording.id}
     options={options}
@@ -42,16 +59,8 @@ export function RecordingMenuOrganizationEditor({ recordingId, options }: {
   />;
 
   return <div>
-    <button disabled={pending} type="button" onClick={() => startTransition(async () => {
-      setError(false);
-      try {
-        const snapshot = await loadRecordingOrganizationAction(recordingId);
-        if (snapshot) setRecording(snapshot); else setError(true);
-      } catch {
-        setError(true);
-      }
-    })}>
-      <Pencil aria-hidden="true" size={15} />{pending ? "Načítám zařazení…" : "Upravit zařazení"}
+    <button disabled={pending} type="button" onClick={loadAssignment}>
+      <Pencil aria-hidden="true" size={15} />{pending ? "Načítám zařazení…" : embedded ? "Načíst zařazení" : "Upravit zařazení"}
     </button>
     {error ? <p role="alert">Zařazení se nepodařilo načíst. Zkuste to znovu.</p> : null}
   </div>;

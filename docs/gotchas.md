@@ -1,5 +1,25 @@
 # Gotchas
 
+## Tým
+
+Instalačního správce nevytváří registrace ani user metadata. Prázdný privátní registr je bezpečný výchozí stav; jeho provision na skutečném targetu vyžaduje určený ověřený účet a samostatně schválený krok. Nedostupná nebo odebraná role skryje navigaci a přímé API dál odmítne správu. Role nezpřístupňuje cizí obsah.
+
+Klient/složka zahrnují jen nesoukromé nahrávky. Odebrání jedné cesty nemusí zrušit jiný projektový, přesný nebo scope grant. Přesun se vyhodnocuje z aktuálního řádku; stávající organizační RPC zůstává omezené na private, testovací operátorový přesun nepředstavuje nové právo v UI. Lokální PG proof nenahrazuje cílový Supabase Auth/Storage HTTP postflight. Scope invitation RPC má samostatné jméno `create_team_scope_invitation_v1`, aby se neopíralo o nepodporované API přetěžování funkcí.
+
+## Navigace při dokončování nahrávky
+
+Přechod na detail nepotvrzuje uložení audia. Fázi stejné persistentní relace ukazuje `RecordingCompletionNotice`; audio je potvrzené až po receipt odpovídajícího řádku. Stará stop generation nesmí navigovat, aktualizovat novou relaci ani mazat její data. Zachovává se remote cleanup před local cleanup a ochrana zavření během ukládání. Zavření procesu upload přeruší; návrat používá durable recovery, nikoli slib běhu na pozadí.
+
+Po časné navigaci se konečný výsledek včetně varování indexu předá kontextem detailu a obnoví se data aktuální stránky. Druhý automatický návrat na původní nahrávku by přepsal další uživatelovu navigaci, proto se neprovádí. Stav je lokální pro otevřený browser; po reloadu je autoritou serverový stav a recovery.
+
+Idle po chybě neznamená, že lze zahodit recorder: neuložený místní text nebo blob drží dock a ochranu zavření. "Zavřít místní obnovu" vyžaduje potvrzení a maže jen volatilní stav této relace, nikoli durable safety data nebo serverový obsah. Pozdní transcript-only draft po pěti sekundách zůstává ve saving, dokud se jeho přesný ID nepotvrdí; dokončení nesmí převzít stav nového nahrávání ani přepsat další navigaci uživatele.
+
+Automatická obnova zablokovaného přepisu pouze obnovuje původní identifikovanou operaci. Po třech kontrolách zůstává ruční řešení; timeout ani `not_found` automaticky nespouští další placenou úlohu. Skrytá/offline stránka nekontroluje; online/focus provede kontrolu při zachování backoffu. Změna recording scope zneplatní pozdní odpovědi.
+
+## Společný editor názvu a zařazení
+
+Editor v inboxu zůstává otevřený po uložení kterékoliv sekce, protože dvě mutace nejsou jedna transakce. Neuložené hodnoty přežijí zavření Escape. Během ukládání jsou blokované dismiss cesty včetně vnější nabídky tří teček i druhá sekce. Search načte přesné organizační údaje a tag IDs až při otevření editoru. Případ chybějícího projektu nelze opravit jen podle screenshotu; fixtures se dvěma dostupnými projekty nepředstavují ověření konkrétních živých dat.
+
 ## Původ browserových AI požadavků
 
 POST pro AI zpracování, chat, automatickou časovou osu, obnovu a úklid manuálních AI úloh i vydání Soniox realtime klíče vyžaduje `Origin` přesně shodný s originem request URL. Chybějící nebo `null` origin, jiná subdoména, schéma či port a `Sec-Fetch-Site: cross-site` vrací 403 ještě před čtením těla nebo vytvořením DB klienta. Cesty používají existující `assertInvitationOrigin`; samotné `SameSite=Lax` cookies neoddělují nedůvěryhodnou sousední subdoménu na stejném site.

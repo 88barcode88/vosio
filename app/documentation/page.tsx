@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { resolveTeamRole } from "@/lib/team/queries.server";
 import { createClient } from "@/lib/supabase/server";
 
 // DocumentationPage renders the protected in-app guide for Vosio workflows.
@@ -15,6 +16,7 @@ export default async function DocumentationPage() {
 
   return (
     <VosioWorkspace
+      canManageTeam={Boolean(await resolveTeamRole(supabase))}
       aiOutputs={[]}
       recordings={[]}
       transcripts={[]}

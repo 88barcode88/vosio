@@ -1,5 +1,23 @@
 # Architecture
 
+## Tým a oprávnění
+
+Tým používá variantu A se seznamem osob a detailem přístupů; na mobilu patří pod Více. Server každé chráněné stránky načítá aktuální `team_authority_v1` pro navigaci. Samotná stránka i API vynucují roli a rozsah znovu. Správce instalace má výslovný privátní registr bez bootstrapu; zakladatel spravuje své projekty. Seznam je osobní, nikoli globální Auth adresář, a role správce nedává implicitní přístup k cizímu obsahu.
+
+Klientské a složkové granty dynamicky rozšiřují původní kanonický recording resolver o současné a budoucí nesoukromé nahrávky. Soukromé se vždy vynechají. Pevná projektová hranice, aktuální autorita autora grantu a původní sharing lock chrání přesuny a revokace. Pozvánky všech čtyř rozsahů používají stávající token/delivery/accept tok. Čekající pozvánka není aktivní grant. Kontrakt, preflight a bezpečný návrat: [team-access](api/team-access.md). Nové migrace jsou na skutečných targetech dosud neaplikované.
+
+## Dokončení browser nahrávky a stavy detailu
+
+Stop zahájí navigaci na potvrzený draft ještě před finalizací bezpečnostních částí a uploadem. Dokončení dál vlastní stejný `BrowserRecorder` v root `PersistentRecordingSessionProvider`; navigace jej přesune do docku. Kontext drží pouze ID nahrávky, fázi, bezpečnou stavovou zprávu a potvrzení audia. Detail zobrazuje jen odpovídající relaci. Bez serverem potvrzeného draftu zůstává uživatel u okamžitého ukládacího stavu; neotevírá se neexistující detail. Konečné uložení obnoví data aktuální stránky, nevrací uživatele zpět po jeho další navigaci.
+
+Při chybě dokončení s místním přepisem nebo audio blobem provider zachová recorder i po návratu do idle. Dock nabízí stažení a existující obnovu; místní data se uvolní až po úspěšném vyřešení nebo výslovném potvrzení zavření obnovy. Ochrana zavření zůstává aktivní. Transcript-only Stop při draftu čekajícím déle než pět sekund dál vlastní saving generaci až do potvrzení ID; další nahrávání je do jejího ukončení zablokované.
+
+Zablokovaný přepis s aktuální manager capability a přesným operation ID se automaticky dohledává přes existující `transcription/recover` s `action=resume`, nejvýše třikrát s odstupem 30 a 60 sekund. Tato větev nezastavuje operaci ani nepřipravuje nový placený pokus. Nejasný nebo nenalezený provider submit zůstává blokovaný pro výslovné řešení. Platný realtime přepis se použije i při segmentovaném audio archivu; samotný formát archivu není důvod k novému placenému přepisu.
+
+AI a Časová osa čtou společný transcript-scoped seznam serverových jobs. Starší kapitoly zůstávají dostupné při novém explicitním běhu. Již otevřené AI a Chat plochy zachovávají koncepty a volby při přepnutí; změna přepisu vytvoří nové lokální plochy. Skrytý Chat neprovádí polling. Otevření záložky nevytváří ruční AI job.
+
+Inbox i hledání oddělují klienta a projekt. Pojmenovaný editor `Název a zařazení` z nabídky nahrávky spojuje dvě samostatné ukládací sekce; title mutation a atomické organizační RPC zůstávají oddělené. Osobní taxonomie a capability filtry se tím nemění.
+
 ## Přehled
 
 Vosio je cílově robustní Next.js PWA pro audio nahrávky, přepisy a AI zpracování. Aplikace je self-hostovatelná v běžném Next.js runtime, používá Supabase pro auth, databázi a storage, Soniox pro speech-to-text a OpenAI API jako výchozí AI provider s volitelným Google Gemini providerem.

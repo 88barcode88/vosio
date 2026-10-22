@@ -30,7 +30,8 @@ const documentationSections: DocumentationSection[] = [
       "Nahrávky jsou inbox všech uložených callů. Řádek se otevírá kliknutím, název jde upravit samostatně a smazání nejdřív přesune položku do Koše.",
       "U každé položky je vidět stav, zdroj, velikost a datum. Cílem je rychle najít správný call a přejít do detailu bez zbytečných tlačítek navíc.",
       "Export, úprava názvu a zařazení nahrávky se rozbalují přímo v detailu. Přehrávač začíná jako malý řádek s přehráváním a rozbalením. Rozbalení ukáže posun v audiu; sbalení ani přepnutí záložky přehrávání nepřeruší. Na mobilu zůstává přehrávač nahoře v detailu a nezakrývá spodní navigaci.",
-      "Vyhledávání na stránce Nahrávky umí prohledat názvy i uložené přepisy. Fulltext vrátí konkrétní úryvek a po otevření přejde na odpovídající místo v přepisu."
+      "Vyhledávání na stránce Nahrávky umí prohledat názvy i uložené přepisy. Fulltext vrátí konkrétní úryvek a po otevření přejde na odpovídající místo v přepisu.",
+      "V nabídce nahrávky otevřete Název a zařazení. Název a zařazení mají vlastní tlačítka Uložit; uložení jedné části neuloží druhou. Klient a Projekt se v seznamu zobrazují odděleně."
     ],
     id: "nahravky",
     kicker: "Seznam a detail callů",
@@ -73,6 +74,16 @@ const documentationSections: DocumentationSection[] = [
     id: "prompty",
     kicker: "Systémové základy a vlastní text",
     title: "AI prompty"
+  },
+  {
+    body: [
+      "Tým najdete v hlavní navigaci, na mobilu pod Více. Je dostupný správci instalace a zakladateli projektu. Zakladatel spravuje lidi a pozvánky svých projektů; role správce sama nezpřístupňuje obsah cizích nahrávek.",
+      "Vyberte člověka a přidělte mu přístup k nahrávce, projektu, klientovi nebo složce. Nového člověka pozvěte e-mailem. Čekající pozvánka ještě neuděluje přístup.",
+      "Sdílení klienta nebo složky zahrnuje současné i budoucí nesoukromé nahrávky v uvedeném rozsahu. Soukromé nahrávky se vždy vynechají. Při odebrání potvrzujete jednu cestu přístupu; další platné přístupy zůstávají v detailu viditelné."
+    ],
+    id: "tym",
+    kicker: "Lidé, pozvánky a přístupy",
+    title: "Tým"
   },
   {
     body: [
