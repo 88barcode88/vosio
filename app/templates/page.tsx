@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { resolveTeamRole } from "@/lib/team/queries.server";
 import {
   canonicalizePromptTemplateSearchParams,
   createPromptTemplateSearchParams
@@ -32,6 +33,7 @@ export default async function TemplatesPage({ searchParams }: TemplatesPageProps
 
   return (
     <VosioWorkspace
+      canManageTeam={Boolean(await resolveTeamRole(supabase))}
       aiOutputs={[]}
       promptTemplateNavigationState={canonical.state}
       promptTemplates={promptTemplates}

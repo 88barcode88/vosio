@@ -12,9 +12,7 @@ import type { OrganizationManagerActions } from "@/components/workspace/organiza
 import { OrganizationManagerDrawer } from "@/components/workspace/organization-manager-drawer";
 import { RecordingFilters } from "@/components/workspace/recording-filters";
 import { RecordingsSearchErrorActions } from "@/components/workspace/recordings-search-error-actions";
-import { RecordingTitleEditor } from "@/components/workspace/recording-title-editor";
-import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
-import { RecordingMenuOrganizationEditor } from "@/components/workspace/recording-menu-organization-editor";
+import { RecordingNameOrganizationEditor } from "@/components/workspace/recording-name-organization-editor";
 import {
   formatDuration,
   getRecordingCounts,
@@ -36,7 +34,6 @@ import {
   type ActiveRecordingStatus,
   type RecordingRow,
   type RecordingSearchPage,
-  type RecordingSearchResult,
   type RecordingStatus
 } from "@/lib/recordings/types";
 
@@ -68,27 +65,9 @@ function getStatusTone(status: RecordingStatus) {
   return "neutral" as const;
 }
 
-// getSearchOrganizationMeta maps safe result ids onto already-owned organization labels.
-function getSearchOrganizationMeta(
-  result: RecordingSearchResult,
-  options: RecordingOrganizationOptions
-) {
-  return [
-    options.clients.find((item) => item.id === result.clientId)?.name,
-    result.projectName,
-    options.folders.find((item) => item.id === result.folderId)?.name
-  ].filter((value): value is string => Boolean(value)).join(" · ");
-}
-
-// getRecordingOrganizationMeta exposes only labels already available in owned list options.
-function getRecordingOrganizationMeta(
-  recording: RecordingRow,
-  options: RecordingOrganizationOptions
-) {
-  return [
-    recording.project_name,
-    options.folders.find((item) => item.id === recording.folder_id)?.name
-  ].filter((value): value is string => Boolean(value)).join(" · ");
+// getOrganizationLabel distinguishes missing assignment from a label outside the safe option projection.
+function getOrganizationLabel(id: string | null | undefined, name: string | null | undefined) {
+  return name || (id ? "Nepřístupné" : "—");
 }
 
 // RecordingActionsMenu keeps secondary row actions available without letting them dominate the inbox.
@@ -104,19 +83,9 @@ function RecordingActionsMenu({ recordingId, title, capabilities, visibility, re
         <MoreHorizontal aria-hidden="true" size={15} />
       </summary>
       <div className="recordings-actions-popover">
-        {capabilities.editTitle ? <RecordingTitleEditor recordingId={recordingId} title={title} /> : null}
-        {canEditOrganization ? recording ? <RecordingOrganizationEditor
-          options={options}
-          organization={{
-            client: options.clients.find((item) => item.id === recording.client_id) ?? null,
-            project: options.projects.find((item) => item.id === recording.project_id) ?? null,
-            folder: options.folders.find((item) => item.id === recording.folder_id) ?? null,
-            tags: options.tags.filter((item) => recording.tag_ids?.includes(item.id))
-          }}
-          recording={{ id: recording.id, client_id: recording.client_id,
-            project_id: recording.project_id, folder_id: recording.folder_id }}
-          showSummary={false}
-        /> : <RecordingMenuOrganizationEditor recordingId={recordingId} options={options} /> : null}
+        {capabilities.editTitle || canEditOrganization ? <RecordingNameOrganizationEditor
+          recordingId={recordingId} title={title} editTitle={Boolean(capabilities.editTitle)}
+          editOrganization={Boolean(canEditOrganization)} recording={recording} options={options} /> : null}
         {capabilities.delete ? <DeleteRecordingForm recordingId={recordingId} variant="compact" /> : null}
       </div>
     </details>
@@ -198,7 +167,8 @@ function RecordingSearchResults({
       {page.results.length > 0 ? (
         <div className="recording-search-result-list" role="list">
           {page.results.map((result) => {
-            const organizationMeta = getSearchOrganizationMeta(result, options);
+            const clientName = options.clients.find((item) => item.id === result.clientId)?.name;
+            const folderName = options.folders.find((item) => item.id === result.folderId)?.name;
 
             return (
               <article
@@ -224,7 +194,9 @@ function RecordingSearchResults({
                     <span>{getSourceTypeLabel(result.sourceType)}</span>
                     <span>{formatDuration(result.durationSeconds)}</span>
                     <span>{formatFileSize(result.fileSizeBytes)}</span>
-                    {organizationMeta ? <span>{organizationMeta}</span> : null}
+                    <span aria-label="Klient">Klient: {getOrganizationLabel(result.clientId, clientName)}</span>
+                    <span aria-label="Projekt">Projekt: {getOrganizationLabel(result.projectId, result.projectName)}</span>
+                    {folderName ? <span>Složka: {folderName}</span> : null}
                   </div>
                   {result.matchedExcerpt ? <SearchResultExcerpt excerpt={result.matchedExcerpt} /> : null}
                 </div>
@@ -351,7 +323,8 @@ export function RecordingsManager({
               <div className="recordings-table-head" aria-hidden="true">
                 <div className="recordings-table-head-main">
                   <span>Název nahrávky</span>
-                  <span>Klient / projekt</span>
+                  <span>Klient</span>
+                  <span>Projekt</span>
                   <span>Stav</span>
                   <span>Délka</span>
                 </div>
@@ -361,7 +334,9 @@ export function RecordingsManager({
                 <section className="recording-client-group" key={group.clientId ?? "unclassified"}>
                   <h2>{group.label}<span>{group.recordings.length}</span></h2>
                   {group.recordings.map((recording) => {
-                    const organizationMeta = getRecordingOrganizationMeta(recording, organizationOptions);
+                    const clientName = organizationOptions.clients.find((item) => item.id === recording.client_id)?.name;
+                    const folderName = organizationOptions.folders.find((item) => item.id === recording.folder_id)?.name;
+                    const tagNames = organizationOptions.tags.filter((item) => recording.tag_ids?.includes(item.id)).map((item) => item.name);
 
                     return (
                       <article
@@ -383,9 +358,13 @@ export function RecordingsManager({
                               {formatRecordingDate(recording.created_at)} · {getSourceTypeLabel(recording.source_type)}
                               {recording.file_size_bytes ? ` · ${formatFileSize(recording.file_size_bytes)}` : ""}
                             </span>
+                            {folderName || tagNames.length ? <span>{[folderName, ...tagNames].filter(Boolean).join(" · ")}</span> : null}
                           </div>
-                          <span className="recordings-row-organization">
-                            {organizationMeta || "Bez zařazení"}
+                          <span aria-label="Klient" className="recordings-row-organization">
+                            {getOrganizationLabel(recording.client_id, clientName)}
+                          </span>
+                          <span aria-label="Projekt" className="recordings-row-organization">
+                            {getOrganizationLabel(recording.project_id, recording.project_name)}
                           </span>
                           <StatusBadge tone={getStatusTone(recording.status)}>{getStatusLabel(recording.status)}</StatusBadge>
                           <span className="recordings-row-duration">{formatDuration(recording.duration_seconds)}</span>

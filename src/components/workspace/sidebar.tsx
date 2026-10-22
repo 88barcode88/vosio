@@ -20,10 +20,12 @@ const SIDEBAR_STORAGE_KEY = "vosio-sidebar-collapsed";
 // WorkspaceSidebar renders the fixed desktop navigation shell.
 export function WorkspaceSidebar({
   activeView,
+  canManageTeam = false,
   navigationHrefOverrides,
   userEmail
 }: {
   activeView: WorkspaceView;
+  canManageTeam?: boolean;
   navigationHrefOverrides?: NavigationHrefOverrides;
   userEmail: string;
 }) {
@@ -64,6 +66,7 @@ export function WorkspaceSidebar({
       </div>
       <WorkspaceNavigation
         activeView={activeView}
+        canManageTeam={canManageTeam}
         compact={collapsed}
         hrefOverrides={navigationHrefOverrides}
       />

@@ -865,9 +865,8 @@ describe("BrowserRecorder live markers", () => {
     expect(Array.from(document.querySelectorAll('[role="status"]')).some((element) => (
       element.textContent === TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
     ))).toBe(true);
-    expect(mocks.routerPush).toHaveBeenCalledWith(
-      `/recordings/${recordingId}?warning=transcript_search_index_incomplete`
-    );
+    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}`);
+    expect(mocks.routerRefresh).toHaveBeenCalled();
     expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
   });
 
@@ -964,7 +963,8 @@ describe("BrowserRecorder live markers", () => {
     expect(draftClient.insert).toHaveBeenCalledOnce();
   });
 
-  it("completes one timed-out transcript draft later without creating a fallback row", async () => {
+  it.each([false, true])("completes one timed-out transcript draft without fallback or navigation hijack (left origin: %s)", async (leftOrigin) => {
+    window.history.replaceState(null, "", "/recordings/new");
     const draft = createDeferred<{
       data: { id: string } | null;
       error: { message: string } | null;
@@ -975,7 +975,7 @@ describe("BrowserRecorder live markers", () => {
     mocks.realtimeRecord.mockReturnValue(realtime.recording);
     mocks.fetch.mockResolvedValue({ json: vi.fn(), ok: true });
 
-    await renderRecorder();
+    await renderRecorder(false, "detail");
     await act(async () => {
       document.querySelector<HTMLButtonElement>(".record-button")?.click();
       await flushRecorderStart();
@@ -991,24 +991,15 @@ describe("BrowserRecorder live markers", () => {
       await Promise.resolve();
     });
 
+    expect(mocks.routerPush).not.toHaveBeenCalled();
     expect(draftClient.insert).toHaveBeenCalledOnce();
     expect(mocks.createBrowserClient).toHaveBeenCalledOnce();
 
-    const nextRecordingId = "acd31215-9b8f-4c68-9e2f-89f4d31f96b6";
-    const nextRealtime = createRealtimeRecordingMock();
-    mocks.createBrowserClient.mockReturnValue(createDraftClientMock(Promise.resolve({
-      data: { id: nextRecordingId },
-      error: null
-    })).client);
-    mocks.realtimeRecord.mockReturnValue(nextRealtime.recording);
+    expect(document.querySelector<HTMLButtonElement>(".record-button")?.disabled).toBe(true);
+    expect(container?.textContent).toContain("Čekáme na potvrzení záznamu");
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
 
-    await act(async () => {
-      document.querySelector<HTMLButtonElement>(".record-button")?.click();
-      await flushRecorderStart();
-      nextRealtime.handlers.get("state_change")?.({ new_state: "recording" } as never);
-    });
-    expect(document.querySelector<HTMLButtonElement>(".live-marker-button")?.disabled).toBe(false);
-
+    if (leftOrigin) window.history.replaceState(null, "", "/recordings/another");
     await act(async () => {
       draft.resolve({ data: { id: recordingId }, error: null });
       await Promise.resolve();
@@ -1032,10 +1023,13 @@ describe("BrowserRecorder live markers", () => {
     expect(mocks.completeLiveRecordingWithoutAudio.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.fetch.mock.invocationCallOrder[transcriptCallIndex] ?? 0);
     expect(JSON.parse(transcriptCall?.[1]?.body as string).rawText).toBe("Čekající přepis.");
-    expect(mocks.createBrowserClient).toHaveBeenCalledTimes(2);
+    expect(mocks.createBrowserClient).toHaveBeenCalledOnce();
     expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
-    expect(nextRealtime.recording.cancel).not.toHaveBeenCalled();
-    expect(document.querySelector<HTMLButtonElement>(".live-marker-button")?.disabled).toBe(false);
+    expect(realtime.recording.cancel).not.toHaveBeenCalled();
+    expect(document.querySelector<HTMLButtonElement>(".record-button")?.disabled).toBe(false);
+    if (leftOrigin) expect(mocks.routerPush).not.toHaveBeenCalled();
+    else expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}`);
+    window.history.replaceState(null, "", "/");
   });
 
   it("does not cancel graceful stop when a pending draft rejects and final data arrives", async () => {

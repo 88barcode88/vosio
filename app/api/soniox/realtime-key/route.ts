@@ -9,6 +9,7 @@ import {
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import type { SonioxRegion } from "@/lib/soniox/region";
 import { createClient } from "@/lib/supabase/server";
+import { assertInvitationOrigin } from "@/lib/recording-sharing/invitation-http.server";
 import { z } from "zod";
 
 // Generous per-user cap: live sessions re-request keys on reconnects, abuse loops do not.
@@ -45,8 +46,9 @@ function getRealtimeKeyErrorCode(error: unknown, region: SonioxRegion) {
   return "soniox_request_failed";
 }
 
-// POST creates a short-lived Soniox key scoped only to realtime websocket transcription.
+// POST verifies the browser origin before creating a short-lived realtime-only Soniox key.
 export async function POST(request: Request) {
+  try { assertInvitationOrigin(request); } catch { return NextResponse.json({ error: "Požadavek není povolený." }, { status: 403 }); }
   const supabase = await createClient();
   const {
     data: { user },

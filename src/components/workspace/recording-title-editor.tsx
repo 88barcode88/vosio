@@ -9,6 +9,8 @@ import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
 import { updateRecordingTitleStateAction } from "@/lib/recordings/actions";
 
 type RecordingTitleEditorProps = {
+  embedded?: boolean;
+  onPendingChange?: (pending: boolean) => void;
   recordingId: string;
   saveAction?: SaveAction;
   title: string;
@@ -20,19 +22,21 @@ type DismissedSaveError = {
 };
 
 // RecordingTitleSaveButton reflects the pending state of its nearest title form.
-function RecordingTitleSaveButton() {
+function RecordingTitleSaveButton({ embedded = false }: { embedded?: boolean }) {
   const { pending } = useFormStatus();
 
   return (
     <button disabled={pending} type="submit">
       <Save aria-hidden="true" size={15} />
-      {pending ? "Ukládám…" : "Uložit"}
+      {pending ? "Ukládám…" : embedded ? "Uložit název" : "Uložit"}
     </button>
   );
 }
 
 // RecordingTitleEditor saves an inbox-row title before closing its anchored popover.
 export function RecordingTitleEditor({
+  embedded = false,
+  onPendingChange,
   recordingId,
   saveAction = updateRecordingTitleStateAction,
   title
@@ -57,7 +61,8 @@ export function RecordingTitleEditor({
     scopedSaveAction,
     createInitialSaveActionState()
   );
-  const closeAfterSuccess = useCallback(() => setIsOpen(false), []);
+  useEffect(() => { onPendingChange?.(isPending); }, [isPending, onPendingChange]);
+  const closeAfterSuccess = useCallback(() => { if (!embedded) setIsOpen(false); }, [embedded]);
   // dismissEditor resets the draft and hides only the current settled error revision.
   const dismissEditor = useCallback(() => {
     if (actionState.status === "error" && actionState.scopeKey === recordingId) {
@@ -83,9 +88,11 @@ export function RecordingTitleEditor({
   });
 
   useEffect(() => {
-    setDraftTitle(title);
-    setIsOpen(false);
-  }, [recordingId, title]);
+    if (!embedded) {
+      setDraftTitle(title);
+      setIsOpen(false);
+    }
+  }, [embedded, recordingId, title]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -120,7 +127,7 @@ export function RecordingTitleEditor({
 
   return (
     <div className="recording-title-edit" ref={containerRef}>
-      <button
+      {embedded ? <h3>Název</h3> : <button
         aria-expanded={isOpen}
         className="recording-title-edit-button"
         disabled={isPending}
@@ -142,17 +149,18 @@ export function RecordingTitleEditor({
       >
         <span className="recording-action-label">Upravit</span>
         <span aria-hidden="true">{isOpen ? "-" : "+"}</span>
-      </button>
+      </button>}
       <span aria-atomic="true" aria-live="polite" className="visually-hidden recording-title-save-status">
         {isCurrentSettlement && actionState.status === "success" && !isPending
           ? actionState.message
           : ""}
       </span>
-      {isOpen ? (
+      {embedded || isOpen ? (
         <form
           action={formAction}
           aria-busy={isPending}
-          className="recording-title-form recording-title-popover"
+          aria-label="Název"
+          className={`recording-title-form${embedded ? "" : " recording-title-popover"}`}
           onClick={(event) => event.stopPropagation()}
           onSubmit={(event) => {
             if (isPending) {
@@ -184,11 +192,11 @@ export function RecordingTitleEditor({
               ) : null}
           </div>
           <div className="recording-title-popover-actions">
-            <RecordingTitleSaveButton />
-            <button disabled={isPending} onClick={dismissEditor} type="button">
+            <RecordingTitleSaveButton embedded={embedded} />
+            {embedded ? null : <button disabled={isPending} onClick={dismissEditor} type="button">
               <X aria-hidden="true" size={15} />
               Zrušit
-            </button>
+            </button>}
           </div>
         </form>
       ) : null}

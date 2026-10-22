@@ -1,3 +1,4 @@
+import { fetchAiResponse } from "@/lib/ai/response.server";
 import { getGeminiEnv } from "@/lib/env.server";
 import type { AiProviderProcessingResult } from "@/lib/ai/common";
 import type { RecordingChatMessage, RecordingChatProviderResult } from "@/lib/ai/chat-types";
@@ -127,7 +128,7 @@ export async function runGeminiProcessing(input: RunGeminiProcessingInput): Prom
   const modelPath = encodeURIComponent(input.model);
   let response: Response;
   try {
-    response = await fetch(
+    response = await fetchAiResponse(
       `https://generativelanguage.googleapis.com/v1beta/models/${modelPath}:generateContent?key=${encodeURIComponent(env.geminiApiKey)}`,
       {
         ...(input.signal ? { signal: input.signal } : {}),
@@ -183,7 +184,7 @@ export async function runGeminiChat(input: RunGeminiChatInput): Promise<Recordin
   const modelPath = encodeURIComponent(input.model);
   let response: Response;
   try {
-    response = await fetch(
+    response = await fetchAiResponse(
       `https://generativelanguage.googleapis.com/v1beta/models/${modelPath}:generateContent?key=${encodeURIComponent(env.geminiApiKey)}`,
       {
         body: JSON.stringify(createGeminiChatRequestBody(input)),

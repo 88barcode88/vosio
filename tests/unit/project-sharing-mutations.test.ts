@@ -42,7 +42,7 @@ describe("shared recordings raw transcript boundaries", () => {
     transcriptQuery.select.mockReturnValue(transcriptQuery);
     transcriptQuery.eq.mockReturnValue(transcriptQuery);
     client.from.mockReturnValue(transcriptQuery);
-    const response = await processTranscript(new NextRequest("https://vosio.test/api/process", { method: "POST", body: JSON.stringify({ processingType: "summary", requestId: recordingId }) }), { params: Promise.resolve({ transcriptId: taskId }) });
+    const response = await processTranscript(new NextRequest("https://vosio.test/api/process", { method: "POST", headers: { Origin: "https://vosio.test" }, body: JSON.stringify({ processingType: "summary", requestId: recordingId }) }), { params: Promise.resolve({ transcriptId: taskId }) });
     expect(response.status).toBe(403);
     expect(rpc).toHaveBeenCalledOnce();
     expect(mocks.createAdminClient).not.toHaveBeenCalled();

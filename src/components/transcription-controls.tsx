@@ -115,6 +115,10 @@ export function TranscriptionControls({
   const router = useRouter();
   const controlsRef = useRef<HTMLDivElement>(null);
   const autoPollInFlightRef = useRef(false);
+  const scopeGenerationRef = useRef(0);
+  const manualRequestInFlightRef = useRef(false);
+  const manualRecoveryInFlightRef = useRef(false);
+  const autoRecoveryRef = useRef<{ operationId: string; requestId: string; attempts: number; nextAt: number } | null>(null);
   const requestRef = useRef<{ recordingId: string; requestId: string; captureRevision: number; purpose: "capture" | "retry" | "retranscribe" } | null>(null);
   const [isAutoChecking, setIsAutoChecking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -130,7 +134,8 @@ export function TranscriptionControls({
   const hasTranscribableAudio = storedAudioMode !== "none";
   const isTranscribing = recordingStatus === "transcribing";
   const isBlocked = lastJobStatus === "manual_required";
-  const shouldPollTranscription = lastJobStatus === null ? isTranscribing : isRunningJobStatus(lastJobStatus);
+  const shouldPollTranscription = lastJobStatus === null ? isTranscribing
+    : isRunningJobStatus(lastJobStatus) || (isBlocked && canRecover && Boolean(operationId));
   const canStart =
     canUseRecording &&
     hasTranscribableAudio &&
@@ -139,6 +144,27 @@ export function TranscriptionControls({
   const canRestart = canUseRecording && hasTranscript && hasTranscribableAudio;
   const canCheck = canUseRecording && (shouldPollTranscription || isBlocked);
   const showRecovery = Boolean(canRecover && operationId && (isBlocked || shouldPollTranscription));
+
+  // Fence responses and retry identities when the same mounted controls switch recording or unmount.
+  useEffect(() => {
+    scopeGenerationRef.current += 1;
+    autoRecoveryRef.current = null;
+    requestRef.current = null;
+    recoveryRequestRef.current = null;
+    autoPollInFlightRef.current = false;
+    manualRequestInFlightRef.current = false;
+    manualRecoveryInFlightRef.current = false;
+    lastJobStatusRef.current = null;
+    setLastJobStatus(null);
+    setOperationId(null);
+    setCanRecover(false);
+    setMessage(null);
+    setLastCheckedAt(null);
+    setRecoveryError(null);
+    setIsWorking(false);
+    setIsAutoChecking(false);
+    return () => { scopeGenerationRef.current += 1; };
+  }, [recordingId]);
 
   // callTranscriptionEndpoint invokes the recording transcription route and refreshes data.
   const callTranscriptionEndpoint = useCallback(async (
@@ -149,15 +175,21 @@ export function TranscriptionControls({
       return;
     }
 
-    if (options.automatic && autoPollInFlightRef.current) {
+    const requestScope = scopeGenerationRef.current;
+    const isCurrent = () => requestScope === scopeGenerationRef.current;
+    if (autoPollInFlightRef.current || manualRequestInFlightRef.current
+      || (options.automatic && (manualRecoveryInFlightRef.current || document.visibilityState === "hidden" || !navigator.onLine))) {
       return;
     }
+    if (options.automatic && lastJobStatusRef.current === "manual_required" && autoRecoveryRef.current
+      && (autoRecoveryRef.current.attempts >= 3 || Date.now() < autoRecoveryRef.current.nextAt)) return;
     if (method === "POST") setRecoveryError(null);
 
     if (options.automatic) {
       autoPollInFlightRef.current = true;
       setIsAutoChecking(true);
     } else {
+      manualRequestInFlightRef.current = true;
       setIsWorking(true);
       setMessage(options.restart
         ? "Odesílám požadavek na přepis… Původní přepis zůstává uložený."
@@ -169,9 +201,11 @@ export function TranscriptionControls({
     try {
       if (method === "GET" && lastJobStatusRef.current !== "manual_required") {
         await fetch(`/api/recordings/${recordingId}/transcription/reconcile`, { method: "POST", cache: "no-store" }).catch(() => undefined);
+        if (!isCurrent()) return;
       }
       if (method === "POST" && requestRef.current?.recordingId !== recordingId) {
         const state = await getCaptureState(createClient(), recordingId);
+        if (!isCurrent()) return;
         requestRef.current = { recordingId, requestId: crypto.randomUUID(), captureRevision: state.captureRevision,
           purpose: options.restart ? "retranscribe" : state.status === "failed" ? "retry" : "capture" };
       }
@@ -184,6 +218,7 @@ export function TranscriptionControls({
         method
       });
       const payload = (await response.json().catch(() => null)) as TranscriptionEndpointPayload | null;
+      if (!isCurrent()) return;
 
       if (!response.ok) {
         setMessage(payload?.error ?? "Přepis se nepovedlo zpracovat.");
@@ -200,6 +235,33 @@ export function TranscriptionControls({
       }
       if (currentOperation) setOperationId(currentOperation);
       if (typeof payload?.canRecover === "boolean") setCanRecover(payload.canRecover);
+      if (options.automatic && payload?.job?.status === "manual_required" && payload.canRecover && currentOperation) {
+        const previous = autoRecoveryRef.current;
+        const recovery = previous?.operationId === currentOperation ? previous
+          : { operationId: currentOperation, requestId: crypto.randomUUID(), attempts: 0, nextAt: 0 };
+        autoRecoveryRef.current = recovery;
+        if (recovery.attempts < 3 && Date.now() >= recovery.nextAt) {
+          autoRecoveryRef.current = { ...recovery, attempts: recovery.attempts + 1,
+            nextAt: Date.now() + [30_000, 60_000, 120_000][recovery.attempts] };
+          setMessage(getTranscriptionMessage("GET", payload));
+          const resumed = await fetch(`/api/recordings/${recordingId}/transcription/recover`, {
+            method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ operationId: currentOperation, requestId: recovery.requestId, action: "resume" })
+          });
+          const result = await resumed.json().catch(() => null) as TranscriptionEndpointPayload | null;
+          if (!isCurrent()) return;
+          if (resumed.ok && (result?.job?.status === "queued" || result?.job?.status === "running")) {
+            lastJobStatusRef.current = result.job.status;
+            setLastJobStatus(result.job.status);
+            setRecoveryError(null);
+            setMessage("Navazuji na původní přepis. Nová placená úloha se nevytvořila.");
+            router.refresh();
+          } else {
+            setRecoveryError(result?.error ?? "Původní pokus zatím nelze bezpečně převzít. Nový přepis se nespustil.");
+          }
+          return;
+        }
+      }
       if (payload?.job?.status === "done" || payload?.job?.status === "failed") requestRef.current = null;
       setMessage(hasTranscriptSearchIndexWarning(payload)
         ? TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
@@ -216,24 +278,30 @@ export function TranscriptionControls({
         router.refresh();
       }
     } catch {
+      if (!isCurrent()) return;
       setMessage("Nepodařilo se spojit se serverem pro přepis.");
     } finally {
-      if (options.automatic) {
-        autoPollInFlightRef.current = false;
-        setIsAutoChecking(false);
-      } else {
-        setIsWorking(false);
+      if (isCurrent()) {
+        if (options.automatic) {
+          autoPollInFlightRef.current = false;
+          setIsAutoChecking(false);
+        } else {
+          manualRequestInFlightRef.current = false;
+          setIsWorking(false);
+        }
       }
     }
   }, [recordingId, router]);
 
   // Recover the original operation before allowing an explicitly confirmed new paid attempt.
   async function recoverTranscription(action: "resume" | "stop", startNew = false) {
-    if (!recordingId || !operationId || isWorking) return;
+    if (!recordingId || !operationId || isWorking || autoPollInFlightRef.current || manualRequestInFlightRef.current || manualRecoveryInFlightRef.current) return;
+    const requestScope = scopeGenerationRef.current;
     if (action === "stop" && !window.confirm(startNew
       ? "Nejprve ověřit a zastavit původní pokus, potom spustit nový placený přepis? Audio a uložené přepisy zůstanou zachované. Běžící úlohu Soniox nelze zastavit."
       : "Zastavit původní pokus o přepis? Audio a uložené přepisy zůstanou zachované.")) return;
     const previous = recoveryRequestRef.current;
+    manualRecoveryInFlightRef.current = true;
     const request = previous?.operationId === operationId && previous.action === action ? previous
       : { operationId, action, requestId: crypto.randomUUID() };
     recoveryRequestRef.current = request;
@@ -245,6 +313,7 @@ export function TranscriptionControls({
         method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request)
       });
       const payload = await response.json().catch(() => null) as { error?: string; message?: string; job?: { status?: string } } | null;
+      if (requestScope !== scopeGenerationRef.current) return;
       if (!response.ok) { setRecoveryError(payload?.error ?? "Obnovu se nepodařilo ověřit. Nový přepis se nespustil."); return; }
       if (!payload?.job?.status || !["queued", "running", "failed"].includes(payload.job.status)) throw new Error("Unconfirmed recovery");
       recoveryRequestRef.current = null;
@@ -256,8 +325,8 @@ export function TranscriptionControls({
         if (startNew) { await callTranscriptionEndpoint("POST"); return; }
       }
       router.refresh();
-    } catch { setRecoveryError("Nepodařilo se potvrdit obnovu. Zkontrolujte stav před dalším pokusem; nový přepis se nespustil."); }
-    finally { setIsWorking(false); }
+    } catch { if (requestScope === scopeGenerationRef.current) setRecoveryError("Nepodařilo se potvrdit obnovu. Zkontrolujte stav před dalším pokusem; nový přepis se nespustil."); }
+    finally { if (requestScope === scopeGenerationRef.current) { manualRecoveryInFlightRef.current = false; setIsWorking(false); } }
   }
 
   // Confirm a new paid transcription while retaining its saved transcript and historical outputs.
@@ -306,12 +375,14 @@ export function TranscriptionControls({
 
     document.addEventListener("visibilitychange", pollWhenVisible);
     window.addEventListener("focus", pollWhenVisible);
+    window.addEventListener("online", pollWhenVisible);
 
     return () => {
       isActive = false;
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", pollWhenVisible);
       window.removeEventListener("focus", pollWhenVisible);
+      window.removeEventListener("online", pollWhenVisible);
     };
   }, [callTranscriptionEndpoint, recordingId, shouldPollTranscription]);
 
@@ -384,7 +455,7 @@ export function TranscriptionControls({
         </button> : null}
       </div>
       <div className="transcription-feedback">
-      {shouldPollTranscription ? (
+      {shouldPollTranscription && !isBlocked ? (
         <p className="command-state command-state-live">
           {lastJobStatus === "queued" ? "Přepis čeká na zpracování." : "Přepis se zpracovává na pozadí."}{" "}
           {isAutoChecking
@@ -397,8 +468,9 @@ export function TranscriptionControls({
       {lastJobStatus && !isBlocked ? (
         <p className="command-state">Stav přepisu: {getJobStatusLabel(lastJobStatus)}.</p>
       ) : null}
+      {isBlocked ? <p className="command-state" role="status">Přepis je zablokovaný. Původní pokus zatím není potvrzený; nový placený přepis se nespustil.</p> : null}
       {recoveryError ? <p className="command-state transcription-recovery-error" role="alert">{recoveryError}</p>
-        : message ? <p aria-live="polite" className="command-state" role="status">{message}</p> : null}
+        : message && !isBlocked ? <p aria-live="polite" className="command-state" role="status">{message}</p> : null}
       {storedAudioMode === "segments" && !shouldPollTranscription ? (
         <p className="command-state">
           Tahle live nahrávka je uložená po částech. Přepis z audia se spouští jako dávka segmentů.

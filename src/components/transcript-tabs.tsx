@@ -83,6 +83,16 @@ export function TranscriptTabs({
   const { capabilities, canReadPrivateChat } = useRecordingCapabilities();
   const [requestedActiveTab, setActiveTab] = useState<TranscriptTab>(initialTab);
   const activeTab = requestedActiveTab === "chat" && !canReadPrivateChat ? "transcript" : requestedActiveTab;
+  const surfaceIdentity = `${activeRecording?.id ?? "none"}:${activeTranscript?.id ?? "none"}`;
+  const [visitedSurfaces, setVisitedSurfaces] = useState({ identity: surfaceIdentity, ai: initialTab === "ai", chat: initialTab === "chat" });
+  const visited = visitedSurfaces.identity === surfaceIdentity ? visitedSurfaces : { identity: surfaceIdentity, ai: false, chat: false };
+  useEffect(() => {
+    if (activeTab !== "ai" && activeTab !== "chat") return;
+    setVisitedSurfaces((current) => ({
+      ...(current.identity === surfaceIdentity ? current : { identity: surfaceIdentity, ai: false, chat: false }),
+      [activeTab]: true
+    }));
+  }, [activeTab, surfaceIdentity]);
   const availableTabs = transcriptTabs.filter((tab) => tab.id !== "chat" || canReadPrivateChat);
   const [activeBlockAnchorId, setActiveBlockAnchorId] = useState<string | null>(null);
   const [activeHighlightText, setActiveHighlightText] = useState<string | null>(null);
@@ -560,30 +570,32 @@ export function TranscriptTabs({
             )}
           />
         ) : null}
-        {activeTab === "ai" ? (
-          <AiProcessingContent
-            activeTranscript={activeTranscript}
-            aiOutputs={displayedAiOutputs}
-            classifications={lazyAiState?.classifications}
-            cleanup={lazyAiState?.cleanup}
-            isLoaded={lazyAiState?.isLoaded ?? true}
-            isLoading={lazyAiState?.isLoading ?? false}
-            jobs={lazyAiState?.jobs ?? []}
-            loadOutput={lazyAiState?.loadOutput}
-            onOpenEvidence={openStructuredEvidence}
-            onJobAccepted={lazyAiState?.acceptJob}
-            onCleanupMutation={lazyAiState?.applyCleanupMutation}
-            onOutputsRemoved={lazyAiState?.removeOutputs}
-            onReload={() => lazyAiState?.loadForPurpose("ai") ?? Promise.resolve()}
-            outputMetadata={lazyAiState?.outputs}
-            resolveEvidenceTarget={resolveStructuredEvidenceTarget}
-            structuredItems={runtimeStructuredItems}
-            onTaskDeleted={lazyAiState?.confirmTaskDeletion}
-            onChecklistDeleted={lazyAiState?.confirmChecklistDeletion}
-            onTaskStatusConfirmed={lazyAiState?.confirmTaskStatus}
-            stateError={lazyAiState?.error ?? null}
-            userSettings={userSettings}
-          />
+        {activeTab === "ai" || visited.ai ? (
+          <div hidden={activeTab !== "ai"} key={`ai-${surfaceIdentity}`}>
+            <AiProcessingContent
+              activeTranscript={activeTranscript}
+              aiOutputs={displayedAiOutputs}
+              classifications={lazyAiState?.classifications}
+              cleanup={lazyAiState?.cleanup}
+              isLoaded={lazyAiState?.isLoaded ?? true}
+              isLoading={lazyAiState?.isLoading ?? false}
+              jobs={lazyAiState?.jobs ?? []}
+              loadOutput={lazyAiState?.loadOutput}
+              onOpenEvidence={openStructuredEvidence}
+              onJobAccepted={lazyAiState?.acceptJob}
+              onCleanupMutation={lazyAiState?.applyCleanupMutation}
+              onOutputsRemoved={lazyAiState?.removeOutputs}
+              onReload={() => lazyAiState?.loadForPurpose("ai") ?? Promise.resolve()}
+              outputMetadata={lazyAiState?.outputs}
+              resolveEvidenceTarget={resolveStructuredEvidenceTarget}
+              structuredItems={runtimeStructuredItems}
+              onTaskDeleted={lazyAiState?.confirmTaskDeletion}
+              onChecklistDeleted={lazyAiState?.confirmChecklistDeletion}
+              onTaskStatusConfirmed={lazyAiState?.confirmTaskStatus}
+              stateError={lazyAiState?.error ?? null}
+              userSettings={userSettings}
+            />
+          </div>
         ) : null}
         <AutomaticTimelineReconciler onReconciled={reloadActiveAiState} transcriptId={activeTranscript?.id ?? null} canRunPersonalAi={capabilities.runPersonalAi} />
         {activeTab === "timeline" ? (
@@ -591,14 +603,17 @@ export function TranscriptTabs({
             <TimelineContent
               activeTranscript={activeTranscript}
               aiOutputs={displayedAiOutputs}
+              classifications={lazyAiState?.classifications}
               defaultAiModel={userSettings.defaultOpenaiModel}
               defaultReasoningEffort={userSettings.defaultReasoningEffort}
               isLoaded={lazyAiState?.isLoaded ?? true}
+              jobs={lazyAiState?.jobs ?? []}
               outputMetadata={lazyAiState?.outputs}
               onOutputsRemoved={lazyAiState?.removeOutputs}
               onJobAccepted={lazyAiState?.acceptJob}
               onReload={reloadTimelineAiState}
               markers={activeRecordingMarkers}
+              onOpenAi={() => selectActiveTab("ai")}
               onOpenMarker={openRecordingMarker}
               structuredItems={runtimeStructuredItems}
               stateError={lazyAiState?.error ?? null}
@@ -606,13 +621,16 @@ export function TranscriptTabs({
           </>
         ) : null}
         {activeTab === "files" ? <FilesContent activeRecording={activeRecording} /> : null}
-        {activeTab === "chat" && canReadPrivateChat ? (
-          <ChatContent
-            activeTranscriptId={activeTranscript?.id ?? null}
-            defaultModel={userSettings.defaultOpenaiModel}
-            defaultReasoningEffort={userSettings.defaultReasoningEffort}
-            onOpenEvidence={openStructuredEvidence}
-          />
+        {(activeTab === "chat" || visited.chat) && canReadPrivateChat ? (
+          <div hidden={activeTab !== "chat"} key={`chat-${surfaceIdentity}`}>
+            <ChatContent
+              activeTranscriptId={activeTranscript?.id ?? null}
+              isActive={activeTab === "chat"}
+              defaultModel={userSettings.defaultOpenaiModel}
+              defaultReasoningEffort={userSettings.defaultReasoningEffort}
+              onOpenEvidence={openStructuredEvidence}
+            />
+          </div>
         ) : null}
       </div>
       <div className="live-transcript">

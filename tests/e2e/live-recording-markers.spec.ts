@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { expect, type Page, test } from "@playwright/test";
 import type { RecordingMarkerRequest, RecordingMarkerRow } from "../../src/lib/recording-markers/types";
 
@@ -15,6 +16,11 @@ type CapturedBoundary = {
   recordingUpdates: unknown[];
   storageEvents?: string[];
   transcriptionRequests?: string[];
+  transcriptionInputs?: Record<string, unknown>[];
+  holdArchive?: boolean;
+  releaseArchive?: () => void;
+  failStorage?: boolean;
+  failLiveSaves?: boolean;
 };
 
 // createFixtureScope isolates browser projects while retaining one provider across client navigation.
@@ -180,6 +186,8 @@ async function installBrowserMediaBoundaries(page: Page) {
 
 // installHttpBoundaries captures persistence calls without touching live Supabase or application APIs.
 async function installHttpBoundaries(page: Page, boundary: CapturedBoundary) {
+  await page.route("**/api/transcripts/*/automatic-timeline", (route) => route.fulfill({ json: { status: "not_scheduled" } }));
+  await page.route("**/api/transcripts/*/ai-state", (route) => route.fulfill({ json: { jobs: [], outputs: [] } }));
   await page.route("**/auth/v1/user", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -196,21 +204,51 @@ async function installHttpBoundaries(page: Page, boundary: CapturedBoundary) {
     });
   });
 
-  await page.route("**/rest/v1/recordings**", async (route) => {
-    const method = route.request().method();
-
-    if (method === "POST") {
-      await route.fulfill({ contentType: "application/json", json: { id: recordingId }, status: 201 });
-      return;
+  let captureRevision = 0;
+  let status = "recording";
+  const receipts = new Map<string, object>();
+  // captureReceipt applies one exact request identity once, mirroring the current session RPC envelope.
+  const captureReceipt = (requestId: string, nextStatus: string, hasTranscript = false) => {
+    let receipt = receipts.get(requestId);
+    if (!receipt) {
+      captureRevision += 1;
+      status = nextStatus;
+      receipt = { recordingId, captureRevision, status, transcriptId: hasTranscript ? transcriptId : null, jobId: null };
+      receipts.set(requestId, receipt);
     }
-
-    if (method === "PATCH") {
-      boundary.recordingUpdates.push(route.request().postDataJSON());
-      await route.fulfill({ contentType: "application/json", json: { id: recordingId }, status: 200 });
-      return;
+    return receipt;
+  };
+  await page.route("**/rest/v1/rpc/*", async (route) => {
+    const name = new URL(route.request().url()).pathname.split("/").at(-1);
+    const input = route.request().postDataJSON() as Record<string, unknown>;
+    if (name === "create_recording_with_access_v1") {
+      expect(input).toMatchObject({ p_source_type: "in_app_recording", p_visibility: "private", p_recipients: [] });
+      expect(input.p_request_id).toEqual(expect.any(String));
+      await route.fulfill({ json: recordingId });
+    } else if (name === "get_recording_capture_state_v1") {
+      expect(input.p_recording_id).toBe(recordingId);
+      await route.fulfill({ json: { recordingId, captureRevision, status } });
+    } else if (name === "prepare_recording_upload_v1") {
+      expect(input).toMatchObject({ p_recording_id: recordingId, p_filename: "live/recording.webm", p_mime_type: "audio/webm" });
+      expect(input.p_file_size_bytes).toBeGreaterThan(0);
+      await route.fulfill({ json: `${userId}/${recordingId}/live/recording.webm` });
+    } else if (name === "prepare_recording_live_part_v1") {
+      expect(input).toMatchObject({ p_recording_id: recordingId, p_expected_capture_revision: captureRevision, p_mime_type: "audio/webm" });
+      expect(input.p_file_size_bytes).toBeGreaterThan(0);
+      await route.fulfill({ json: `${userId}/${recordingId}/live/part-${String(input.p_part_index).padStart(6, "0")}.webm` });
+    } else if (name === "apply_recording_capture_transition_v1") {
+      expect(input.p_recording_id).toBe(recordingId);
+      if (!receipts.has(String(input.p_request_id))) expect(input.p_expected_capture_revision).toBe(captureRevision);
+      if (input.p_transition === "upload_complete") boundary.recordingUpdates.push(input);
+      const nextStatus = input.p_transition === "upload_complete" ? "uploaded" : input.p_transition === "capture_failed" ? "failed" : "completed";
+      await route.fulfill({ json: captureReceipt(String(input.p_request_id), nextStatus) });
+    } else if (name === "complete_recording_live_parts_v1") {
+      expect(input).toMatchObject({ p_recording_id: recordingId, p_expected_capture_revision: captureRevision });
+      boundary.recordingUpdates.push(input);
+      await route.fulfill({ json: captureReceipt(String(input.p_request_id), "uploaded") });
+    } else {
+      throw new Error(`Unexpected fixture RPC: ${name}`);
     }
-
-    await route.fulfill({ contentType: "application/json", json: [], status: 200 });
   });
 
   await page.route(`**/api/recordings/${recordingId}/markers`, async (route) => {
@@ -254,16 +292,23 @@ async function installHttpBoundaries(page: Page, boundary: CapturedBoundary) {
   });
 
   await page.route(`**/api/recordings/${recordingId}/live-draft`, async (route) => {
-    await route.fulfill({ contentType: "application/json", json: { ok: true }, status: 200 });
+    const input = route.request().postDataJSON() as { requestId: string; captureRevision: number };
+    if (boundary.failLiveSaves) { await route.fulfill({ json: { code: "fixture_failure" }, status: 500 }); return; }
+    if (!receipts.has(input.requestId)) expect(input.captureRevision).toBe(captureRevision);
+    await route.fulfill({ json: captureReceipt(input.requestId, status, true) });
   });
 
   await page.route(`**/api/recordings/${recordingId}/live-transcript`, async (route) => {
-    boundary.liveTranscriptRequests.push(route.request().postDataJSON());
-    await route.fulfill({ contentType: "application/json", json: { ok: true }, status: 200 });
+    const input = route.request().postDataJSON() as { requestId: string; captureRevision: number };
+    boundary.liveTranscriptRequests.push(input);
+    if (boundary.failLiveSaves) { await route.fulfill({ json: { code: "fixture_failure" }, status: 500 }); return; }
+    if (!receipts.has(input.requestId)) expect(input.captureRevision).toBe(captureRevision);
+    await route.fulfill({ json: captureReceipt(input.requestId, "completed", true) });
   });
 
   await page.route(`**/api/recordings/${recordingId}/transcription**`, async (route) => {
     boundary.transcriptionRequests?.push(route.request().url());
+    boundary.transcriptionInputs?.push(route.request().postDataJSON());
     await route.fulfill({ contentType: "application/json", json: { job: { id: "fixture-job" } }, status: 202 });
   });
 
@@ -297,6 +342,10 @@ async function installHttpBoundaries(page: Page, boundary: CapturedBoundary) {
 
     if (request.method() === "POST") {
       boundary.storageEvents?.push(url.includes("part-") ? "safety-upload" : "archive-upload");
+      if (!url.includes("part-") && boundary.holdArchive) {
+        await new Promise<void>((resolve) => { boundary.releaseArchive = resolve; });
+      }
+      if (boundary.failStorage) { await route.fulfill({ json: { statusCode: "500", error: "fixture_storage_failure", message: "Fixture upload failed" }, status: 500 }); return; }
       await route.fulfill({ contentType: "application/json", json: { Key: url }, status: 200 });
       return;
     }
@@ -343,7 +392,7 @@ test("reduced motion removes recorder transitions and the pressed transform", as
 test("provider loss keeps audio and markers alive before restart-safe fallback", async ({ page }) => {
   const boundary: CapturedBoundary = {
     liveTranscriptRequests: [], markerRequests: [], recordingUpdates: [],
-    storageEvents: [], transcriptionRequests: []
+    storageEvents: [], transcriptionRequests: [], transcriptionInputs: []
   };
   const scope = createFixtureScope();
 
@@ -360,7 +409,7 @@ test("provider loss keeps audio and markers alive before restart-safe fallback",
   await expect.poll(() => boundary.markerRequests.length).toBe(1);
   await page.getByRole("button", { name: "Zastavit" }).click();
   await expect.poll(() => boundary.transcriptionRequests?.length ?? 0).toBe(1);
-  expect(boundary.transcriptionRequests![0]).toContain("restart=1");
+  expect(boundary.transcriptionInputs![0]).toMatchObject({ purpose: "retranscribe", requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i), captureRevision: expect.any(Number) });
 });
 
 test("audio limit finalizes archive before exact remote and local safety cleanup", async ({ page }) => {
@@ -407,8 +456,75 @@ test("reload keeps a locally durable safety part recoverable", async ({ page }) 
   await page.getByRole("button", { name: "Nahrávat live" }).click();
   await page.waitForTimeout(15_500);
   await page.goto(`/login/live-marker-e2e?scope=${scope}&view=recovery`);
-  await expect(page.getByText("Nedokončené live nahrávky")).toBeVisible();
+  await page.locator(".live-recovery-popover > summary").click();
   await expect(page.getByText("Lokálně uložená live nahrávka")).toBeVisible();
+});
+
+test("Stop keeps saving and failed local recovery after navigation, then retains durable audio through reload", async ({ page }) => {
+  const boundary: CapturedBoundary = {
+    liveTranscriptRequests: [], markerRequests: [], recordingUpdates: [], storageEvents: [], transcriptionRequests: [],
+    holdArchive: true, failStorage: true, failLiveSaves: true
+  };
+  const scope = createFixtureScope();
+  await installBrowserMediaBoundaries(page);
+  await installHttpBoundaries(page, boundary);
+  await page.goto(`/login/live-marker-e2e?scope=${scope}`);
+  await page.getByRole("button", { name: "Nahrávat live" }).click();
+  await expect(page.getByRole("button", { name: "Označit moment" })).toBeEnabled();
+  await page.getByRole("button", { name: "Zastavit" }).click();
+  await expect.poll(() => boundary.storageEvents).toContain("archive-upload");
+  await page.getByRole("link", { name: "Přejít na jinou stránku" }).click();
+  await expect(page).toHaveURL(new RegExp(`scope=${scope}&view=away`));
+  const notice = page.locator("[data-e2e-completion]");
+  const dock = page.locator(".persistent-recorder-dock");
+  await expect(notice.getByRole("status")).toContainText("Ukládáme");
+  await expect(dock).toBeVisible();
+  expect(await page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  })).toBe(true);
+  boundary.releaseArchive!();
+  await expect(notice.getByRole("alert")).toContainText("Vyžaduje pozornost");
+  await expect(notice).not.toContainText("Ukládání dokončeno");
+  const recovery = dock.getByRole("group", { name: "Místní obnova nahrávky" });
+  await expect(recovery).toBeVisible();
+  const textDownload = page.waitForEvent("download");
+  await recovery.getByRole("button", { name: "Stáhnout místní přepis" }).click();
+  const text = await textDownload;
+  expect(text.suggestedFilename()).toBe("live-prepis.txt");
+  expect(await readFile((await text.path())!, "utf8")).toBe("První část. Druhý označený moment.");
+  const audioDownload = page.waitForEvent("download");
+  await recovery.getByRole("button", { name: "Stáhnout místní audio" }).click();
+  const audio = await audioDownload;
+  expect(await readFile((await audio.path())!, "utf8")).toBe("fixture-audio");
+  expect(await page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  })).toBe(true);
+  expect(boundary.transcriptionRequests).toEqual([]);
+  // readDurableParts checks the same exact local safety records before and after browser reload.
+  const readDurableParts = () => page.evaluate(async () => {
+    const opening = indexedDB.open("vosio-live-audio");
+    const database = await new Promise<IDBDatabase>((resolve) => { opening.onsuccess = () => resolve(opening.result); });
+    const result = await new Promise<Array<{ key: string; size: number }>>((resolve) => {
+      const request = database.transaction("safety_parts", "readonly").objectStore("safety_parts").getAll();
+      request.onsuccess = () => resolve(request.result.map((part: { key: string; size: number }) => ({ key: part.key, size: part.size })));
+    });
+    database.close();
+    return result;
+  });
+  const partsBeforeReload = await readDurableParts();
+  expect(partsBeforeReload.length).toBeGreaterThan(0);
+  expect(partsBeforeReload.every((part) => part.size > 0 && part.key.includes(recordingId))).toBe(true);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.reload();
+  await page.goto(`/login/live-marker-e2e?scope=${scope}&view=recovery`);
+  await page.locator(".live-recovery-popover > summary").click();
+  await expect(page.getByText("Lokálně uložená live nahrávka")).toBeVisible();
+  await expect(page.getByText(/Místně v tomto prohlížeči:/)).toBeVisible();
+  expect(await readDurableParts()).toEqual(partsBeforeReload);
 });
 
 // boxesOverlap reports whether two visible controls intercept the same viewport area.

@@ -49,7 +49,7 @@ function createOwnerClient(ownerId = "user-1", transcript: { id: string } | null
 function postCleanup(jobIds: unknown) {
   return POST(new NextRequest(`https://vosio.test/api/transcripts/${transcriptId}/manual-ai/cleanup`, {
     body: JSON.stringify({ job_ids: jobIds }),
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Origin: "https://vosio.test" },
     method: "POST"
   }), { params: Promise.resolve({ transcriptId }) });
 }

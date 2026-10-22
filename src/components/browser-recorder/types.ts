@@ -4,6 +4,13 @@ import type { LiveAudioQuality } from "@/lib/recordings/types";
 import type { SonioxRealtimeLanguageId } from "@/lib/soniox/languages";
 
 export type RecorderStatus = "idle" | "starting" | "recording" | "saving";
+export type RecordingCompletion = {
+  recordingId: string | null;
+  phase: "saving" | "settled" | "error";
+  message: string;
+  audioConfirmed: boolean;
+  retainLocalData?: boolean;
+};
 export type LiveProviderHealth =
   | "canceled"
   | "connecting"
@@ -50,6 +57,7 @@ export type BrowserRecorderProps = {
   maxAudioFileSizeBytes: number | null;
   onAudioHealthChange?: (health: LiveAudioHealthSnapshot | null) => void;
   onStatusChange?: (status: RecorderStatus) => void;
+  onCompletionChange?: (completion: RecordingCompletion | null) => void;
   realtimeLanguage?: SonioxRealtimeLanguageId;
   redirectAfterSave?: "detail" | "list";
   realtimeModel?: string;

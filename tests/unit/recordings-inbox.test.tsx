@@ -8,6 +8,7 @@ import { createSaveError, type SaveAction, type SaveActionState } from "@/lib/fo
 import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
 import type { RecordingStatusCounts } from "@/lib/recordings/queries";
 import type { ActiveRecordingStatus, RecordingRow, RecordingStatus } from "@/lib/recordings/types";
+import { getRecordingCapabilities } from "@/lib/recording-sharing/capabilities";
 import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
@@ -126,22 +127,55 @@ afterEach(async () => {
 });
 
 describe("recordings inbox", () => {
-  it("opens the existing assignment editor from the row menu only for private managers", async () => {
+  it("limits organization editing to private managers while retaining shared title permissions", async () => {
+    const privateCapabilities = getRecordingCapabilities({
+      actorId: "user-1", ownerId: "user-1", createdBy: "user-1", projectId: null,
+      founderId: null, visibility: "private", status: "completed", memberRole: null,
+      grantRole: null, grantScopeProjectId: null
+    });
+    const sharedContext = {
+      actorId: "user-1", ownerId: "user-2", createdBy: "user-2", projectId: "project-1",
+      founderId: "user-1", visibility: "project" as const, status: "completed",
+      memberRole: null, grantRole: null, grantScopeProjectId: null
+    };
     const privateManager = { ...createRecording("private", "completed", clientA), visibility: "private" as const,
-      capabilities: { ...NO_RECORDING_CAPABILITIES, read: true, manageAccess: true } };
-    const sharedManager = { ...privateManager, id: "shared", visibility: "project" as const };
-    const reader = { ...privateManager, id: "reader", capabilities: { ...NO_RECORDING_CAPABILITIES, read: true } };
-    await renderInbox([privateManager, sharedManager, reader]);
+      capabilities: privateCapabilities };
+    const sharedManager = { ...privateManager, id: "shared", visibility: "project" as const,
+      capabilities: getRecordingCapabilities(sharedContext) };
+    const reader = { ...sharedManager, id: "reader", capabilities: getRecordingCapabilities({
+      ...sharedContext, actorId: "reader", memberRole: "reader"
+    }) };
+    const editor = { ...sharedManager, id: "editor", capabilities: getRecordingCapabilities({
+      ...sharedContext, actorId: "editor", memberRole: "editor"
+    }) };
+    expect(privateManager.capabilities).toMatchObject({ editTitle: true, manageAccess: true });
+    expect(sharedManager.capabilities).toMatchObject({ editTitle: true, manageAccess: true });
+    expect(editor.capabilities).toMatchObject({ editTitle: true, manageAccess: false });
+    expect(reader.capabilities).toMatchObject({ read: true, editTitle: false, manageAccess: false });
+    await renderInbox([privateManager, sharedManager, editor, reader]);
 
     const privateRow = container.querySelector('[data-recording-id="private"]');
-    const trigger = privateRow?.querySelector<HTMLElement>('.recording-organization-popover > summary');
-    expect(trigger?.textContent).toContain("Upravit zařazení");
-    expect(container.querySelector('[data-recording-id="shared"] .recording-organization-popover')).toBeNull();
-    expect(container.querySelector('[data-recording-id="reader"] .recording-organization-popover')).toBeNull();
+    const trigger = privateRow?.querySelector<HTMLElement>('.recording-name-organization-popover > summary');
+    expect(trigger?.textContent).toContain("Název a zařazení");
     await act(async () => trigger?.click());
-    const dialog = privateRow?.querySelector('[role="dialog"][aria-label="Zařazení nahrávky"]');
+    const dialog = privateRow?.querySelector('[role="dialog"][aria-label="Název a zařazení"]');
+    expect(dialog?.querySelector('[aria-label="Upravit private"]')).not.toBeNull();
     expect(dialog?.querySelector<HTMLSelectElement>('select[name="clientId"]')?.value).toBe(clientA);
     expect(dialog?.querySelector('select[name="projectId"]')).not.toBeNull();
+
+    for (const id of ["shared", "editor"]) {
+      const row = container.querySelector(`[data-recording-id="${id}"]`);
+      const titleTrigger = row?.querySelector<HTMLElement>('.recording-name-organization-popover > summary');
+      expect(titleTrigger?.textContent).toContain("Název a zařazení");
+      await act(async () => titleTrigger?.click());
+      const titleDialog = row?.querySelector('[role="dialog"][aria-label="Název a zařazení"]');
+      expect(titleDialog?.querySelector(`[aria-label="Upravit ${id}"]`)).not.toBeNull();
+      expect(titleDialog?.querySelector('.recording-organization-editor')).toBeNull();
+      expect(titleDialog?.querySelector('select[name="clientId"]')).toBeNull();
+      expect(titleDialog?.querySelector('form[aria-label="Zařazení"]')).toBeNull();
+    }
+    expect(container.querySelector('[data-recording-id="reader"] .recording-name-organization-popover')).toBeNull();
+    expect(container.querySelector('[data-recording-id="reader"] [aria-label="Upravit reader"]')).toBeNull();
   });
 
   it("exposes the compact toolbar and flat list as named workspace regions", async () => {
@@ -276,7 +310,7 @@ describe("recordings inbox", () => {
     )).toBe(false);
   });
 
-  it("renders URL-backed status facets and keeps title, edit and delete as sibling actions", async () => {
+  it("renders URL-backed status facets and keeps the combined editor and delete outside the title link", async () => {
     const recording = createRecording("recording-1", "failed", clientA);
     recording.title = "Testovací hovor";
     await renderInbox([recording], organizationActions, {
@@ -308,7 +342,7 @@ describe("recordings inbox", () => {
     expect(tableHead?.children).toHaveLength(2);
     expect(tableHeadMain?.classList.contains("recordings-table-head-main")).toBe(true);
     expect(Array.from(tableHeadMain?.children ?? []).map((cell) => cell.textContent))
-      .toEqual(["Název nahrávky", "Klient / projekt", "Stav", "Délka"]);
+      .toEqual(["Název nahrávky", "Klient", "Projekt", "Stav", "Délka"]);
     expect(tableHead?.children.item(1)?.classList.contains("recordings-table-head-actions"))
       .toBe(true);
     expect(tableHead?.children.item(1)?.textContent).toBe("");
@@ -318,7 +352,12 @@ describe("recordings inbox", () => {
     expect(titleLink?.textContent).toContain("Testovací hovor");
     expect(firstRow?.querySelectorAll('a[href="/recordings/recording-1"]')).toHaveLength(1);
     expect(firstRow?.textContent).not.toContain("Otevřít");
-    expect(firstRow?.querySelector('[aria-label="Upravit recording-1"]')?.closest("a")).toBeNull();
+    const editorTrigger = firstRow?.querySelector<HTMLElement>('.recording-name-organization-popover > summary');
+    expect(editorTrigger?.textContent).toBe("Název a zařazení");
+    expect(editorTrigger?.closest("a")).toBeNull();
+    await act(async () => editorTrigger?.click());
+    expect(firstRow?.querySelector('[aria-label="Upravit recording-1"]')).not.toBeNull();
+    expect(firstRow?.querySelector('form[aria-label="Zařazení"]')).toBeNull();
     expect(firstRow?.querySelector('[aria-label="Smazat recording-1"]')?.closest("a")).toBeNull();
     expect(firstRow?.querySelector('summary[aria-label="Možnosti nahrávky Testovací hovor"]'))
       .not.toBeNull();

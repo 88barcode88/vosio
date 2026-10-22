@@ -16,6 +16,7 @@ type ChatHistory = {
 
 type ChatContentProps = {
   activeTranscriptId: string | null;
+  isActive?: boolean;
   defaultModel: string;
   defaultReasoningEffort?: AiReasoningEffort;
   onOpenEvidence: (target: TranscriptTarget) => void;
@@ -69,7 +70,7 @@ function mergeChatTurn(turns: SafeRecordingChatTurn[], nextTurn: SafeRecordingCh
 }
 
 // ChatContent loads and submits the single persisted transcript chat without sending transcript audio or context.
-export function ChatContent({ activeTranscriptId, defaultModel, defaultReasoningEffort, onOpenEvidence }: ChatContentProps) {
+export function ChatContent({ activeTranscriptId, isActive = true, defaultModel, defaultReasoningEffort, onOpenEvidence }: ChatContentProps) {
   const { capabilities } = useRecordingCapabilities();
   const [history, setHistory] = useState<ChatHistory>(emptyHistory);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -185,7 +186,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, defaultReasoning
   const isComposerDisabled = !isHydrated || !capabilities.usePrivateChat || !capabilities.runPersonalAi || !activeTranscriptId || loadedTranscriptId !== activeTranscriptId || isLoading || isSubmitting || hasServerRunningTurn || transportUncertain || hasPendingSubmission;
 
   useEffect(() => {
-    if (!activeTranscriptId || !hasServerRunningTurn) {
+    if (!isActive || !activeTranscriptId || !hasServerRunningTurn) {
       return;
     }
 
@@ -208,6 +209,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, defaultReasoning
       if (
         disposed
         || document.visibilityState === "hidden"
+        || !navigator.onLine
         || pollInFlightRef.current
         || activeTranscriptRef.current !== activeTranscriptId
       ) {
@@ -237,7 +239,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, defaultReasoning
 
     // startPolling resumes the bounded timer only while the tab is visible and this server turn remains active.
     const startPolling = () => {
-      if (document.visibilityState === "hidden" || intervalId !== null) {
+      if (document.visibilityState === "hidden" || !navigator.onLine || intervalId !== null) {
         return;
       }
       intervalId = setInterval(() => { void pollRunningTurn(); }, CHAT_RUNNING_POLL_INTERVAL_MS);
@@ -245,7 +247,7 @@ export function ChatContent({ activeTranscriptId, defaultModel, defaultReasoning
 
     // refreshVisibleChat resumes delayed reconciliation as soon as the browser returns to this tab.
     const refreshVisibleChat = () => {
-      if (document.visibilityState === "hidden") {
+      if (document.visibilityState === "hidden" || !navigator.onLine) {
         stopPolling();
         return;
       }
@@ -255,15 +257,19 @@ export function ChatContent({ activeTranscriptId, defaultModel, defaultReasoning
 
     document.addEventListener("visibilitychange", refreshVisibleChat);
     window.addEventListener("focus", refreshVisibleChat);
+    window.addEventListener("online", refreshVisibleChat);
+    window.addEventListener("offline", refreshVisibleChat);
     startPolling();
 
     return () => {
       disposed = true;
       document.removeEventListener("visibilitychange", refreshVisibleChat);
       window.removeEventListener("focus", refreshVisibleChat);
+      window.removeEventListener("online", refreshVisibleChat);
+      window.removeEventListener("offline", refreshVisibleChat);
       stopPolling();
     };
-  }, [activeTranscriptId, applyHistory, hasServerRunningTurn, loadHistory]);
+  }, [activeTranscriptId, applyHistory, hasServerRunningTurn, isActive, loadHistory]);
 
   // reconcilePendingTurn checks a transport-uncertain UUID before the user can submit another request.
   async function reconcilePendingTurn() {
@@ -458,13 +464,21 @@ export function ChatContent({ activeTranscriptId, defaultModel, defaultReasoning
         />
         <small id="recording-chat-keyboard-hint">Enter odešle zprávu · Shift+Enter vloží nový řádek</small>
         <div className="recording-chat-composer-controls">
-          <AiModelPicker
-            disabled={isComposerDisabled}
-            modelLabel="Model"
-            onChange={setSelection}
-            scope="Pro následující otázku v chatu."
-            value={selection}
-          />
+          <details className="ai-settings-details recording-chat-model-settings" onKeyDown={(event) => {
+            if (event.key !== "Escape" || !event.currentTarget.open) return;
+            event.preventDefault();
+            event.currentTarget.open = false;
+            event.currentTarget.querySelector("summary")?.focus();
+          }}>
+            <summary><span>Model</span><strong>{getModelLabel(model)}{getAiModelReasoningEffort(selection) ? ` · ${selection.reasoningEffort}` : ""}</strong></summary>
+            <AiModelPicker
+              disabled={isComposerDisabled}
+              modelLabel="Model"
+              onChange={setSelection}
+              scope="Pro následující otázku v chatu."
+              value={selection}
+            />
+          </details>
           <button disabled={isComposerDisabled || !draft.trim()} type="submit">
             <ArrowUp aria-hidden="true" size={16} /> Odeslat
           </button>

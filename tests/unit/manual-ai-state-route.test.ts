@@ -40,12 +40,12 @@ let snapshotMounts = 0;
 let snapshotUnmounts = 0;
 
 // renderAiSnapshot observes the real tabs' hydration while retaining browser-owned interaction state.
-function RenderAiSnapshot({ aiOutputs, structuredItems }: { aiOutputs: AiOutputView[]; structuredItems: StructuredAiItems }) {
+function RenderAiSnapshot({ aiOutputs, jobs = [], structuredItems }: { aiOutputs: AiOutputView[]; jobs?: Array<{ id: string; status: string }>; structuredItems: StructuredAiItems }) {
   useEffect(() => {
     snapshotMounts += 1;
     return () => { snapshotUnmounts += 1; };
   }, []);
-  return createElement("div", null,
+  return createElement("div", { "data-job-state": JSON.stringify(jobs.map(({ id, status }) => ({ id, status }))) },
     createElement("output", null, JSON.stringify({ aiOutputs, structuredItems })),
     createElement("details", { "data-local-details": true }, createElement("summary", null, "Lokální detail"),
       createElement("input", { "aria-label": "Lokální koncept", defaultValue: "" }))
@@ -180,6 +180,36 @@ describe("real detail tabs after server revalidation", () => {
       expect(document.activeElement).toBe(draft);
       expect(snapshotMounts).toBe(1);
       expect(snapshotUnmounts).toBe(0);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("shares persisted jobs with Timeline and retains the visited AI draft across tab changes", async () => {
+    const job = { id: "timeline-persisted", processing_type: "timeline_chapters", status: "queued", created_at: new Date().toISOString() };
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(withCleanupState({ jobs: [job], outputs: [] }))));
+    vi.stubGlobal("fetch", fetchMock);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(detailTree("ai")));
+      const draft = container.querySelector<HTMLInputElement>('input[aria-label="Lokální koncept"]')!;
+      draft.value = "Rozepsaný výstup";
+      await act(async () => container.querySelector<HTMLButtonElement>('[role="tab"][id="recording-tab-timeline"]')!.click());
+      const activePanel = container.querySelector('[role="tabpanel"]')!;
+      const snapshots = activePanel.querySelectorAll('[data-job-state]');
+      expect(snapshots).toHaveLength(2);
+      expect(snapshots[1].getAttribute("data-job-state")).toContain("timeline-persisted");
+      expect(snapshots[1].getAttribute("data-job-state")).toContain("queued");
+      expect(draft.closest("[hidden]")).not.toBeNull();
+      await act(async () => container.querySelector<HTMLButtonElement>('[role="tab"][id="recording-tab-ai"]')!.click());
+      expect(container.querySelector('input[aria-label="Lokální koncept"]')).toBe(draft);
+      expect(draft.value).toBe("Rozepsaný výstup");
+      expect(draft.closest("[hidden]")).toBeNull();
+      expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/process"))).toBe(false);
+      await act(async () => root.render(detailTree("ai", "transcript-2")));
+      expect(container.querySelector<HTMLInputElement>('input[aria-label="Lokální koncept"]')?.value).toBe("");
     } finally {
       await act(async () => root.unmount());
     }

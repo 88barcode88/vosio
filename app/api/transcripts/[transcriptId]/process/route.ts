@@ -12,6 +12,7 @@ import {
 import { createRateLimiter } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { assertInvitationOrigin } from "@/lib/recording-sharing/invitation-http.server";
 
 const routeParamsSchema = z.object({ transcriptId: z.uuid() });
 // Next requires a statically analyzable literal; the runtime contract test locks it to the shared budget.
@@ -203,8 +204,9 @@ function canCloneManualSnapshot(job: ExistingJob) {
     && resolveAiModelExecution({ model: job.model, provider: job.provider, providerConfig: config }) !== null;
 }
 
-// POST durably accepts one idempotent manual AI job and releases provider work to Next after().
+// POST requires the browser origin before accepting a durable job and releasing provider work to Next after().
 export async function POST(request: NextRequest, context: RouteContext) {
+  try { assertInvitationOrigin(request); } catch { return NextResponse.json({ error: "Požadavek není povolený." }, { status: 403 }); }
   try {
     const params = routeParamsSchema.safeParse(await context.params);
     if (!params.success) return NextResponse.json({ error: "Neplatné ID přepisu." }, { status: 400 });

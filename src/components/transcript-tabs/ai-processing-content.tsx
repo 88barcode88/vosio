@@ -144,7 +144,7 @@ export function AiProcessingContent({
       {retryProcessing.message ? <p className="ai-state" role="status">{retryProcessing.message}</p> : null}
       {stateError ? (
         <p className="ai-state" role="alert">
-          {stateError} <button onClick={() => void onReload?.()} type="button">Zkusit znovu</button>
+          {stateError} <button className="secondary-inline-action" onClick={() => void onReload?.()} type="button">Zkusit znovu</button>
         </p>
       ) : null}
       {(!isLoaded || isLoading) && !stateError && artifacts.length === 0 ? <div className="ai-empty-card" aria-busy="true"><p role="status">Načítám AI stav…</p></div> : null}
@@ -379,12 +379,13 @@ function ManualAiJobList({
               <small>Starší protokol nelze bezpečně automaticky spravovat. Je nutná ruční kontrola.</small>
             ) : null}
             {classification?.actions.map((action) => (
-              <button disabled={pendingJobId !== null || isBulkPending} key={action} onClick={() => void runJobAction(job.id, action)} type="button">
+              <button className="secondary-inline-action" disabled={pendingJobId !== null || isBulkPending} key={action} onClick={() => void runJobAction(job.id, action)} type="button">
                 {pendingJobId === job.id ? "Pracuji…" : cleanupActionLabels[action]}
               </button>
             ))}
             {job.status === "failed" && job.execution_mode !== "automatic" ? (
               <button
+                className="secondary-inline-action"
                 disabled={pendingJobId !== null || isBulkPending || retryBlocked}
                 onClick={() => {
                   setPendingJobId(job.id);
@@ -399,7 +400,7 @@ function ManualAiJobList({
         );
       })}
       {cleanup.eligible_count > 0 ? (
-        <button className="ai-job-cleanup-all" disabled={isBulkPending || pendingJobId !== null} onClick={() => void cleanupAll()} type="button">
+        <button className="ai-job-cleanup-all secondary-inline-action" disabled={isBulkPending || pendingJobId !== null} onClick={() => void cleanupAll()} type="button">
           {isBulkPending ? "Čistím…" : bulkResumeCursor ? "Pokračovat v čištění" : `Vyčistit způsobilé (${cleanup.eligible_count})`}
         </button>
       ) : null}

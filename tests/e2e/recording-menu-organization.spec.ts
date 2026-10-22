@@ -8,8 +8,8 @@ test("row menu opens assignment controls within the viewport and cancels without
     await page.goto(`/login/recording-organization-e2e?scope=${scope}`);
     const menu = page.locator(".recordings-row").first().locator(".recordings-actions-menu");
     await menu.locator(":scope > summary").click();
-    await menu.getByText("Upravit zařazení", { exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "Zařazení nahrávky" });
+    await menu.getByRole("button", { name: "Název a zařazení", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Název a zařazení" });
     await expect(dialog).toBeVisible();
     for (const name of ["Klient", "Projekt", "Složka"]) {
       await expect(dialog.getByRole("combobox", { name, exact: true })).toBeVisible();
@@ -19,9 +19,10 @@ test("row menu opens assignment controls within the viewport and cancels without
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
     await page.screenshot({ path: testInfo.outputPath("assignment-menu.png"), fullPage: true });
-    await dialog.getByRole("button", { name: "Zrušit", exact: true }).click();
+    await expect(dialog.getByRole("textbox", { name: /^Název nahrávky/ })).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
-    await expect(menu.getByText("Upravit zařazení", { exact: true })).toBeFocused();
+    await expect(menu.getByRole("button", { name: "Název a zařazení", exact: true })).toBeFocused();
   } finally {
     await cleanupOrganizationFixture(page.request, scope);
   }

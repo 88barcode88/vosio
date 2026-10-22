@@ -38,7 +38,7 @@ describe("automatic timeline route", () => {
       auth: { getUser: vi.fn(async () => ({ data: { user: null }, error: null })) }
     });
 
-    const response = await POST(new NextRequest(`http://localhost/api/transcripts/${transcriptId}/automatic-timeline`, { method: "POST" }), {
+    const response = await POST(new NextRequest(`http://localhost/api/transcripts/${transcriptId}/automatic-timeline`, { method: "POST", headers: { Origin: "http://localhost" } }), {
       params: Promise.resolve({ transcriptId })
     });
 
@@ -59,7 +59,7 @@ describe("automatic timeline route", () => {
     mocks.scheduleAutomaticOutputs.mockResolvedValue({ status: "done" });
     const response = await POST(new NextRequest(`http://localhost/api/transcripts/${transcriptId}/automatic-timeline`, {
       body: JSON.stringify({ model: "attacker-model", processingType: "summary", prompt: "attacker" }),
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", Origin: "http://localhost" },
       method: "POST"
     }), { params: Promise.resolve({ transcriptId }) });
 
@@ -77,7 +77,7 @@ describe("automatic timeline route", () => {
     const query = createTranscriptQuery({ data: { id: transcriptId, recording_id: "shared" }, error: null });
     mocks.createClient.mockResolvedValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "author" } }, error: null }) },
       from: vi.fn(() => query), rpc: vi.fn().mockResolvedValue({ data: { ...NO_RECORDING_CAPABILITIES, read: true }, error: null }) });
-    const response = await POST(new NextRequest("http://localhost/test", { method: "POST" }), { params: Promise.resolve({ transcriptId }) });
+    const response = await POST(new NextRequest("http://localhost/test", { method: "POST", headers: { Origin: "http://localhost" } }), { params: Promise.resolve({ transcriptId }) });
     expect(response.status).toBe(403);
     expect(mocks.createAdminClient).not.toHaveBeenCalled();
     expect(mocks.scheduleAutomaticOutputs).not.toHaveBeenCalled();
@@ -90,7 +90,7 @@ describe("automatic timeline route", () => {
       from: vi.fn(() => transcriptQuery)
     });
 
-    const response = await POST(new NextRequest(`http://localhost/api/transcripts/${transcriptId}/automatic-timeline`, { method: "POST" }), {
+    const response = await POST(new NextRequest(`http://localhost/api/transcripts/${transcriptId}/automatic-timeline`, { method: "POST", headers: { Origin: "http://localhost" } }), {
       params: Promise.resolve({ transcriptId })
     });
 

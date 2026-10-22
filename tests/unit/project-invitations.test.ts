@@ -21,7 +21,7 @@ const emptyAccess = { members: [], grants: [], invitations: [] };
 function client() {
   return { rpc: vi.fn(async (name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: null | { code: string } }> => {
     expect(args).toBeDefined();
-    return { data: name === "create_recording_invitation_v1" || name === "accept_recording_invitation_v1" ? id : name === "settle_recording_invitation_delivery_v1" || name === "revoke_recording_invitation_v1" ? true : name === "list_recording_access_v1" ? emptyAccess : receipt, error: null };
+    return { data: name === "create_recording_invitation_v1" || name === "create_team_scope_invitation_v1" || name === "accept_recording_invitation_v1" ? id : name === "settle_recording_invitation_delivery_v1" || name === "revoke_recording_invitation_v1" ? true : name === "list_recording_access_v1" ? emptyAccess : receipt, error: null };
   }) };
 }
 
@@ -48,6 +48,25 @@ describe("invitation orchestration (RPC boundary, not database proof)", () => {
     const value = invitationCreateSchema.parse({ email: receipt.email, role: "editor", scope, projectId, ...(scope === "project-selected" ? { recordingIds: [recordingId] } : {}) });
     await createInvitation(db, `actor-${scope}`, value, "https://vosio.test", async () => true);
     expect(db.rpc.mock.calls.find(([name]) => name === "create_recording_invitation_v1")![1]).toMatchObject({ p_scope: scope === "project" ? "project" : "recordings", p_project_id: projectId, p_recording_ids: scope === "project" ? [] : [recordingId] });
+  });
+
+  it.each(["client", "folder"] as const)("authorizes %s before creating its pending token without recording expansion", async (scope) => {
+    const db = client();
+    const value = invitationCreateSchema.parse({ email: `${scope}@example.test`, role: "reader", scope, scopeId: recordingId, projectId });
+    const deliver = vi.fn(async () => true);
+    await createInvitation(db, `actor-scope-${scope}`, value, "https://vosio.test", deliver);
+    expect(db.rpc.mock.calls[0]).toEqual(["assert_team_invitation_scope_v1", { p_scope_kind: scope, p_scope_id: recordingId, p_project_id: projectId }]);
+    expect(db.rpc).toHaveBeenCalledWith("create_team_scope_invitation_v1", expect.objectContaining({ p_scope: scope, p_scope_id: recordingId, p_project_id: projectId, p_recording_ids: [] }));
+    expect(db.rpc.mock.calls.some(([name]) => name === "set_team_access_v1" || name === "accept_recording_invitation_v1")).toBe(false);
+    expect(deliver).toHaveBeenCalledOnce();
+  });
+
+  it("never delivers a scope invitation after a stale role or foreign-scope preflight denial", async () => {
+    const db = client(); db.rpc.mockResolvedValue({ data: null, error: { code: "42501" } });
+    const deliver = vi.fn();
+    await expect(createInvitation(db, "scope-denied", { scope: "folder", scopeId: recordingId, projectId: null, role: "reader", email: "scope-denied@example.test" }, "https://vosio.test", deliver)).rejects.toMatchObject({ status: 403 });
+    expect(db.rpc).toHaveBeenCalledOnce();
+    expect(deliver).not.toHaveBeenCalled();
   });
 
   it.each(["project-reader", "project-editor", "outsider", "unrelated-founder"])("does not deliver after DB denies %s", async (actor) => {

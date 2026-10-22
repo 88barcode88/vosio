@@ -20,7 +20,7 @@ vi.mock("@/lib/soniox/client", async (importOriginal) => ({
 import { POST } from "../../app/api/soniox/realtime-key/route";
 
 // Bind key creation to the authorized draft before contacting the provider.
-function keyRequest() { return new Request("http://localhost/api/soniox/realtime-key", { method: "POST", body: JSON.stringify({ recordingId: "00000000-0000-4000-8000-000000000010" }) }); }
+function keyRequest() { return new Request("http://localhost/api/soniox/realtime-key", { method: "POST", headers: { Origin: "http://localhost", "Content-Type": "application/json" }, body: JSON.stringify({ recordingId: "00000000-0000-4000-8000-000000000010" }) }); }
 
 // mockAuthenticatedUser configures the route's trusted Supabase Auth result.
 function mockAuthenticatedUser(region: "global" | "eu") {

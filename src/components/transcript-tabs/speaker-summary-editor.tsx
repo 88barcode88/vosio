@@ -183,18 +183,21 @@ export function SpeakerSummaryEditor({
                 ))}
               </select>
             </label>
-            <strong className="speaker-summary-state">{speaker.name || speaker.label} · {speaker.roleLabel}</strong>
-            <div className="speaker-summary-feedback" role="status" aria-live="polite">
-              <span>{status?.message ?? ""}</span>
-              {status?.kind === "error" ? (
-                <button
-                  aria-label={`Zkusit znovu uložit ${speaker.label}`}
-                  onClick={() => enqueueSave(speaker.id, true)}
-                  type="button"
-                >
-                  Zkusit znovu
-                </button>
-              ) : null}
+            <div className="speaker-summary-status">
+              <strong className="speaker-summary-state">{speaker.name || speaker.label} · {speaker.roleLabel}</strong>
+              <div className="speaker-summary-feedback" role="status" aria-live="polite">
+                <span>{status?.message ?? ""}</span>
+                {status?.kind === "error" ? (
+                  <button
+                    className="secondary-inline-action"
+                    aria-label={`Zkusit znovu uložit ${speaker.label}`}
+                    onClick={() => enqueueSave(speaker.id, true)}
+                    type="button"
+                  >
+                    Zkusit znovu
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
         );

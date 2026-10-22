@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { resolveTeamRole } from "@/lib/team/queries.server";
 import { listDeletedRecordings } from "@/lib/recordings/queries";
 import { canonicalizeTrashSearchParams, createTrashSearchParams } from "@/lib/recordings/trash-navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -32,6 +33,7 @@ export default async function TrashPage({
 
   return (
     <VosioWorkspace
+      canManageTeam={Boolean(await resolveTeamRole(supabase))}
       aiOutputs={[]}
       deletedRecordings={deletedRecordings}
       recordings={[]}

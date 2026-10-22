@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { resolveTeamRole } from "@/lib/team/queries.server";
 import {
   canonicalizeAiArchiveSearchParams,
   createAiArchiveSearchParams
@@ -32,6 +33,7 @@ export default async function AiPage({ searchParams }: AiPageProps) {
 
   return (
     <VosioWorkspace
+      canManageTeam={Boolean(await resolveTeamRole(supabase))}
       aiArchiveActionAlert={canonical.actionAlert}
       aiArchiveFilters={canonical.filters}
       aiArchiveItems={items}

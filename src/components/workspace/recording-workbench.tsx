@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RecordingCompletionNotice } from "@/components/persistent-recording-session";
 import { RecordingSharingPopover } from "@/components/workspace/recording-sharing-popover";
 import { ChevronLeft } from "lucide-react";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
@@ -80,6 +81,7 @@ export function RecordingWorkbench({
           <ChevronLeft aria-hidden="true" size={16} />
           Zpět na nahrávky
         </Link>
+        {activeRecording ? <RecordingCompletionNotice recordingId={activeRecording.id} /> : null}
         <RecordingCard
           activeRecording={activeRecording}
           activeRecordingView={activeRecordingView}

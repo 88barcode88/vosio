@@ -12,11 +12,12 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { BrowserRecorder } from "@/components/browser-recorder";
-import type { BrowserRecorderProps, RecorderStatus } from "@/components/browser-recorder/types";
+import type { BrowserRecorderProps, RecorderStatus, RecordingCompletion } from "@/components/browser-recorder/types";
 
-type PersistentRecorderConfig = Omit<BrowserRecorderProps, "compact" | "onStatusChange">;
+type PersistentRecorderConfig = Omit<BrowserRecorderProps, "compact" | "onStatusChange" | "onCompletionChange">;
 
 type PersistentRecordingSessionContextValue = {
+  completion: RecordingCompletion | null;
   attachRecorderSlot: (
     element: HTMLDivElement,
     config: PersistentRecorderConfig
@@ -36,13 +37,22 @@ export function PersistentRecordingSessionProvider({ children }: { children: Rea
   const [recorderHost, setRecorderHost] = useState<HTMLDivElement | null>(null);
   const [slotHost, setSlotHost] = useState<HTMLDivElement | null>(null);
   const [status, setStatus] = useState<RecorderStatus>("idle");
+  const [completion, setCompletion] = useState<RecordingCompletion | null>(null);
+  const completionRef = useRef<RecordingCompletion | null>(null);
+
+  // handleCompletionChange retains failed local data until the recorder explicitly resolves or discards recovery.
+  const handleCompletionChange = useCallback((next: RecordingCompletion | null) => {
+    completionRef.current = next;
+    setCompletion(next);
+    if (!next && statusRef.current === "idle" && !slotHostRef.current) setConfig(null);
+  }, []);
 
   // handleStatusChange mirrors recorder lifecycle state for docking and slot cleanup.
   const handleStatusChange = useCallback((nextStatus: RecorderStatus) => {
     statusRef.current = nextStatus;
     setStatus(nextStatus);
 
-    if (nextStatus === "idle" && !slotHostRef.current) {
+    if (nextStatus === "idle" && !slotHostRef.current && !completionRef.current?.retainLocalData) {
       setConfig(null);
     }
   }, []);
@@ -65,7 +75,7 @@ export function PersistentRecordingSessionProvider({ children }: { children: Rea
       return host;
     });
     setSlotHost(element);
-    setConfig((current) => statusRef.current === "idle" ? nextConfig : current ?? nextConfig);
+    setConfig((current) => statusRef.current === "idle" && !completionRef.current?.retainLocalData ? nextConfig : current ?? nextConfig);
 
     return () => {
       if (slotTokenRef.current !== token) {
@@ -76,15 +86,15 @@ export function PersistentRecordingSessionProvider({ children }: { children: Rea
       slotHostRef.current = null;
       setSlotHost(null);
 
-      if (statusRef.current === "idle") {
+      if (statusRef.current === "idle" && !completionRef.current?.retainLocalData) {
         setConfig(null);
       }
     };
   }, []);
 
   const contextValue = useMemo(
-    () => ({ attachRecorderSlot }),
-    [attachRecorderSlot]
+    () => ({ attachRecorderSlot, completion }),
+    [attachRecorderSlot, completion]
   );
 
   useEffect(() => {
@@ -92,14 +102,14 @@ export function PersistentRecordingSessionProvider({ children }: { children: Rea
       return;
     }
 
-    const destination = slotHost ?? (status !== "idle" ? dockRef.current : null);
+    const destination = slotHost ?? (status !== "idle" || completion?.retainLocalData ? dockRef.current : null);
 
     if (destination && recorderHost.parentElement !== destination) {
       destination.appendChild(recorderHost);
     } else if (!destination) {
       recorderHost.remove();
     }
-  }, [recorderHost, slotHost, status]);
+  }, [recorderHost, slotHost, status, completion?.retainLocalData]);
 
   useEffect(() => {
     return () => recorderHost?.remove();
@@ -113,7 +123,7 @@ export function PersistentRecordingSessionProvider({ children }: { children: Rea
         className="persistent-recorder-dock"
         data-recorder-placement="dock"
         data-recording-status={status}
-        hidden={status === "idle" || slotHost !== null}
+        hidden={(status === "idle" && !completion?.retainLocalData) || slotHost !== null}
         ref={dockRef}
       />
       {config && recorderHost
@@ -122,12 +132,25 @@ export function PersistentRecordingSessionProvider({ children }: { children: Rea
             {...config}
             compact={slotHost === null}
             onStatusChange={handleStatusChange}
+            onCompletionChange={handleCompletionChange}
           />,
           recorderHost
         )
         : null}
     </PersistentRecordingSessionContext.Provider>
   );
+}
+
+// RecordingCompletionNotice mirrors only the matching local session; it never claims server audio confirmation early.
+export function RecordingCompletionNotice({ recordingId }: { recordingId: string }) {
+  const context = useContext(PersistentRecordingSessionContext);
+  const completion = context?.completion;
+  if (!completion || completion.recordingId !== recordingId) return null;
+  return <div className="inline-feedback" role={completion.phase === "error" ? "alert" : "status"}
+    aria-live={completion.phase === "error" ? "assertive" : "polite"}>
+    <strong>{completion.phase === "saving" ? completion.audioConfirmed ? "Připravujeme přepis" : "Ukládáme" : completion.phase === "error" ? "Vyžaduje pozornost" : "Ukládání dokončeno"}</strong>
+    <p>{completion.message}</p>
+  </div>;
 }
 
 // PersistentRecorderSlot supplies the page location and configuration for the global recorder.
