@@ -8,15 +8,18 @@ export const invitationCreateSchema = z.discriminatedUnion("scope", [
   z.strictObject({ ...recipient, scope: z.literal("standalone"), recordingIds }),
   z.strictObject({ ...recipient, scope: z.literal("project"), projectId: z.uuid() }),
   z.strictObject({ ...recipient, scope: z.literal("project-selected"), projectId: z.uuid(), recordingIds }),
+  z.strictObject({ ...recipient, scope: z.literal("client"), scopeId: z.uuid(), projectId: z.uuid().nullable() }),
+  z.strictObject({ ...recipient, scope: z.literal("folder"), scopeId: z.uuid(), projectId: z.uuid().nullable() }),
 ]);
 export type InvitationCreate = z.infer<typeof invitationCreateSchema>;
 export type InvitationScope = Pick<Extract<InvitationCreate, { scope: "project" }>, "scope" | "projectId">
   | Pick<Extract<InvitationCreate, { scope: "standalone" }>, "scope" | "recordingIds">
   | Pick<Extract<InvitationCreate, { scope: "project-selected" }>, "scope" | "recordingIds" | "projectId">;
 
-export const invitationPreviewSchema = z.object({ id: z.uuid(), role: recordingShareRoleSchema, scope: z.enum(["project", "recordings"]), expiresAt: z.string(), recordingCount: z.number().int().min(0).max(100) });
+export const invitationPreviewSchema = z.object({ id: z.uuid(), role: recordingShareRoleSchema, scope: z.enum(["project", "recordings", "client", "folder"]), expiresAt: z.string(), recordingCount: z.number().int().min(0).max(100) });
 export const invitationSummarySchema = z.object({
-  id: z.uuid(), email: z.email(), role: recordingShareRoleSchema, scope: z.enum(["project", "recordings"]),
+  id: z.uuid(), email: z.email(), role: recordingShareRoleSchema, scope: z.enum(["project", "recordings", "client", "folder"]),
+  scopeId: z.uuid().nullable().optional(), projectId: z.uuid().nullable().optional(),
   expiresAt: z.string(), acceptedAt: z.string().nullable(), revokedAt: z.string().nullable(),
   attemptId: z.uuid(), attemptCount: z.number().int().min(1).max(5), deliveryState: z.enum(["pending", "sent", "failed"]),
   lastAttemptAt: z.string(), nextAttemptAt: z.string(), authorizationCurrent: z.boolean(),

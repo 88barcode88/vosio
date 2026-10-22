@@ -24,10 +24,10 @@ function response(payload: unknown, ok = true) {
 }
 
 // renderChat mounts the standalone lazy tab content with one controlled transcript identity.
-async function renderChat(id: string | null = transcriptId, onOpenEvidence = vi.fn(), defaultModel = "gpt-5.6-terra", defaultReasoningEffort?: AiReasoningEffort) {
+async function renderChat(id: string | null = transcriptId, onOpenEvidence = vi.fn(), defaultModel = "gpt-5.6-terra", defaultReasoningEffort?: AiReasoningEffort, isActive = true) {
   await act(async () => root?.render(<RecordingCapabilityProvider
     capabilities={{ ...NO_RECORDING_CAPABILITIES, read: true, usePrivateChat: true, runPersonalAi: true }} canReadPrivateChat>
-    <ChatContent activeTranscriptId={id} defaultModel={defaultModel} defaultReasoningEffort={defaultReasoningEffort} onOpenEvidence={onOpenEvidence} />
+    <ChatContent isActive={isActive} activeTranscriptId={id} defaultModel={defaultModel} defaultReasoningEffort={defaultReasoningEffort} onOpenEvidence={onOpenEvidence} />
   </RecordingCapabilityProvider>));
   return onOpenEvidence;
 }
@@ -64,6 +64,45 @@ describe("recording chat content", () => {
     await act(async () => textarea.dispatchEvent(new Event("input", { bubbles: true })));
     return textarea;
   }
+  it("keeps the model, reasoning and draft when model controls collapse", async () => {
+    vi.mocked(fetch).mockResolvedValue(response({ thread: null, turns: [] }) as never);
+    await renderChat();
+    const textarea = await writeQuestion("Rozepsaná otázka");
+    const details = container!.querySelector<HTMLDetailsElement>(".recording-chat-model-settings")!;
+    details.open = true;
+    const select = details.querySelector<HTMLSelectElement>("select")!;
+    await act(async () => { select.value = "gpt-6-astra"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    const max = details.querySelector<HTMLButtonElement>('button[aria-label="Maximum (max)"]')!;
+    await act(async () => max.click());
+    await act(async () => select.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    expect(details.open).toBe(false);
+    expect(document.activeElement).toBe(details.querySelector("summary"));
+    expect(details.querySelector("summary")?.textContent).toContain("GPT-6 Astra · max");
+    expect(new FormData(container!.querySelector("form")!).get("reasoningEffort")).toBe("max");
+    expect(textarea.value).toBe("Rozepsaná otázka");
+    expect(details.textContent).toContain("zvýšit cenu");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("pauses server turn polling on an inactive surface and resumes without reloading history or losing model choice", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    vi.mocked(fetch).mockImplementation(async () => response({ thread: null, turns: [{ ...oldTurn, status: "running" }] }) as never);
+    await renderChat();
+    const select = container!.querySelector<HTMLSelectElement>("select")!;
+    const textarea = container!.querySelector("textarea");
+    await renderChat(transcriptId, vi.fn(), "gpt-5.6-terra", undefined, false);
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(container!.querySelector("select")).toBe(select);
+    expect(container!.querySelector("textarea")).toBe(textarea);
+    await renderChat();
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fetch).mock.calls.every(([, request]) => request?.method === "GET")).toBe(true);
+  });
+
   it("preserves history and draft without a GET when account defaults change on the same transcript", async () => {
     vi.mocked(fetch).mockResolvedValue(response({ thread: { id: "thread-1", transcriptId }, turns: [oldTurn] }) as never);
     await renderChat();

@@ -1,5 +1,13 @@
 # Design System — Vosio
 
+## Kompaktní ovládání detailu a inboxu
+
+Viditelné drobné akce mají přibližně 30px rámeček uvnitř nejméně 44px nepřekrývajícího se cíle. Souhrn identity mluvčího je svisle vystředěný; saving/error feedback zůstává v příslušném sloupci. AI/Timeline akce používají existující command vzor. V chatu lze modelové nastavení sbalit; vybraný model a uvažování zůstávají v souhrnu a cenová nápověda je dostupná po rozbalení. Escape vrátí focus na souhrn.
+
+Inbox odděluje Klient a Projekt v desktopových sloupcích i mobilních popiscích. Ellipsis otevírá přímo pojmenovaný popup `Název a zařazení` s oddělenými sekcemi `Uložit název` a `Uložit zařazení`. Výsledek jedné sekce nevydává za společný úspěch. Jednotlivé uložené změny popup automaticky nezavírají; pending blokuje zavření a chyby zachovávají koncepty.
+
+Pro novou sekci Tým uživatel vybral variantu A: seznam osob vlevo, detail přístupů vpravo. Mobil přechází ze seznamu do detailu a nabízí návrat. Odkaz patří na desktopu do navigace a na mobilu pod Více; pět pevných mobilních cílů zůstává. Aktivní přístupy a čekající pozvánky mají oddělené seznamy. Grant klienta/složky před uložením výslovně popisuje současné i budoucí nesoukromé nahrávky. Odebrání vyžaduje konkrétní potvrzení a výsledek ukáže případnou další cestu přístupu. Náhledy `artifacts/team-design/` zachovávají tři předložené návrhy s demo daty; uživatelská akceptace implementovaného UI je samostatná.
+
 ## Product Context
 
 Vosio je pracovní audio workspace pro nahrávání, přepis a AI vytěžení hovorů. Uživatel má rychle zapnout live nahrávání, vložit existující nahrávku, otevřít přepis a vytvořit z něj konkrétní výstupy.

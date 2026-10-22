@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TimelineContent } from "@/components/transcript-tabs/timeline-content";
+import type { ManualAiJobSummary } from "@/lib/ai/manual-job-state";
 import { RecordingCapabilityProvider } from "@/components/recording-capability-context";
 import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 
@@ -46,6 +47,13 @@ const marker = {
   user_id: transcript.user_id
 };
 
+// timelineJob represents a persisted job returned by the transcript-scoped shared state.
+function timelineJob(status: ManualAiJobSummary["status"]): ManualAiJobSummary {
+  return { attempt_count: 1, completed_at: null, created_at: new Date().toISOString(), failure_code: null,
+    id: "timeline-job", lease_expires_at: null, max_attempts: 1, model: "gpt-6.1-sol", processing_type: "timeline_chapters",
+    retry_after_at: null, started_at: status === "running" ? new Date().toISOString() : null, status };
+}
+
 describe("TimelineContent direct generation", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -58,6 +66,97 @@ describe("TimelineContent direct generation", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  it.each(["queued", "running"] as const)("restores server %s state on opening and remount without submitting", async (status) => {
+    const props = { activeTranscript: transcript, aiOutputs: [], defaultAiModel: "gpt-6.1-sol", jobs: [timelineJob(status)],
+      classifications: [{ job_id: "timeline-job", poll_eligible: true, actions: [], cleanup_reason: "active_or_slow" as const }],
+      markers: [marker], onOpenMarker: vi.fn(), structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] } };
+    await act(async () => root.render(<TimelineContent {...props} />));
+    expect(container.textContent).toContain("Časová osa se připravuje");
+    expect(container.textContent).toContain("zpracovává na serveru");
+    expect(container.textContent).not.toContain("Vytvořte obsahovou časovou osu");
+    expect(container.querySelector<HTMLButtonElement>(".secondary-inline-action")?.disabled).toBe(true);
+    await act(async () => root.render(null));
+    await act(async () => root.render(<TimelineContent {...props} />));
+    expect(container.textContent).toContain("zpracovává na serveru");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it.each(["queued", "running"] as const)("routes stale %s jobs to existing AI recovery without submitting", async (status) => {
+    const onOpenAi = vi.fn();
+    const expired = new Date(Date.now() - 600_000).toISOString();
+    const job = { ...timelineJob(status), created_at: expired, started_at: status === "running" ? expired : null,
+      lease_expires_at: status === "running" ? new Date(Date.now() - 1_000).toISOString() : null };
+    const props = { activeTranscript: transcript, aiOutputs: [], defaultAiModel: "gpt-6.1-sol", jobs: [job], onOpenAi,
+      classifications: [{ job_id: job.id, poll_eligible: false, actions: ["reconcile" as const], cleanup_reason: "eligible_stale_unclaimed" as const }],
+      markers: [marker], onOpenMarker: vi.fn(), structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] } };
+    await act(async () => root.render(<TimelineContent {...props} />));
+    expect(container.textContent).not.toContain("zpracovává na serveru");
+    expect(container.textContent).toContain("vyžaduje kontrolu");
+    const recovery = container.querySelector<HTMLButtonElement>(".secondary-inline-action")!;
+    expect(recovery.textContent).toContain("Otevřít stav AI");
+    expect(recovery.disabled).toBe(false);
+    await act(async () => recovery.click());
+    expect(onOpenAi).toHaveBeenCalledOnce();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("uses the shared stalled helper when classification is absent", async () => {
+    await act(async () => root.render(<TimelineContent activeTranscript={transcript} aiOutputs={[]} defaultAiModel="gpt-6.1-sol"
+      jobs={[{ ...timelineJob("queued"), created_at: new Date(Date.now() - 600_000).toISOString() }]}
+      markers={[]} onOpenMarker={vi.fn()} onOpenAi={vi.fn()} structuredItems={{ chapters: [], tasks: [], decisions: [], risks: [] }} />));
+    expect(container.textContent).toContain("vyžaduje kontrolu");
+    expect(container.textContent).not.toContain("zpracovává na serveru");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("respects server non-pollable classification even before the display age limit", async () => {
+    const job = { ...timelineJob("running"), lease_expires_at: new Date(Date.now() - 1_000).toISOString() };
+    await act(async () => root.render(<TimelineContent activeTranscript={transcript} aiOutputs={[]} defaultAiModel="gpt-6.1-sol"
+      jobs={[job]} classifications={[{ job_id: job.id, poll_eligible: false, actions: ["reconcile"], cleanup_reason: "eligible_stale_unclaimed" }]}
+      markers={[]} onOpenMarker={vi.fn()} onOpenAi={vi.fn()} structuredItems={{ chapters: [], tasks: [], decisions: [], risks: [] }} />));
+    expect(container.textContent).toContain("vyžaduje kontrolu");
+    expect(container.textContent).not.toContain("zpracovává na serveru");
+  });
+
+  it("reflects terminal failure and resets persisted state for another transcript without submitting", async () => {
+    const props = { activeTranscript: transcript, aiOutputs: [], defaultAiModel: "gpt-6.1-sol",
+      markers: [], onOpenMarker: vi.fn(), structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] } };
+    await act(async () => root.render(<TimelineContent {...props} jobs={[timelineJob("running")]} />));
+    await act(async () => root.render(<TimelineContent {...props} jobs={[timelineJob("failed")]} />));
+    expect(container.textContent).toContain("AI zpracování selhalo");
+    expect(container.textContent).not.toContain("zpracovává na serveru");
+    await act(async () => root.render(<TimelineContent {...props} activeTranscript={{ ...transcript, id: "other-transcript" }} jobs={[]} />));
+    expect(container.textContent).not.toContain("AI zpracování selhalo");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("preserves historical chapters while shared jobs run, stall and complete", async () => {
+    const onOpenAi = vi.fn();
+    const props = { activeTranscript: transcript, aiOutputs: [], defaultAiModel: "gpt-6.1-sol", markers: [marker], onOpenMarker: vi.fn(), onOpenAi,
+      structuredItems: { chapters: [{ id: "chapter", title: "Uložená kapitola", start_time: "00:00", end_time: "00:01", summary: "Obsah", position: 1,
+        ai_output_id: "output", processing_job_id: "old-job", transcript_id: transcript.id, user_id: transcript.user_id,
+        confidence: null, dominant_roles: [], raw_item: {}, source_type: "explicit" as const, speakers: [], topics: [] }], tasks: [], decisions: [], risks: [] } };
+    await act(async () => root.render(<TimelineContent {...props} jobs={[timelineJob("running")]} />));
+    const chapter = container.querySelector(".timeline-chapter");
+    expect(container.textContent).toContain("zpracovává na serveru");
+    await act(async () => root.render(<TimelineContent {...props} jobs={[{ ...timelineJob("running"), started_at: new Date(Date.now() - 600_000).toISOString() }]} />));
+    expect(container.querySelector(".timeline-chapter")).toBe(chapter);
+    expect(container.textContent).toContain("vyžaduje kontrolu");
+    await act(async () => container.querySelector<HTMLButtonElement>(".ai-state button")!.click());
+    expect(onOpenAi).toHaveBeenCalledOnce();
+    await act(async () => root.render(<TimelineContent {...props} jobs={[timelineJob("done")]} />));
+    expect(container.querySelector(".timeline-chapter")).toBe(chapter);
+    expect(container.textContent).toContain("Uložená kapitola");
+    expect(container.textContent).toContain("je dokončené");
+    expect(container.textContent).toContain("Důležitý bod");
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("keeps cached chapters mounted on background failure and offers a read retry", async () => {

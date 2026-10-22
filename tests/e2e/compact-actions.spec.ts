@@ -128,10 +128,12 @@ test("blocked recovery uses one popup and preserves the real error on desktop an
   await isolate(page);
   const recoveryError = "Stav přepisu se během obnovy změnil. Zkontrolujte aktuální stav a zkuste to znovu.";
   let recoveryCalls = 0;
+  const recoveryBodies: unknown[] = [];
   let paidStarts = 0;
   await page.route("**/api/recordings/*/transcription**", async route => {
     if (route.request().url().endsWith("/recover")) {
       recoveryCalls++;
+      recoveryBodies.push(route.request().postDataJSON());
       return route.fulfill({ status: 409, json: { error: recoveryError, code: "state_changed" } });
     }
     if (route.request().method() === "POST") {
@@ -141,11 +143,14 @@ test("blocked recovery uses one popup and preserves the real error on desktop an
     return route.fulfill({ json: { job: { status: "manual_required" }, operation: { operation_id: recordingId }, canRecover: true } });
   });
   for (const width of [320, 390, 1440]) for (const theme of ["light", "dark"]) {
+    const initialRecoveryCalls = recoveryCalls;
     await page.setViewportSize({ width, height: 780 });
     await openDetail(page, "transcribing");
     await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
     const trigger = page.getByRole("button", { name: "Vyřešit přepis", exact: true });
     await expect(trigger).toBeVisible();
+    // The identified operation is now resumed automatically once before explicit user recovery.
+    await expect.poll(() => recoveryCalls).toBe(initialRecoveryCalls + 1);
     await expect(page.locator(".transcription-actions > button")).toHaveCount(0);
     await expect(page.getByRole("dialog")).toHaveCount(0);
     const before = await geometry(page);
@@ -159,6 +164,7 @@ test("blocked recovery uses one popup and preserves the real error on desktop an
     await compactAction(page, ".transcription-recovery-choice button");
     if (width === 320 || width === 1440) await page.screenshot({ path: info.outputPath(`recovery-${width}-${theme}.png`) });
     await page.getByRole("button", { name: "Dohledat původní přepis" }).click();
+    await expect.poll(() => recoveryCalls).toBe(initialRecoveryCalls + 2);
     await expect(page.locator(".transcription-feedback [role='alert']")).toHaveText(recoveryError);
     await page.getByRole("button", { name: "Zkontrolovat stav" }).click();
     await expect(page.getByRole("button", { name: "Zkontrolovat stav" })).toBeEnabled();
@@ -168,7 +174,8 @@ test("blocked recovery uses one popup and preserves the real error on desktop an
     await expect(page.locator(".transcription-feedback [role='alert']")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   }
-  expect(recoveryCalls).toBe(6); expect(paidStarts).toBe(0);
+  expect(recoveryCalls).toBe(12); expect(paidStarts).toBe(0);
+  for (const body of recoveryBodies) expect(body).toMatchObject({ operationId: recordingId, action: "resume" });
 });
 
 test("audio empty, loading, success and error keep tabs and chat composer in place", async ({ page }, info) => {

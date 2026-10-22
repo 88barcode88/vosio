@@ -110,6 +110,7 @@ for (const theme of ["light", "dark"] as const) {
       } } });
     });
     await page.goto(fixturePath("recording-layout-e2e", { mode: "chat" }));
+    await page.locator(".recording-chat-model-settings > summary").click();
     const picker = page.locator(".recording-chat-content .ai-model-picker");
     await expect(picker.getByRole("combobox")).toBeEnabled();
     await assertPickerGeometry(page, picker);

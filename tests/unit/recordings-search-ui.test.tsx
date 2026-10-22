@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import type { RecordingRow, RecordingSearchResult } from "@/lib/recordings/types";
 import { RecordingsManager } from "@/components/workspace/recordings-manager";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
@@ -241,7 +242,9 @@ describe("recordings indexed search UI", () => {
     expect(markup).toContain("Nalezeno 51 nahrávek. Strana 2 z 3.");
     expect(markup).toContain('aria-current="page" href="/recordings">Celkem <strong>1</strong>');
     expect(markup).toContain('href="/recordings?status=completed">Dokončeno <strong>1</strong>');
-    expect(markup).toContain("Acme · CRM · Calls");
+    expect(markup).toContain('aria-label="Klient">Klient: Acme');
+    expect(markup).toContain('aria-label="Projekt">Projekt: CRM');
+    expect(markup).toContain("Složka: Calls");
     expect(markup).toContain("<mark>Lucern</mark>");
     expect(markup).toContain(
       "/recordings/recording-1?tab=transcript&amp;at=1200&amp;highlight=Lucern"
@@ -249,6 +252,35 @@ describe("recordings indexed search UI", () => {
     expect(markup).toContain('aria-label="Stránkování výsledků hledání"');
     expect(markup).not.toContain("recording-client-group");
     expect(markup).not.toContain("recordings-table-head");
+  });
+
+  it.each([false, true])("separates client-only and restricted metadata in search=%s", (search) => {
+    const renderAssignment = (clientId: string | null, projectId: string | null, projectName: string | null) => {
+      const recording = {
+        id: "recording-1", title: "Call", client_id: clientId, project_id: projectId,
+        project_name: projectName, folder_id: "folder-1", tag_ids: ["tag-1"],
+        created_at: organizationTimestamp, source_type: "upload", status: "completed"
+      } as RecordingRow;
+      const result = {
+        id: recording.id, title: recording.title, clientId, projectId, projectName, folderId: "folder-1",
+        createdAt: organizationTimestamp, sourceType: "upload", status: "completed"
+      } as RecordingSearchResult;
+      return renderToStaticMarkup(createElement(RecordingsManager, {
+        errorCode: null, filters, organizationOptions: { ...organizationOptions,
+          tags: [{ ...organizationBase, id: "tag-1", name: "Priorita" }] },
+        recordings: search ? [] : [recording], searchQuery: search ? "Call" : "",
+        ...(search ? { searchPage: { page: 1, pageSize: 25, results: [result], totalCount: 1 } } : {})
+      }));
+    };
+    const clientOnly = renderAssignment("client-1", null, null);
+    expect(clientOnly).toMatch(/aria-label="Klient"[^>]*>(?:Klient: )?Acme</u);
+    expect(clientOnly).toMatch(/aria-label="Projekt"[^>]*>(?:Projekt: )?—</u);
+    expect(clientOnly).toContain("Calls");
+    if (!search) expect(clientOnly).toContain("Priorita");
+    const restricted = renderAssignment("private-client", "shared-project", "Shared project");
+    expect(restricted).toMatch(/aria-label="Klient"[^>]*>(?:Klient: )?Nepřístupné</u);
+    expect(restricted).toMatch(/aria-label="Projekt"[^>]*>(?:Projekt: )?Shared project</u);
+    expect(restricted).not.toContain("private-client");
   });
 
   it("renders a sanitized search failure as an alert and no misleading empty group", () => {

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { resolveTeamRole } from "@/lib/team/queries.server";
 import { WorkspaceLoading } from "@/components/workspace/loading";
 import { getInstallationStatus } from "@/lib/installation-status.server";
 import { getRecordingStorageConfig } from "@/lib/recordings/storage-config.server";
@@ -52,6 +53,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
   return (
     <VosioWorkspace
+      canManageTeam={Boolean(await resolveTeamRole(supabase))}
       aiOutputs={[]}
       installationStatus={installationStatus}
       recordings={[]}

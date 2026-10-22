@@ -15,7 +15,7 @@ const loaders = { recordings: RecordingsLoading, ai: AiLoading, settings: Settin
   templates: TemplatesLoading, trash: TrashLoading, documentation: DocumentationLoading };
 
 // DelayedWorkspace reproduces the real route fallback without authenticated data or mutations.
-async function DelayedWorkspace({ view }: { view: WorkspaceView }) {
+async function DelayedWorkspace({ view }: { view: Exclude<WorkspaceView, "team"> }) {
   await new Promise((resolve) => setTimeout(resolve, 4_000));
   return <VosioWorkspace aiOutputs={[]} recordings={[]} transcripts={[]} userEmail="fixture@example.invalid" view={view} disableAccountSecurity settingsFormDisabled />;
 }
@@ -27,7 +27,7 @@ export default async function WorkspaceLoadingE2EPage({ searchParams }: {
   const { scope, view, state } = await searchParams;
   if (process.env.NODE_ENV !== "development" || !scope || !/^[0-9a-f]{12}$/.test(scope)
     || !view || !Object.hasOwn(loaders, view)) notFound();
-  const workspaceView = view as WorkspaceView;
+  const workspaceView = view as Exclude<WorkspaceView, "team">;
   if (state === "error") return <WorkspaceErrorFixture view={workspaceView} />;
   const Loading = loaders[workspaceView];
   return <Suspense fallback={<Loading />}><DelayedWorkspace view={workspaceView} /></Suspense>;

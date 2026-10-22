@@ -15,6 +15,7 @@ přiřazení k projektu samo obsah nesdílí a pozvání člena nezveřejní sta
 | Čtenář | Celé povolené audio, přepis, uložené AI výstupy a úkoly |
 | Editor | Čtení, přidání nahrávky do projektu, název, jméno/role mluvčího, stav úkolu |
 | Zakladatel projektu | Správa členů, projektových pozvánek a sdíleného projektového obsahu |
+| Správce celé instalace | Správa vlastního seznamu lidí a již spravovatelných rozsahů; role sama nedává cizí obsah |
 | Vlastník samostatné nahrávky | Správa přesného sdílení a pozvánek jejího obsahu |
 
 Editor ani čtenář nespouštějí AI/chat, nespravují přístup a nemažou ani neobnovují
@@ -25,8 +26,23 @@ a audit se nesdílí. Autorství není trvalé oprávnění.
 ## Viditelnost a vytvoření
 
 - Soukromá: pouze vlastník, i uvnitř cizího projektu.
-- Členové projektu: současní a budoucí aktivní členové projektu.
-- Vybraní lidé: pouze přesně určené grants; členství projektový výběr nerozšiřuje.
+- Členové projektu: současní a budoucí aktivní členové projektu, případně další výslovné přesné nebo klientské/složkové granty.
+- Vybraní lidé: výslovné přesné nebo klientské/složkové granty; členství projektový výběr nerozšiřuje.
+
+## Tým, klienti a složky
+
+Tým je dostupný instalačnímu správci a zakladateli projektu; běžný člen nemá
+správcovský přehled ani přes přímou adresu/API. Správce instalace je výslovný
+neveřejný registr účtů bez bootstrapu. Seznam lidí je vlastní, ne globální adresář.
+Zakladatel vidí a spravuje pouze lidi a pozvánky svých projektů.
+
+Ve variantě A je vlevo seznam lidí a čekajících pozvánek, vpravo detail aktivních
+přístupů. Na mobilu je Tým pod Více a detail nabízí návrat. Pozvat lze na nahrávku,
+projekt, klienta nebo složku. Pending pozvánka nedává přístup; vznikne až přijetím.
+Klient/složka zahrnují současné i budoucí nesoukromé nahrávky v autorizované hranici.
+Soukromé nahrávky se vždy vynechají, včetně nahrávek autora grantu. Přesun mění
+účinek dynamického grantu; odebrání jedné cesty neruší jiný platný přístup.
+Podrobný kontrakt a rollout hranice: [team-access](../api/team-access.md).
 
 Live relace a každá položka upload fronty mají neměnný snapshot projektu,
 viditelnosti, příjemců a request ID již před vytvořením draftu. Retry nesmí použít

@@ -103,14 +103,16 @@ async function deliverReserved(client: InvitationClient, rawReceipt: unknown, to
 // createInvitation persists a pending invitation and binds its receipt before sending any email.
 export async function createInvitation(client: InvitationClient, actor: string, input: InvitationCreate, origin: string, deliver: Delivery = deliverInvitation) {
   const value = invitationCreateSchema.parse(input);
-  const projectId = value.scope === "standalone" ? null : value.projectId.toLowerCase();
-  const recordingIds = value.scope === "project" ? [] : value.recordingIds;
+  const scoped = value.scope === "client" || value.scope === "folder";
+  const projectId = value.scope === "standalone" ? null : value.projectId?.toLowerCase() ?? null;
+  const recordingIds = "recordingIds" in value ? value.recordingIds : [];
   enforceBudget(actorLimit(actor));
-  await preflightCreate(client, projectId, recordingIds);
-  consumeSharedBudget(projectId ?? [...recordingIds].sort().join(","), value.email);
+  if (scoped) await rpc(client, "assert_team_invitation_scope_v1", { p_scope_kind: value.scope, p_scope_id: value.scopeId, p_project_id: projectId });
+  else await preflightCreate(client, projectId, recordingIds);
+  consumeSharedBudget(scoped ? `${value.scope}:${value.scopeId}:${projectId ?? ""}` : projectId ?? [...recordingIds].sort().join(","), value.email);
   const token = randomBytes(32).toString("base64url");
   const hash = hashInvitationToken(token);
-  const id = z.uuid().parse(await rpc(client, "create_recording_invitation_v1", { p_token_hash: hash, p_email: value.email, p_role: value.role, p_scope: value.scope === "project" ? "project" : "recordings", p_project_id: projectId, p_recording_ids: recordingIds, p_expires_at: new Date(Date.now() + INVITATION_TTL_MS).toISOString() }));
+  const id = z.uuid().parse(await rpc(client, scoped ? "create_team_scope_invitation_v1" : "create_recording_invitation_v1", { p_token_hash: hash, p_email: value.email, p_role: value.role, p_scope: scoped ? value.scope : value.scope === "project" ? "project" : "recordings", p_project_id: projectId, p_recording_ids: recordingIds, p_expires_at: new Date(Date.now() + INVITATION_TTL_MS).toISOString(), ...(scoped ? { p_scope_id: value.scopeId } : {}) }));
   const receipt = await rpc(client, "get_recording_invitation_delivery_v1", { p_invitation_id: id, p_expected_token_hash: hash });
   return deliverReserved(client, receipt, token, origin, deliver);
 }

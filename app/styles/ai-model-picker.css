@@ -1,6 +1,6 @@
 .ai-model-picker {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   container-type: inline-size;
 }
@@ -15,12 +15,12 @@
 }
 
 .ai-model-picker .ai-model-picker-scope {
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .ai-model-picker .ai-model-picker-field {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   color: var(--text-secondary);
   font-size: 0.75rem;
@@ -48,9 +48,9 @@
 
 .ai-model-picker-reasoning {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  margin-top: 12px;
+  margin-top: 4px;
 }
 
 .ai-model-picker-reasoning-heading {
@@ -58,7 +58,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   font-size: 0.75rem;
 }
 
@@ -133,7 +133,7 @@
 .ai-reasoning-choices {
   display: grid;
   grid-template-columns: repeat(5, minmax(44px, 1fr));
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -213,4 +213,64 @@
   .ai-model-picker .ai-reasoning-choices button {
     transition: none;
   }
+}
+
+/* Detail actions reuse Export's 30px visible surface inside a separate 44px target. */
+.tab-panel :is(.ai-job-row button, .ai-job-cleanup-all, .ai-state button, .timeline-list .secondary-inline-action, .speaker-summary-feedback button, .recording-chat-composer button[type="submit"], .recording-chat-reconcile) {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  max-width: 100%;
+  gap: 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: .75rem;
+  padding: 0 10px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.tab-panel :is(.ai-job-row button, .ai-job-cleanup-all, .ai-state button, .timeline-list .secondary-inline-action, .speaker-summary-feedback button, .recording-chat-composer button[type="submit"], .recording-chat-reconcile)::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 7px 0;
+  border: 1px solid var(--border);
+  border-radius: inherit;
+  background: var(--surface);
+}
+
+.tab-panel :is(.ai-job-row button, .ai-job-cleanup-all, .ai-state button, .timeline-list .secondary-inline-action, .speaker-summary-feedback button, .recording-chat-composer button[type="submit"], .recording-chat-reconcile):hover:not(:disabled)::before {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+}
+
+.tab-panel :is(button, summary):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.tab-panel .speaker-summary-form { align-items: center; padding: 7px 10px; }
+.tab-panel .speaker-summary-identity { align-content: center; }
+.speaker-summary-status { display: grid; align-content: center; min-width: 0; gap: 2px; }
+.speaker-summary-status .speaker-summary-feedback { grid-column: auto; min-height: 0; }
+.tab-panel .speaker-summary-feedback:has(button) { flex-wrap: wrap; }
+.recording-chat-composer-controls > .recording-chat-model-settings { flex: 1 1 260px; min-width: 0; }
+.recording-chat-model-settings > .ai-model-picker { padding: 8px 10px; }
+.recording-chat-model-settings summary strong { overflow-wrap: anywhere; white-space: normal; }
+.tab-panel .ai-settings-details summary { gap: 6px; padding-block: 4px; }
+.tab-panel .ai-tab-actions { gap: 6px; padding: 10px; }
+.tab-panel .ai-job-row { padding-block: 3px; gap: 2px 8px; }
+
+.tab-panel :is(.ai-job-row button, .ai-job-cleanup-all, .ai-state button, .timeline-list .secondary-inline-action, .speaker-summary-feedback button, .recording-chat-composer button[type="submit"], .recording-chat-reconcile):disabled {
+  cursor: not-allowed;
+  opacity: .55;
 }

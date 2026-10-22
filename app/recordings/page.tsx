@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { resolveTeamRole } from "@/lib/team/queries.server";
 import {
   canonicalizeRecordingOrganizationFilters,
   createRecordingSearchParams,
@@ -230,6 +231,7 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
 
   return (
     <VosioWorkspace
+      canManageTeam={Boolean(await resolveTeamRole(supabase))}
       aiOutputs={[]}
       recordings={recordings}
       recordingsError={(Array.isArray(params.error) ? params.error[0] : params.error) ?? null}

@@ -204,6 +204,19 @@ describe("RecordingOrganizationEditor", () => {
     expect(projectSelect?.disabled).toBe(false);
   });
 
+  it("includes both permitted projects for the selected client after options refresh", async () => {
+    const twoProjects = { ...options, projects: options.projects.map((project) => ({ ...project, client_id: clientA })) };
+    await act(async () => root.render(<RecordingOrganizationEditor organization={organization} options={twoProjects}
+      recording={createRecording()} saveAction={vi.fn()} />));
+    await clickButton("Upravit zařazení");
+    const projectChoices = () => Array.from(container.querySelector<HTMLSelectElement>('select[name="projectId"]')!.options).map((item) => item.textContent);
+    expect(projectChoices()).toEqual(["Bez projektu", "Projekt A", "Projekt B"]);
+    await act(async () => root.render(<RecordingOrganizationEditor organization={organization}
+      options={{ ...twoProjects, projects: twoProjects.projects.map((project) => project.id === projectB ? { ...project, name: "Přejmenovaný projekt" } : project) }}
+      recording={createRecording()} saveAction={vi.fn()} />));
+    expect(projectChoices()).toEqual(["Bez projektu", "Projekt A", "Přejmenovaný projekt"]);
+  });
+
   it("clears every assignment and supports multiple controlled tags", async () => {
     await act(async () => root.render(
       <RecordingOrganizationEditor organization={organization} options={options} recording={createRecording()} saveAction={vi.fn()} />

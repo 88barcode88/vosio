@@ -18,7 +18,9 @@ import type { AiOutputView } from "@/lib/ai/types";
 import type { RecordingMarkerRow, RecordingMarkerType } from "@/lib/recording-markers/types";
 import { formatRecordingDate } from "@/lib/recordings/types";
 import type { TranscriptRow } from "@/lib/transcripts/types";
-import type { ManualAiJobStatus, ManualAiOutputMetadata } from "@/lib/ai/manual-job-state";
+import { getManualAiJobDisplayStatus, type ManualAiJobStatus, type ManualAiJobSummary, type ManualAiOutputMetadata } from "@/lib/ai/manual-job-state";
+import type { ManualAiCleanupClassification } from "@/lib/ai/manual-job-cleanup-contract";
+import { getManualAiFailureMessage } from "@/lib/ai/provider-errors";
 import { getActiveAiModelOption, type AiReasoningEffort } from "@/lib/model-options";
 
 const markerTypeLabels: Record<RecordingMarkerType, string> = {
@@ -44,12 +46,15 @@ function formatMarkerOffset(offsetMs: number) {
 export function TimelineContent({
   activeTranscript,
   aiOutputs,
+  classifications = [],
   defaultAiModel,
   defaultReasoningEffort,
   isLoaded = true,
+  jobs = [],
   markers,
   onJobAccepted,
   onReload,
+  onOpenAi,
   onOpenMarker,
   onOutputsRemoved,
   outputMetadata,
@@ -58,12 +63,15 @@ export function TimelineContent({
 }: {
   activeTranscript: TranscriptRow | null;
   aiOutputs: AiOutputView[];
+  classifications?: ManualAiCleanupClassification[];
   defaultAiModel: string;
   defaultReasoningEffort?: AiReasoningEffort;
   isLoaded?: boolean;
+  jobs?: ManualAiJobSummary[];
   markers: RecordingMarkerRow[];
   onJobAccepted?: (job: { id: string; status: ManualAiJobStatus }, processingType: string) => void;
   onReload?: () => Promise<void>;
+  onOpenAi?: () => void;
   onOpenMarker: (target: TranscriptTarget, recordingId: string) => void;
   onOutputsRemoved?: (outputIds: string[]) => void;
   outputMetadata?: ManualAiOutputMetadata[];
@@ -73,7 +81,28 @@ export function TimelineContent({
   const { capabilities } = useRecordingCapabilities();
   const pathname = usePathname();
   const processing = useAiProcessingRun(activeTranscript?.id ?? null, onJobAccepted);
-  const timelinePending = processing.isRunning("timeline_chapters");
+  const timelineJobs = jobs.filter((job) => job.processing_type === "timeline_chapters");
+  const classifiedJobs = timelineJobs.map((job) => ({
+    job,
+    status: getManualAiJobDisplayStatus(job),
+    classification: classifications.find((classification) => classification.job_id === job.id)
+  }));
+  const needsAttention = classifiedJobs.some(({ job, status, classification }) =>
+    (job.status === "queued" || job.status === "running")
+    && (status === "stalled" || classification?.poll_eligible === false));
+  const timelinePending = processing.isRunning("timeline_chapters")
+    || classifiedJobs.some(({ status, classification }) =>
+      (status === "queued" || status === "running") && classification?.poll_eligible !== false);
+  const showRecovery = needsAttention && !timelinePending;
+  const latestJob = timelineJobs.reduce<ManualAiJobSummary | null>((latest, job) =>
+    !latest || job.created_at > latest.created_at ? job : latest, null);
+  const timelineMessage = timelinePending
+    ? processing.isRunning("timeline_chapters") ? processing.message ?? "AI generuje výstup…" : "Časová osa se zpracovává na serveru."
+    : showRecovery ? "Stav časové osy vyžaduje kontrolu. Otevřete stav AI požadavků pro bezpečné pokračování."
+    : latestJob?.status === "failed" ? getManualAiFailureMessage(latestJob.failure_code)
+    : latestJob?.status === "cancelled" ? "Vytváření časové osy bylo zastaveno."
+    : latestJob?.status === "done" ? "Zpracování časové osy je dokončené."
+    : processing.message;
   const timelineOutput = useMemo(() => getTimelineOutput(aiOutputs), [aiOutputs]);
   const timelineArtifact = outputMetadata?.find((output) => output.processing_type === "timeline_chapters") ?? timelineOutput;
   const chapters = useMemo(() => getPreferredTimelineChapters({
@@ -140,6 +169,12 @@ export function TimelineContent({
         </section>
       ) : null}
 
+      {chapters.length > 0 && timelineMessage ? (
+        <p className="ai-state" role="status" aria-live="polite">
+          {timelineMessage}
+          {showRecovery && onOpenAi ? <button className="secondary-inline-action" onClick={onOpenAi} type="button">Otevřít stav AI</button> : null}
+        </p>
+      ) : null}
       {stateError && chapters.length > 0 ? <p className="ai-state" role="alert">
         {stateError} <button className="secondary-inline-action" onClick={() => void onReload?.()} type="button">Zkusit znovu</button>
       </p> : null}
@@ -163,13 +198,13 @@ export function TimelineContent({
       ) : chapters.length === 0 ? (
         <div className="transcript-empty">
           <AudioLines size={22} />
-          <strong>Vytvořte obsahovou časovou osu</strong>
+          <strong>{timelinePending ? "Časová osa se připravuje" : showRecovery ? "Časová osa vyžaduje kontrolu" : "Vytvořte obsahovou časovou osu"}</strong>
           <p>Časová osa vznikne z AI zpracování nad hotovým přepisem.</p>
           <button
             aria-describedby="timeline-generation-state"
             className="secondary-inline-action"
-            disabled={timelinePending || !capabilities.runPersonalAi}
-            onClick={() => void processing.run({
+            disabled={timelinePending || (showRecovery ? !onOpenAi : !capabilities.runPersonalAi)}
+            onClick={() => showRecovery ? onOpenAi?.() : void processing.run({
               model: defaultAiModel,
               processingType: "timeline_chapters",
               ...(getActiveAiModelOption(defaultAiModel)?.provider === "openai" ? { reasoningEffort: defaultReasoningEffort ?? "medium" } : {})
@@ -177,7 +212,7 @@ export function TimelineContent({
             type="button"
           >
             <Sparkles aria-hidden="true" size={16} />
-            <span>{timelinePending ? "Vytvářím časovou osu…" : "Vytvořit časovou osu"}</span>
+            <span>{timelinePending ? "Vytvářím časovou osu…" : showRecovery ? "Otevřít stav AI" : "Vytvořit časovou osu"}</span>
           </button>
           <p
             className="timeline-generation-state"
@@ -185,7 +220,7 @@ export function TimelineContent({
             role="status"
             aria-live="polite"
           >
-            {processing.message ?? "Výsledek se uloží do této nahrávky."}
+            {timelineMessage ?? "Výsledek se uloží do této nahrávky."}
           </p>
         </div>
       ) : (

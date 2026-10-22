@@ -11,6 +11,7 @@ import { signOutAction } from "@/lib/auth/actions";
 import {
   documentationNavigationItem,
   primaryNavigationItems,
+  teamNavigationItem,
   utilityNavigationItems,
   VOSIO_SUPPORT_URL,
   type NavigationHrefOverrides,
@@ -84,10 +85,12 @@ export function isNavigationItemActive(
 // WorkspaceNavigation renders only the primary desktop destinations with route pending feedback.
 export function WorkspaceNavigation({
   activeView,
+  canManageTeam = false,
   compact = false,
   hrefOverrides
 }: {
   activeView: WorkspaceView;
+  canManageTeam?: boolean;
   compact?: boolean;
   hrefOverrides?: NavigationHrefOverrides;
 }) {
@@ -101,7 +104,7 @@ export function WorkspaceNavigation({
   return (
     <nav className="nav-list" aria-label="Hlavní sekce">
       <NewRecordingNavigationLink compact={compact} hrefOverrides={hrefOverrides} />
-      {primaryNavigationItems.map((item) => {
+      {[...primaryNavigationItems, ...(canManageTeam ? [teamNavigationItem] : [])].map((item) => {
         const isActive = isNavigationItemActive(item, activeView, pathname);
         const isPending = pendingHref === item.href;
         const className = [
@@ -204,6 +207,7 @@ function MobileAccount({ userEmail }: { userEmail: string }) {
 // MobileMoreDrawer makes non-primary destinations and utilities reachable without widening bottom navigation.
 function MobileMoreDrawer({
   activeView,
+  canManageTeam = false,
   hrefOverrides,
   onClose,
   open,
@@ -211,6 +215,7 @@ function MobileMoreDrawer({
   userEmail
 }: {
   activeView: WorkspaceView;
+  canManageTeam?: boolean;
   hrefOverrides?: NavigationHrefOverrides;
   onClose: () => void;
   open: boolean;
@@ -218,7 +223,7 @@ function MobileMoreDrawer({
   userEmail: string;
 }) {
   const pathname = usePathname();
-  const drawerItems = [utilityNavigationItems[0], documentationNavigationItem];
+  const drawerItems = [...(canManageTeam ? [teamNavigationItem] : []), utilityNavigationItems[0], documentationNavigationItem];
 
   return (
     <Drawer className="mobile-more-drawer" label="Další možnosti" onClose={onClose} open={open}>
@@ -276,10 +281,12 @@ function MobileMoreDrawer({
 // MobileNav renders four direct routes and an accessible More drawer at the mobile shell breakpoint.
 export function MobileNav({
   activeView,
+  canManageTeam = false,
   hrefOverrides,
   userEmail = ""
 }: {
   activeView: WorkspaceView;
+  canManageTeam?: boolean;
   hrefOverrides?: NavigationHrefOverrides;
   userEmail?: string;
 }) {
@@ -287,8 +294,8 @@ export function MobileNav({
   const [moreReady, setMoreReady] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [pendingHref, setPendingHref] = useState<WorkspaceNavigationHref | null>(null);
-  const moreIsActive = activeView === "trash" || activeView === "documentation";
-  const moreIsPending = pendingHref === "/trash" || pendingHref === "/documentation";
+  const moreIsActive = activeView === "trash" || activeView === "documentation" || activeView === "team";
+  const moreIsPending = pendingHref === "/trash" || pendingHref === "/documentation" || pendingHref === "/team";
 
   // Mark More interactive only after React owns its client event handler.
   useEffect(() => {
@@ -347,6 +354,7 @@ export function MobileNav({
 
       <MobileMoreDrawer
         activeView={activeView}
+        canManageTeam={canManageTeam}
         hrefOverrides={hrefOverrides}
         onClose={() => setMoreOpen(false)}
         open={moreOpen}

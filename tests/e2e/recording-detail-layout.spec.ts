@@ -229,12 +229,17 @@ async function readTimelineActionGeometry(page: Page, buttonName: string) {
     const labelBox = element.querySelector("span")?.getBoundingClientRect() ?? null;
     const stateBox = element.parentElement!.querySelector(".timeline-generation-state")!.getBoundingClientRect();
     const styles = getComputedStyle(element);
+    const paint = getComputedStyle(element, "::before");
+    const label = element.querySelector("span");
+    const labelLineHeight = label ? Number.parseFloat(getComputedStyle(label).lineHeight) : null;
     return {
       borderRadius: styles.borderRadius,
       button: { bottom: buttonBox.bottom, height: buttonBox.height, width: buttonBox.width },
+      paint: { height: buttonBox.height - Number.parseFloat(paint.top) - Number.parseFloat(paint.bottom),
+        borderRadius: paint.borderRadius, borderWidth: paint.borderTopWidth, background: paint.backgroundColor },
       emptyWidth: emptyBox.width,
-      icon: iconBox ? { height: iconBox.height, middle: iconBox.y + (iconBox.height / 2), width: iconBox.width } : null,
-      label: labelBox ? { middle: labelBox.y + (labelBox.height / 2) } : null,
+      icon: iconBox ? { height: iconBox.height, middle: iconBox.y + (iconBox.height / 2), right: iconBox.right, width: iconBox.width } : null,
+      label: labelBox ? { height: labelBox.height, left: labelBox.left, lineHeight: labelLineHeight, middle: labelBox.y + (labelBox.height / 2) } : null,
       overflows: element.scrollWidth > element.clientWidth + 0.5,
       stateTop: stateBox.top,
       whiteSpace: styles.whiteSpace
@@ -443,8 +448,13 @@ for (const width of [375, 768, 901, 1024]) {
       const idle = await readTimelineActionGeometry(page, "Vytvořit časovou osu");
       expect(idle.button.height).toBeGreaterThanOrEqual(44);
       expect(idle.button.width).toBeLessThan(idle.emptyWidth);
-      expect(idle.borderRadius).toBe("6px");
-      expect(idle.whiteSpace).toBe("nowrap");
+      expect(idle.borderRadius).toBe("5px");
+      expect(idle.button.width).toBeGreaterThanOrEqual(44);
+      expect(idle.paint).toMatchObject({ height: 30, borderRadius: "5px", borderWidth: "1px" });
+      expect(idle.paint.background).not.toBe("rgba(0, 0, 0, 0)");
+      expect(idle.whiteSpace).toBe("normal");
+      expect(idle.label!.height).toBeLessThanOrEqual(idle.label!.lineHeight! + 0.5);
+      expect(idle.icon!.right).toBeLessThanOrEqual(idle.label!.left);
       expect(idle.overflows).toBe(false);
       expect(idle.icon).toMatchObject({ height: 12, width: 12 });
       expect(idle.icon!.middle).toBeCloseTo(idle.label!.middle, 0);
@@ -457,8 +467,13 @@ for (const width of [375, 768, 901, 1024]) {
       const pending = await readTimelineActionGeometry(page, "Vytvářím časovou osu…");
       expect(pending.button.height).toBeGreaterThanOrEqual(44);
       expect(pending.button.width).toBeLessThan(pending.emptyWidth);
-      expect(pending.borderRadius).toBe("6px");
-      expect(pending.whiteSpace).toBe("nowrap");
+      expect(pending.borderRadius).toBe("5px");
+      expect(pending.button.width).toBeGreaterThanOrEqual(44);
+      expect(pending.paint).toMatchObject({ height: 30, borderRadius: "5px", borderWidth: "1px" });
+      expect(pending.paint.background).not.toBe("rgba(0, 0, 0, 0)");
+      expect(pending.whiteSpace).toBe("normal");
+      expect(pending.label!.height).toBeLessThanOrEqual(pending.label!.lineHeight! + 0.5);
+      expect(pending.icon!.right).toBeLessThanOrEqual(pending.label!.left);
       expect(pending.overflows).toBe(false);
       expect(pending.icon).toMatchObject({ height: 12, width: 12 });
       expect(pending.icon!.middle).toBeCloseTo(pending.label!.middle, 0);
