@@ -87,11 +87,17 @@ try {
   assert.equal(sql(`${auth(fixture.recipient, fixture.recipientSession)} select public.can_read_recording(${lit(fixture.recording)});`).split(/\r?\n/).at(-1), "f", "moved recording must not retain a materialized scope grant");
   sql(`update public.recordings set client_id=${lit(fixture.client)} where id=${lit(fixture.recording)};`);
   assert.equal(sql(`${auth(fixture.recipient, fixture.recipientSession)} select public.can_read_recording(${lit(fixture.recording)});`).split(/\r?\n/).at(-1), "t", "moving back must dynamically recover the still-valid grant");
+  const batchRequest = randomUUID();
+  const batch = `select public.set_team_access_batch_v1(${lit(batchRequest)},${lit(fixture.recipient)},'reader',${lit(JSON.stringify([{ scopeKind: "client", scopeId: fixture.client, projectId: null }]))}::jsonb);`;
+  const auditBefore = Number(sql(`select count(*) from public.recording_sharing_audit where actor_id=${lit(fixture.admin)};`));
+  await race("same_batch_request_serializes_without_duplicate_grants", `${auth(fixture.admin, fixture.session)} ${batch}`, `${auth(fixture.admin, fixture.session)} ${batch}`);
+  assert.equal(sql(`select count(*) from vosio_team_private.access_batch_receipts where actor_id=${lit(fixture.admin)};`), "1", "concurrent replay has one receipt");
+  assert.equal(Number(sql(`select count(*) from public.recording_sharing_audit where actor_id=${lit(fixture.admin)};`)), auditBefore + 1, "concurrent replay cannot perform another mutation");
   await race("administrator_revoke_serializes_and_waiting_grant_rechecks", `update vosio_team_private.installation_administrators set revoked_at=clock_timestamp() where user_id=${lit(fixture.admin)};`, `${auth(fixture.admin, fixture.session)} do $$ begin ${grant.replace(/^select /, "perform ")} raise exception 'removed administrator grant unexpectedly succeeded'; exception when insufficient_privilege then null; end $$;`);
   assert.equal(sql(`${auth(fixture.recipient, fixture.recipientSession)} select public.can_read_recording(${lit(fixture.recording)});`).split(/\r?\n/).at(-1), "f", "unbounded grant invalid after administrator removal");
   console.log("PASS dynamic_move_out_back_and_removed_authority (actual authenticated roles)");
 } finally {
   for (const active of sessions) if (!active.closed) active.child.kill();
   await Promise.allSettled(sessions.map((active) => active.completion));
-  sql(`begin; delete from public.recordings where id=${lit(fixture.recording)}; delete from public.recording_clients where id=${lit(fixture.client)}; delete from auth.sessions where id in (${lit(fixture.session)},${lit(fixture.recipientSession)}); delete from auth.users where id in (${lit(fixture.admin)},${lit(fixture.recipient)}); commit;`);
+  sql(`begin; delete from vosio_team_private.access_batch_receipts where actor_id=${lit(fixture.admin)}; delete from public.recordings where id=${lit(fixture.recording)}; delete from public.recording_clients where id=${lit(fixture.client)}; delete from auth.sessions where id in (${lit(fixture.session)},${lit(fixture.recipientSession)}); delete from auth.users where id in (${lit(fixture.admin)},${lit(fixture.recipient)}); commit;`);
 }

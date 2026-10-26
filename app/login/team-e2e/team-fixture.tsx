@@ -13,8 +13,8 @@ const folderId = "00000000-0000-4000-8000-000000000907";
 // createTeamFixture returns reserved-domain demo identities and all four project-bounded grant paths.
 function createTeamFixture(role: TeamWorkspace["role"]): TeamWorkspace {
   const scopes: TeamWorkspace["scopes"] = [
-    { scopeKind: "recording", scopeId: recordingId, projectId, label: "Úvodní schůzka s velmi dlouhým názvem pro ověření zalamování" },
-    { scopeKind: "project", scopeId: projectId, projectId, label: "Web 2026" },
+    { scopeKind: "recording", scopeId: recordingId, projectId, clientId, folderId, visibility: "private", label: "Úvodní schůzka s velmi dlouhým názvem pro ověření zalamování" },
+    { scopeKind: "project", scopeId: projectId, projectId, clientId, label: "Web 2026" },
     { scopeKind: "client", scopeId: clientId, projectId, label: "Studio Sever" },
     { scopeKind: "folder", scopeId: folderId, projectId, label: "Obchodní hovory" }
   ];
@@ -39,6 +39,14 @@ export function TeamFixture({ role }: { role: TeamWorkspace["role"] }) {
     if (stateRef.current === "error") return new Response("{}", { status: 500 });
     if (path === "/api/team" && !init?.method) return Response.json(stateRef.current === "empty" ? { ...data.current, people: [], invitations: [] } : data.current);
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+    if (path === "/api/team/access/batch" && init?.method === "POST") {
+      const matches = (scope: TeamWorkspace["scopes"][number], candidate: TeamWorkspace["scopes"][number]) => scope.scopeKind === candidate.scopeKind && scope.scopeId === candidate.scopeId && scope.projectId === candidate.projectId;
+      data.current = { ...data.current, people: data.current.people.map(person => person.userId !== body.userId ? person : { ...person, accesses: [
+        ...person.accesses.filter(access => !body.scopes.some((scope: TeamWorkspace["scopes"][number]) => matches(access, scope))),
+        ...body.scopes.map((scope: TeamWorkspace["scopes"][number]) => ({ ...data.current.scopes.find(candidate => matches(candidate, scope))!, role: body.role }))
+      ] }) };
+      return Response.json({ saved: true, count: body.scopes.length });
+    }
     if (path === "/api/team/access") {
       data.current = { ...data.current, people: data.current.people.map(person => person.userId !== body.userId ? person : { ...person, accesses: [
         ...person.accesses.filter(access => !(access.scopeKind === body.scopeKind && access.scopeId === body.scopeId && access.projectId === body.projectId)),

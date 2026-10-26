@@ -1,6 +1,6 @@
 import "server-only";
 import { InvitationError, type InvitationClient } from "@/lib/recording-sharing/invitations.server";
-import { teamAccessIdentitySchema, teamAccessMutationSchema, teamRoleSchema, teamWorkspaceSchema, type TeamAccessIdentity, type TeamAccessMutation } from "./types";
+import { teamAccessBatchMutationSchema, teamAccessIdentitySchema, teamAccessMutationSchema, teamRoleSchema, teamWorkspaceSchema, type TeamAccessBatchMutation, type TeamAccessIdentity, type TeamAccessMutation } from "./types";
 
 // teamRpc keeps all authority in the authenticated database session and hides backend details.
 async function teamRpc(client: InvitationClient, name: string, args: Record<string, unknown> = {}) {
@@ -19,7 +19,7 @@ export async function resolveTeamRole(client: InvitationClient) {
 
 // loadTeamWorkspace accepts only the narrow server projection, never an Auth user directory.
 export async function loadTeamWorkspace(client: InvitationClient) {
-  const result = teamWorkspaceSchema.safeParse(await teamRpc(client, "team_workspace_v1"));
+  const result = teamWorkspaceSchema.safeParse(await teamRpc(client, "team_workspace_v2"));
   if (!result.success) throw new InvitationError(500);
   return result.data;
 }
@@ -29,6 +29,17 @@ export async function saveTeamAccess(client: InvitationClient, input: TeamAccess
   const value = teamAccessMutationSchema.parse(input);
   await teamRpc(client, "set_team_access_v1", { p_scope_kind: value.scopeKind, p_scope_id: value.scopeId, p_project_id: value.projectId, p_user_id: value.userId, p_role: value.role });
   return { saved: true };
+}
+
+// saveTeamAccessBatch confirms one atomic command and rejects incomplete or malformed receipts.
+export async function saveTeamAccessBatch(client: InvitationClient, input: TeamAccessBatchMutation) {
+  const value = teamAccessBatchMutationSchema.parse(input);
+  const result = await teamRpc(client, "set_team_access_batch_v1", {
+    p_request_id: value.requestId, p_user_id: value.userId, p_role: value.role, p_scopes: value.scopes,
+  });
+  if (!result || typeof result !== "object" || !("saved" in result) || result.saved !== true
+    || !("count" in result) || result.count !== value.scopes.length) throw new InvitationError(500);
+  return { saved: true, count: value.scopes.length };
 }
 
 // revokeTeamAccess removes only the named path; remaining grants keep their own authority.

@@ -16,6 +16,18 @@ Výslovný klientský/složkový grant zahrnuje současné i budoucí odpovídaj
 
 Mutace používají původní `recording_sharing_lock_v1`, stejný jako sharing, revokace a organizační assignment. Znovu ověřují session/roli a přesný rozsah v databázi. Operátor při provision/revoke registry musí použít stejný transakční lock. Žádný browser ani service role nedostává přímý přístup k privátním tabulkám.
 
+## Kompaktní výběr více přístupů
+
+Forward `20261026160001_team_scope_picker_batch.sql` přidává níže popsaný batch kontrakt. Při instalaci i upgradu musí být aplikovaný na cíli před novým app buildem; ověřte jeho owner, ACL/RLS a přesná těla funkcí. Původní v1 API/RPC zůstávají kompatibilní. Syntetické permission a concurrency testy nenahrazují cílový apply/postflight.
+
+`GET /api/team` nyní používá `team_workspace_v2`. Pole `scopes` doplňuje nullable `clientId`, `folderId` a `visibility` pouze k již spravovatelným volbám. Cizí osobní taxonomie se maskuje a chybějící metadata nejsou stav Sdílená. Prázdné projekty zůstávají volitelné; složky jsou plochá osobní taxonomie a nemají odvozeného klientského rodiče.
+
+`POST /api/team/access/batch` přijímá `{requestId,userId,role,scopes:[{scopeKind,scopeId,projectId}]}`: 1–100 různých přesných rozsahů, společná reader/editor role, stávající ověřený příjemce. Používá existující verified session, origin a 16 KiB body guard. `set_team_access_batch_v1` pod stejným sharing lockem nejdřív autorizuje celý výběr a potom transakčně použije původní `set_team_access_v1`. Chyba kterékoli položky vrátí celý zápis. Nejde o smyčku HTTP single-grant požadavků.
+
+Úspěch vrací `{saved:true,count}`. Privátní forced-RLS receipt váže actor/request UUID na kanonický payload; stejný požadavek vrátí historické potvrzení bez opětovného vytvoření odebraných grantů, jiný payload se stejným UUID se odmítne. UI před odesláním zachytí UUID, příjemce a celý výběr. Po síťové chybě/5xx/neplatném potvrzení zachová a uzamkne draft a nabízí ověření stejného požadavku; až po potvrzeném reloadu zobrazuje aktuální přístupy. Recovery draft žije v paměti komponenty, nikoli napříč reloadem stránky. Receipt není tvrzení o dnešním oprávnění.
+
+Soukromé nahrávky rodičovský grant nadále vynechává. Výslovná recording volba používá existující sharing pravidla a ukazuje aktuální Soukromá i souhrnný počet a příjemce. Klient/složka zahrnují nesoukromé nahrávky v dané hranici, včetně selected; samotné projektové členství zahrnuje pouze project-visible. Checkbox rodiče nevytváří skryté exact granty potomků. Odebrání dál používá původní přesnou DELETE identitu a výslovné potvrzení.
+
 ## Preflight a návrat
 
 Před samostatně autorizovaným nasazením ověřit skutečnou definici/owner/BYPASSRLS původních helperů, všech prerequisite migrací včetně `mcp_auth_session_active_v1`, přímé ACL a forced RLS. Neopravovat remote ledger automaticky. Aplikovat forward pod stejným trusted vlastníkem jako sharing helpery v jedné transakci s bounded lock/statement timeout. Neprovádět bootstrap administrátora bez výslovně určeného ověřeného účtu a nového souhlasu.

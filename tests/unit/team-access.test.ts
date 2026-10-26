@@ -29,7 +29,7 @@ describe("team session RPC boundaries", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(workspace);
     expect(response.headers.get("cache-control")).toContain("no-store");
-    expect(mocks.rpc).toHaveBeenCalledWith("team_workspace_v1", {});
+    expect(mocks.rpc).toHaveBeenCalledWith("team_workspace_v2", {});
   });
   it("preserves database denial for member, foreign founder and removed administrator", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "42501", message: "private backend data" } });
