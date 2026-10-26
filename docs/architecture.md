@@ -1,5 +1,10 @@
 # Architecture
 
+Invitation email configuration is versioned in `supabase/templates/`, shared by
+local CLI Auth and the explicit hosted `setup:auth` installer. It preserves the
+direct application-token plus email-OTP contract; SQL migrations do not configure
+hosted Auth. [Installation and upgrade](api/invitation-email-setup.md).
+
 ## Tým a oprávnění
 
 Tým používá variantu A se seznamem osob a detailem přístupů; na mobilu patří pod Více. Server každé chráněné stránky načítá aktuální `team_authority_v1` pro navigaci. Samotná stránka i API vynucují roli a rozsah znovu. Správce instalace má výslovný privátní registr bez bootstrapu; zakladatel spravuje své projekty. Seznam je osobní, nikoli globální Auth adresář, a role správce nedává implicitní přístup k cizímu obsahu.

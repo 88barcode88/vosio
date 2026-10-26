@@ -1,0 +1,1 @@
+export function configureInvitationEmail(options: { projectRef: string; webOrigin: string; managementToken: string; mode?: "check" | "apply" }, fetcher?: typeof fetch): Promise<{ projectRef: string; webOrigin: string; mode: "check" | "apply"; changedFields: string[]; configured: boolean }>;

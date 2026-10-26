@@ -82,15 +82,19 @@ No public signup route or `signUp` call is introduced. Supabase public signup mu
 remain disabled on the actual target; its live configuration has not been checked.
 
 The delivery contract intentionally uses email OTP entry, because admin invite
-does not support a recipient-browser PKCE verifier. Before any rollout, both
-Supabase **Invite user** and **Magic link** templates must be configured and tested
-on an isolated target. Each template must include the recipient's `{{ .Token }}`
+does not support a recipient-browser PKCE verifier. Before any rollout, configure
+both Supabase **Invite user** and **Magic link** templates with the bundled
+`npm run setup:auth` command and verify a newly delivered email. Local CLI Auth
+loads the same templates from `supabase/config.toml`. Each template includes the recipient's `{{ .Token }}`
 verification code and an HTML-escaped link to **`{{ .RedirectTo }}`**. The supplied
 destination is `/invitations/accept#token=<application token>&type=invite|email`.
 Do not use `{{ .ConfirmationURL }}` for this flow: default implicit Auth callbacks
 do not preserve this application fragment/OTP contract. The application URL must
-be in the target's redirect allowlist. Template/config changes require separate
-approval; none are applied by this source implementation.
+be in the target's redirect allowlist. The explicit setup command applies only
+the narrow invitation settings; SQL migrations do not configure hosted Auth.
+Template/config changes require authorization for the selected target.
+See [portable Auth setup](invitation-email-setup.md) for installation, upgrade,
+self-hosting and read-back checks. Existing emails require a bounded resend.
 
 The acceptance shell is public but reveals no account/project/recording metadata.
 `verifyInvitationIdentityAction` accepts only email/invite OTP types, establishes
