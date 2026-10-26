@@ -5,6 +5,7 @@ import { reconcileManualAiJob } from "@/lib/ai/manual-reconciliation.server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
+import { assertInvitationOrigin } from "@/lib/recording-sharing/invitation-http.server";
 
 // Next requires a statically analyzable literal; the runtime contract test locks it to the shared budget.
 export const maxDuration = 300;
@@ -15,8 +16,9 @@ const requestBodySchema = z.object({
 });
 type RouteContext = { params: Promise<{ transcriptId: string }> };
 
-// POST reconciles one exact manual job only after request-session ownership verification.
+// POST requires the browser origin and session ownership before reconciling one exact manual job.
 export async function POST(request: NextRequest, context: RouteContext) {
+  try { assertInvitationOrigin(request); } catch { return NextResponse.json({ error: "Požadavek není povolený." }, { status: 403 }); }
   const params = routeParamsSchema.safeParse(await context.params);
   const body = requestBodySchema.safeParse(await request.json().catch(() => null));
   if (!params.success || !body.success) {

@@ -28,7 +28,7 @@ const jobId = "00000000-0000-4000-8000-000000000942";
 function post(action: "interrupt" | "reconcile") {
   return POST(new NextRequest(`https://vosio.test/api/transcripts/${transcriptId}/manual-ai/reconcile`, {
     body: JSON.stringify({ action, jobId }),
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Origin: "https://vosio.test" },
     method: "POST"
   }), { params: Promise.resolve({ transcriptId }) });
 }

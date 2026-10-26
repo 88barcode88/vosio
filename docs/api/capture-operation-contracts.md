@@ -1,5 +1,11 @@
 # Atomic capture and durable async transcription
 
+## Browser completion presentation
+
+The persistent browser recorder may navigate to a confirmed accessible draft before upload or transcript finalization completes. Local completion presentation carries only the exact recording ID, phase, safe message and `audioConfirmed`; it does not grant access or replace a server receipt. Generation fences and remote-before-local safety cleanup are unchanged.
+
+Blocked operation recovery uses the existing manager-authorized `POST .../transcription/recover` with `{operationId,requestId,action:"resume"}`. Automatic lookup is bounded to three attempts, reuses the same request identity for that lookup, and never sends `action:"stop"` or creates a replacement transcription. Unconfirmed provider submission remains reserved; starting a new paid attempt still requires the existing explicit closure/start protocol. Reload may resume the same existing operation but must not create a new paid attempt. Live target behavior and migration compatibility require separate authorized preflight; these source changes do not prove deployed behavior.
+
 Contract: base migration `20260923010000_add_capture_operation_contracts.sql` after `20260923000000`, with additive `20261005020000_complete_saved_transcript_and_dispatch.sql`, `20261006122518_add_transcription_recovery.sql` and `20261006140000_add_transcription_recovery_read.sql`. Target state and application deployment must be verified separately.
 
 ## Manager recovery of the original Soniox operation

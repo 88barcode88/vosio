@@ -200,3 +200,15 @@
   .recordings-inbox .recordings-row-main { min-height: 80px; }
   .recordings-inbox .recordings-row:has(.recording-sharing-checkbox, .recording-sharing-checkbox-placeholder) > .recordings-row-actions { grid-column: 3; }
 }
+
+/* The row keeps client and project separate while retaining a flexible title column. */
+.recordings-inbox { --recordings-main-columns: minmax(160px, 1fr) minmax(80px, 120px) minmax(80px, 140px) 115px 65px; }
+.recording-name-organization-sections { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.recording-name-organization-sections > * + * { border-top: 1px solid var(--border); padding-top: 12px; }
+.recording-name-organization-sections h3 { margin: 0 0 8px; font-size: .8125rem; }
+.recording-name-organization-sections .recording-title-form { position: static; width: 100%; padding: 0; border: 0; box-shadow: none; }
+.recording-name-organization-sections .recording-organization-summary { display: block; }
+@container recordings-inbox (max-width:680px) {
+  .recordings-inbox .recordings-row-organization::before { content: attr(aria-label) ": "; color: var(--text-secondary); }
+  .recordings-inbox .recordings-row-organization { overflow-wrap: anywhere; }
+}

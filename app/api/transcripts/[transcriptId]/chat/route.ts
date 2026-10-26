@@ -10,6 +10,7 @@ import {
 import { aiModelIds, aiReasoningEfforts, legacyAiModelOptions } from "@/lib/model-options";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { assertInvitationOrigin } from "@/lib/recording-sharing/invitation-http.server";
 
 const routeParamsSchema = z.object({ transcriptId: z.uuid() });
 const requestBodySchema = z.object({
@@ -79,8 +80,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 }
 
-// POST validates the narrow browser contract and submits one idempotent server-owned chat turn.
+// POST verifies the browser origin and narrow contract before submitting a server-owned chat turn.
 export async function POST(request: NextRequest, context: RouteContext) {
+  try { assertInvitationOrigin(request); } catch { return NextResponse.json({ error: "Požadavek není povolený." }, { status: 403 }); }
   try {
     const params = routeParamsSchema.safeParse(await context.params);
 

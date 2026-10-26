@@ -8,6 +8,7 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
+import { assertInvitationOrigin } from "@/lib/recording-sharing/invitation-http.server";
 
 const routeParamsSchema = z.object({ transcriptId: z.uuid() });
 const cursorSchema = z.string().min(1).max(1_024).nullable();
@@ -60,8 +61,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 }
 
-// POST atomically evaluates and cleans only the exact requested owner-scoped manual job IDs.
+// POST verifies the browser origin before atomically cleaning exact owner-scoped manual job IDs.
 export async function POST(request: NextRequest, context: RouteContext) {
+  try { assertInvitationOrigin(request); } catch { return NextResponse.json({ error: "Požadavek není povolený." }, { status: 403 }); }
   const params = routeParamsSchema.safeParse(await context.params);
   const body = requestBodySchema.safeParse(await request.json().catch(() => null));
   if (!params.success || !body.success) {

@@ -27,6 +27,47 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 async function openRecovery() { await act(async () => container.querySelector<HTMLElement>(".transcription-recovery-popover > summary")!.click()); }
 
 describe("compact transcription presentation", () => {
+  it("automatically resumes only the identified original attempt and never submits a new transcription", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/recover")) {
+        expect(JSON.parse(init!.body as string)).toMatchObject({ operationId: id, action: "resume" });
+        return new Response(JSON.stringify({ job: { status: "running" } }));
+      }
+      return new Response(JSON.stringify({ job: { status: "manual_required" }, operation: { operation_id: id }, canRecover: true }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => root.render(<TranscriptionControls storedAudioMode="single" recordingId={id} recordingStatus="transcribing" />));
+    expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/recover"))).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url, init]) => url.endsWith("/transcription") && init?.method === "POST")).toHaveLength(0);
+    expect(mocks.capture).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Navazuji na původní přepis");
+  });
+
+  it("ignores an old recording response after switching to a completed recording", async () => {
+    let resolveOld!: (value: Response) => void;
+    const old = new Promise<Response>(resolve => { resolveOld = resolve; });
+    const fetchMock = vi.fn(async (url: string) => url.endsWith("/reconcile") ? new Response("{}") : old);
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => root.render(<TranscriptionControls recordingId={id} recordingStatus="transcribing" />));
+    await act(async () => root.render(<TranscriptionControls recordingId="00000000-0000-4000-8000-000000000399" hasTranscript recordingStatus="completed" />));
+    await act(async () => resolveOld(new Response(JSON.stringify({ job: { status: "manual_required" }, operation: { operation_id: id }, canRecover: true }))));
+    expect(container.textContent).not.toContain("zablokovaný");
+    expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/recover"))).toBe(false);
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  });
+
+  it("waits while offline and catches up on reconnection without a paid start", async () => {
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ job: { status: "done" } })));
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => root.render(<TranscriptionControls recordingId={id} recordingStatus="transcribing" />));
+    expect(fetchMock).not.toHaveBeenCalled();
+    online.mockReturnValue(true);
+    await act(async () => window.dispatchEvent(new Event("online")));
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+    expect(mocks.capture).not.toHaveBeenCalled();
+  });
+
   it.each([true, false])("starts a fresh attempt only after confirmed old-operation closure (%s)", async verified => {
     mocks.capture.mockResolvedValue({ recordingId: id, status: "failed", captureRevision: 3 });
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -50,7 +91,8 @@ describe("compact transcription presentation", () => {
   });
 
   it("retains the exact recovery request after an unconfirmed response and never starts paid work", async () => {
-    const fetchMock = vi.fn(async (url: string) => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      void init;
       if (url.endsWith("/recover")) throw new Error("Lost response");
       return new Response(JSON.stringify({ job: { status: "manual_required" }, operation: { operation_id: id }, canRecover: true }));
     });
@@ -60,38 +102,47 @@ describe("compact transcription presentation", () => {
     const button = Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Zastavit pokus")!;
     await act(async () => button.click());
     await act(async () => button.click());
-    const attempts = fetchMock.mock.calls.filter(([url]) => url.endsWith("/recover"));
+    const attempts = fetchMock.mock.calls.filter(([url, init]) => url.endsWith("/recover") && JSON.parse((init as RequestInit).body as string).action === "stop");
     expect(attempts).toHaveLength(2);
     expect((attempts[0] as unknown as [string, RequestInit])[1].body).toBe((attempts[1] as unknown as [string, RequestInit])[1].body);
     expect(mocks.capture).not.toHaveBeenCalled();
   });
 
   it("uses a new request for a later explicitly renewed recovery after confirmed resume", async () => {
+    let recoveries = 0;
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       void init;
-      return new Response(JSON.stringify(url.endsWith("/recover") ? { job: { status: "queued" } }
-        : { job: { status: "manual_required" }, operation: { operation_id: id }, canRecover: true }));
+      if (url.endsWith("/recover")) {
+        recoveries += 1;
+        return new Response(JSON.stringify(recoveries === 1 ? { error: "Kontrola není úplná." } : { job: { status: "queued" } }), { status: recoveries === 1 ? 409 : 200 });
+      }
+      return new Response(JSON.stringify({ job: { status: "manual_required" }, operation: { operation_id: id }, canRecover: true }));
     });
     vi.stubGlobal("fetch", fetchMock);
     await act(async () => root.render(<TranscriptionControls storedAudioMode="single" recordingId={id} recordingStatus="transcribing" />));
     await openRecovery();
     await act(async () => Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Dohledat původní přepis")!.click());
+    await act(async () => Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Zkontrolovat stav")!.click());
     await act(async () => Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Dohledat původní přepis")!.click());
-    const attempts = fetchMock.mock.calls.filter(([url]) => url.endsWith("/recover"));
+    const attempts = fetchMock.mock.calls.filter(([url]) => url.endsWith("/recover")).slice(1);
     expect(attempts).toHaveLength(2);
     expect(JSON.parse(attempts[0][1]!.body as string).requestId).not.toBe(JSON.parse(attempts[1][1]!.body as string).requestId);
   });
 
-  it("stops automatic checks at manual recovery and exposes concrete recovery actions", async () => {
+  it("bounds original-operation lookup with backoff and exposes manual actions without paid retries", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(
       url.endsWith("/reconcile") ? { ok: true } : { job: { status: "manual_required" }, operation: { operation_id: id }, canRecover: true }
     )));
     vi.stubGlobal("fetch", fetchMock);
     await act(async () => root.render(<TranscriptionControls storedAudioMode="single" recordingId={id} recordingStatus="transcribing" />));
-    const calls = fetchMock.mock.calls.length;
     await act(async () => { await vi.advanceTimersByTimeAsync(45_000); });
-    expect(fetchMock).toHaveBeenCalledTimes(calls);
+    expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/recover"))).toHaveLength(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(300_000); });
+    const recoveries = fetchMock.mock.calls.filter(([url]) => url.endsWith("/recover"));
+    expect(recoveries).toHaveLength(3);
+    expect(new Set(recoveries.map(([, init]) => (init as RequestInit).body)).size).toBe(1);
+    expect(mocks.capture).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Přepis je zablokovaný");
     expect(container.textContent).not.toContain("Stav přepisu je aktualizovaný");
     expect(container.textContent).not.toContain("Přepis se zpracovává na pozadí");

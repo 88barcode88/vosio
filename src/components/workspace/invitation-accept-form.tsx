@@ -75,8 +75,12 @@ export function InvitationAcceptForm() {
   return <>
     <p role="status" aria-live="polite">{message}</p>
     {accepted ? <Link href="/recordings">Otevřít nahrávky</Link> : preview ? <>
-      <p>Přístup: {preview.role === "editor" ? "Úpravy" : "Čtení"}. {preview.scope === "project" ? "Nahrávky sdílené v projektu včetně budoucích." : `Vybrané nahrávky: ${preview.recordingCount}.`}</p>
-      <p>{preview.scope === "project" ? "Soukromé nahrávky se touto projektovou pozvánkou nesdílejí." : "Přístup získáte pouze k nahrávkám v pozvánce. Ostatní soukromé nahrávky zůstanou soukromé."}</p>
+      <p>Přístup: {preview.role === "editor" ? "Úpravy" : "Čtení"}. {preview.scope === "project" ? "Nahrávky sdílené v projektu včetně budoucích."
+        : preview.scope === "client" || preview.scope === "folder" ? `Přístup k současným i budoucím nesoukromým nahrávkám ${preview.scope === "client" ? "klienta" : "složky"} v rozsahu pozvánky.`
+        : `Vybrané nahrávky: ${preview.recordingCount}.`}</p>
+      <p>{preview.scope === "project" ? "Soukromé nahrávky se touto projektovou pozvánkou nesdílejí."
+        : preview.scope === "client" || preview.scope === "folder" ? "Soukromé nahrávky se touto pozvánkou nikdy nesdílejí."
+        : "Přístup získáte pouze k nahrávkám v pozvánce. Ostatní soukromé nahrávky zůstanou soukromé."}</p>
       <button type="button" disabled={busy} onClick={accept}>{busy ? "Přijímám…" : "Přijmout pozvánku"}</button>
     </> : token ? <form className="auth-form" onSubmit={verifyIdentity}>
       <label>E-mail z pozvánky<input autoComplete="email" name="email" type="email" required disabled={busy} /></label>

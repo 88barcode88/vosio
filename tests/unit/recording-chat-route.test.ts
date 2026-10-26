@@ -31,7 +31,7 @@ const context = { params: Promise.resolve({ transcriptId }) };
 function request(body: unknown) {
   return new NextRequest(`https://vosio.test/api/transcripts/${transcriptId}/chat`, {
     body: JSON.stringify(body),
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Origin: "https://vosio.test" },
     method: "POST"
   });
 }

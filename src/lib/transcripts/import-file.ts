@@ -115,26 +115,34 @@ function decodeXmlText(value: string) {
     .replace(/&amp;/g, "&");
 }
 
-// extractTextFromDocxXml converts WordprocessingML text runs into readable plain text.
+// extractTextFromDocxXml scans markup once and rejects malformed text runs without regex backtracking.
 function extractTextFromDocxXml(xml: string) {
   const parts: string[] = [];
-  const tokenPattern = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:tab\b[^/]*\/>|<w:br\b[^/]*\/>|<\/w:p>/g;
-  let match: RegExpExecArray | null;
+  let cursor = 0;
+  let textStart: number | null = null;
 
-  while ((match = tokenPattern.exec(xml)) !== null) {
-    if (match[1] !== undefined) {
-      parts.push(decodeXmlText(match[1]));
-      continue;
-    }
+  while (cursor < xml.length) {
+    const start = xml.indexOf("<", cursor);
+    if (start < 0) break;
+    const end = xml.indexOf(">", start + 1);
+    if (end < 0) throw new Error("DOCX soubor má neplatný text dokumentu.");
+    const tag = xml.slice(start, end + 1);
 
-    if (match[0].startsWith("<w:tab")) {
+    if (textStart !== null) {
+      if (tag !== "</w:t>") throw new Error("DOCX soubor má neplatný text dokumentu.");
+      parts.push(decodeXmlText(xml.slice(textStart, start)));
+      textStart = null;
+    } else if (/^<w:t(?:\s|>)/.test(tag) && !tag.endsWith("/>")) {
+      textStart = end + 1;
+    } else if (/^<w:tab\b[^<>]*\/>$/.test(tag)) {
       parts.push("\t");
-      continue;
+    } else if (/^<w:br\b[^<>]*\/>$/.test(tag) || tag === "</w:p>") {
+      parts.push("\n");
     }
-
-    parts.push("\n");
+    cursor = end + 1;
   }
 
+  if (textStart !== null) throw new Error("DOCX soubor má neplatný text dokumentu.");
   return normalizeImportedTranscriptText(parts.join(""));
 }
 

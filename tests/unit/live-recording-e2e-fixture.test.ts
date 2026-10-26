@@ -12,7 +12,11 @@ describe("live recording development fixture", () => {
     expect(fixture).toContain("Simulovat výpadek přepisu");
     expect(fixture).toContain("LiveRecordingRecoveryPanel");
     expect(page).toContain('"audio-limit"');
-    expect(spec).toContain("restart=1");
+    expect(spec).toContain('purpose: "retranscribe"');
+    expect(spec).toContain("requestId: expect.stringMatching(/^[0-9a-f]{8}");
+    expect(spec).toContain("captureRevision: expect.any(Number)");
+    expect(spec).toContain("apply_recording_capture_transition_v1");
+    expect(spec).toContain("get_recording_capture_state_v1");
     expect(spec).toContain("storageEvents");
     expect(spec).toContain("safety-upload");
     expect(spec).toContain("archive-upload");

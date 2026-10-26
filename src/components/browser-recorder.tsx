@@ -239,6 +239,7 @@ export function BrowserRecorder({
   maxAudioFileSizeBytes,
   onAudioHealthChange,
   onStatusChange,
+  onCompletionChange,
   realtimeLanguage = "auto",
   redirectAfterSave,
   realtimeModel = "stt-rt-v5"
@@ -254,8 +255,14 @@ export function BrowserRecorder({
   const captureAttemptRef = useRef<CaptureAttempt | null>(null);
   const transcriptionRequestsRef = useRef(new Map<string, { requestId: string; captureRevision: number; purpose: "capture" | "retranscribe" }>());
   const retainedAudioRef = useRef<Blob | null>(null);
+  const completionRecordingIdRef = useRef<string | null>(null);
+  const completionNavigatedRef = useRef<string | null>(null);
+  const completionOriginRef = useRef("");
+  const completionAudioConfirmedRef = useRef(false);
+  const completionFeedbackRef = useRef<RecorderFeedback | null>(null);
   const privateRetryRef = useRef<{ requestId: string; transitionRequestId: string; rawText: string } | null>(null);
   const [lostCaptureAccess, setLostCaptureAccess] = useState(false);
+  const [recoveryPending, setRecoveryPending] = useState(false);
   const liveRecordingStartedAtMsRef = useRef<number | null>(null);
   const liveCaptureActiveRef = useRef(false);
   const liveMarkerAttemptRef = useRef<LiveMarkerAttempt | null>(null);
@@ -288,7 +295,8 @@ export function BrowserRecorder({
   const pendingRealtimeSessionOffsetMsRef = useRef<number | null>(null);
   const providerConnectionHealthRef = useRef<"healthy" | "reconnecting">("healthy");
   const providerFallbackReasonRef = useRef<LiveProviderFallbackReason | null>(null);
-  const sessionLiveAudioQualityRef = useRef(liveAudioQuality);
+  const [sessionLiveAudioQuality, setSessionLiveAudioQuality] = useState(liveAudioQuality);
+  const [hasRetainedAudio, setHasRetainedAudio] = useState(false);
   const isMountedRef = useRef(true);
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
   const wakeLockRequestRef = useRef<Promise<boolean> | null>(null);
@@ -318,7 +326,8 @@ export function BrowserRecorder({
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [wakeLockWarning, setWakeLockWarning] = useState<string | null>(null);
 
-  audioHealthChangeCallbackRef.current = onAudioHealthChange;
+  // Keep the external callback current without reading or writing refs during render.
+  useEffect(() => { audioHealthChangeCallbackRef.current = onAudioHealthChange; }, [onAudioHealthChange]);
 
   // detectTabAudioCapture selects the safer desktop call topology only when the browser exposes it.
   useEffect(() => {
@@ -341,12 +350,39 @@ export function BrowserRecorder({
   // setRecorderFeedback keeps ordinary capture state separate from assertive errors and provider warnings.
   function setRecorderFeedback(message: string, tone: RecorderFeedbackTone = "status") {
     setFeedback({ message, tone });
+    completionFeedbackRef.current = { message, tone };
+    if (recorderLifecyclePhaseRef.current === "saving" && completionRecordingIdRef.current) {
+      onCompletionChange?.({ recordingId: completionRecordingIdRef.current, phase: "saving",
+        audioConfirmed: completionAudioConfirmedRef.current, message });
+    }
   }
 
   // setRecorderPhase synchronizes render state with the callback-safe lifecycle phase.
   function setRecorderPhase(nextPhase: RecorderStatus) {
     recorderLifecyclePhaseRef.current = nextPhase;
     setStatus(nextPhase);
+  }
+
+  // openCompletingRecording hands off only a confirmed draft while this persistent recorder still owns the stop.
+  function openCompletingRecording(recording: Recording | null, stopGeneration: number, recordingId: string) {
+    if (!stillOwnsStop(recording, stopGeneration)) return;
+    completionRecordingIdRef.current = recordingId;
+    onCompletionChange?.({ recordingId, phase: "saving", audioConfirmed: false, message: "Ukládáme nahrávku. Připravujeme přepis." });
+    if (redirectAfterSave === "detail" && completionNavigatedRef.current !== recordingId) {
+      completionNavigatedRef.current = recordingId;
+      if (`${window.location.pathname}${window.location.search}` === completionOriginRef.current) router.push(`/recordings/${recordingId}`);
+    }
+  }
+
+  // settleRecordingCompletion retains the exact result on the detail after the persistent recorder becomes idle.
+  function settleRecordingCompletion() {
+    const recordingId = completionRecordingIdRef.current;
+    const feedback = completionFeedbackRef.current;
+    const retainLocalData = feedback?.tone === "error" && Boolean(tokensRef.current.length || liveTranscript || retainedAudioRef.current);
+    if (retainLocalData) setRecoveryPending(true);
+    if (feedback) onCompletionChange?.({ recordingId,
+      phase: feedback.tone === "error" ? "error" : "settled", message: feedback.message,
+      audioConfirmed: completionAudioConfirmedRef.current, retainLocalData });
   }
 
   // isCurrentStartSession rejects stale microphone acquisition before a Soniox recording exists.
@@ -411,38 +447,30 @@ export function BrowserRecorder({
       .catch(() => undefined);
   }
 
-  // completeLateTranscriptDraft finalizes one timed-out draft from an immutable stop snapshot.
-  function completeLateTranscriptDraft(
+  // completeLateTranscriptDraft keeps the stop owner until its delayed draft and immutable final text settle.
+  async function completeLateTranscriptDraft(
     pending: PendingLiveDraftSession,
     snapshot: {
       durationSeconds: number;
       rawText: string;
       tokens: RealtimeToken[];
-    }
+    },
+    recording: Recording | null,
+    stopGeneration: number
   ) {
     if (pending.cleanupScheduled) {
-      return;
+      return null;
     }
 
     pending.cleanupScheduled = true;
-    void pending.promise
-      .then(async (draft) => {
-        try {
-          await completeLiveRecordingWithoutAudio({
-            durationSeconds: snapshot.durationSeconds,
-            recording: draft
-          });
-          await saveLiveTranscript(draft.id, snapshot.rawText, snapshot.tokens, "transcript_only");
-        } catch (error) {
-          await failLiveRecordingUpload({
-            message: error instanceof Error
-              ? error.message
-              : "Pozdní live přepis se nepodařilo dokončit.",
-            recording: draft
-          });
-        }
-      })
-      .catch(() => undefined);
+    const draft = await pending.promise;
+    if (!stillOwnsStop(recording, stopGeneration)) return null;
+    liveRecordingDraftRef.current = draft;
+    openCompletingRecording(recording, stopGeneration, draft.id);
+    await completeLiveRecordingWithoutAudio({ durationSeconds: snapshot.durationSeconds, recording: draft });
+    if (!stillOwnsStop(recording, stopGeneration)) return null;
+    const hasSearchWarning = await saveLiveTranscript(draft.id, snapshot.rawText, snapshot.tokens, "transcript_only");
+    return stillOwnsStop(recording, stopGeneration) ? { recordingId: draft.id, hasSearchWarning } : null;
   }
 
   // adoptPendingLiveDraftForStop waits briefly for this session's draft, then isolates late cleanup.
@@ -539,11 +567,20 @@ export function BrowserRecorder({
   // beginRecorderStop synchronously invalidates provider callbacks and marker work before saving.
   function beginRecorderStop(recording: Recording | null) {
     const stopGeneration = recordingSessionGenerationRef.current + 1;
+    completionOriginRef.current = `${window.location.pathname}${window.location.search}`;
 
     recordingSessionGenerationRef.current = stopGeneration;
     recorderStopOwnerRef.current = { recording, stopGeneration };
     setRecorderPhase("saving");
     resetLiveMarkerSession();
+    const draft = liveRecordingDraftRef.current;
+    if (draft) openCompletingRecording(recording, stopGeneration, draft.id);
+    else {
+      const pending = pendingLiveDraftSessionRef.current;
+      if (pending) void pending.promise.then((confirmed) => {
+        openCompletingRecording(recording, stopGeneration, confirmed.id);
+      }).catch(() => undefined);
+    }
     return stopGeneration;
   }
 
@@ -656,12 +693,12 @@ export function BrowserRecorder({
   }
 
   useEffect(() => {
-    if (status === "idle") {
+    if (status === "idle" && !recoveryPending) {
       return;
     }
 
     return registerNavigationBlocker({ blockInternalNavigation: false });
-  }, [registerNavigationBlocker, status]);
+  }, [registerNavigationBlocker, status, recoveryPending]);
 
   useEffect(() => {
     onStatusChange?.(status);
@@ -1398,6 +1435,10 @@ export function BrowserRecorder({
 
   // startRecording begins the selected audio and provider owners without coupling their lifecycles.
   async function startRecording() {
+    if (recoveryPending) {
+      setRecorderFeedback("Nejprve uložte místní kopii nebo výslovně zavřete obnovu předchozí nahrávky.", "error");
+      return;
+    }
     if (!audioCaptureCapabilityResolved) {
       return;
     }
@@ -1431,13 +1472,20 @@ export function BrowserRecorder({
       return;
     }
 
+    completionRecordingIdRef.current = null;
+    completionNavigatedRef.current = null;
+    completionAudioConfirmedRef.current = false;
+    onCompletionChange?.(null);
+
     const sessionGeneration = recordingSessionGenerationRef.current + 1;
     let recording: Recording | null = null;
     let audioSession: SharedAudioSession | null = null;
     let localRecorderReadyPromise: Promise<boolean> | null = null;
 
     recordingSessionGenerationRef.current = sessionGeneration;
-    sessionLiveAudioQualityRef.current = liveAudioQuality;
+    setSessionLiveAudioQuality(liveAudioQuality);
+    retainedAudioRef.current = null;
+    setHasRetainedAudio(false);
     recorderStopOwnerRef.current = null;
     setRecorderPhase("starting");
     resetLiveMarkerSession();
@@ -1909,6 +1957,7 @@ export function BrowserRecorder({
     const recording = await createTranscriptOnlyDraft();
     if (!stillOwnsStop(stopRecordingInstance, stopGeneration)) return null;
     liveRecordingDraftRef.current = recording;
+    openCompletingRecording(stopRecordingInstance, stopGeneration, recording.id);
     const hasSearchWarning = await saveLiveTranscript(recording.id, rawText, tokens, "transcript_only");
     if (!stillOwnsStop(stopRecordingInstance, stopGeneration)) return null;
     return { hasSearchWarning, recordingId: recording.id };
@@ -1916,6 +1965,10 @@ export function BrowserRecorder({
 
   // navigateAfterSave moves the user to the configured destination after saving a recording.
   function navigateAfterSave(recordingId: string, hasSearchWarning = false) {
+    if (completionNavigatedRef.current === recordingId) {
+      router.refresh();
+      return;
+    }
     if (redirectAfterSave === "detail") {
       const path = `/recordings/${recordingId}`;
       router.push(hasSearchWarning ? addTranscriptSearchIndexWarningToPath(path) : path);
@@ -1938,6 +1991,7 @@ export function BrowserRecorder({
     const resultSession = sonioxResultSessionRef.current;
     const audioSession = sharedAudioSessionRef.current;
     const stopGeneration = beginRecorderStop(recording);
+    let audioReleased = false;
 
     setRecorderFeedback(
       reason === "shared_tab_ended"
@@ -1982,12 +2036,19 @@ export function BrowserRecorder({
         }
 
         if (rawText) {
-          completeLateTranscriptDraft(draftSettlement.pending, {
+          setRecorderFeedback("Čekáme na potvrzení záznamu. Místní přepis zůstává zachovaný.", "working");
+          cleanupAudioSession(audioSession);
+          audioReleased = true;
+          void releaseWakeLock();
+          const completed = await completeLateTranscriptDraft(draftSettlement.pending, {
             durationSeconds: elapsedSecondsRef.current,
             rawText,
             tokens
-          });
-          setRecorderFeedback("Přepis se dokončí na pozadí po připravení záznamu.");
+          }, recording, stopGeneration);
+          if (completed && stillOwnsStop(recording, stopGeneration)) {
+            setRecorderFeedback(completed.hasSearchWarning ? TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE : "Live přepis je uložený bez audio souboru.");
+            navigateAfterSave(completed.recordingId, completed.hasSearchWarning);
+          }
         } else {
           failLateLiveDraft(draftSettlement.pending);
           setRecorderFeedback("Příprava záznamu trvá příliš dlouho.", "error");
@@ -2038,6 +2099,7 @@ export function BrowserRecorder({
       setRecorderFeedback(error instanceof Error ? error.message : "Live přepis se nepodařilo uložit.", "error");
     } finally {
       if (stillOwnsStop(recording, stopGeneration)) {
+        settleRecordingCompletion();
         stopTimer();
         if (sonioxRecordingRef.current === recording) {
           sonioxRecordingRef.current = null;
@@ -2045,7 +2107,7 @@ export function BrowserRecorder({
 
         liveRecordingDraftRef.current = null;
         resetLiveDraftRefs();
-        cleanupAudioSession(audioSession);
+        if (!audioReleased) cleanupAudioSession(audioSession);
         void releaseWakeLock();
         recorderStopOwnerRef.current = null;
         setRecorderPhase("idle");
@@ -2234,11 +2296,12 @@ export function BrowserRecorder({
       }
 
       const audioBlob = await finalizeLocalAudioBlob();
-      retainedAudioRef.current = audioBlob;
-
       if (!stillOwnsStop(recordingSession, stopGeneration)) {
         return;
       }
+
+      retainedAudioRef.current = audioBlob;
+      setHasRetainedAudio(Boolean(audioBlob?.size));
 
       const realtimeStopOutcome = await stopRealtimeRecording(recordingSession);
 
@@ -2329,6 +2392,8 @@ export function BrowserRecorder({
           }
 
           audioUploadCompleted = true;
+          completionAudioConfirmedRef.current = true;
+          setRecorderFeedback("Audio je uložené. Připravujeme přepis.", "working");
           await cleanupConfirmedSafetyAudio(safetySession, completion.id);
         } catch (error) {
           if (!stillOwnsStop(recordingSession, stopGeneration)) {
@@ -2346,6 +2411,8 @@ export function BrowserRecorder({
             elapsedSecondsRef.current
           );
           audioUploadCompleted = audioStoredAsSegments;
+          completionAudioConfirmedRef.current = audioUploadCompleted;
+          if (audioUploadCompleted) setRecorderFeedback("Audio části jsou uložené. Připravujeme přepis.", "working");
         } catch (error) {
           audioSaveError = error instanceof Error
             ? error
@@ -2439,7 +2506,7 @@ export function BrowserRecorder({
 
       if (
         audioUploadCompleted
-        && (audioStoredAsSegments || providerFallbackReasonRef.current)
+        && providerFallbackReasonRef.current
       ) {
         try {
           await requestAsyncTranscription(recording.id, true);
@@ -2461,7 +2528,7 @@ export function BrowserRecorder({
           : providerFallbackReasonRef.current
             ? "Audio a částečný live přepis jsou uložené. Nový přepis běží na pozadí."
           : audioStoredAsSegments
-            ? "Audio části a live přepis jsou uložené. Úplný přepis běží na pozadí."
+            ? "Audio části a live přepis jsou uložené."
           : audioUploadCompleted
           ? "Live nahrávka a přepis jsou uložené."
           : `Audio není potvrzené. ${audioSaveError?.message ?? "Záznam zůstal k obnovení."}`,
@@ -2518,6 +2585,7 @@ export function BrowserRecorder({
       );
     } finally {
       if (stillOwnsStop(recordingSession, stopGeneration)) {
+        settleRecordingCompletion();
         stopTimer();
         audioChunksRef.current = [];
         audioStartedAtRef.current = null;
@@ -2544,7 +2612,7 @@ export function BrowserRecorder({
   const audioHealthNotice = getLiveAudioHealthNotice(audioHealth);
   const displayedAudioQuality = status === "idle"
     ? liveAudioQuality
-    : sessionLiveAudioQualityRef.current;
+    : sessionLiveAudioQuality;
   const displayedProviderHealth = status === "idle"
     ? liveModeUsesRealtime(saveMode) ? "ready" : "disabled"
     : providerHealth;
@@ -2574,19 +2642,42 @@ export function BrowserRecorder({
             const result = await fetch("/api/recordings/import-transcript", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...pending, title: "Soukromá kopie live přepisu", scope: { projectId: null, visibility: "private", recipients: [] } }) });
             const receipt = await result.json();
             if (!result.ok || !receipt.recordingId) throw new Error();
-            setLostCaptureAccess(false); privateRetryRef.current = null; navigateAfterSave(receipt.recordingId);
+            setLostCaptureAccess(false); setRecoveryPending(false); privateRetryRef.current = null; onCompletionChange?.(null); navigateAfterSave(receipt.recordingId);
           } catch { setRecorderFeedback("Soukromou kopii se nepodařilo uložit. Místní obsah zůstává připravený.", "error"); }
         }}>Uložit přepis jako novou soukromou nahrávku</button>
-        <button type="button" disabled={!retainedAudioRef.current} onClick={() => {
+        <button type="button" disabled={!hasRetainedAudio} onClick={() => {
           const audio = retainedAudioRef.current; if (!audio) return;
           const url = URL.createObjectURL(audio); const link = document.createElement("a"); link.href = url; link.download = "live-nahravka.webm"; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
         }}>Stáhnout místní audio</button>
+      </div> : null}
+      {recoveryPending ? <div className="recorder-local-recovery" role="group" aria-label="Místní obnova nahrávky">
+        <p>Poslední místní obsah zůstává v tomto okně. Před zavřením si uložte kopii.</p>
+        <button type="button" disabled={!liveTranscript} onClick={() => {
+          const text = tokensToText(tokensRef.current) || liveTranscript;
+          const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+          const link = document.createElement("a"); link.href = url; link.download = "live-prepis.txt"; link.click();
+          window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }}>Stáhnout místní přepis</button>
+        {!lostCaptureAccess ? <button type="button" disabled={!hasRetainedAudio} onClick={() => {
+          const audio = retainedAudioRef.current; if (!audio) return;
+          const url = URL.createObjectURL(audio); const link = document.createElement("a"); link.href = url;
+          link.download = `live-nahravka.${getRecordedFileExtension(liveRecordingContentTypeRef.current)}`; link.click();
+          window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }}>Stáhnout místní audio</button> : null}
+        <button type="button" onClick={() => {
+          if (!window.confirm("Zavřít místní obnovu? Neuložený místní text a audio z tohoto okna už nepůjde stáhnout. Uložené serverové a bezpečnostní kopie se nemažou.")) return;
+          retainedAudioRef.current = null; tokensRef.current = []; finalTokensRef.current = []; partialTokensRef.current = [];
+          setHasRetainedAudio(false);
+          setLiveTranscript(""); setLostCaptureAccess(false); setRecoveryPending(false); privateRetryRef.current = null;
+          onCompletionChange?.(null); setRecorderFeedback("Místní obnova je uzavřená.");
+        }}>Zavřít místní obnovu</button>
       </div> : null}
       {compact ? (
         <div className="persistent-recorder-summary">
           <strong>
             {status === "saving"
               ? "Ukládám nahrávku"
+              : recoveryPending ? "Nahrávka čeká na místní obnovu"
               : status === "starting"
                 ? "Spouštím nahrávání"
                 : "Probíhá nahrávání"}

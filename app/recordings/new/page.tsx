@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { VosioWorkspace } from "@/components/vosio-workspace";
+import { resolveTeamRole } from "@/lib/team/queries.server";
 import { getRecordingStorageConfig } from "@/lib/recordings/storage-config.server";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
@@ -22,6 +23,7 @@ export default async function NewRecordingPage() {
 
   return (
     <VosioWorkspace
+      canManageTeam={Boolean(await resolveTeamRole(supabase))}
       aiOutputs={[]}
       isCreatingRecording
       recordingStorageConfig={recordingStorageConfig}

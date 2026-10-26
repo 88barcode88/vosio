@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
 import { resolveAutomaticOutputTypes } from "@/lib/settings/metadata";
+import { assertInvitationOrigin } from "@/lib/recording-sharing/invitation-http.server";
 
 const routeParamsSchema = z.object({
   transcriptId: z.uuid()
@@ -18,8 +19,9 @@ type RouteContext = {
   }>;
 };
 
-// POST requires current personal AI authority before creating any admin/provider recovery path.
-export async function POST(_request: NextRequest, context: RouteContext) {
+// POST requires the browser origin and current personal AI authority before admin/provider recovery.
+export async function POST(request: NextRequest, context: RouteContext) {
+  try { assertInvitationOrigin(request); } catch { return NextResponse.json({ error: "Požadavek není povolený." }, { status: 403 }); }
   const params = routeParamsSchema.safeParse(await context.params);
 
   if (!params.success) {

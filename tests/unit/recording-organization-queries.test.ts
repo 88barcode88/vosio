@@ -111,6 +111,27 @@ describe("recording organization queries", () => {
     }
   });
 
+  it("returns two permitted projects while keeping a member's private client metadata hidden", async () => {
+    const queries = new Map([
+      ["recording_clients", createListQuery([{ id: "client-1", name: "Acme" }])],
+      ["recording_projects", createListQuery([{ id: "project-1", name: "Owned" }, { id: "project-2", name: "Shared" }])],
+      ["recording_folders", createListQuery([])],
+      ["recording_tags", createListQuery([])]
+    ]);
+    const rpc = vi.fn(async (name: string, args: { p_project_id: string }) => ({
+      error: null,
+      data: name === "can_capture_in_recording_project" ? true
+        : name === "is_recording_project_founder_v1" ? args.p_project_id === "project-1"
+          : { id: "project-1", client_id: "client-1" }
+    }));
+    const result = await listRecordingOrganizationOptions({ from: (table: string) => queries.get(table), rpc } as never);
+    expect(result.projects).toEqual([
+      { id: "project-1", name: "Owned", client_id: "client-1", can_manage_access: true, can_capture: true },
+      { id: "project-2", name: "Shared", client_id: null, can_manage_access: false, can_capture: true }
+    ]);
+    expect(rpc).not.toHaveBeenCalledWith("get_personal_recording_project_v1", { p_project_id: "project-2" });
+  });
+
   it("keeps an unclassified recording usable without issuing nullable lookup queries", async () => {
     const linksQuery = createListQuery([]);
     const from = vi.fn((table: string) => {

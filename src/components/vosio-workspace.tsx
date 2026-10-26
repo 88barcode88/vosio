@@ -1,3 +1,5 @@
+import { TeamManager } from "@/components/team-manager";
+import type { TeamWorkspace } from "@/lib/team/types";
 import type { ReactNode } from "react";
 import {
   NewRecordingWorkspace,
@@ -51,6 +53,8 @@ import type {
 
 type VosioWorkspaceProps = {
   pendingContent?: ReactNode;
+  canManageTeam?: boolean;
+  teamWorkspace?: TeamWorkspace;
   activeRecordingId?: string;
   aiOutputs: AiOutputView[];
   aiArchiveBaseHref?: string;
@@ -134,6 +138,8 @@ export function getContentAreaClassName({
 // VosioWorkspace composes the workspace shell and routes each view into its working area.
 export function VosioWorkspace({
   pendingContent,
+  canManageTeam = false,
+  teamWorkspace,
   activeRecordingId,
   aiOutputs,
   aiArchiveActionAlert,
@@ -215,6 +221,7 @@ export function VosioWorkspace({
     <main className="workspace-shell">
       <WorkspaceSidebar
         activeView={view}
+        canManageTeam={canManageTeam}
         navigationHrefOverrides={navigationHrefOverrides}
         userEmail={userEmail}
       />
@@ -258,6 +265,8 @@ export function VosioWorkspace({
                 searchPage={recordingSearchPage}
                 searchPreviousHref={recordingSearchPreviousHref}
               />
+            ) : view === "team" && teamWorkspace ? (
+              <TeamManager initialWorkspace={teamWorkspace} />
             ) : view === "ai" || view === "templates" || view === "documentation" || view === "trash" || view === "settings" ? (
               <UtilityWorkspaceView
                 aiArchiveActionAlert={aiArchiveActionAlert}
@@ -311,6 +320,7 @@ export function VosioWorkspace({
 
       <MobileNav
         activeView={view}
+        canManageTeam={canManageTeam}
         hrefOverrides={navigationHrefOverrides}
         userEmail={userEmail}
       />

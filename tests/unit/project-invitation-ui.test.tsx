@@ -64,6 +64,19 @@ describe("first standalone email invitation caller boundary", () => {
     expect(mocks.refresh).toHaveBeenCalledTimes(status === 200 ? 1 : 0);
     expect(container.textContent).toContain(status === 200 ? "Pozvánka byla přijata" : "Pozvánku nelze přijmout");
   });
+
+  it.each(["client", "folder"])("explains current and future nonprivate %s access before explicit acceptance", async (scope) => {
+    window.history.replaceState(null, "", `/invitations/accept#token=${"z".repeat(43)}&type=email`);
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: invitationId, scope, role: "reader", expiresAt: "2030-01-01T00:00:00Z", recordingCount: 0 })));
+    await act(async () => root.render(<InvitationAcceptForm />));
+    expect(container.textContent).toContain(scope === "client" ? "klienta" : "složky");
+    expect(container.textContent).toContain("současným i budoucím nesoukromým nahrávkám");
+    expect(container.textContent).toContain("Soukromé nahrávky se touto pozvánkou nikdy nesdílejí");
+    expect(container.textContent).not.toContain("Vybrané nahrávky: 0");
+    expect(container.textContent).not.toContain("pouze k nahrávkám v pozvánce");
+    expect(vi.mocked(fetch).mock.calls.every(([, options]) => options?.method !== "POST")).toBe(true);
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  });
 });
 
 const pendingInvitation = { id: invitationId, email: "recipient@example.test", role: "reader", scope: "recordings", expiresAt: "2030-01-01T00:00:00Z", acceptedAt: null, revokedAt: null, attemptId: projectId, attemptCount: 4, deliveryState: "sent", lastAttemptAt: "2026-01-01T00:00:00Z", nextAttemptAt: "2026-01-01T00:01:00Z", authorizationCurrent: true };

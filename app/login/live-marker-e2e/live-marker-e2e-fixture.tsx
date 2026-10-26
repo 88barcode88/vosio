@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import type { AudioSource, RecordOptions, Recording } from "@soniox/client";
 import { LiveRecordingRecoveryPanel } from "@/components/live-recording-recovery-panel";
-import { PersistentRecorderSlot } from "@/components/persistent-recording-session";
+import { PersistentRecorderSlot, RecordingCompletionNotice } from "@/components/persistent-recording-session";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import { MobileNav } from "@/components/workspace-navigation";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
@@ -279,6 +279,7 @@ function LiveMarkerTimelineFixture({ scope }: { scope: string }) {
     <FixtureShell>
       <section data-e2e-live-marker-state="compact">
         <h1>Nahrávání pokračuje mimo původní stránku</h1>
+        <div data-e2e-completion><RecordingCompletionNotice recordingId="00000000-0000-4000-8000-000000000302" /></div>
         <button onClick={loadTimeline} type="button">Načíst uloženou timeline</button>
         {error ? <p role="alert">{error}</p> : null}
         {boundary ? (

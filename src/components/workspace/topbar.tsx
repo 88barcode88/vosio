@@ -8,7 +8,8 @@ const workspaceViewLabels: Record<WorkspaceView, string> = {
   recordings: "Nahrávky",
   settings: "Nastavení",
   templates: "AI prompty",
-  trash: "Koš"
+  trash: "Koš",
+  team: "Tým"
 };
 
 // WorkspaceTopbar keeps the global context and appearance control aligned across every workspace route.

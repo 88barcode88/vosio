@@ -4,6 +4,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { AudioSource, RecordOptions, Recording } from "@soniox/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PersistentRecorderSlot, PersistentRecordingSessionProvider, RecordingCompletionNotice } from "@/components/persistent-recording-session";
+import { RecordingNavigationGuardProvider } from "@/components/recording-navigation-guard";
 import { BrowserRecorder } from "@/components/browser-recorder";
 import type {
   DurableAudioPartRecord,
@@ -27,6 +29,8 @@ function createDeferred<T>(): Deferred<T> {
 
   return { promise, resolve };
 }
+
+const navigationGuard = vi.hoisted(() => ({ real: false }));
 
 const mocks = vi.hoisted(() => ({
   acquireDurableGenerationWriter: vi.fn(),
@@ -62,9 +66,12 @@ vi.mock("next/link", () => ({
   )
 }));
 
-vi.mock("@/components/recording-navigation-guard", () => ({
-  useRecordingNavigationBlocker: () => ({ registerNavigationBlocker: vi.fn(() => vi.fn()) })
-}));
+vi.mock("@/components/recording-navigation-guard", async (original) => {
+  const actual = await original<typeof import("@/components/recording-navigation-guard")>();
+  return { ...actual, useRecordingNavigationBlocker: () => navigationGuard.real
+    ? actual.useRecordingNavigationBlocker()
+    : { registerNavigationBlocker: vi.fn(() => vi.fn()) } };
+});
 
 vi.mock("@soniox/client", () => ({
   BrowserPermissionResolver: class BrowserPermissionResolver {},
@@ -357,6 +364,7 @@ beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true;
   vi.useFakeTimers();
+  navigationGuard.real = false;
   Object.values(mocks).forEach((mock) => mock.mockReset());
   mocks.acquireDurableGenerationWriter.mockResolvedValue(vi.fn(async () => {}));
   mocks.failLiveRecordingUpload.mockResolvedValue(undefined);
@@ -423,9 +431,166 @@ afterEach(async () => {
   document.body.replaceChildren();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  window.history.replaceState(null, "", "/");
 });
 
 describe("BrowserRecorder modes", () => {
+  it("shows immediate saving feedback without opening an unconfirmed draft", async () => {
+    const draft = createDeferred<{ id: string; storagePrefix: string; userId: string }>();
+    mocks.createLiveRecordingDraft.mockReturnValue(draft.promise);
+    await act(async () => root?.render(<BrowserRecorder allowTranscriptOnly
+      maxAudioFileSizeBytes={50 * 1024 * 1024} redirectAfterSave="detail" />));
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("ukládám nahrávku");
+    await act(async () => {
+      draft.resolve({ id: recordingId, storagePrefix: "live/", userId: "user-1" });
+      await flushPromises(30);
+    });
+    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}`);
+  });
+
+  it("opens the confirmed detail within two seconds while a twenty-second archive upload continues", async () => {
+    const upload = createDeferred<{ bytes: number; storagePath: string }>();
+    mocks.uploadLiveRecording.mockReturnValue(upload.promise);
+    const completion = vi.fn();
+    await act(async () => root?.render(<BrowserRecorder allowTranscriptOnly
+      maxAudioFileSizeBytes={50 * 1024 * 1024} redirectAfterSave="detail" onCompletionChange={completion} />));
+    await act(async () => findMode("audio_only")?.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises();
+    });
+    MediaRecorderFixture.instances[0]?.emitData(new Blob(["archive"], { type: "audio/webm" }));
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")?.click();
+      await flushPromises(20);
+      await vi.advanceTimersByTimeAsync(1_999);
+    });
+    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}`);
+    expect(completion).toHaveBeenLastCalledWith(expect.objectContaining({ recordingId, phase: "saving", audioConfirmed: false }));
+    expect(mocks.completeLiveRecordingUpload).not.toHaveBeenCalled();
+    expect(mocks.cleanupDurableSafetyGeneration).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(18_001);
+      upload.resolve({ bytes: 32, storagePath: "live/archive.webm" });
+      await flushPromises(30);
+    });
+    expect(mocks.completeLiveRecordingUpload).toHaveBeenCalledOnce();
+    expect(mocks.routerPush).toHaveBeenCalledOnce();
+    expect(completion).toHaveBeenLastCalledWith(expect.objectContaining({ recordingId, phase: "settled", audioConfirmed: true }));
+  });
+
+  it.each(["upload", "final_save"] as const)("retains real persistent recorder recovery after early slot removal and %s failure", async (failure) => {
+    navigationGuard.real = true;
+    window.history.replaceState(null, "", "/recordings/new");
+    const provider = createProviderRecording();
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+    const upload = createDeferred<void>();
+    mocks.uploadLiveRecording.mockImplementation(async () => {
+      await upload.promise;
+      if (failure === "upload") throw new Error("archive failed");
+      return { bytes: 7, storagePath: "live/archive.webm" };
+    });
+    mocks.fetch.mockImplementation(async (url) => ({
+      json: vi.fn().mockResolvedValue({}),
+      ok: !String(url).endsWith("/live-transcript") && !String(url).endsWith("/live-draft")
+    }));
+    const createObjectURL = vi.fn((_blob: Blob) => "blob:local-recovery");
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = vi.fn();
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    // sessionTree removes only the route slot while keeping the real session and unload owner mounted.
+    const sessionTree = (capture: boolean) => <RecordingNavigationGuardProvider><PersistentRecordingSessionProvider>
+      {capture ? <PersistentRecorderSlot allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} redirectAfterSave="detail" />
+        : <RecordingCompletionNotice recordingId={recordingId} />}
+    </PersistentRecordingSessionProvider></RecordingNavigationGuardProvider>;
+    await act(async () => root?.render(sessionTree(true)));
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")!.click();
+      await flushPromises(20);
+      provider.emit("state_change", { new_state: "recording" });
+      provider.emit("result", { tokens: [{ end_ms: 500, is_final: true, start_ms: 0, text: "Jen místní text." }] });
+    });
+    const archive = new Blob(["archive"], { type: "audio/webm" });
+    MediaRecorderFixture.instances[0]!.emitData(archive);
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")!.click();
+      await flushPromises(20);
+    });
+    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}`);
+    window.history.replaceState(null, "", `/recordings/${recordingId}`);
+    await act(async () => root?.render(sessionTree(false)));
+    const dock = container.querySelector<HTMLElement>('[aria-label="Probíhající nahrávání"]')!;
+    const recorder = dock.querySelector(".browser-recorder");
+    expect(recorder).not.toBeNull();
+    expect(dock.hidden).toBe(false);
+    const savingUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(savingUnload);
+    expect(savingUnload.defaultPrevented).toBe(true);
+    await act(async () => { upload.resolve(); await flushPromises(40); });
+    const recovery = dock.querySelector<HTMLElement>('[aria-label="Místní obnova nahrávky"]');
+    expect(recovery).not.toBeNull();
+    expect(dock.hidden).toBe(false);
+    expect(dock.querySelector(".browser-recorder")).toBe(recorder);
+    expect(dock.textContent).toContain("čeká na místní obnovu");
+    expect(container.textContent).not.toContain("Ukládání dokončeno");
+    if (failure === "upload") expect(mocks.completeLiveRecordingUpload).not.toHaveBeenCalled();
+    else {
+      expect(mocks.completeLiveRecordingUpload).toHaveBeenCalledOnce();
+      expect(mocks.fetch.mock.calls.some(([url]) => String(url).endsWith("/live-transcript"))).toBe(true);
+    }
+    expect(mocks.fetch.mock.calls.some(([url]) => String(url).endsWith("/transcription"))).toBe(false);
+    const failedUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(failedUnload);
+    expect(failedUnload.defaultPrevented).toBe(true);
+    const downloadText = [...recovery!.querySelectorAll("button")].find(button => button.textContent === "Stáhnout místní přepis")!;
+    const downloadAudio = [...recovery!.querySelectorAll("button")].find(button => button.textContent === "Stáhnout místní audio")!;
+    expect(downloadText.disabled).toBe(false);
+    expect(downloadAudio.disabled).toBe(false);
+    await act(async () => { downloadText.click(); downloadAudio.click(); });
+    expect(createObjectURL.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ size: new Blob(["Jen místní text."]).size }));
+    expect(createObjectURL.mock.calls[1]?.[0]).toEqual(expect.objectContaining({ size: archive.size, type: archive.type }));
+    const downloadedText = new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(createObjectURL.mock.calls[0]![0]);
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await downloadedText).toBe("Jen místní text.");
+    const acquisitions = vi.mocked(navigator.mediaDevices.getUserMedia).mock.calls.length;
+    await act(async () => document.querySelector<HTMLButtonElement>(".record-button")!.click());
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(acquisitions);
+    expect(mocks.realtimeRecord).toHaveBeenCalledOnce();
+    const discard = [...recovery!.querySelectorAll("button")].find(button => button.textContent === "Zavřít místní obnovu")!;
+    await act(async () => discard.click());
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(dock.querySelector('[aria-label="Místní obnova nahrávky"]')).toBe(recovery);
+    confirm.mockReturnValue(true);
+    await act(async () => discard.click());
+    expect(dock.querySelector('[aria-label="Místní obnova nahrávky"]')).toBeNull();
+    const releasedUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(releasedUnload);
+    expect(releasedUnload.defaultPrevented).toBe(false);
+    await act(async () => root?.render(sessionTree(true)));
+    await act(async () => { document.querySelector<HTMLButtonElement>(".record-button")!.click(); await flushPromises(20); });
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(acquisitions + 1);
+    expect(mocks.realtimeRecord).toHaveBeenCalledTimes(2);
+  });
+
   it("never creates a safety clone when unmounted during deferred writer acquisition", async () => {
     const source = createTrackedMasterStream();
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue(source.stream) } });
@@ -1126,7 +1291,7 @@ describe("BrowserRecorder modes", () => {
     expect(mocks.cleanupDurableSafetyGeneration).not.toHaveBeenCalled();
   });
 
-  it("promotes complete safety parts when archive upload fails and starts segmented transcription", async () => {
+  it("promotes complete safety parts and reuses healthy realtime text without a paid segmented transcription", async () => {
     const provider = createProviderRecording();
     mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
     mocks.uploadLiveRecording.mockRejectedValue(new Error("archive failed"));
@@ -1171,7 +1336,7 @@ describe("BrowserRecorder modes", () => {
     }));
     expect(mocks.fetch.mock.calls.some(([url]) => (
       String(url).endsWith(`/api/recordings/${recordingId}/transcription`)
-    ))).toBe(true);
+    ))).toBe(false);
   });
 
   it.each(["recorder_error", "track_ended"] as const)(
@@ -1815,6 +1980,61 @@ describe("BrowserRecorder modes", () => {
     expect(mocks.fetch.mock.calls.some(([url]) => (
       String(url).endsWith(`/api/recordings/${recordingId}/transcription`)
     ))).toBe(false);
+  });
+
+  it("never offers prior successful audio in a new transcript-only session's failed recovery", async () => {
+    await act(async () => root?.render(<BrowserRecorder allowTranscriptOnly maxAudioFileSizeBytes={50 * 1024 * 1024} />));
+    await act(async () => findMode("audio_only")!.click());
+    await act(async () => { document.querySelector<HTMLButtonElement>(".record-button")!.click(); await flushPromises(20); });
+    const oldAudio = new Blob(["successful session A audio"], { type: "audio/webm" });
+    MediaRecorderFixture.instances[0]!.emitData(oldAudio);
+    await act(async () => { document.querySelector<HTMLButtonElement>(".record-button")!.click(); await flushPromises(40); });
+    expect(mocks.uploadLiveRecording).toHaveBeenCalledOnce();
+    expect(mocks.uploadLiveRecording.mock.calls[0][0].blob.size).toBe(oldAudio.size);
+    expect(mocks.completeLiveRecordingUpload).toHaveBeenCalledOnce();
+    expect(container.querySelector('[aria-label="Místní obnova nahrávky"]')).toBeNull();
+    expect(document.querySelector<HTMLButtonElement>(".record-button")!.disabled).toBe(false);
+
+    const secondRecordingId = "00000000-0000-4000-8000-000000000002";
+    mocks.createLiveRecordingDraft.mockResolvedValueOnce({ id: secondRecordingId, userId: "user-1", storagePrefix: "" });
+    const provider = createProviderRecording();
+    mocks.realtimeRecord.mockImplementation(createProviderFactory(provider));
+    mocks.fetch.mockImplementation(async (url) => ({ json: vi.fn().mockResolvedValue({}),
+      ok: !String(url).endsWith(`/api/recordings/${secondRecordingId}/live-transcript`)
+        && !String(url).endsWith(`/api/recordings/${secondRecordingId}/live-draft`) }));
+    const createObjectURL = vi.fn((_blob: Blob) => "blob:session-b-text");
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = vi.fn();
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    await act(async () => findMode("live_transcript_only")!.click());
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".record-button")!.click();
+      await flushPromises(20);
+      provider.emit("state_change", { new_state: "recording" });
+      provider.emit("result", { tokens: [{ end_ms: 500, is_final: true, start_ms: 0, text: "Pouze text relace B." }] });
+    });
+    await act(async () => { document.querySelector<HTMLButtonElement>(".record-button")!.click(); await flushPromises(40); });
+    expect(mocks.fetch.mock.calls.some(([url]) => String(url).endsWith(`/api/recordings/${secondRecordingId}/live-transcript`))).toBe(true);
+    const recovery = container.querySelector<HTMLElement>('[aria-label="Místní obnova nahrávky"]')!;
+    expect(recovery).not.toBeNull();
+    const audioDownload = [...recovery.querySelectorAll("button")].find(button => button.textContent === "Stáhnout místní audio")!;
+    const textDownload = [...recovery.querySelectorAll("button")].find(button => button.textContent === "Stáhnout místní přepis")!;
+    expect(audioDownload.disabled).toBe(true);
+    await act(async () => audioDownload.click());
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(textDownload.disabled).toBe(false);
+    await act(async () => textDownload.click());
+    const downloadedText = new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(createObjectURL.mock.calls[0]![0]);
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await downloadedText).toBe("Pouze text relace B.");
+    expect(mocks.uploadLiveRecording).toHaveBeenCalledOnce();
   });
 
   it("retains uploaded audio and exposes retry guidance when async transcription fails", async () => {
