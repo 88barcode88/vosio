@@ -1,25 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, Search, Users } from "lucide-react";
+import { ArrowLeft, ChevronDown, Search, Users } from "lucide-react";
 import { CompactPopover } from "@/components/ui/compact-popover";
 import { Modal } from "@/components/ui/modal";
+import { TeamScopePicker } from "@/components/team-scope-picker";
 import { getEmailInitials } from "@/components/workspace/utils";
 import { invitationCreateSchema } from "@/lib/recording-sharing/invitation-contract";
-import { teamWorkspaceSchema, type TeamAccess, type TeamScope, type TeamWorkspace } from "@/lib/team/types";
+import { teamAccessBatchMutationSchema, teamWorkspaceSchema, type TeamAccess, type TeamAccessBatchMutation, type TeamScope, type TeamWorkspace } from "@/lib/team/types";
+import { teamScopeKey as scopeKey, teamScopeLabel } from "@/lib/team/scope-options";
 import styles from "./team-manager.module.css";
 
 const scopeLabels = { recording: "Nahrávka", project: "Projekt", client: "Klient", folder: "Složka" };
-const sharedScopeNotice = "Současné i budoucí sdílené nahrávky; soukromé zůstávají soukromé.";
 type Invitation = TeamWorkspace["invitations"][number];
 type Mutation = { path: string; method: "POST" | "PATCH" | "DELETE"; body?: unknown; success: string };
 type Confirmation = { access: TeamAccess; userId: string; email: string; invitation?: never }
   | { invitation: Invitation; access?: never; userId?: never; email?: never };
-
-// scopeKey distinguishes project-limited client/folder paths with the same object identity.
-function scopeKey(scope: TeamScope) {
-  return `${scope.scopeKind}:${scope.scopeId}:${scope.projectId ?? ""}`;
-}
 
 // invitationLabel keeps delivery, acceptance and expired links separate from active access.
 export function teamInvitationLabel(invitation: Invitation, now: number) {
@@ -33,10 +29,10 @@ export function teamInvitationLabel(invitation: Invitation, now: number) {
 
 // TeamIdentity displays only the current actor's narrow people projection, never a global directory.
 function TeamIdentity({ email }: { email: string }) {
-  return <span className={styles.identity}><span aria-hidden="true" className={styles.avatar}>{getEmailInitials(email)}</span><span>{email}</span></span>;
+  return <span className={styles.identity}><span aria-hidden="true" className={styles.avatar}>{getEmailInitials(email)}</span><span title={email}>{email}</span></span>;
 }
 
-// TeamManager implements selected variant A and refreshes authority after every confirmed mutation.
+// TeamManager implements approved compact variant 2 and confirms current authority after mutations.
 export function TeamManager({ initialWorkspace, request = fetch }: { initialWorkspace: TeamWorkspace; request?: typeof fetch }) {
   const [workspace, setWorkspace] = useState<TeamWorkspace | null>(initialWorkspace);
   const [selectedId, setSelectedId] = useState<string | null>(initialWorkspace.people[0]?.userId ?? null);
@@ -50,7 +46,12 @@ export function TeamManager({ initialWorkspace, request = fetch }: { initialWork
   const [inviteOpen, setInviteOpen] = useState(false);
   const [grantTarget, setGrantTarget] = useState<{ userId: string; email: string } | null>(null);
   const grantOpen = grantTarget !== null;
-  const [grantKey, setGrantKey] = useState("");
+  const [grantSelection, setGrantSelection] = useState<TeamScope[]>([]);
+  const [grantRole, setGrantRole] = useState<"reader" | "editor">("reader");
+  const [batchUncertain, setBatchUncertain] = useState(false);
+  const heldBatch = useRef<TeamAccessBatchMutation | null>(null);
+  const rejectedGrantTarget = useRef<{ userId: string; email: string } | null>(null);
+  const locked = busy || batchUncertain;
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const pending = useRef(false);
   const mounted = useRef(true);
@@ -74,7 +75,13 @@ export function TeamManager({ initialWorkspace, request = fetch }: { initialWork
       if (!mounted.current || requestGeneration !== generation.current) return false;
       setWorkspace(result); setDenied(false); setError(""); setNow(Date.now());
       setConfirmation(current => current?.access && !result.people.some(person => person.userId === current.userId && person.accesses.some(access => scopeKey(access) === scopeKey(current.access))) ? null : current);
-      setGrantTarget(current => current && !result.people.some(person => person.userId === current.userId) ? null : current);
+      const rejectedTarget = rejectedGrantTarget.current;
+      rejectedGrantTarget.current = null;
+      setGrantTarget(current => {
+        const targetId = current?.userId ?? rejectedTarget?.userId ?? heldBatch.current?.userId;
+        const person = result.people.find(candidate => candidate.userId === targetId);
+        return person ? { userId: person.userId, email: person.email } : null;
+      });
       setSelectedId(current => result.people.some(person => person.userId === current) ? current : result.people[0]?.userId ?? null);
       return true;
     } catch {
@@ -101,7 +108,7 @@ export function TeamManager({ initialWorkspace, request = fetch }: { initialWork
 
   // mutate serializes commands and never presents a successful write until the refreshed server state is available.
   async function mutate({ path, method, body, success }: Mutation) {
-    if (pending.current) return false;
+    if (pending.current || batchUncertain) return false;
     pending.current = true; setBusy(true); setMessage(""); setError("");
     try {
       const response = await request(path, { method, cache: "no-store", headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -130,7 +137,6 @@ export function TeamManager({ initialWorkspace, request = fetch }: { initialWork
   const selected = workspace?.people.find(person => person.userId === selectedId);
   const people = workspace?.people.filter(person => person.email.toLocaleLowerCase("cs").includes(query.trim().toLocaleLowerCase("cs"))) ?? [];
   const invitations = workspace?.invitations.filter(invitation => !invitation.acceptedAt && !invitation.revokedAt) ?? [];
-  const grantScope = workspace?.scopes.find(scope => scopeKey(scope) === grantKey);
   const inviteScopes = workspace?.scopes ?? [];
 
   // invite preserves the exact selected recording/project/client/folder boundary through the shared invitation contract.
@@ -145,13 +151,50 @@ export function TeamManager({ initialWorkspace, request = fetch }: { initialWork
     if (await mutate({ path: "/api/recording-invitations", method: "POST", body: parsed.data, success: "Pozvánka byla předána k odeslání. Přístup vznikne až po přijetí." })) setInviteOpen(false);
   }
 
-  // grant uses the person captured at opening so an in-flight refresh cannot retarget the submitted scope.
-  async function grant(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!grantScope || !grantTarget) return;
-    const data = new FormData(event.currentTarget);
-    const { scopeKind, scopeId, projectId } = grantScope;
-    if (await mutate({ path: "/api/team/access", method: "POST", body: { scopeKind, scopeId, projectId, userId: grantTarget.userId, role: data.get("role") }, success: "Přístup je uložený." })) setGrantTarget(null);
+  // grant captures one immutable batch and replays that exact request after an ambiguous result.
+  async function grant(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (pending.current) return;
+    const replaying = heldBatch.current !== null;
+    if (!heldBatch.current) {
+      if (!grantTarget || !workspace || !grantSelection.length || grantSelection.some(scope => !workspace.scopes.some(current => scopeKey(current) === scopeKey(scope)))) return;
+      const parsed = teamAccessBatchMutationSchema.safeParse({ requestId: crypto.randomUUID(), userId: grantTarget.userId, role: grantRole, scopes: grantSelection.map(({ scopeKind, scopeId, projectId }) => ({ scopeKind, scopeId, projectId })) });
+      if (!parsed.success) { setError("Vyberte 1 až 100 různých dostupných rozsahů."); return; }
+      heldBatch.current = parsed.data;
+    }
+    const payload = heldBatch.current;
+    pending.current = true; setBusy(true); setMessage(""); setError("");
+    try {
+      const response = await request("/api/team/access/batch", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (response.status === 401 || response.status === 403) {
+        setWorkspace(null); setConfirmation(null);
+        if (!replaying) {
+          heldBatch.current = null; setBatchUncertain(false);
+          rejectedGrantTarget.current = grantTarget;
+        } else setBatchUncertain(true);
+        const restored = await refresh();
+        if (restored) setError(replaying
+          ? "Výsledek dřívějšího uložení stále není potvrzený. Ověřte stejný požadavek; výběr zůstává uzamčený."
+          : "Požadavek byl odmítnutý. Přehled je obnovený; upravte výběr podle dostupných rozsahů a zkuste to znovu.");
+        else setError(replaying
+          ? "Obnovte přehled a přihlášení před ověřením stejného požadavku. Původní výběr zůstává zachovaný."
+          : "Požadavek byl odmítnutý. Obnovte přehled před úpravou zachovaného výběru.");
+        return;
+      }
+      if ([400, 409, 422, 429].includes(response.status)) {
+        heldBatch.current = null; setBatchUncertain(false);
+        setError(response.status === 409 ? "Stav se změnil. Obnovte přehled před dalším pokusem." : response.status === 429 ? "Uložení je nyní omezené. Výběr zůstal zachovaný, zkuste to později." : "Požadavek byl odmítnutý. Výběr zůstal zachovaný, ověřte dostupné rozsahy.");
+        return;
+      }
+      if (!response.ok) throw new Error("unconfirmed");
+      const result: Record<string, unknown> = await response.json();
+      if (result.saved !== true || result.count !== payload.scopes.length) throw new Error("unconfirmed");
+      if (!await refresh()) { setBatchUncertain(true); return; }
+      heldBatch.current = null; setBatchUncertain(false); setGrantTarget(null); setGrantSelection([]);
+      setMessage("Požadavek je potvrzený. Přehled zobrazuje aktuální přístupy.");
+    } catch {
+      setBatchUncertain(true); setError("Výsledek uložení není potvrzený. Výběr zůstal zachovaný; ověřte stejný požadavek.");
+    } finally { pending.current = false; if (mounted.current) setBusy(false); }
   }
 
   // confirmRevocation uses the identity captured when the dialog opened, never the current list selection.
@@ -165,49 +208,48 @@ export function TeamManager({ initialWorkspace, request = fetch }: { initialWork
 
   return <section className={styles.root} aria-label="Tým" aria-busy={busy || refreshing}>
     <header className={styles.heading}><div><h1>Tým</h1><p>Lidé a přístupy, které spravujete.</p></div>
-      {workspace ? <CompactPopover label="Pozvat člověka" trigger="Pozvat člověka" busy={busy} keepMounted open={inviteOpen} onOpenChange={setInviteOpen}>
+      {workspace ? <CompactPopover label="Pozvat člověka" trigger="Pozvat člověka" busy={locked} keepMounted open={inviteOpen} onOpenChange={setInviteOpen}>
         <form className={styles.form} onSubmit={invite}>
-          <label>E-mail<input name="email" type="email" autoComplete="email" spellCheck={false} required maxLength={254} disabled={busy} /></label>
-          <label>Rozsah pozvánky<select name="scope" required disabled={busy || !inviteScopes.length} defaultValue=""><option value="" disabled>Vyberte rozsah</option>{inviteScopes.map(scope => <option key={scopeKey(scope)} value={scopeKey(scope)}>{scopeLabels[scope.scopeKind]}: {scope.label}{scope.projectId && scope.scopeKind !== "project" ? ` · ${workspace.scopes.find(project => project.scopeKind === "project" && project.scopeId === scope.projectId)?.label ?? "Vlastní projekt"}` : ""}</option>)}</select></label>
-          <label>Oprávnění<select name="role" disabled={busy} defaultValue="reader"><option value="reader">Čtenář</option><option value="editor">Editor</option></select></label>
+          <label>E-mail<input name="email" type="email" autoComplete="email" spellCheck={false} required maxLength={254} disabled={locked} /></label>
+          <label>Rozsah pozvánky<select name="scope" required disabled={locked || !inviteScopes.length} defaultValue=""><option value="" disabled>Vyberte rozsah</option>{inviteScopes.map(scope => <option key={scopeKey(scope)} value={scopeKey(scope)}>{scopeLabels[scope.scopeKind]}: {scope.label}{scope.projectId && scope.scopeKind !== "project" ? ` · ${workspace.scopes.find(project => project.scopeKind === "project" && project.scopeId === scope.projectId)?.label ?? "Vlastní projekt"}` : ""}</option>)}</select></label>
+          <label>Oprávnění<select name="role" disabled={locked} defaultValue="reader"><option value="reader">Čtenář</option><option value="editor">Editor</option></select></label>
           <p>Pozvánka platí pouze pro vybraný rozsah. Přístup vznikne až po přijetí. Klient, složka a projekt zahrnují současné i budoucí sdílené nahrávky; soukromé zůstávají soukromé.</p>
           {!inviteScopes.length ? <p>Není dostupný žádný spravovaný rozsah pro pozvání.</p> : null}
-          {error ? <p role="alert">{error}</p> : null}<button type="submit" disabled={busy || !inviteScopes.length}>{busy ? "Odesílám…" : "Odeslat pozvánku"}</button>
+          {error ? <p role="alert">{error}</p> : null}<button type="submit" disabled={locked || !inviteScopes.length}>{busy ? "Odesílám…" : "Odeslat pozvánku"}</button>
         </form>
       </CompactPopover> : null}
     </header>
     {workspace ? <div className={styles.scope}><strong>{workspace.role === "installation_admin" ? "Správce celé instalace Vosio" : "Zakladatel projektu"}</strong><p>{workspace.role === "installation_admin" ? "Spravujete svůj tým a jeho přístupy. Tato role sama nezpřístupňuje obsah cizích nahrávek." : "Vidíte pouze lidi, pozvánky a rozsahy svých projektů."}</p></div> : null}
     {denied ? <p role="alert">Ke správě týmu nemáte aktuální oprávnění. Vraťte se na Nahrávky.</p> : null}
     {error ? <div className={styles.feedback} role="alert"><p>{error}</p><button disabled={busy || refreshing} onClick={() => void refresh()} type="button">Obnovit přehled</button></div> : null}
+    {batchUncertain ? <div className={styles.recovery}><p>Výsledek hromadného uložení není potvrzený. Nové změny jsou do ověření uzamčené.</p><button type="button" disabled={busy || denied} onClick={() => void grant()}>Ověřit stejný požadavek</button></div> : null}
     <p className={styles.status} role="status" aria-live="polite">{refreshing ? "Obnovuji přehled…" : message}</p>
     {workspace ? <>
-      <div className={styles.toolbar}><label><Search aria-hidden="true" size={15} /><span className={styles.srOnly}>Hledat ve vlastním seznamu lidí</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Hledat e-mail…" disabled={busy} /></label><span>Lidé: {workspace.people.length} · Pozvánky: {invitations.length}</span></div>
+      <div className={styles.toolbar}><label><Search aria-hidden="true" size={15} /><span className={styles.srOnly}>Hledat ve vlastním seznamu lidí</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Hledat e-mail…" disabled={locked} /></label><span>Lidé: {workspace.people.length} · Pozvánky: {invitations.length}</span></div>
       <div className={`${styles.layout} ${mobileDetail ? styles.mobileDetail : ""}`}>
         <section className={`${styles.panel} ${styles.people}`} aria-label="Vlastní seznam lidí"><header className={styles.panelHeading}><h2>Lidé</h2><span>Váš seznam</span></header>
-          {people.map(person => <button key={person.userId} className={styles.personRow} type="button" aria-pressed={selectedId === person.userId} disabled={busy}
+          {people.map(person => <button key={person.userId} className={styles.personRow} type="button" aria-pressed={selectedId === person.userId} disabled={locked}
             ref={element => { if (element) personButtonRefs.current.set(person.userId, element); else personButtonRefs.current.delete(person.userId); }}
             onClick={() => { setSelectedId(person.userId); setGrantTarget(null); setMobileDetail(true); if (window.matchMedia("(max-width: 900px)").matches) requestAnimationFrame(() => detailRef.current?.focus()); }}><TeamIdentity email={person.email} /><span>Přístupy: {person.accesses.length}</span></button>)}
           {!people.length ? <p className={styles.empty}>{workspace.people.length ? "Hledání neodpovídá žádný člověk." : "Ve svém seznamu zatím nemáte žádné lidi. Pozvěte prvního člověka."}</p> : null}
           <div className={styles.invitationHeading}>Čekající pozvánky · {invitations.length}</div>
-          {invitations.map(invitation => <article className={styles.invitation} key={invitation.id}><strong>{invitation.email}</strong><p>{invitation.scope === "recordings" ? "Vybrané nahrávky" : `${scopeLabels[invitation.scope]}: ${workspace.scopes.find(scope => scope.scopeKind === invitation.scope && scope.scopeId === (invitation.scopeId ?? invitation.projectId))?.label ?? scopeLabels[invitation.scope]}`} · {invitation.role === "reader" ? "Čtenář" : "Editor"}</p><p>{teamInvitationLabel(invitation, now)}</p><div className={styles.invitationActions}><button type="button" disabled={busy || !invitation.authorizationCurrent || invitation.attemptCount >= 5 || Date.parse(invitation.nextAttemptAt) > now || Date.parse(invitation.expiresAt) <= now} onClick={() => void mutate({ path: `/api/recording-invitations/${invitation.id}`, method: "PATCH", success: "Pozvánka byla znovu předána k odeslání. Starý odkaz už neplatí." })}>Odeslat znovu ({invitation.attemptCount}/5)</button><button disabled={busy || !invitation.authorizationCurrent} type="button" onClick={() => setConfirmation({ invitation })}>Zrušit pozvánku</button></div>{invitation.attemptCount >= 5 ? <p>Limit pěti odeslání je vyčerpaný.</p> : Date.parse(invitation.nextAttemptAt) > now ? <p>Další odeslání: {new Intl.DateTimeFormat("cs", { dateStyle: "short", timeStyle: "short" }).format(new Date(invitation.nextAttemptAt))}</p> : null}</article>)}
+          {invitations.map(invitation => <article className={styles.invitation} key={invitation.id}><strong>{invitation.email}</strong><p>{invitation.scope === "recordings" ? "Vybrané nahrávky" : `${scopeLabels[invitation.scope]}: ${workspace.scopes.find(scope => scope.scopeKind === invitation.scope && scope.scopeId === (invitation.scopeId ?? invitation.projectId))?.label ?? scopeLabels[invitation.scope]}`} · {invitation.role === "reader" ? "Čtenář" : "Editor"}</p><p>{teamInvitationLabel(invitation, now)}</p><div className={styles.invitationActions}><button type="button" disabled={locked || !invitation.authorizationCurrent || invitation.attemptCount >= 5 || Date.parse(invitation.nextAttemptAt) > now || Date.parse(invitation.expiresAt) <= now} onClick={() => void mutate({ path: `/api/recording-invitations/${invitation.id}`, method: "PATCH", success: "Pozvánka byla znovu předána k odeslání. Starý odkaz už neplatí." })}>Odeslat znovu ({invitation.attemptCount}/5)</button><button disabled={locked || !invitation.authorizationCurrent} type="button" onClick={() => setConfirmation({ invitation })}>Zrušit pozvánku</button></div>{invitation.attemptCount >= 5 ? <p>Limit pěti odeslání je vyčerpaný.</p> : Date.parse(invitation.nextAttemptAt) > now ? <p>Další odeslání: {new Intl.DateTimeFormat("cs", { dateStyle: "short", timeStyle: "short" }).format(new Date(invitation.nextAttemptAt))}</p> : null}</article>)}
           {!invitations.length ? <p className={styles.empty}>Žádné čekající pozvánky.</p> : null}
         </section>
-        <div className={styles.detailWrapper}><button className={styles.back} type="button" disabled={busy} onClick={() => { setMobileDetail(false); if (selectedId) requestAnimationFrame(() => personButtonRefs.current.get(selectedId)?.focus()); }}><ArrowLeft size={15} aria-hidden="true" />Zpět na lidi</button>
-          <section className={`${styles.panel} ${styles.detail}`} tabIndex={-1} ref={detailRef} aria-label="Detail osoby"><header className={styles.panelHeading}><h2>Detail osoby</h2></header>
-            {selected ? <div className={styles.detailBody}><TeamIdentity email={selected.email} /><div className={styles.accessHeading}><h3>Aktivní přístupy · {selected.accesses.length}</h3>
-              <CompactPopover label="Přidělit přístup" trigger="Přidělit přístup" busy={busy} keepMounted open={grantOpen} onOpenChange={open => { setGrantTarget(open ? { userId: selected.userId, email: selected.email } : null); if (open && !workspace.scopes.some(scope => scopeKey(scope) === grantKey)) setGrantKey(workspace.scopes[0] ? scopeKey(workspace.scopes[0]) : ""); }}>
-                <form className={styles.form} onSubmit={grant}><p>{grantTarget?.email}</p><label>Rozsah<select required value={grantKey} onChange={event => setGrantKey(event.target.value)} disabled={busy || !workspace.scopes.length}><option value="" disabled>Vyberte rozsah</option>{workspace.scopes.map(scope => <option key={scopeKey(scope)} value={scopeKey(scope)}>{scopeLabels[scope.scopeKind]}: {scope.label}{scope.projectId && scope.scopeKind !== "project" ? ` · ${workspace.scopes.find(project => project.scopeKind === "project" && project.scopeId === scope.projectId)?.label ?? "Vlastní projekt"}` : ""}</option>)}</select></label><label>Oprávnění<select name="role" defaultValue="reader" disabled={busy}><option value="reader">Čtenář</option><option value="editor">Editor</option></select></label>
-                  <p>{grantScope?.scopeKind === "recording" ? "Pouze vybraná nahrávka. Ostatní přístupy se tím nemění." : sharedScopeNotice}</p><p>Odebrání tohoto přístupu ponechá ostatní platné přístupy zachované.</p>{!workspace.scopes.length ? <p>Nemáte dostupný žádný spravovaný rozsah.</p> : null}{error ? <p role="alert">{error}</p> : null}<button type="submit" disabled={busy || !grantScope}>{busy ? "Ukládám…" : "Uložit přístup"}</button></form>
-              </CompactPopover></div>
-              {selected.accesses.map(access => <article className={styles.access} key={scopeKey(access)}><div><span className={styles.kind}>{scopeLabels[access.scopeKind]}</span><strong>{access.label}</strong><p>{access.scopeKind === "recording" ? "Pouze tato nahrávka" : sharedScopeNotice}</p>{access.projectId && access.scopeKind !== "project" ? <p>V projektu {workspace.scopes.find(scope => scope.scopeKind === "project" && scope.scopeId === access.projectId)?.label ?? "ve vašem spravovaném rozsahu"}</p> : null}</div><span className={styles.badge}>{access.role === "reader" ? "Čtenář" : "Editor"}</span><button className={styles.danger} disabled={busy} onClick={() => setConfirmation({ access, userId: selected.userId, email: selected.email })} type="button" aria-label={`Odebrat přístup: ${access.label}`}>Odebrat</button></article>)}
-              {!selected.accesses.length ? <p className={styles.empty}>Žádný aktivní přístup.</p> : null}<p className={styles.note}>Samotné uvedení osoby v týmu nesdílí žádný obsah. Zobrazené přístupy jsou jednotlivé cesty; odebrání jedné neruší ostatní.</p>
+        <div className={styles.detailWrapper}><button className={styles.back} type="button" disabled={locked} onClick={() => { setMobileDetail(false); if (selectedId) requestAnimationFrame(() => personButtonRefs.current.get(selectedId)?.focus()); }}><ArrowLeft size={15} aria-hidden="true" />Zpět na lidi</button>
+          <section className={`${styles.panel} ${styles.detail}`} tabIndex={-1} ref={detailRef} aria-label="Detail osoby">
+            {selected ? <div className={styles.detailBody}><TeamIdentity email={selected.email} /><div className={styles.accessHeading}><h2>Aktivní přístupy · {selected.accesses.length}</h2></div>
+              {selected.accesses.map(access => <article className={styles.access} key={scopeKey(access)}><div><span className={styles.kind}>{scopeLabels[access.scopeKind]}</span><strong>{teamScopeLabel(access, workspace.scopes)}</strong></div><span className={styles.badge}>{access.role === "reader" ? "Čtenář" : "Editor"}</span><button className={styles.danger} disabled={locked} onClick={() => setConfirmation({ access, userId: selected.userId, email: selected.email })} type="button" aria-label={`Odebrat přístup: ${teamScopeLabel(access, workspace.scopes)}`}>Odebrat</button></article>)}
+              {!selected.accesses.length ? <p className={styles.empty}>Žádný aktivní přístup.</p> : null}<p className={styles.note}>Jednotlivé cesty se mohou překrývat. Odebrání jedné neruší ostatní.</p>
+              <button className={styles.grantToggle} type="button" disabled={locked} aria-expanded={grantOpen} aria-controls="team-grant-picker" onClick={() => { setGrantTarget(grantOpen ? null : { userId: selected.userId, email: selected.email }); if (!grantOpen) { setGrantSelection([]); setGrantRole("reader"); } }}><span>Přidělit přístup</span><ChevronDown size={14} aria-hidden="true" /></button>
+              {grantTarget ? <div id="team-grant-picker"><TeamScopePicker key={grantTarget.userId} scopes={workspace.scopes} selection={grantSelection} onSelectionChange={setGrantSelection} email={grantTarget.email} role={grantRole} onRoleChange={setGrantRole} locked={locked} busy={busy} uncertain={batchUncertain} onSubmit={grant} /></div> : null}
             </div> : <div className={styles.empty}><Users aria-hidden="true" size={18} /><p>Vyberte člověka ze svého seznamu.</p></div>}
           </section>
         </div>
       </div>
     </> : null}
     <Modal open={confirmation !== null && workspace !== null} onClose={() => { if (!busy) setConfirmation(null); }} label={confirmation?.invitation ? "Zrušit pozvánku" : "Odebrat tento přístup"}>
-      <div className={styles.confirm}><h2>{confirmation?.invitation ? "Zrušit pozvánku?" : "Odebrat tento přístup?"}</h2><p>{confirmation?.invitation?.email ?? confirmation?.email}</p><p>{confirmation?.access?.label}</p><p>{confirmation?.invitation ? "Pozvánku již nepůjde přijmout. Existující přístupy se tím nemění." : "Odebere se pouze tato cesta přístupu. Jiný platný přístup přes nahrávku, projekt, klienta či složku může zůstat zachovaný."}</p>{error ? <p role="alert">{error}</p> : null}<div><button disabled={busy} onClick={() => setConfirmation(null)} type="button">Zrušit</button><button disabled={busy} onClick={() => void confirmRevocation()} type="button">{busy ? "Odebírám…" : confirmation?.invitation ? "Zrušit pozvánku" : "Odebrat přístup"}</button></div></div>
+      <div className={styles.confirm}><h2>{confirmation?.invitation ? "Zrušit pozvánku?" : "Odebrat tento přístup?"}</h2><p>{confirmation?.invitation?.email ?? confirmation?.email}</p><p>{confirmation?.access?.label}</p><p>{confirmation?.invitation ? "Pozvánku již nepůjde přijmout. Existující přístupy se tím nemění." : "Odebere se pouze tato cesta přístupu. Jiný platný přístup přes nahrávku, projekt, klienta či složku může zůstat zachovaný."}</p>{error ? <p role="alert">{error}</p> : null}<div><button disabled={locked} onClick={() => setConfirmation(null)} type="button">Zrušit</button><button disabled={locked} onClick={() => void confirmRevocation()} type="button">{busy ? "Odebírám…" : confirmation?.invitation ? "Zrušit pozvánku" : "Odebrat přístup"}</button></div></div>
     </Modal>
   </section>;
 }

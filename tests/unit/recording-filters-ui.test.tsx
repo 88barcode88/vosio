@@ -110,6 +110,31 @@ afterEach(async () => {
 });
 
 describe("RecordingFilters URL navigation", () => {
+  it("lets a project member filter a readable project whose personal client is not exposed", async () => {
+    const memberOptions: RecordingOrganizationOptions = {
+      clients: [], folders: [], tags: [],
+      projects: [{ id: projectA, name: "Shared CRM", color: null, created_at: timestamp, updated_at: timestamp, client_id: null, can_manage_access: false, can_capture: false }]
+    };
+    await act(async () => root.render(<RecordingFilters filters={emptyFilters} options={memberOptions} searchQuery="" />));
+    const projectSelect = container.querySelector<HTMLSelectElement>('select[name="project"]')!;
+    expect(projectSelect.disabled).toBe(false);
+    expect([...projectSelect.options].map(option => option.textContent)).toContain("Shared CRM");
+    await setSelect("project", projectA);
+    const target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
+    expect(target.searchParams.get("project")).toBe(projectA);
+    expect(target.searchParams.has("client")).toBe(false);
+  });
+
+  it("preserves the selected project when broadening a client filter to all clients", async () => {
+    navigation.currentSearch = `client=${clientA}&project=${projectA}`;
+    await act(async () => root.render(<RecordingFilters filters={{ ...emptyFilters, clientId: clientA, projectId: projectA }} options={options} searchQuery="" />));
+    await setSelect("client", "");
+    const target = new URL(navigation.push.mock.calls[0]?.[0], "https://example.test");
+    expect(target.searchParams.has("client")).toBe(false);
+    expect(target.searchParams.get("project")).toBe(projectA);
+    expect(container.querySelector<HTMLSelectElement>('select[name="project"]')?.value).toBe(projectA);
+  });
+
   it("renders an accessible search control without a visible filter heading", async () => {
     await act(async () => root.render(
       <RecordingFilters filters={emptyFilters} options={options} searchQuery="" />

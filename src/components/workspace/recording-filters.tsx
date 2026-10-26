@@ -32,7 +32,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
   const previousCommittedLocationRef = useRef<string | null>(null);
   const committedQueryString = currentSearchParams.toString();
   const committedLocation = committedQueryString ? `${pathname}?${committedQueryString}` : pathname;
-  const projects = options.projects.filter((project) => project.client_id === clientId);
+  const projects = options.projects.filter((project) => !clientId || project.client_id === clientId);
   const hasFilters = Boolean(filters.clientId || filters.projectId || filters.folderId || filters.tagIds.length);
   const hasDraftFilters = Boolean(clientId || projectId || folderId || tagIds.size);
   const activeAdvancedFilterCount = [clientId, projectId, folderId].filter(Boolean).length + tagIds.size;
@@ -168,7 +168,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
                 onChange={(event) => {
                   const nextClientId = event.target.value;
                   const nextProjectId = options.projects.some((project) =>
-                    project.id === projectId && project.client_id === nextClientId
+                    project.id === projectId && (!nextClientId || project.client_id === nextClientId)
                   ) ? projectId : "";
                   setClientId(nextClientId);
                   setProjectId(nextProjectId);
@@ -189,7 +189,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
             <label>
               <span>Projekt</span>
               <select
-                disabled={isNavigationPending || !clientId}
+                disabled={isNavigationPending}
                 name="project"
                 onChange={(event) => {
                   const nextProjectId = event.target.value;

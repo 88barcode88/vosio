@@ -1,5 +1,17 @@
 # Gotchas
 
+Tým ukládá více rozsahů jedním atomickým batch RPC, které vyžaduje forward `20261026160001` před app deployem. Chybějící v2 RPC nesmí spadnout na odhadované zařazení nebo klientskou smyčku grantů. UUID/payload nejistého požadavku zůstávají v komponentě uzamčené pro přesný replay; reload stránky tento místní koncept neuchová. Historický receipt neobnovuje později odebraný grant.
+
+Klientské a složkové granty zahrnují všechny nesoukromé nahrávky v přesné hranici, včetně selected. Projektové členství samo vyžaduje project visibility. Soukromé nahrávky se sdílejí pouze samostatným výslovným výběrem, bez automatické změny při přesunu do klienta nebo projektu. Složky nemají klientského rodiče; UI jej nesmí odhadovat podle názvů.
+
+## Sdílený projekt bez osobního klienta
+
+Příjemce projektového členství smí vidět název projektu, ale jeho osobní vazba na
+klienta zůstává maskovaná (`client_id: null`). Projektový filtr proto funguje i
+bez vybraného klienta a nabídne všechny projekty dostupné přes RLS. Teprve
+výslovný klientský filtr nabídku zúží; návrat na všechny klienty nezruší platný
+projektový výběr. Viditelný projekt sám nezpřístupňuje jeho soukromé nahrávky.
+
 ## Pozvánkové e-maily
 
 Výchozí Supabase Invite/Magic Link šablony neodpovídají Vosio invitation/OTP toku:
