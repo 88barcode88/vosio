@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="cs">
+  <body>
+    <h1>Ověření pozvánky do Vosio</h1>
+    <p>Pro váš účet byla připravena pozvánka ke spolupráci ve Vosio.</p>
+    <p><a href="{{ .RedirectTo }}">Otevřít pozvánku</a></p>
+    <p>Na otevřené stránce zadejte svůj e-mail a tento jednorázový ověřovací kód:</p>
+    <p><strong>{{ .Token }}</strong></p>
+    <p>Po ověření e-mailu potvrďte přijetí pozvánky. Samotné otevření odkazu ani ověření e-mailu přístup k nahrávkám nepřidá.</p>
+    <p>Pokud pozvánku neočekáváte, tento e-mail ignorujte. Odkaz ani kód nikomu nepředávejte.</p>
+  </body>
+</html>
