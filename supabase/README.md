@@ -2,6 +2,14 @@
 
 This folder contains the canonical database and Storage setup expected by Vosio.
 
+Hosted Auth email templates are a separate required setup step after migrations:
+run `npm run setup:auth -- --project-ref YOUR_PROJECT_REF --web-origin https://vosio.example --apply`
+with your own `SUPABASE_ACCESS_TOKEN` in the operator process environment.
+This idempotently installs the versioned invitation/OTP templates without editing
+them in the dashboard. SQL migrations and `db push` cannot install hosted Auth
+templates. Local CLI Auth references the same files in `config.toml`.
+See [portable email setup](../docs/api/invitation-email-setup.md).
+
 ## MCP and current application
 
 The public source includes project sharing/capture/recovery, model/checklist forwards, and the remote MCP OAuth bridge/Function. For your own installation follow the Czech [MCP setup](../plugins/vosio/SETUP.md); no author target, secrets or OAuth client are supplied. Source publication never activates MCP, retention or a scheduler.

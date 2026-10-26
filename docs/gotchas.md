@@ -1,5 +1,15 @@
 # Gotchas
 
+## Pozvánkové e-maily
+
+Výchozí Supabase Invite/Magic Link šablony neodpovídají Vosio invitation/OTP toku:
+chybí přímý odkaz s application tokenem a ověřovací kód. Hláška o úplném odkazu
+znamená, že přijímací stránka nemá platný invitation fragment. Při instalaci i
+upgrade spusťte [setup:auth](api/invitation-email-setup.md); `supabase db push`
+mění databázi, nikoli hosted Auth šablony. Starý e-mail se změnou konfigurace
+neopraví: použijte stávající omezené opětovné odeslání. Po reloadu otevřete znovu
+nový odkaz, protože token žije jen v paměti a fragment se po načtení odstraní.
+
 ## Tým
 
 Instalačního správce nevytváří registrace ani user metadata. Prázdný privátní registr je bezpečný výchozí stav; jeho provision na skutečném targetu vyžaduje určený ověřený účet a samostatně schválený krok. Nedostupná nebo odebraná role skryje navigaci a přímé API dál odmítne správu. Role nezpřístupňuje cizí obsah.

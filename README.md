@@ -52,7 +52,16 @@ supabase db push
 
 Na existující instalaci nejprve vytvořte ověřenou zálohu a porovnejte skutečné schéma i migrační historii. Aplikujte pouze chybějící forwards. Neresetujte produkci, neupravujte staré migrace a neopravujte historii bez plánu. Sdílení mění oprávnění a capture kontrakty: databázi, web a workery upgradujte společně. [Databázový návod](supabase/README.md), [upgrade a rollback hranice](docs/api/project-sharing-runbook.md).
 
-V Supabase Auth nastavte Site URL svého webu, přesné callbacky a účet správce. Pro pozvánky nastavte vlastní SMTP a přesné Invite/Magic Link šablony podle [Auth](docs/api/auth.md) a [pozvánek](docs/api/recording-invitations.md). Nevytvářejte sdílený demonstrační účet ani automatické public signup kvůli pluginu.
+Po databázových migracích nastavte pozvánkové e-maily automaticky. Předejte vlastní `SUPABASE_ACCESS_TOKEN` přes prostředí procesu správce a spusťte:
+
+```powershell
+npm.cmd run setup:auth -- --project-ref YOUR_PROJECT_REF --web-origin https://vosio.example --apply
+npm.cmd run setup:auth -- --project-ref YOUR_PROJECT_REF --web-origin https://vosio.example
+```
+
+Druhý příkaz pouze ověřuje stav (`configured: true`, prázdné `changedFields`). Setup nainstaluje verzované Invite/Magic Link šablony s odkazem i kódem, Site URL a potřebné invitation redirecty; zachová SMTP, OAuth/MCP a ostatní Auth nastavení. Lokální CLI načte stejné šablony z `supabase/config.toml`. `supabase db push` sám hosted Auth šablony nenastaví. [Instalace a upgrade](docs/api/invitation-email-setup.md).
+
+V Supabase Auth nastavte vlastní SMTP, další potřebné callbacky a účet správce podle [Auth](docs/api/auth.md). Staré e-maily je nutné poslat znovu přes Tým. Nevytvářejte sdílený demonstrační účet ani automatické public signup kvůli pluginu.
 
 ```powershell
 npm.cmd run dev

@@ -19,7 +19,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "build:mcp": "node scripts/build-mcp-edge.mjs",
     "check:mcp": "node scripts/check-mcp-edge.mjs",
-    "setup:mcp": "node scripts/setup-vosio-mcp.mjs"
+    "setup:mcp": "node scripts/setup-vosio-mcp.mjs",
+    "setup:auth": "node scripts/setup-invitation-email.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.0",
