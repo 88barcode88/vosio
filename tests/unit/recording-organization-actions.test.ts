@@ -396,9 +396,12 @@ describe("recording organization actions", () => {
     expect(rpc).toHaveBeenCalledOnce();
     expect(rpc).toHaveBeenCalledWith("recording_organization_context_v1", { p_recording_id: recordingId });
     form.set("organizationFingerprint", "old-preview");
-    rpc.mockResolvedValue({ data: null, error: { code: "40001", message: "organization preview stale" } });
+    rpc.mockClear();
+    rpc.mockResolvedValue({ data: null, error: { code: "PT409", message: "organization preview stale" } });
     const result = await assignRecordingOrganizationAction(createInitialSaveActionState(), form);
     expect(result.message).toContain("Obnovte náhled");
+    expect(result.status).toBe("error");
+    expect(rpc).toHaveBeenCalledOnce();
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 

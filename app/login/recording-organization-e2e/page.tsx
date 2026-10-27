@@ -11,6 +11,8 @@ import { normalizeRecordingSearchQuery } from "@/lib/recordings/search";
 import { activeRecordingStatuses } from "@/lib/recordings/types";
 import {
   assignFixtureOrganizationAction,
+  confirmFixtureOrganizationAction,
+  previewFixtureOrganizationAction,
   createFixtureClientAction,
   createFixtureFolderAction,
   createFixtureProjectAction,
@@ -126,8 +128,13 @@ export default async function RecordingOrganizationE2EPage({
           key={`fixture-assignment-${snapshot.primary.id}`}
           options={snapshot.options}
           organization={snapshot.organization}
-          recording={snapshot.primary}
-          saveAction={assignFixtureOrganizationAction.bind(null, scopeValue)}
+          recording={fixtureMode === "confirmation" || fixtureMode === "confirmation-conflict" ? {
+            ...snapshot.primary, visibility: "selected", organization_policy: { personalEditable: true, projectIds: snapshot.options.projects.map((project) => project.id) }
+          } : snapshot.primary}
+          previewAction={previewFixtureOrganizationAction.bind(null, scopeValue)}
+          saveAction={fixtureMode === "confirmation" || fixtureMode === "confirmation-conflict"
+            ? confirmFixtureOrganizationAction.bind(null, scopeValue, fixtureMode === "confirmation-conflict")
+            : assignFixtureOrganizationAction.bind(null, scopeValue)}
         />
       </section>
       <RecordingsManager

@@ -66,7 +66,7 @@ do $$ declare p jsonb; begin
  begin
   perform public.assign_recording_organization_v2('b5000000-0000-4000-8000-000000000001','b2000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',null,'{}',p->>'fingerprint');
   raise exception 'FAIL stale accepted';
- exception when serialization_failure then null; end;
+ exception when sqlstate 'PT409' then null; end;
  perform pg_temp.assert_true((select folder_id='b3000000-0000-4000-8000-000000000001' from public.recordings where id='b5000000-0000-4000-8000-000000000001'),'stale save rolled back');
 end; $$;
 insert into public.recording_invitations(id,token_hash,email,role,scope,recording_item_count,project_id,expires_at,created_by) values
@@ -104,7 +104,7 @@ select pg_temp.assert_true((select client_id='b2000000-0000-4000-8000-0000000000
 do $$ declare p jsonb; begin
  p:=public.preview_recording_organization_v1('b5000000-0000-4000-8000-000000000001','b2000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',null,'{}');
  update vosio_team_private.scope_grants set revoked_at=now();
- begin perform public.assign_recording_organization_v2('b5000000-0000-4000-8000-000000000001','b2000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',null,'{}',p->>'fingerprint'); raise exception 'FAIL stale scope revoke'; exception when serialization_failure then null; end;
+ begin perform public.assign_recording_organization_v2('b5000000-0000-4000-8000-000000000001','b2000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',null,'{}',p->>'fingerprint'); raise exception 'FAIL stale scope revoke'; exception when sqlstate 'PT409' then null; end;
 end; $$;
 -- Pending scope recipients are shown separately, and acceptance/revocation both invalidate review.
 insert into public.recording_invitations(id,token_hash,email,role,scope,recording_item_count,team_client_id,expires_at,created_by) values
@@ -115,13 +115,13 @@ do $$ declare p jsonb; begin
  p:=public.preview_recording_organization_v1('b5000000-0000-4000-8000-000000000001','b2000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',null,'{}');
  perform pg_temp.assert_true(jsonb_array_length(p->'pendingInvitations')=1 and p#>>'{pendingInvitations,0,label}'='reader@example.invalid','pending recipient separate from active paths');
  perform public.revoke_recording_invitation_v1('b7000000-0000-4000-8000-000000000002');
- begin perform public.assign_recording_organization_v2('b5000000-0000-4000-8000-000000000001','b2000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',null,'{}',p->>'fingerprint'); raise exception 'FAIL stale pending revoke'; exception when serialization_failure then null; end;
+ begin perform public.assign_recording_organization_v2('b5000000-0000-4000-8000-000000000001','b2000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',null,'{}',p->>'fingerprint'); raise exception 'FAIL stale pending revoke'; exception when sqlstate 'PT409' then null; end;
  update public.recording_invitations set revoked_at=null where id='b7000000-0000-4000-8000-000000000002';
  p:=public.preview_recording_organization_v1('b5000000-0000-4000-8000-000000000001','b2000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',null,'{}');
  perform set_config('request.jwt.claim.sub','b1000000-0000-4000-8000-000000000002',true);
  perform set_config('request.jwt.claims','{"session_id":"b8000000-0000-4000-8000-000000000002"}',true);
  perform public.accept_recording_invitation_v1(repeat('b',64));
  perform set_config('request.jwt.claim.sub','b1000000-0000-4000-8000-000000000001',true);
- begin perform public.assign_recording_organization_v2('b5000000-0000-4000-8000-000000000001','b2000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',null,'{}',p->>'fingerprint'); raise exception 'FAIL stale pending accept'; exception when serialization_failure then null; end;
+ begin perform public.assign_recording_organization_v2('b5000000-0000-4000-8000-000000000001','b2000000-0000-4000-8000-000000000001','b4000000-0000-4000-8000-000000000001',null,'{}',p->>'fingerprint'); raise exception 'FAIL stale pending accept'; exception when sqlstate 'PT409' then null; end;
 end; $$;
 rollback;

@@ -118,6 +118,14 @@ export function RecordingOrganizationEditor({
   const submittedDraftRef = useRef<RecordingOrganizationDraft | null>(null);
   const submittedPersistedSignatureRef = useRef<string | null>(null);
 
+  // React resets forms during commit, when synthetic onReset is suppressed; preserve the controlled draft natively.
+  const preserveDraftOnReset = useCallback((form: HTMLFormElement | null) => {
+    if (!form) return;
+    const preventReset = (event: Event) => event.preventDefault();
+    form.addEventListener("reset", preventReset);
+    return () => form.removeEventListener("reset", preventReset);
+  }, []);
+
   useEffect(() => {
     persistedDraftRef.current = persistedDraft;
     persistedSignatureRef.current = persistedSignature;
@@ -265,6 +273,7 @@ export function RecordingOrganizationEditor({
             aria-busy={isPending}
             aria-label="Zařazení"
             className="recording-organization-form"
+            ref={preserveDraftOnReset}
             onSubmit={(event) => {
               if (isPending) event.preventDefault();
             }}

@@ -33,6 +33,10 @@ taxonomii cizího autora. Pending pozvánka není aktivní přístup. Soukromé 
 nemají dynamické scope cesty ani pending publikum.
 
 UI ukáže vybraný cíl, zachované exact příjemce a přidané/odebrané aktivní cesty.
+Řízený formulář zachytává nativní `reset`: React ho vyvolává i po úspěšném
+načtení náhledu, ještě před vlastním potvrzením. Reset během React commitu
+nezachytí syntetický `onReset`; odpojitelný nativní listener zachová DOM hodnoty
+shodné s draftem a fingerprintem. Výslovné vyčištění a zrušení dál mění draft.
 Čekající pozvánky cíle označí jako budoucí přístup až po přijetí. Změna draftu
 zneplatní potvrzení. `assign_recording_organization_v2(..., expected_fingerprint)`
 získá stejný lock, zopakuje celý preflight a dovolí jedinou atomickou mutation
@@ -54,8 +58,14 @@ preflight na serveru; nesoukromá větev nejdřív načte autoritativní policy.
 
 - `42501`: chybějící správa, cizí osobní cíl, nepovolený projekt/custody transfer.
 - `22023`: nesoulad klienta a vlastního founder projektu.
-- `40001 / organization preview stale`: změněné zařazení, exact/scope grant nebo
+- `PT409 / organization preview stale`: změněné zařazení, exact/scope grant nebo
   čekající pozvánka. UI vyžádá nový náhled a potvrzení, zachová hodnoty.
+  Forward `20261027122647_organization_confirmation_conflict.sql` nahrazuje
+  původní `40001`, který některé verze PostgREST považují za opakovatelnou
+  serializační chybu a mohou zacyklit jediný HTTP požadavek. Nepoužívat jej
+  pro aplikační konflikt vyžadující nové potvrzení. Již zacyklené relace mohou
+  vyžadovat samostatné ukončení po ověření konkrétního backendu; samotný deploy
+  aplikace je neuvolní.
 - `55000 / organization pending invitation`: projektový přesun zasahuje živou
   pozvánku aktuálního/cílového projektu nebo přesný invitation item. Záměrně
   konzervativní blokace zachovává původní invitation scope.
