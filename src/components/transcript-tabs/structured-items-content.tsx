@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRecordingCapabilities } from "@/components/recording-capability-context";
 import {
   AlertTriangle,
@@ -43,19 +43,23 @@ type EvidenceNavigationProps = {
 // StructuredItemsContent renders normalized AI rows as actionable workspace data.
 export function StructuredItemsContent({
   items,
+  checklistAction,
+  checklistPending = false,
   onOpenEvidence,
   onTaskDeleted,
   onTaskStatusConfirmed,
   resolveEvidenceTarget
 }: {
   items: StructuredAiItems;
+  checklistAction?: ReactNode;
+  checklistPending?: boolean;
   onOpenEvidence: (target: TranscriptTarget) => void;
   onTaskDeleted?: (task: StructuredTaskRow) => void;
   onTaskStatusConfirmed?: (task: StructuredTaskRow, status: StructuredTaskRow["status"]) => void;
   resolveEvidenceTarget?: EvidenceTargetResolver;
 }) {
   const [checklistMessage, setChecklistMessage] = useState<string | null>(null);
-  const hasStructuredItems = items.tasks.length > 0 || items.decisions.length > 0 || items.risks.length > 0;
+  const hasStructuredItems = checklistPending || items.tasks.length > 0 || items.decisions.length > 0 || items.risks.length > 0;
   const activeEvidenceTargetResolver = resolveEvidenceTarget ?? resolveStoredEvidenceTarget;
 
   // copyChecklist copies the normalized task checklist as readable Markdown.
@@ -76,20 +80,21 @@ export function StructuredItemsContent({
 
   return (
     <section className="structured-ai-section" aria-label="Strukturované AI položky">
-      {items.tasks.length > 0 ? (
+      {items.tasks.length > 0 || checklistPending ? (
         <div className="structured-ai-block">
           <header>
             <strong>Úkoly jako checklist</strong>
             <span>{items.tasks.length} položek</span>
-            <div className="structured-checklist-actions" aria-label="Export checklistu">
-              <button onClick={copyChecklist} type="button">
+            <div className="structured-checklist-actions" aria-label="Akce checklistu">
+              <button disabled={checklistPending} onClick={copyChecklist} type="button">
                 <Copy size={13} />
                 Kopírovat
               </button>
-              <button onClick={downloadChecklist} type="button">
+              <button disabled={checklistPending} onClick={downloadChecklist} type="button">
                 <Download size={13} />
                 MD
               </button>
+              {checklistAction}
             </div>
           </header>
           {checklistMessage ? <p className="structured-checklist-message">{checklistMessage}</p> : null}

@@ -8,7 +8,8 @@ import { ExportControls } from "@/components/transcript-tabs/export-controls";
 import { TranscriptAiStateProvider } from "@/components/transcript-tabs/use-transcript-ai-state";
 import { TranscriptionControls } from "@/components/transcription-controls";
 import { RecordingDetailTitleEditor } from "@/components/workspace/recording-detail-title-editor";
-import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
+import { RecordingOrganizationEditor, RecordingOrganizationSummary } from "@/components/workspace/recording-organization-editor";
+import { RecordingMenuOrganizationEditor } from "@/components/workspace/recording-menu-organization-editor";
 import { RecordingCapabilityProvider } from "@/components/recording-capability-context";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
@@ -130,6 +131,7 @@ function RecordingCard({
           <div className="recording-meta">
             <span className={getRecordingDotClassName(activeRecording?.status)} />
             <span>Nahrávka · {activeRecording ? getStatusLabel(activeRecording.status) : "Připraveno"}</span>
+            {activeRecordingRow ? <RecordingOrganizationSummary organization={activeRecordingOrganization} /> : null}
           </div>
           <div className="recording-title-line">
             <h1>{activeRecording ? activeRecording.title : "Audio"}</h1>
@@ -155,6 +157,17 @@ function RecordingCard({
         </div>
         {activeRecordingRow ? (
           <div className="recording-detail-actions">
+            {activeRecordingRow.capabilities?.manageAccess ? activeRecordingRow.visibility === "private" ? <RecordingOrganizationEditor
+              key={`organization-${activeRecordingRow.id}`}
+              options={recordingOrganizationOptions}
+              organization={activeRecordingOrganization}
+              recording={activeRecordingRow}
+              showSummary={false}
+            /> : <RecordingMenuOrganizationEditor
+              key={`organization-${activeRecordingRow.id}`}
+              options={recordingOrganizationOptions}
+              recordingId={activeRecordingRow.id}
+            /> : null}
             <ExportControls
               activeRecording={activeRecordingView}
               activeTranscript={activeTranscript}
@@ -176,12 +189,6 @@ function RecordingCard({
       </div>
       {activeRecordingRow ? (
         <>
-          {activeRecordingRow.visibility === "private" && activeRecordingRow.capabilities?.manageAccess ? <RecordingOrganizationEditor
-            key={`organization-${activeRecordingRow.id}`}
-            options={recordingOrganizationOptions}
-            organization={activeRecordingOrganization}
-            recording={activeRecordingRow}
-          /> : null}
           <div className="recording-header-operations" aria-label="Akce přepisu">
             {activeRecordingRow.capabilities?.runPersonalAi ? <CommandBar activeRecording={activeRecordingView} activeTranscript={activeTranscript} /> : null}
           </div>

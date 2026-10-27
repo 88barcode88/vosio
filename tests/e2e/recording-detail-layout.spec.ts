@@ -12,7 +12,7 @@ for (const width of [390, 768, 900, 901, 1024, 1440]) {
       for (const [trigger, panel] of [
         [".export-controls > summary", ".export-controls-menu"],
         [".recording-inline-edit > summary", ".recording-title-form"],
-        [".recording-detail-actions .compact-popover:not(.export-controls):not(.recording-inline-edit) > summary", ".recording-detail-actions [role='dialog'][aria-label='Sdílení a přístup']"]
+        [".recording-detail-actions .compact-popover:not(.export-controls):not(.recording-inline-edit):not(.recording-organization-popover) > summary", ".recording-detail-actions [role='dialog'][aria-label='Sdílení a přístup']"]
       ]) {
         const before = await page.locator(trigger).boundingBox();
         await page.locator(trigger).click();
@@ -21,8 +21,13 @@ for (const width of [390, 768, 900, 901, 1024, 1440]) {
         expect(after?.width).toBe(before?.width);
         expect(after?.x).toBe(before?.x);
         expect(after?.y).toBe(before?.y);
-        expect(after?.height).toBeGreaterThanOrEqual(44);
+        const compactDesktop = await page.evaluate(() => matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches);
+        expect(after?.height).toBeGreaterThanOrEqual(compactDesktop ? 30 : 44);
+        if (compactDesktop) expect(after?.height).toBeLessThanOrEqual(32);
         const popup = page.locator(".recording-detail-actions [role='dialog']");
+        const closeBox = await popup.locator(".compact-popover-header > button").boundingBox();
+        expect(closeBox!.width).toBeCloseTo(compactDesktop ? 30 : 44, 0);
+        expect(closeBox!.height).toBeCloseTo(compactDesktop ? 30 : 44, 0);
         const popupBox = await popup.boundingBox();
         expect(popupBox!.x).toBeGreaterThanOrEqual(15);
         expect(popupBox!.x + popupBox!.width).toBeLessThanOrEqual(width - 15);
@@ -105,6 +110,8 @@ async function openFixture(page: Page, mode: FixtureMode = "blocks") {
   await stubFixtureBoundaries(page);
   await page.goto(`/login/recording-layout-e2e?scope=${createFixtureScope()}&mode=${mode}`);
   await expect(page.locator(".recording-workbench")).toBeVisible();
+  // Development-only Next indicators must not intercept production-control hit tests.
+  await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
 }
 
 // installManyAiBoundaries exposes 25 metadata rows, all durable states, and exact lazy bodies.
@@ -177,6 +184,8 @@ test("AI jobs survive tab navigation while 25 output bodies stay lazy", async ({
   const boundary = await installManyAiBoundaries(page);
   await openFixture(page, "ai-many");
   await expect(page.locator(".recording-workbench")).toBeVisible();
+  // Development-only Next indicators must not intercept production-control hit tests.
+  await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
   await expect(page.getByRole("heading", { name: "Dlouhý testovací hovor" })).toBeVisible();
   expect(boundary.bodyRequests).toHaveLength(0);
 
@@ -203,20 +212,22 @@ test("AI jobs survive tab navigation while 25 output bodies stay lazy", async ({
   expect(boundary.bodyRequests).toHaveLength(2);
 });
 
-// readCompactStyle returns the rendered shape and first Lucide glyph size for one action.
+// readCompactStyle inspects every matching action, including reserved pending controls.
 async function readCompactStyle(page: Page, selector: string) {
-  return page.locator(selector).evaluate((element) => {
-    const styles = getComputedStyle(element);
+  return page.locator(selector).evaluateAll((elements) => elements.map(element => {
+    const styles = getComputedStyle(element, "::before");
     const icon = element.querySelector<SVGElement>("svg");
     const iconBox = icon?.getBoundingClientRect() ?? null;
     return {
+      compactDesktop: matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches,
+      paintHeight: element.getBoundingClientRect().height - parseFloat(styles.top) - parseFloat(styles.bottom),
       backgroundColor: styles.backgroundColor,
       borderRadius: styles.borderRadius,
       height: element.getBoundingClientRect().height,
       iconHeight: iconBox?.height ?? null,
       iconWidth: iconBox?.width ?? null
     };
-  });
+  }));
 }
 
 // readTimelineActionGeometry captures wrapping, alignment and overlap for the empty-state CTA.
@@ -233,6 +244,7 @@ async function readTimelineActionGeometry(page: Page, buttonName: string) {
     const label = element.querySelector("span");
     const labelLineHeight = label ? Number.parseFloat(getComputedStyle(label).lineHeight) : null;
     return {
+      compactDesktop: matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches,
       borderRadius: styles.borderRadius,
       button: { bottom: buttonBox.bottom, height: buttonBox.height, width: buttonBox.width },
       paint: { height: buttonBox.height - Number.parseFloat(paint.top) - Number.parseFloat(paint.bottom),
@@ -404,22 +416,27 @@ for (const width of [320, 390, 768, 900, 1024, 1440]) {
     for (const theme of ["dark", "light"] as const) {
       await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
       const controls = [
-        [".recording-object-header .export-controls > summary", "10px"],
-        [".recording-object-header .recording-inline-edit > summary", "10px"],
-        [".recording-object-header .delete-recording-danger button", "10px"],
-        [".recording-object-header .recording-organization-summary > button", "10px"],
-        [".recording-object-header .recording-header-operations .command-button", "10px"],
-        [".ai-tab-actions .quick-grid button:first-child", "6px"]
+        [".recording-object-header .export-controls > summary", "5px"],
+        [".recording-object-header .recording-inline-edit > summary", "5px"],
+        [".recording-object-header .delete-recording-danger button", "5px"],
+        [".recording-object-header .recording-organization-popover > summary", "5px"],
+        [".recording-object-header .recording-header-operations .command-button", "5px"],
+        [".ai-tab-actions .quick-grid button:first-child", "5px"]
       ];
 
       for (const [selector, borderRadius] of controls) {
-        const styles = await readCompactStyle(page, selector);
-        expect(styles.height).toBeGreaterThanOrEqual(44);
-        expect(styles.borderRadius).toBe(borderRadius);
-        expect(styles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-        if (styles.iconWidth !== null || styles.iconHeight !== null) {
-          expect(styles.iconWidth).toBe(12);
-          expect(styles.iconHeight).toBe(12);
+        const actions = await readCompactStyle(page, selector);
+        expect(actions.length, selector).toBeGreaterThan(0);
+        for (const styles of actions) {
+          expect(styles.height, selector).toBeGreaterThanOrEqual(styles.compactDesktop ? 30 : 44);
+          if (styles.compactDesktop) expect(styles.height, selector).toBeLessThanOrEqual(32);
+          expect(styles.paintHeight, selector).toBeCloseTo(30, 0);
+          expect(styles.borderRadius, selector).toBe(borderRadius);
+          expect(styles.backgroundColor, selector).not.toBe("rgba(0, 0, 0, 0)");
+          if (styles.iconWidth !== null || styles.iconHeight !== null) {
+            expect(styles.iconWidth, selector).toBe(15);
+            expect(styles.iconHeight, selector).toBe(15);
+          }
         }
       }
 
@@ -427,6 +444,8 @@ for (const width of [320, 390, 768, 900, 1024, 1440]) {
         getComputedStyle(element).borderRadius
       )).toBe("999px");
     }
+    await page.getByRole("button", { name: "Rozbalit přehrávač" }).click();
+    expect((await page.getByRole("slider", { name: "Pozice přehrávání" }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
   });
 }
 
@@ -446,7 +465,8 @@ for (const width of [375, 768, 901, 1024]) {
     await expect(page.getByRole("tab", { name: "Časová osa" })).toHaveAttribute("aria-selected", "true");
     try {
       const idle = await readTimelineActionGeometry(page, "Vytvořit časovou osu");
-      expect(idle.button.height).toBeGreaterThanOrEqual(44);
+      expect(idle.button.height).toBeGreaterThanOrEqual(idle.compactDesktop ? 30 : 44);
+      if (idle.compactDesktop) expect(idle.button.height).toBeLessThanOrEqual(32);
       expect(idle.button.width).toBeLessThan(idle.emptyWidth);
       expect(idle.borderRadius).toBe("5px");
       expect(idle.button.width).toBeGreaterThanOrEqual(44);
@@ -456,7 +476,7 @@ for (const width of [375, 768, 901, 1024]) {
       expect(idle.label!.height).toBeLessThanOrEqual(idle.label!.lineHeight! + 0.5);
       expect(idle.icon!.right).toBeLessThanOrEqual(idle.label!.left);
       expect(idle.overflows).toBe(false);
-      expect(idle.icon).toMatchObject({ height: 12, width: 12 });
+      expect(idle.icon).toMatchObject({ height: 15, width: 15 });
       expect(idle.icon!.middle).toBeCloseTo(idle.label!.middle, 0);
       expect(idle.button.bottom).toBeLessThanOrEqual(idle.stateTop + 0.5);
 
@@ -465,7 +485,8 @@ for (const width of [375, 768, 901, 1024]) {
       const pendingButton = page.getByRole("button", { name: "Vytvářím časovou osu…" });
       await expect(pendingButton).toBeDisabled();
       const pending = await readTimelineActionGeometry(page, "Vytvářím časovou osu…");
-      expect(pending.button.height).toBeGreaterThanOrEqual(44);
+      expect(pending.button.height).toBeGreaterThanOrEqual(pending.compactDesktop ? 30 : 44);
+      if (pending.compactDesktop) expect(pending.button.height).toBeLessThanOrEqual(32);
       expect(pending.button.width).toBeLessThan(pending.emptyWidth);
       expect(pending.borderRadius).toBe("5px");
       expect(pending.button.width).toBeGreaterThanOrEqual(44);
@@ -475,7 +496,7 @@ for (const width of [375, 768, 901, 1024]) {
       expect(pending.label!.height).toBeLessThanOrEqual(pending.label!.lineHeight! + 0.5);
       expect(pending.icon!.right).toBeLessThanOrEqual(pending.label!.left);
       expect(pending.overflows).toBe(false);
-      expect(pending.icon).toMatchObject({ height: 12, width: 12 });
+      expect(pending.icon).toMatchObject({ height: 15, width: 15 });
       expect(pending.icon!.middle).toBeCloseTo(pending.label!.middle, 0);
       expect(pending.button.bottom).toBeLessThanOrEqual(pending.stateTop + 0.5);
     } finally {
@@ -515,15 +536,21 @@ test("desktop organization editor keeps save visually distinct", async ({ page }
     const computed = getComputedStyle(element);
     return {
       backgroundColor: computed.backgroundColor,
-      borderStyle: computed.borderStyle,
+      borderWidths: [computed.borderTopWidth, computed.borderRightWidth, computed.borderBottomWidth, computed.borderLeftWidth],
       paddingTop: computed.paddingTop
     };
   });
-  expect(styles.borderStyle).toBe("solid");
-  expect(styles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-  expect(Number.parseFloat(styles.paddingTop)).toBeGreaterThan(0);
-  expect(await save.evaluate((element) => getComputedStyle(element).backgroundColor))
-    .not.toBe(await cancel.evaluate((element) => getComputedStyle(element).backgroundColor));
+  expect(styles.borderWidths).toEqual(["0px", "0px", "0px", "0px"]);
+  expect(styles.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect(Number.parseFloat(styles.paddingTop)).toBe(0);
+  expect(await save.evaluate((element) => getComputedStyle(element, "::before").backgroundColor))
+    .not.toBe(await cancel.evaluate((element) => getComputedStyle(element, "::before").backgroundColor));
+  for (const control of [save, cancel]) {
+    const dimensions = await control.evaluate(element => ({ height: element.getBoundingClientRect().height,
+      compactDesktop: matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches }));
+    expect(dimensions.height).toBeGreaterThanOrEqual(dimensions.compactDesktop ? 30 : 44);
+    if (dimensions.compactDesktop) expect(dimensions.height).toBeLessThanOrEqual(32);
+  }
 });
 
 const fixtureTabs: ReadonlyArray<readonly [FixtureMode, string]> = [
@@ -668,8 +695,11 @@ for (const width of [375, 768]) {
     await audio.evaluate((element) => {
       Object.defineProperty(element, "currentTime", { configurable: true, value: 0, writable: true });
     });
+    // Scroll as a user would before clicking document coordinates below a wrapped header.
+    await slider.evaluate(element => element.scrollIntoView({ block: "center" }));
     const box = await slider.boundingBox();
     expect(box).not.toBeNull();
+    expect(await slider.evaluate(element => { const rect = element.getBoundingClientRect(); return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === element; })).toBe(true);
     expect(box!.height).toBeGreaterThanOrEqual(44);
 
     await page.mouse.click(box!.x + box!.width * 0.25, box!.y + box!.height / 2);

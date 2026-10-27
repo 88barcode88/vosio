@@ -1,5 +1,9 @@
 # Gotchas
 
+Kompaktní akce mají společné tokeny pro skutečný cíl i viditelný pseudo-povrch. Při změně 44 → 30 px nesmí zůstat pevný inset 7 px, který by rámeček zmenšil na 16 px. Poslední `control-hit-targets.css` má vyšší specificitu než lokální varianty; hodnotit skutečnou geometrii v app shellu, včetně horní meze desktopu a širokého dotykového zařízení. Team již nepotřebuje vlastní kopii density tokenů.
+
+Čistý checkout bez `.env.local` může izolovanému E2E serveru přesměrovat readiness URL na `/configuration`. Stav Next `Ready` sám nepotvrzuje vlastnictví testovacího serveru. Pro inertní fixture použít pouze procesní neprodukční public konfiguraci (`NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321` a testovací publishable hodnotu), zachovat přesný readiness token a zákaz externích API požadavků. Neodstraňovat ownership kontrolu ani přebírat jiný devserver.
+
 Tým ukládá více rozsahů jedním atomickým batch RPC, které vyžaduje forward `20261026160001` před app deployem. Chybějící v2 RPC nesmí spadnout na odhadované zařazení nebo klientskou smyčku grantů. UUID/payload nejistého požadavku zůstávají v komponentě uzamčené pro přesný replay; reload stránky tento místní koncept neuchová. Historický receipt neobnovuje později odebraný grant.
 
 Klientské a složkové granty zahrnují všechny nesoukromé nahrávky v přesné hranici, včetně selected. Projektové členství samo vyžaduje project visibility. Soukromé nahrávky se sdílejí pouze samostatným výslovným výběrem, bez automatické změny při přesunu do klienta nebo projektu. Složky nemají klientského rodiče; UI jej nesmí odhadovat podle názvů.
@@ -26,7 +30,7 @@ nový odkaz, protože token žije jen v paměti a fragment se po načtení odstr
 
 Instalačního správce nevytváří registrace ani user metadata. Prázdný privátní registr je bezpečný výchozí stav; jeho provision na skutečném targetu vyžaduje určený ověřený účet a samostatně schválený krok. Nedostupná nebo odebraná role skryje navigaci a přímé API dál odmítne správu. Role nezpřístupňuje cizí obsah.
 
-Klient/složka zahrnují jen nesoukromé nahrávky. Odebrání jedné cesty nemusí zrušit jiný projektový, přesný nebo scope grant. Přesun se vyhodnocuje z aktuálního řádku; stávající organizační RPC zůstává omezené na private, testovací operátorový přesun nepředstavuje nové právo v UI. Lokální PG proof nenahrazuje cílový Supabase Auth/Storage HTTP postflight. Scope invitation RPC má samostatné jméno `create_team_scope_invitation_v1`, aby se neopíralo o nepodporované API přetěžování funkcí.
+Klient/složka zahrnují jen nesoukromé nahrávky. Odebrání jedné cesty nemusí zrušit jiný projektový, přesný nebo scope grant. Lokální [organizační kandidát](api/recording-organization.md) vyžaduje pro nesoukromé zařazení potvrzený náhled, včetně oddělených čekajících scope pozvánek; jejich přijetí/revoke zneplatní starý fingerprint. Starý v1 caller zůstává private-only. Projektový přesun je blokovaný při živé dotčené pozvánce nebo rozpracovaném přepisu. Lokální PG proof nenahrazuje cílový Supabase Auth/Storage HTTP postflight. Scope invitation RPC má samostatné jméno `create_team_scope_invitation_v1`, aby se neopíralo o nepodporované API přetěžování funkcí.
 
 ## Navigace při dokončování nahrávky
 
@@ -54,11 +58,12 @@ Při nasazení na Vercel zvol region serverových funkcí blízko vlastní Supab
 
 Nezrychluj stránku odvozením oprávnění z vlastníka řádku nebo trvalou cache: seznam i detail dál používají čerstvou autoritu. Souběh čtení a pořadí autorizace ověřuje `tests/unit/recording-page-loading.test.tsx`; souběh projektových oprávnění `tests/unit/recording-organization-queries.test.ts`.
 
-Menu jednotlivé nahrávky nabízí `Upravit zařazení` pouze pro soukromý záznam
-s oprávněním `manageAccess`, stejně jako detail. Sdílené a projektové nahrávky
-se tímto editorem nepřesouvají. Výsledky hledání před prvním otevřením editoru
-načítají aktuální zařazení samostatnou autorizovanou akcí, protože search výsledek
-neobsahuje štítky; změna klienta/projektu tak zachová složku a štítky.
+Menu i detail nabízejí zařazení aktuálnímu správci konkrétní nahrávky.
+Private řádek používá přímý editor s novou serverovou kontrolou; nesoukromý
+nejdřív načte autoritativní cíle a před uložením vyžaduje náhled dopadu.
+Výsledky hledání načítají aktuální zařazení samostatnou autorizovanou akcí,
+protože search výsledek neobsahuje štítky; změna klienta/projektu tak zachová
+složku a štítky. Osobní taxonomie jiného autora se tím neodhaluje.
 
 ## Fronta přepisu a potvrzení uloženého textu
 

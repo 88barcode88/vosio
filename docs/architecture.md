@@ -1,5 +1,12 @@
 # Architecture
 
+Lokální kandidát [organizace nahrávky](api/recording-organization.md) odděluje
+manager-authorized policy, náhled dopadu a atomické potvrzení pod sharing lockem.
+Zařazení vlastní selected nahrávky zachovává visibility i exact role a přepojuje
+jejich projektovou hranici; osobní metadata jiného autora zůstávají redigovaná.
+Forward `20261027074514` a odpovídající app tvoří společný kandidát, nikoli
+potvrzení produkčního apply nebo uživatelské akceptace.
+
 Invitation email configuration is versioned in `supabase/templates/`, shared by
 local CLI Auth and the explicit hosted `setup:auth` installer. It preserves the
 direct application-token plus email-OTP contract; SQL migrations do not configure
@@ -22,6 +29,8 @@ Zablokovaný přepis s aktuální manager capability a přesným operation ID se
 AI a Časová osa čtou společný transcript-scoped seznam serverových jobs. Starší kapitoly zůstávají dostupné při novém explicitním běhu. Již otevřené AI a Chat plochy zachovávají koncepty a volby při přepnutí; změna přepisu vytvoří nové lokální plochy. Skrytý Chat neprovádí polling. Otevření záložky nevytváří ruční AI job.
 
 Inbox i hledání oddělují klienta a projekt. Pojmenovaný editor `Název a zařazení` z nabídky nahrávky spojuje dvě samostatné ukládací sekce; title mutation a atomické organizační RPC zůstávají oddělené. Osobní taxonomie a capability filtry se tím nemění.
+
+Detail renderuje bezpečný prezentační souhrn zařazení vedle stavu a jeden editor před Exportem. Hlavička checklistu vlastní Copy/MD i stávající akci pro atomické mazání celého checklistu. Při optimistickém skrytí úkolů zůstává tato hlavička připojená až do výsledku DELETE, aby selhání obnovilo úkoly a nezahodilo stav chyby. Společné CSS sjednocuje jemné desktopové cíle 30–32 px a akční ikony 15 px, zatímco úzké/coarse/hybrid ovládání drží 44px cíle.
 
 ## Přehled
 

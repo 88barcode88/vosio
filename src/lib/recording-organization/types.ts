@@ -51,3 +51,34 @@ export type RecordingAssignment = {
   projectId: string | null;
   tagIds: string[];
 };
+
+export type RecordingOrganizationPolicy = {
+  personalEditable: boolean;
+  projectIds: string[];
+};
+
+export type RecordingOrganizationSnapshot = {
+  id: string;
+  visibility: "private" | "selected" | "project";
+  client_id: string | null;
+  project_id: string | null;
+  folder_id: string | null;
+  tag_ids: string[];
+  organization_policy: RecordingOrganizationPolicy;
+};
+
+export type RecordingOrganizationAccessPath = {
+  id: string;
+  userId: string;
+  label: string;
+  role: "reader" | "editor";
+  kind?: "client" | "folder" | "project";
+};
+
+export type RecordingOrganizationPreview = {
+  fingerprint: string;
+  exactRecipients: RecordingOrganizationAccessPath[];
+  addedPaths: RecordingOrganizationAccessPath[];
+  removedPaths: RecordingOrganizationAccessPath[];
+  pendingInvitations?: Array<{ id: string; label: string; role: "reader" | "editor"; kind: "recordings" | "project" | "client" | "folder" }>;
+};

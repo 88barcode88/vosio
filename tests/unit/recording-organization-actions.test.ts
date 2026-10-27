@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SaveAction } from "@/lib/forms/save-action-state";
 import { createInitialSaveActionState } from "@/lib/forms/save-action-state";
-import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 import {
   assignRecordingOrganizationAction,
   createRecordingClientAction,
@@ -17,7 +16,8 @@ import {
   renameRecordingClientAction,
   renameRecordingFolderAction,
   renameRecordingProjectAction,
-  renameRecordingTagAction
+  renameRecordingTagAction,
+  previewRecordingOrganizationAction
 } from "@/lib/recording-organization/actions";
 
 const mocks = vi.hoisted(() => ({
@@ -353,10 +353,8 @@ describe("recording organization actions", () => {
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
-  it("assigns normalized private organization through locked RPC and verifies persisted safe projection", async () => {
-    const rpc = vi.fn().mockImplementation(async (name: string) => ({ error: null, data: name === "recording_capabilities_v1"
-      ? { ...NO_RECORDING_CAPABILITIES, read: true, manageAccess: true }
-      : name === "get_accessible_recording_v1" ? [{ id: recordingId, visibility: "private", client_id: clientId, project_id: projectId, folder_id: folderId, tag_ids: [tagId] }] : null }));
+  it.each(["private", "selected"])("assigns normalized %s organization through confirmed locked RPC and verifies persisted safe projection", async (visibility) => {
+    const rpc = vi.fn().mockImplementation(async () => ({ error: null, data: { id: recordingId, visibility, client_id: clientId, project_id: projectId, folder_id: folderId, tag_ids: [tagId] } }));
     const from = vi.fn();
     arrangeSupabase({ from, rpc });
     const formData = createForm({
@@ -364,6 +362,7 @@ describe("recording organization actions", () => {
       folderId,
       projectId,
       recordingId,
+      organizationFingerprint: "confirmed-impact",
       scopeKey: recordingId,
       tagIds: [uppercaseTagId, tagId]
     });
@@ -372,8 +371,9 @@ describe("recording organization actions", () => {
       createInitialSaveActionState(),
       formData
     )).resolves.toMatchObject({ scopeKey: recordingId, status: "success" });
-    expect(rpc).toHaveBeenCalledTimes(4);
-    expect(rpc).toHaveBeenCalledWith("assign_recording_organization_v1", {
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("assign_recording_organization_v2", {
+      p_expected_fingerprint: "confirmed-impact",
       p_client_id: clientId,
       p_folder_id: folderId,
       p_project_id: projectId,
@@ -383,8 +383,38 @@ describe("recording organization actions", () => {
     expect(from).not.toHaveBeenCalled();
     expect(mocks.revalidatePath.mock.calls).toEqual([
       ["/recordings"],
-      [`/recordings/${recordingId}`]
+      [`/recordings/${recordingId}`],
+      ["/team"]
     ]);
+  });
+
+  it("requires a reviewed preview for shared callers and rejects a stale confirmed impact without revalidation", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { visibility: "selected" }, error: null });
+    arrangeSupabase({ rpc });
+    const form = createForm({ recordingId, scopeKey: recordingId, clientId: "", folderId: "", projectId: "" });
+    expect((await assignRecordingOrganizationAction(createInitialSaveActionState(), form)).status).toBe("error");
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledWith("recording_organization_context_v1", { p_recording_id: recordingId });
+    form.set("organizationFingerprint", "old-preview");
+    rpc.mockResolvedValue({ data: null, error: { code: "40001", message: "organization preview stale" } });
+    const result = await assignRecordingOrganizationAction(createInitialSaveActionState(), form);
+    expect(result.message).toContain("Obnovte náhled");
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["organization pending invitation", "nevyřízené pozvánky"],
+    ["organization active transcription", "rozpracovaného přepisu"],
+    ["organization custody transfer denied", "stejného zakladatele"],
+    ["foreign row secret", "Zařazení nahrávky se nepodařilo uložit."]
+  ])("returns a safe preview reason for %s", async (message, expected) => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message } });
+    arrangeSupabase({ rpc });
+    const result = await previewRecordingOrganizationAction(createForm({ recordingId, scopeKey: recordingId, clientId: "", folderId: "", projectId: "" }));
+    expect(result.error).toContain(expected);
+    expect(result.error).not.toContain("secret");
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("does not revalidate or make partial calls when assignment RPC fails", async () => {

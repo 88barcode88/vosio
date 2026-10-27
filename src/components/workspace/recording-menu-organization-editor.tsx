@@ -47,6 +47,7 @@ export function RecordingMenuOrganizationEditor({ recordingId, options, embedded
     saveAction={async (state, formData) => {
       const result = await assignRecordingOrganizationAction(state, formData);
       if (result.status === "success") setRecording({
+        ...recording,
         id: recording.id,
         client_id: String(formData.get("clientId") ?? "") || null,
         project_id: String(formData.get("projectId") ?? "") || null,
@@ -59,7 +60,7 @@ export function RecordingMenuOrganizationEditor({ recordingId, options, embedded
   />;
 
   return <div>
-    <button disabled={pending} type="button" onClick={loadAssignment}>
+    <button className="ghost-action" disabled={pending} type="button" onClick={loadAssignment}>
       <Pencil aria-hidden="true" size={15} />{pending ? "Načítám zařazení…" : embedded ? "Načíst zařazení" : "Upravit zařazení"}
     </button>
     {error ? <p role="alert">Zařazení se nepodařilo načíst. Zkuste to znovu.</p> : null}

@@ -44,7 +44,7 @@ export function RecordingNameOrganizationEditor({ recordingId, title, editTitle,
     trigger={<><Pencil aria-hidden="true" size={15} />Název a zařazení</>}>
     <fieldset className="recording-name-organization-sections" disabled={busy}>
       {editTitle ? <RecordingTitleEditor embedded onPendingChange={setTitlePending} recordingId={recordingId} title={title} /> : null}
-      {editOrganization ? recording ? <RecordingOrganizationEditor embedded onPendingChange={setOrganizationPending}
+      {editOrganization ? recording && recording.visibility === "private" ? <RecordingOrganizationEditor embedded onPendingChange={setOrganizationPending}
         options={options} organization={{
           client: options.clients.find((item) => item.id === recording.client_id) ?? null,
           project: options.projects.find((item) => item.id === recording.project_id) ?? null,

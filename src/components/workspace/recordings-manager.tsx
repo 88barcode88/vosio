@@ -71,11 +71,11 @@ function getOrganizationLabel(id: string | null | undefined, name: string | null
 }
 
 // RecordingActionsMenu keeps secondary row actions available without letting them dominate the inbox.
-function RecordingActionsMenu({ recordingId, title, capabilities, visibility, recording, options }: {
+function RecordingActionsMenu({ recordingId, title, capabilities, recording, options }: {
   recordingId: string; title: string; capabilities?: RecordingRow["capabilities"];
-  visibility?: RecordingRow["visibility"]; recording?: RecordingRow; options: RecordingOrganizationOptions;
+  recording?: RecordingRow; options: RecordingOrganizationOptions;
 }) {
-  const canEditOrganization = visibility === "private" && capabilities?.manageAccess;
+  const canEditOrganization = capabilities?.manageAccess;
   if (!capabilities?.editTitle && !capabilities?.delete && !canEditOrganization) return null;
   return (
     <details className="recordings-actions-menu">
@@ -206,7 +206,7 @@ function RecordingSearchResults({
                   role="group"
                 >
                   <RecordingActionsMenu recordingId={result.id} title={result.title} capabilities={result.capabilities}
-                    visibility={result.visibility} options={options} />
+                    options={options} />
                 </div>
               </article>
             );
@@ -375,7 +375,7 @@ export function RecordingsManager({
                           role="group"
                         >
                           <RecordingActionsMenu recordingId={recording.id} title={recording.title} capabilities={recording.capabilities}
-                            visibility={recording.visibility} recording={recording} options={organizationOptions} />
+                            recording={recording} options={organizationOptions} />
                         </div>
                       </article>
                     );

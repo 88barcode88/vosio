@@ -156,10 +156,11 @@ export function AiProcessingContent({
         </div>
       ) : null}
       <section className="notes-list ai-output-list" aria-label="Uložené AI výstupy">
-        {activeTranscript ? <DeleteTranscriptChecklistButton key={activeTranscript.id} transcriptId={activeTranscript.id}
-          onDeleted={onChecklistDeleted} onPending={(ids) => setPendingChecklist({ transcriptId: activeTranscript.id, ids })} /> : null}
         <StructuredItemsContent
           items={visibleStructuredItems}
+          checklistPending={Boolean(activeTranscript && pendingChecklist?.transcriptId === activeTranscript.id && pendingChecklist.ids)}
+          checklistAction={activeTranscript ? <DeleteTranscriptChecklistButton key={activeTranscript.id} transcriptId={activeTranscript.id}
+            onDeleted={onChecklistDeleted} onPending={(ids) => setPendingChecklist({ transcriptId: activeTranscript.id, ids })} /> : null}
           onTaskDeleted={onTaskDeleted}
           onTaskStatusConfirmed={onTaskStatusConfirmed}
           onOpenEvidence={onOpenEvidence}

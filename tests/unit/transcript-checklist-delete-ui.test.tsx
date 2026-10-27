@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act, useEffect } from "react";
+import { act, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DeleteTranscriptChecklistButton } from "@/components/delete-transcript-checklist-button";
+import { StructuredItemsContent } from "@/components/transcript-tabs/structured-items-content";
 import type { ChecklistReview } from "@/lib/ai/checklist-delete";
 import { TranscriptAiStateProvider, useTranscriptAiState, type TranscriptAiStateContextValue } from "@/components/transcript-tabs/use-transcript-ai-state";
 import type { StructuredAiItems, StructuredTaskRow } from "@/lib/ai/structured-types";
@@ -129,4 +130,44 @@ it.each([false, true])("reconciles a committed delete across tab switches but fe
   let exported: Awaited<ReturnType<TranscriptAiStateContextValue["loadAllOutputs"]>>;
   await act(async () => { exported = await state.loadAllOutputs(); });
   expect(exported!.structuredItems.tasks.map((task) => task.id)).toEqual(navigate ? ["next-task"] : []);
+});
+
+// ChecklistHeaderHarness mirrors optimistic task hiding while retaining the header mutation owner.
+function ChecklistHeaderHarness() {
+  const [pending, setPending] = useState<string[] | null>(null);
+  const [deleted, setDeleted] = useState(false);
+  const task = { id: taskId, ai_output_id: outputId, title: "Current task", owner_category: "Moje práce", status: "new", position: 1 } as StructuredTaskRow;
+  return <StructuredItemsContent items={{ tasks: pending || deleted ? [] : [task], chapters: [], decisions: [], risks: [] }}
+    onOpenEvidence={() => undefined} checklistPending={pending !== null}
+    checklistAction={<DeleteTranscriptChecklistButton transcriptId={transcriptId} onPending={setPending} onDeleted={() => setDeleted(true)} />} />;
+}
+
+it.each([false, true])("keeps the checklist header mounted during optimistic hiding and reconciles its outcome (%s)", async (success) => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  let finish!: (response: Response) => void;
+  fetchMock.mockResolvedValueOnce(Response.json(review)).mockReturnValueOnce(new Promise<Response>(resolve => { finish = resolve; }));
+  await act(async () => root.render(<ChecklistHeaderHarness />));
+  const header = container.querySelector(".structured-ai-block > header")!;
+  const remove = header.querySelector<HTMLButtonElement>(".checklist-delete-control button")!;
+  expect(remove).not.toBeNull();
+  await act(async () => remove.click());
+  expect(container.textContent).not.toContain("Current task");
+  expect(container.querySelector(".structured-ai-block > header")).toBe(header);
+  expect([...header.querySelectorAll("button")].every(button => button.disabled)).toBe(true);
+  await act(async () => finish(success ? Response.json({ ok: true, transcriptId, deletedIds: [taskId], suppressionIds: [outputId] }) : Response.json({ error: "unavailable" }, { status: 500 })));
+  if (success) {
+    expect(container.querySelector(".structured-ai-block")).toBeNull();
+    expect(container.querySelector(".checklist-delete-control")).toBeNull();
+  } else {
+    expect(container.textContent).toContain("Current task");
+    expect(container.textContent).toContain("ověřte aktuální stav");
+    expect(remove.disabled).toBe(false);
+  }
+});
+
+it("does not render an orphan checklist action when no task exists", async () => {
+  await act(async () => root.render(<StructuredItemsContent items={{ tasks: [], chapters: [], decisions: [], risks: [] }}
+    onOpenEvidence={() => undefined} checklistAction={<DeleteTranscriptChecklistButton transcriptId={transcriptId} />} />));
+  expect(container.querySelector("button")).toBeNull();
+  expect(fetchMock).not.toHaveBeenCalled();
 });
