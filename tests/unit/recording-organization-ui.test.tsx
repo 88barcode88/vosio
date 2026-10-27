@@ -167,6 +167,55 @@ afterEach(async () => {
 });
 
 describe("RecordingOrganizationEditor", () => {
+  it("keeps a newly chosen target in the native form through preview and confirmation", async () => {
+    const previewAction = vi.fn().mockResolvedValue({ preview: { fingerprint: "new-target", exactRecipients: [], addedPaths: [], removedPaths: [] } });
+    const saveAction = vi.fn().mockImplementation(async (state, data) => createSaveSuccess(state.revision, String(data.get("scopeKey")), "Uloženo."));
+    await act(async () => root.render(<RecordingOrganizationEditor embedded options={options}
+      organization={{ client: null, project: null, folder: null, tags: [] }}
+      recording={{ ...createRecording(), client_id: null, project_id: null, folder_id: null, visibility: "selected", organization_policy: { personalEditable: true, projectIds: [projectA] } }}
+      previewAction={previewAction} saveAction={saveAction} />));
+    await setSelect("clientId", clientA);
+    await setSelect("projectId", projectA);
+    await setSelect("folderId", folderId);
+    await act(async () => container.querySelector<HTMLInputElement>(`[name="tagIds"][value="${tagA}"]`)!.click());
+    await clickButton("Uložit zařazení");
+    expect(container.querySelector<HTMLSelectElement>('[name="clientId"]')?.value).toBe(clientA);
+    expect(container.querySelector<HTMLSelectElement>('[name="projectId"]')?.value).toBe(projectA);
+    expect(container.querySelector<HTMLSelectElement>('[name="folderId"]')?.value).toBe(folderId);
+    expect(container.querySelector<HTMLInputElement>(`[name="tagIds"][value="${tagA}"]`)?.checked).toBe(true);
+    await clickButton("Potvrdit zařazení");
+    expect(saveAction).toHaveBeenCalledOnce();
+    const submitted = saveAction.mock.calls[0][1] as FormData;
+    expect([submitted.get("clientId"), submitted.get("projectId"), submitted.get("folderId"), submitted.getAll("tagIds"), submitted.get("organizationFingerprint")])
+      .toEqual([clientA, projectA, folderId, [tagA], "new-target"]);
+  });
+
+  it("settles a pending confirmation as an unlocked error without retrying or losing the selected draft", async () => {
+    const settlement = createDeferred<SaveActionState>();
+    const previewAction = vi.fn().mockResolvedValue({ preview: { fingerprint: "new-target", exactRecipients: [], addedPaths: [], removedPaths: [] } });
+    const saveAction = vi.fn().mockReturnValue(settlement.promise);
+    await act(async () => root.render(<RecordingOrganizationEditor initiallyOpen options={options}
+      organization={{ client: null, project: null, folder: null, tags: [] }}
+      recording={{ ...createRecording(), client_id: null, project_id: null, folder_id: null, visibility: "selected", organization_policy: { personalEditable: true, projectIds: [projectA] } }}
+      previewAction={previewAction} saveAction={saveAction} />));
+    await setSelect("clientId", clientA);
+    await clickButton("Uložit");
+    await clickButton("Potvrdit zařazení");
+    expect(container.querySelector('form')?.getAttribute("aria-busy")).toBe("true");
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Zavřít Zařazení nahrávky"]')?.disabled).toBe(true);
+    expect(saveAction).toHaveBeenCalledOnce();
+    await act(async () => settlement.resolve(createSaveError(0, recordingA, "Přístupy nebo zařazení se změnily. Obnovte náhled.")));
+    expect(container.querySelector('form')?.getAttribute("aria-busy")).toBe("false");
+    expect(container.querySelector<HTMLSelectElement>('[name="clientId"]')?.value).toBe(clientA);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Obnovte náhled");
+    expect(saveAction).toHaveBeenCalledOnce();
+    await clickButton("Uložit");
+    expect(previewAction).toHaveBeenCalledTimes(2);
+    expect(saveAction).toHaveBeenCalledOnce();
+    await clickButton("Zrušit");
+    expect(container.querySelector<HTMLElement>('[role="dialog"]')).toBeNull();
+  });
+
   it("previews selected recipients and paths before saving, refreshes confirmation after a stale save and preserves draft", async () => {
     const previewAction = vi.fn().mockResolvedValue({ preview: { fingerprint: "reviewed", exactRecipients: [{ id: "grant", userId: "reader", label: "reader@example.invalid", role: "reader" }], addedPaths: [{ id: "scope", userId: "editor", label: "editor@example.invalid", role: "editor", kind: "client" }], removedPaths: [], pendingInvitations: [{ id: "invite", label: "pending@example.invalid", role: "reader", kind: "folder" }] } });
     const saveAction = vi.fn().mockImplementation(async (state, data) => createSaveError(state.revision, String(data.get("scopeKey")), "Obnovte náhled"));

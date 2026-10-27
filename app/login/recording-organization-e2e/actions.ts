@@ -6,7 +6,7 @@ import {
   createSaveSuccess,
   type SaveActionState
 } from "@/lib/forms/save-action-state";
-import type { RecordingOrganizationEntityKind } from "@/lib/recording-organization/types";
+import type { RecordingOrganizationEntityKind, RecordingOrganizationPreview } from "@/lib/recording-organization/types";
 import {
   isValidCreateScope,
   parseOrganizationColor,
@@ -238,4 +238,20 @@ export async function assignFixtureOrganizationAction(
       "Zařazení nahrávky se nepodařilo uložit."
     );
   }
+}
+
+// previewFixtureOrganizationAction exercises the real two-step form without contacting Supabase.
+export async function previewFixtureOrganizationAction(fixtureScope: string, formData: FormData): Promise<{ preview: RecordingOrganizationPreview }> {
+  requireOrganizationFixtureAccess(process.env.NODE_ENV, fixtureScope);
+  const assignment = parseRecordingAssignment({ clientId: getFormString(formData, "clientId"), projectId: getFormString(formData, "projectId"), folderId: getFormString(formData, "folderId"), tagIds: formData.getAll("tagIds") });
+  return { preview: { fingerprint: JSON.stringify(assignment), exactRecipients: [], addedPaths: [], removedPaths: [] } };
+}
+
+// confirmFixtureOrganizationAction supplies success or a terminal stale response through a real Next server action.
+export async function confirmFixtureOrganizationAction(fixtureScope: string, stale: boolean, state: SaveActionState, formData: FormData): Promise<SaveActionState> {
+  const { preview } = await previewFixtureOrganizationAction(fixtureScope, formData);
+  if (stale || getFormString(formData, "organizationFingerprint") !== preview.fingerprint) {
+    return createSaveError(state.revision, getFormString(formData, "scopeKey"), "Přístupy nebo zařazení se změnily. Obnovte náhled a potvrďte jej znovu.");
+  }
+  return assignFixtureOrganizationAction(fixtureScope, state, formData);
 }
