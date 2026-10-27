@@ -48,6 +48,41 @@ test.afterEach(async ({ request }) => {
   }
 });
 
+for (const stale of [false, true]) {
+  test(`shared confirmation preserves the changed target and ${stale ? "unlocks on conflict" : "saves successfully"}`, async ({ page }) => {
+    await page.goto(`/login/recording-organization-e2e?scope=${fixtureScope}&fixture=${stale ? "confirmation-conflict" : "confirmation"}`);
+    await page.getByRole("button", { name: "Spravovat", exact: true }).click();
+    await createManagerEntity(page, "Přidat klienta", "Chosen client");
+    await page.getByRole("button", { name: "Zavřít správu organizace" }).click();
+    const assignment = page.locator('[data-e2e-surface="assignment"]');
+    await assignment.getByRole("button", { name: "Upravit zařazení" }).click();
+    const form = assignment.getByRole("form", { name: "Zařazení", exact: true });
+    await form.getByRole("combobox", { name: "Klient", exact: true }).selectOption({ label: "Chosen client" });
+    const chosen = await form.getByRole("combobox", { name: "Klient", exact: true }).inputValue();
+    await form.getByRole("button", { name: "Uložit", exact: true }).click();
+    await expect(form.getByRole("button", { name: "Potvrdit zařazení", exact: true })).toBeEnabled();
+    await expect(form.getByRole("combobox", { name: "Klient", exact: true })).toHaveValue(chosen);
+    await expect(form.getByRole("region", { name: "Dopad zařazení" })).toContainText("Chosen client");
+    await form.getByRole("button", { name: "Potvrdit zařazení", exact: true }).click();
+    if (stale) {
+      await expect(form.getByRole("alert")).toContainText("Obnovte náhled");
+      await expect(form).toHaveAttribute("aria-busy", "false");
+      await expect(form.getByRole("combobox", { name: "Klient", exact: true })).toHaveValue(chosen);
+      await form.getByRole("button", { name: "Zrušit", exact: true }).click();
+    } else {
+      await expect(assignment.locator(".recording-organization-badges")).toContainText("Chosen client");
+    }
+    await expect(form).not.toBeVisible();
+    await page.getByRole("button", { name: "Spravovat", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Správa organizace" })).toBeVisible();
+    await page.getByRole("button", { name: "Zavřít správu organizace" }).click();
+    const filters = page.getByRole("form", { name: "Filtrování nahrávek" });
+    await ensureAdvancedFiltersOpen(filters);
+    await filters.getByRole("combobox", { name: "Klient", exact: true }).selectOption({ label: "Chosen client" });
+    await expect(page).toHaveURL((url) => url.searchParams.get("client") === chosen);
+  });
+}
+
 test("mobile inbox keeps status facets horizontal and first recording visible", async ({ page }, testInfo) => {
   await page.route("**/api/**", (route) => route.fulfill({ json: { ownerId: null, recordings: [] } }));
   await page.goto(`/login/recording-organization-e2e?scope=${fixtureScope}`);

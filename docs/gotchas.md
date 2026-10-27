@@ -1,5 +1,11 @@
 # Gotchas
 
+Organizační preview je mezikrok React form action. Nativní reset během commitu
+musí být zastaven přímo na formuláři, jinak se DOM selecty rozcházejí s draftem
+a potvrzeným fingerprintem. Stale potvrzení vrací terminální `PT409` přes forward
+`20261027122647`; `40001` může v PostgREST spustit nekonečný retry místo chyby
+pro uživatele. [Kontrakt a provozní hranice](api/recording-organization.md).
+
 Kompaktní akce mají společné tokeny pro skutečný cíl i viditelný pseudo-povrch. Při změně 44 → 30 px nesmí zůstat pevný inset 7 px, který by rámeček zmenšil na 16 px. Poslední `control-hit-targets.css` má vyšší specificitu než lokální varianty; hodnotit skutečnou geometrii v app shellu, včetně horní meze desktopu a širokého dotykového zařízení. Team již nepotřebuje vlastní kopii density tokenů.
 
 Čistý checkout bez `.env.local` může izolovanému E2E serveru přesměrovat readiness URL na `/configuration`. Stav Next `Ready` sám nepotvrzuje vlastnictví testovacího serveru. Pro inertní fixture použít pouze procesní neprodukční public konfiguraci (`NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321` a testovací publishable hodnotu), zachovat přesný readiness token a zákaz externích API požadavků. Neodstraňovat ownership kontrolu ani přebírat jiný devserver.
