@@ -39,10 +39,11 @@ async function compactAction(page: Page, selector: string) {
   const size = await action.evaluate((element) => {
     const box = element.getBoundingClientRect(); const paint = getComputedStyle(element, "::before");
     const icon = element.querySelector("svg")?.getBoundingClientRect();
-    return { height: box.height, width: box.width, inset: paint.top, content: paint.content, icon: icon?.width };
+    return { compactDesktop: matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches, height: box.height, width: box.width, inset: paint.top, content: paint.content, icon: icon?.width };
   });
-  expect(size.height).toBeGreaterThanOrEqual(44); expect(size.width).toBeGreaterThanOrEqual(44);
-  expect(size.inset).toBe("7px"); expect(size.content).toBe('""');
+  expect(size.height).toBeGreaterThanOrEqual(size.compactDesktop ? 30 : 44);
+  if (size.compactDesktop) expect(size.height).toBeLessThanOrEqual(32); expect(size.width).toBeGreaterThanOrEqual(size.compactDesktop ? 30 : 44);
+  expect(size.inset).toBe(size.compactDesktop ? "0px" : "7px"); expect(size.content).toBe('""');
   if (size.icon !== undefined) expect(size.icon).toBe(15);
 }
 
@@ -224,3 +225,31 @@ test("small semantic actions share geometry across new capture, settings, prompt
     }
   }
 });
+
+for (const touch of [false, true]) {
+  test(`shared compact controls keep desktop upper bounds and wide touch targets (touch=${touch})`, async ({ browser, baseURL }) => {
+    const context = await browser.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: touch, baseURL });
+    const page = await context.newPage();
+    try {
+      await isolate(page);
+      await openDetail(page, "ai");
+      expect(await page.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(touch);
+      for (const theme of ["light", "dark"]) {
+        await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
+        await expect(page.locator(".recording-meta .recording-organization-badges")).toBeVisible();
+        expect(await page.locator(".recording-organization-popover").evaluate(element => Boolean(element.compareDocumentPosition(document.querySelector(".export-controls")!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+        await expect(page.locator(".recording-organization-popover")).toHaveCount(1);
+        for (const selector of [".recording-organization-popover > summary", ".export-controls > summary", ".structured-checklist-actions > button:first-child", ".structured-checklist-actions > button:nth-child(2)", ".structured-checklist-actions .checklist-delete-control button"]) await compactAction(page, selector);
+        await expect(page.locator(".structured-ai-block > header .checklist-delete-control")).toBeVisible();
+        const row = page.locator(".structured-task-row");
+        expect(await row.evaluate(element => getComputedStyle(element).borderTopWidth)).toBe("0px");
+        await page.locator(".recording-organization-popover > summary").click();
+        const field = page.locator(".recording-organization-fields select").first();
+        expect((await field.boundingBox())!.height).toBeGreaterThanOrEqual(touch ? 44 : 30);
+        if (!touch) expect((await field.boundingBox())!.height).toBeLessThanOrEqual(32);
+        await page.keyboard.press("Escape");
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+      }
+    } finally { await context.close(); }
+  });
+}

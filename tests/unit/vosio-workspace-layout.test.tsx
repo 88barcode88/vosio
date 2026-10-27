@@ -78,8 +78,10 @@ describe("Vosio workspace content area", () => {
     );
   });
 
-  it("defines one shared 44px hit-target contract for real app controls", () => {
+  it("defines one pointer-aware hit-target contract for real app controls", () => {
     expect(baseStyles).toContain("--control-hit-size: 44px");
+    expect(controlHitTargetStyles).toMatch(/@media \(min-width: 901px\) and \(pointer: fine\)[\s\S]*?--control-hit-size: 30px;[\s\S]*?--control-surface-inset: 0px;/u);
+    expect(controlHitTargetStyles).toMatch(/@media \(any-pointer: coarse\)[\s\S]*?--control-hit-size: 44px;[\s\S]*?--control-surface-inset: 7px;/u);
     expect(globalsStyles.trimEnd()).toMatch(/@import "\.\/styles\/control-hit-targets\.css";$/u);
     expect(controlHitTargetStyles).toMatch(/:root :is\(\.workspace-shell[\s\S]*?\.not-found-page\) :is\([\s\S]*?button[\s\S]*?input:not\(\[type="hidden"\]\)[\s\S]*?select[\s\S]*?textarea[\s\S]*?summary[\s\S]*?\)[\s\S]*?min-height:\s*var\(--control-hit-size\);/u);
     expect(controlHitTargetStyles).toMatch(/:root :is\(\.workspace-shell[\s\S]*?:is\(button, \[role="button"\], \[role="tab"\], \.icon-button\)[\s\S]*?min-width:\s*var\(--control-hit-size\);/u);

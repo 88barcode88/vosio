@@ -11,7 +11,8 @@ import type { OrganizationManagerActions } from "@/components/workspace/organiza
 import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 import type { RecordingRow } from "@/lib/recordings/types";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), share: vi.fn(), refresh: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), share: vi.fn(), refresh: vi.fn(), loadOrganization: vi.fn() }));
+vi.mock("@/lib/recording-organization/load-recording-action", () => ({ loadRecordingOrganizationAction: mocks.loadOrganization }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
 vi.mock("@/lib/supabase/browser", () => ({ createClient: () => ({ rpc: mocks.rpc }) }));
 vi.mock("@/lib/recording-sharing/bulk", () => ({ bulkShareRecordings: mocks.share }));
@@ -42,6 +43,13 @@ async function renderInbox(recordings: RecordingRow[]) {
 }
 
 describe("compact sharing interactions", () => {
+  it("offers selected recording organization to its manager and loads the authorized snapshot", async () => {
+    mocks.loadOrganization.mockResolvedValue({ id: row.id, visibility: "selected", client_id: null, project_id: null, folder_id: null, tag_ids: [], organization_policy: { personalEditable: true, projectIds: [] } });
+    await renderInbox([{ ...row, visibility: "selected" }]);
+    await click(".recording-name-organization-popover > summary");
+    expect(mocks.loadOrganization).toHaveBeenCalledWith(row.id);
+    expect(container.querySelector('form[aria-label="Zařazení"]')).not.toBeNull();
+  });
   it("keeps a pending popup open for Escape, outside click and close-button attempts", async () => {
     await act(async () => root.render(<CompactPopover label="Test" trigger="Otevřít"><input aria-label="Draft" defaultValue="Rozepsáno" /></CompactPopover>));
     await click("summary");

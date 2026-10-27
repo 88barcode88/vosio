@@ -1,28 +1,19 @@
 "use server";
 
 import { parseOrganizationId } from "@/lib/recording-organization/validation";
-import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
-import { getRecordingById } from "@/lib/recordings/queries";
+import type { RecordingOrganizationSnapshot } from "@/lib/recording-organization/types";
 import { createClient } from "@/lib/supabase/server";
 
-// loadRecordingOrganizationAction reads only assignment ids for an authorized private recording.
-export async function loadRecordingOrganizationAction(recordingId: string) {
+// loadRecordingOrganizationAction reads manager-authorized assignment ids and allowed targets, redacting foreign taxonomy.
+export async function loadRecordingOrganizationAction(recordingId: string): Promise<RecordingOrganizationSnapshot | null> {
   try {
     const id = parseOrganizationId(recordingId);
     const supabase = await createClient();
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) return null;
-    const capabilities = await resolveRecordingCapabilities(supabase, id);
-    if (!capabilities.manageAccess) return null;
-    const recording = await getRecordingById(supabase, id);
-    if (!recording || recording.visibility !== "private") return null;
-    return {
-      id: recording.id,
-      client_id: recording.client_id,
-      project_id: recording.project_id,
-      folder_id: recording.folder_id,
-      tag_ids: recording.tag_ids ?? []
-    };
+    const result = await supabase.rpc("recording_organization_context_v1", { p_recording_id: id });
+    if (result.error || !result.data || result.data.id !== id) return null;
+    return result.data as RecordingOrganizationSnapshot;
   } catch {
     return null;
   }

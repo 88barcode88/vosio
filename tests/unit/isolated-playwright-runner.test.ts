@@ -16,6 +16,8 @@ const projectRoot = path.resolve(import.meta.dirname, "../..");
 const ownedMarkers = new Set<string>();
 const directlyOwnedWorkspaces = new Set<string>();
 const teardownReceiptName = ".vosio-teardown-receipt.json";
+// These cases include OS process startup plus the runner's own bounded 5s stop and descendant lifetime.
+const processLifecycleTestTimeout = 15_000;
 
 // waitForExit captures the outer runner result without invoking a shell.
 function waitForExit(child: ChildProcess) {
@@ -193,7 +195,7 @@ describe("isolated Playwright outer runner", () => {
     await expect(run.exit).resolves.toMatchObject({ code: 143 });
     await expect(isPortClosed(port)).resolves.toBe(true);
     await expect(findMarkedWorkspace(run.marker)).resolves.toBeNull();
-  });
+  }, processLifecycleTestTimeout);
 
   it("allows only one same-port runner to reach Playwright through its owned readiness token", async () => {
     const first = startTestRunner({ mode: "delay-zero", port: 3178 });
@@ -257,7 +259,8 @@ describe("isolated Playwright outer runner", () => {
         },
         version: 1
       });
-    }
+    },
+    processLifecycleTestTimeout
   );
 
   it("fails closed and retains its workspace when a descendant tree cannot be proven stopped", async () => {

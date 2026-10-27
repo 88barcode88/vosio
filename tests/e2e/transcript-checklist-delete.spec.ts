@@ -23,10 +23,13 @@ for (const theme of ["light", "dark"] as const) {
     });
     await page.goto(`/login/manual-ai-refresh-e2e?scope=${randomBytes(6).toString("hex")}`);
     await expect(page.locator(".structured-task-row")).toHaveCount(1);
+    await expect(page.locator(".structured-ai-block > header .checklist-delete-control button")).toHaveAccessibleName("Smazat celý checklist");
+    await expect(page.locator(".structured-ai-block > header .structured-checklist-actions > button")).toHaveCount(2);
     let confirmation = "";
     page.once("dialog", async (dialog) => { confirmation = dialog.message(); await dialog.accept(); });
     await page.getByRole("button", { name: "Smazat celý checklist", exact: true }).click();
     await expect(page.locator(".structured-task-row")).toHaveCount(0);
+    await expect(page.locator(".checklist-delete-control")).toHaveCount(0);
     expect(deleteBody).toEqual({ snapshot }); expect(confirmation).toContain("(2 položek)");
     await page.getByRole("button", { name: "Přehrát staré server props" }).click();
     await expect(page.locator(".structured-task-row")).toHaveCount(0);

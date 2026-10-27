@@ -78,6 +78,7 @@ export function AiProcessingControls({
           <button
             className={processing.isRunning(action.processingType) ? "quick-action-running" : undefined}
             disabled={!canProcess}
+            title={getQuickActionDescription(action.processingType)}
             onClick={() => processTranscript(action.processingType)}
             type="button"
             key={action.label}
@@ -85,7 +86,7 @@ export function AiProcessingControls({
             <action.icon size={16} />
             <span>
               <strong>{action.label}</strong>
-              <small>
+              <small className="visually-hidden">
                 {processing.isRunning(action.processingType)
                   ? "Běží. Kliknutím spustíte další výstup."
                   : getQuickActionDescription(action.processingType)}

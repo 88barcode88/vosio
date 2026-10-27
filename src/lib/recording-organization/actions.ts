@@ -7,7 +7,7 @@ import {
   createSaveSuccess,
   type SaveActionState
 } from "@/lib/forms/save-action-state";
-import type { RecordingOrganizationEntityKind } from "@/lib/recording-organization/types";
+import type { RecordingOrganizationEntityKind, RecordingOrganizationPreview, RecordingOrganizationSnapshot } from "@/lib/recording-organization/types";
 import {
   isValidCreateScope,
   parseOrganizationColor,
@@ -16,8 +16,6 @@ import {
   parseRecordingAssignment
 } from "@/lib/recording-organization/validation";
 import { createClient as createSupabaseClient } from "@/lib/supabase/server";
-import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
-import { getRecordingById } from "@/lib/recordings/queries";
 
 type OrganizationActionConfig = {
   createMessage: string;
@@ -357,7 +355,31 @@ export async function deleteRecordingTagAction(previousState: SaveActionState, f
   return executeDeleteOrganization(organizationActionConfigs.tag, previousState, formData);
 }
 
-// assignRecordingOrganizationAction atomically replaces one recording's organization through one RPC.
+// organizationFailure maps only known preflight codes, never raw database diagnostics.
+function organizationFailure(error: DatabaseError | null) {
+  if (error?.message === "organization preview stale") return "Přístupy nebo zařazení se změnily. Obnovte náhled a potvrďte jej znovu.";
+  if (error?.message === "organization pending invitation") return "Projekt nelze změnit, dokud má nevyřízené pozvánky.";
+  if (error?.message === "organization active transcription") return "Projekt nelze změnit během rozpracovaného přepisu.";
+  if (error?.message === "organization custody transfer denied") return "Přesun mimo správu stejného zakladatele není povolen.";
+  return "Zařazení nahrávky se nepodařilo uložit.";
+}
+
+// previewRecordingOrganizationAction exposes only manager-authorized impact for the exact submitted target.
+export async function previewRecordingOrganizationAction(formData: FormData): Promise<{ preview: RecordingOrganizationPreview; error?: never } | { error: string; preview?: never }> {
+  try {
+    const id = parseOrganizationId(getFormString(formData, "recordingId"));
+    if (getFormString(formData, "scopeKey") !== id) return { error: staleEditorMessage };
+    const assignment = parseRecordingAssignment({ clientId: getFormString(formData, "clientId"), folderId: getFormString(formData, "folderId"), projectId: getFormString(formData, "projectId"), tagIds: formData.getAll("tagIds") });
+    const context = await getAuthenticatedContext();
+    if (!context) return { error: authenticationMessage };
+    const { data, error } = await context.supabase.rpc("preview_recording_organization_v1", {
+      p_recording_id: id, p_client_id: assignment.clientId, p_project_id: assignment.projectId, p_folder_id: assignment.folderId, p_tag_ids: assignment.tagIds
+    });
+    return error || !data ? { error: organizationFailure(error) } : { preview: data as RecordingOrganizationPreview };
+  } catch { return { error: "Náhled zařazení se nepodařilo načíst." }; }
+}
+
+// assignRecordingOrganizationAction commits the confirmed impact and verifies the returned safe projection.
 export async function assignRecordingOrganizationAction(
   previousState: SaveActionState,
   formData: FormData
@@ -387,32 +409,37 @@ export async function assignRecordingOrganizationAction(
       return createSaveError(previousState.revision, scopeKey, authenticationMessage);
     }
 
-    const capabilities = await resolveRecordingCapabilities(context.supabase, recordingId);
-    const recording = capabilities.manageAccess ? await getRecordingById(context.supabase, recordingId) : null;
-    if (!recording || recording.visibility !== "private") {
-      return createSaveError(previousState.revision, scopeKey, "Zařazení nahrávky se nepodařilo uložit.");
-    }
-    const { error } = await context.supabase.rpc("assign_recording_organization_v1", {
+    const args = {
       p_client_id: assignment.clientId,
       p_folder_id: assignment.folderId,
       p_project_id: assignment.projectId,
       p_recording_id: recordingId,
       p_tag_ids: assignment.tagIds
-    });
-
-    const saved = error ? null : await getRecordingById(context.supabase, recordingId);
-    if (error || !saved || saved.client_id !== assignment.clientId || saved.project_id !== assignment.projectId
+    };
+    let fingerprint = getFormString(formData, "organizationFingerprint");
+    // Old private callers cannot expand access; shared callers must present an explicitly reviewed preview.
+    if (!fingerprint) {
+      const current = await context.supabase.rpc("recording_organization_context_v1", { p_recording_id: recordingId });
+      if (current.error || current.data?.visibility !== "private") return createSaveError(previousState.revision, scopeKey, organizationFailure(current.error));
+      const preview = await context.supabase.rpc("preview_recording_organization_v1", args);
+      if (preview.error || !preview.data) return createSaveError(previousState.revision, scopeKey, organizationFailure(preview.error));
+      fingerprint = preview.data.fingerprint;
+    }
+    const { data, error } = await context.supabase.rpc("assign_recording_organization_v2", { ...args, p_expected_fingerprint: fingerprint });
+    const saved = error ? null : data as RecordingOrganizationSnapshot | null;
+    if (error || !saved || saved.id !== recordingId || saved.client_id !== assignment.clientId || saved.project_id !== assignment.projectId
       || saved.folder_id !== assignment.folderId
       || JSON.stringify([...(saved.tag_ids ?? [])].sort()) !== JSON.stringify([...assignment.tagIds].sort())) {
       return createSaveError(
         previousState.revision,
         scopeKey,
-        "Zařazení nahrávky se nepodařilo uložit."
+        organizationFailure(error)
       );
     }
 
     revalidatePath("/recordings");
     revalidatePath(`/recordings/${recordingId}`);
+    revalidatePath("/team");
     return createSaveSuccess(previousState.revision, scopeKey, "Zařazení bylo uloženo.");
   } catch {
     return createSaveError(

@@ -8,7 +8,7 @@ import type { RecordingOrganizationOptions } from "@/lib/recording-organization/
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
 vi.mock("@/lib/recording-organization/load-recording-action", () => ({ loadRecordingOrganizationAction: mocks.load }));
-vi.mock("@/lib/recording-organization/actions", () => ({ assignRecordingOrganizationAction: mocks.save }));
+vi.mock("@/lib/recording-organization/actions", () => ({ assignRecordingOrganizationAction: mocks.save, previewRecordingOrganizationAction: vi.fn() }));
 
 const options: RecordingOrganizationOptions = {
   clients: ["a", "b"].map((id) => ({ id, name: id, color: null, created_at: "", updated_at: "", user_id: "user" })),

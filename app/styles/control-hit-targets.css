@@ -1,7 +1,13 @@
-/* Loaded last so the real app's touch contract wins component-level compact sizing. */
+/* One density policy for real app controls; hybrid and narrow devices keep touch-safe targets. */
+@media (min-width: 901px) and (pointer: fine) {
+  :root { --control-hit-size: 30px; --control-surface-inset: 0px; }
+}
+@media (any-pointer: coarse) {
+  :root { --control-hit-size: 44px; --control-surface-inset: 7px; }
+}
 :root :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock, .auth-shell, .utility-route-state, .not-found-page) :is(
   button,
-  input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+  input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
   select,
   textarea,
   summary,
@@ -14,6 +20,34 @@
 :is(button, [role="button"], [role="tab"], .icon-button) {
   min-width: var(--control-hit-size);
 }
+
+/* Ordinary actions share the selected toolbar density; content can still wrap naturally. */
+:root :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock, .auth-shell, .utility-route-state, .not-found-page)
+:is(button:not(.record-button):not(.recording-audio-toggle):not(.recording-audio-expand), summary, [role="tab"]) {
+  padding-block: 4px;
+  font-size: .75rem;
+  line-height: 1.25;
+}
+
+/* Native single-line fields cannot use a painted pseudo-surface like action buttons. */
+:root :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock, .auth-shell, .utility-route-state, .not-found-page)
+:is(input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select) {
+  min-height: var(--control-hit-size);
+  padding-block: 4px;
+  border-radius: 5px;
+  font-size: .75rem;
+  line-height: 1.25;
+}
+@media (max-width: 900px), (any-pointer: coarse) {
+  :root :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock, .auth-shell, .utility-route-state, .not-found-page)
+  :is(input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select) { font-size: 16px; }
+}
+
+/* Native range tracks keep touch-safe geometry rather than inheriting single-line field density. */
+:root :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock, .auth-shell, .utility-route-state, .not-found-page) input[type="range"] { min-height: 44px; }
+
+/* Primary recording and playback controls keep their purpose-specific geometry. */
+:root .workspace-shell :is(.record-button, .recording-audio-toggle, .recording-audio-expand, .recording-audio-progress input) { min-height: 44px; min-width: 44px; }
 
 /* Native toggles stay visually compact while their semantic labels own the complete hit area. */
 :root :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock, .auth-shell, .utility-route-state, .not-found-page) :is(

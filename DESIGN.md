@@ -2,13 +2,17 @@
 
 ## Kompaktní ovládání detailu a inboxu
 
-Viditelné drobné akce mají přibližně 30px rámeček uvnitř nejméně 44px nepřekrývajícího se cíle. Souhrn identity mluvčího je svisle vystředěný; saving/error feedback zůstává v příslušném sloupci. AI/Timeline akce používají existující command vzor. V chatu lze modelové nastavení sbalit; vybraný model a uvažování zůstávají v souhrnu a cenová nápověda je dostupná po rozbalení. Escape vrátí focus na souhrn.
+Rychlé AI akce používají stejnou malou jednořádkovou plochu. Jejich doplňující popis zůstává v nápovědě `title` a vizuálně skrytém textu pro asistivní čtení; neroztahuje každý knoflík na dva řádky. Primární posuvník přehrávače zachovává 44px plochu i na fine desktopu.
+
+Jediná reference drobných akcí pro celý web je toolbar Filtry / Spravovat / Nedokončené. Na desktopu od 901 px s jemným ukazatelem bez coarse mají akce i nativní jednořádková pole přibližně 30–32 px a akční ikony 15 px. Na mobilu, coarse i hybridních zařízeních zůstávají nepřekrývající se cíle nejméně 44 px; menší viditelnou plochu od skutečného cíle odděluje společný inset. Pevný 7px inset platí jen pro 44px cíl, na fine desktopu je nulový. Souhrn identity mluvčího je svisle vystředěný; saving/error feedback zůstává v příslušném sloupci. AI/Timeline akce používají existující command vzor. V chatu lze modelové nastavení sbalit; vybraný model a uvažování zůstávají v souhrnu a cenová nápověda je dostupná po rozbalení. Escape vrátí focus na souhrn.
 
 Inbox odděluje Klient a Projekt v desktopových sloupcích i mobilních popiscích. Ellipsis otevírá přímo pojmenovaný popup `Název a zařazení` s oddělenými sekcemi `Uložit název` a `Uložit zařazení`. Výsledek jedné sekce nevydává za společný úspěch. Jednotlivé uložené změny popup automaticky nezavírají; pending blokuje zavření a chyby zachovávají koncepty.
 
-Pro sekci Tým uživatel schválil nový kompaktní návrh 2: úzký neobalený seznam osob vlevo a detail přístupů vpravo. Nahrazuje původní rámované rozložení A. Aktivní přístupy mají krátké řádky typ/název/hranice, role a Odebrat, bez opakovaných vysvětlivek. Přidělit přístup rozbaluje inline procházení klient → projekt → dostupná složka → nahrávka s drobečkovou navigací, hromadným výběrem, společnou rolí a jedním uložením. Desktopové řádky a viditelné akce mají přibližně 30–32 px, avatary 24 px; na mobilu a pro dotykové ovládání mají cíle nejméně 44 px. Tato výslovná kompaktní volba platí pro Tým. Nevkládat rámované panely do dalších panelů.
+Pro sekci Tým uživatel schválil nový kompaktní návrh 2: úzký neobalený seznam osob vlevo a detail přístupů vpravo. Nahrazuje původní rámované rozložení A. Aktivní přístupy mají krátké řádky typ/název/hranice, role a Odebrat, bez opakovaných vysvětlivek. Přidělit přístup rozbaluje inline procházení klient → projekt → dostupná složka → nahrávka s drobečkovou navigací, hromadným výběrem, společnou rolí a jedním uložením. Desktopové řádky a viditelné akce mají přibližně 30–32 px, avatary 24 px; na mobilu a pro dotykové ovládání mají cíle nejméně 44 px. Tým používá stejnou globální rozměrovou politiku jako ostatní obrazovky. Nevkládat rámované panely do dalších panelů.
 
 Mobil přechází ze seznamu do detailu a nabízí návrat. Odkaz patří na desktopu do navigace a na mobilu pod Více; pět pevných mobilních cílů zůstává. Aktivní přístupy a čekající pozvánky jsou oddělené. Grant klienta/složky popisuje současné i budoucí nesoukromé nahrávky; projekt zahrnuje nahrávky sdílené s projektem. Soukromou nahrávku lze výslovně zvolit samostatně: viditelný štítek Soukromá a souhrn Nově sdílené soukromé s konkrétním příjemcem před uložením. Samotné zařazení nic nesdílí. Odebrání vyžaduje konkrétní potvrzení a ponechává ostatní platné cesty. Uživatelská akceptace implementovaného UI zůstává samostatná.
+
+Badge bezpečně dostupného zařazení je malý text přímo za aktuálním stavem nahrávky. Jeden editor zařazení patří před Export do horních akcí. Hlavička Úkoly jako checklist obsahuje Kopírovat, MD a potvrzované mazání checklistu; při pending zůstává připojená a po potvrzeném prázdném stavu nezůstává osamocená akce. Pracovní seznamy používají oddělovače a přirozenou výšku podle obsahu, nikoli vnořené rámované karty nebo neodůvodněná řádková minima. Primární nahrávání, přehrávač, waveform a loga mají vlastní účelovou geometrii.
 
 ## Product Context
 
@@ -211,7 +215,7 @@ Radius scale:
 
 Nested radius musí být opticky konzistentní: vnitřní radius má být menší než vnější.
 
-Pracovní plochy inboxu, filtrů, řádků, Draweru, capture a Koše používají kompaktní radius 4-6 px. Interaktivní hit area zůstává nejméně 44 px i tam, kde je viditelná geometrie menší.
+Pracovní plochy inboxu, filtrů, řádků, Draweru, capture a Koše používají kompaktní radius 4-6 px. Interaktivní cíle se řídí společnou politikou: fine desktop 30–32 px, mobil/coarse/hybrid nejméně 44 px.
 
 ## Layout
 
@@ -261,7 +265,7 @@ Nepatří sem:
 
 `/recordings` je jeden kompaktní pracovní inbox, ne sestava panelů nebo tabulek vložených do sebe.
 
-- Nad obsahem je jeden kompaktní toolbar: pružné hledání s vlastní ikonou, `Filtry`, hned za nimi `Spravovat` a případně `Nedokončené · N`. Akce mají stejně jako detail 30px viditelnou plochu uvnitř nejméně 44px cíle a 15px ikony.
+- Nad obsahem je jeden kompaktní toolbar: pružné hledání s vlastní ikonou, `Filtry`, hned za nimi `Spravovat` a případně `Nedokončené · N`. Akce mají stejně jako detail 30px viditelnou plochu, 15px ikony a společnou fine/touch geometrii.
 - Nedokončené nahrávky patří do kontextového popupu, ne do dominantního banneru nad seznamem. Zavření popupu nikdy nemaže místní bezpečnostní kopii ani serverový záznam. Odstranění musí být samostatně potvrzené, odlišovat místní kopii od serverové nahrávky a respektovat aktivního zapisovatele.
 - Hromadné sdílení začíná checkboxem přímo u autorizované soukromé nahrávky. Teprve neprázdný výběr zobrazí malý action toolbar `Vybráno N`, `Sdílet`, `Zrušit výběr`; sdílení nepatří mezi filtry. Výběr nejvýše 100 položek a stejný request při nejistém retry zůstávají zachované.
 - Stavové facety tvoří měkký segmentovaný řádek; seznam je jeden bílý 16px panel s jemnými skupinovými oddělovači a neobaluje jednotlivé desktopové řádky dalšími kartami.
@@ -269,7 +273,7 @@ Nepatří sem:
 - Inbox používá studené `#f7f8fa` pozadí a bílý `--surface-raised`, bez původního teplého béžového tónu; dark mode zůstává plnohodnotný.
 - Existující filtry `q`, `status`, `client`, `project`, `folder` a opakovatelný `tag` zůstávají URL-backed. Pokročilá organizační část používá keep-mounted ukotvený popup do 360 px, ne plnošířkový panel. Zachovává draft, focus trap, Escape, návrat focusu a blokování zavření během aktualizace filtrů.
 - Zdroj a datum nejsou nové filtry tohoto UI-only řezu.
-- Při viewportu 900 px a méně se hledání přesune na vlastní řádek; `Filtry` a `Spravovat` zůstávají kompaktní sousední akce. Stavové počty mají 30px viditelný segment uvnitř 44px cíle. Samotný seznam přechází na karty podle skutečné šířky content containeru 680 px a méně, ne pouze podle viewportu.
+- Při viewportu 900 px a méně se hledání přesune na vlastní řádek; `Filtry` a `Spravovat` zůstávají kompaktní sousední akce. Stavové počty mají 30px viditelný segment; na fine desktopu má cíl 30–32 px, na mobilu/coarse/hybrid nejméně 44 px. Samotný seznam přechází na karty podle skutečné šířky content containeru 680 px a méně, ne pouze podle viewportu.
 - Správa zařazení používá Drawer do 640 px. Název má vlastní čitelný sloupec, akce pružný vedlejší sloupec a správa přístupu celý řádek pod nimi. Do 480 px se název, akce a formulář skládají pod sebe; krátká jména se nelámou po jednotlivých písmenech.
 
 ### Recording Detail
@@ -277,8 +281,8 @@ Nepatří sem:
 Detail nahrávky je pracovní objekt, ne hero.
 
 - Header drž kompaktní: název, stav, metadata a destruktivní akce.
-- `Upravit název`, `Export` a `Sdílet` mají stabilní umístění v jedné action liště. `Upravit zařazení` používá stejný keep-mounted kontextový popup u organizačních chipů. Popupy neodsouvají přehrávač ani ostatní akce.
-- Viditelná geometrie drobných akcí má výšku přibližně 30 px, ikony 15 px a titul detailu 21 px; skutečný hit target zůstává nejméně 44 × 44 px. Popup má šířku nejvýše 360 px, 16px okraje viewportu a vlastní scroll na krátké obrazovce.
+- `Upravit název`, `Export` a `Sdílet` mají stabilní umístění v jedné action liště. `Upravit zařazení` je před Exportem a používá stejný keep-mounted kontextový popup; organizační chipy jsou vedle stavu nahrávky. Popupy neodsouvají přehrávač ani ostatní akce.
+- Viditelná geometrie drobných akcí má výšku přibližně 30 px, ikony 15 px a titul detailu 21 px; skutečný hit target je na fine desktopu 30–32 px a na mobilu/coarse/hybrid nejméně 44 × 44 px. Popup má šířku nejvýše 360 px, 16px okraje viewportu a vlastní scroll na krátké obrazovce.
 - Stejný malý action surface používají uložení/zrušení, prompt editor, nastavení, Koš a upload akce. Velikost přehrávače, capture a datových ikon se tím nemění. Přepis má stabilní společnou geometrii textu i ikony během pending a rezervovaný scrollovatelný status slot; request ani provider guard se vzhledem nemění.
 - Popupy mají přístupný název, focus trap, Escape a návrat focusu na trigger. Pending mutaci nelze zavřít; chyba ponechá draft a nejisté sdílení zachovává stejný payload. Obsah po prvním otevření zůstává připojený.
 - Přehrávač začíná jako sbalený řádek s play/pause, časem a rozbalením posuvníku. Rozbalení ani změna záložky nesmí zastavit nebo znovu načíst audio; sbalení se resetuje až při změně nahrávky.
@@ -349,7 +353,7 @@ neutrálních plochách a tokenech; mění se pouze ovládání modelu.
 - Nativní model select nad nativním range se samostatným viditelným popiskem.
 - Pět kroků: Nízké (low), Střední (medium), Vysoké (high), Velmi vysoké (xhigh),
   Maximum (max). Aktuální úroveň je textová i přes `aria-valuetext`, bez procent.
-- Klávesnice i dotyk, nejméně 44px cíle, desktop/mobile a light/dark.
+- Klávesnice i dotyk, společné fine/touch cíle, desktop/mobile a light/dark.
 - Podporu určuje katalog modelů; nepodporované modely místo posuvníku zobrazí
   „U tohoto modelu nelze uvažování nastavit.“ Uložená OpenAI preference zůstává.
 - Scope nápověda odlišuje nový ruční výstup, ukládaný default a následující otázku.
@@ -396,7 +400,7 @@ Recommended transition:
 
 Requirements:
 
-- tlačítka a ovládací prvky mají minimálně 44 px hit area,
+- tlačítka a ovládací prvky používají fine desktop 30–32 px a mobil/coarse/hybrid nejméně 44 px hit area,
 - icon-only akce mají `aria-label`,
 - taby používají `role="tablist"` / `role="tab"` / `role="tabpanel"`,
 - formuláře mají label nebo přístupný název,

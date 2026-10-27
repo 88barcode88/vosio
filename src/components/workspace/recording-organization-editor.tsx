@@ -2,14 +2,17 @@
 
 import { type CSSProperties, type ReactNode, useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Eraser, Pencil, Save, X } from "lucide-react";
+import Link from "next/link";
 import { CompactPopover } from "@/components/ui/compact-popover";
 import { useCloseOnSuccessfulSave } from "@/components/use-close-on-successful-save";
-import { createInitialSaveActionState, type SaveAction } from "@/lib/forms/save-action-state";
+import { createInitialSaveActionState, createSaveError, type SaveAction } from "@/lib/forms/save-action-state";
 import { runSaveActionSafely } from "@/lib/forms/run-save-action-safely";
-import { assignRecordingOrganizationAction } from "@/lib/recording-organization/actions";
+import { assignRecordingOrganizationAction, previewRecordingOrganizationAction } from "@/lib/recording-organization/actions";
 import type {
   RecordingOrganization,
-  RecordingOrganizationOptions
+  RecordingOrganizationOptions,
+  RecordingOrganizationPolicy,
+  RecordingOrganizationPreview
 } from "@/lib/recording-organization/types";
 import type { RecordingRow } from "@/lib/recordings/types";
 
@@ -18,10 +21,11 @@ type RecordingOrganizationEditorProps = {
   onPendingChange?: (pending: boolean) => void;
   options: RecordingOrganizationOptions;
   organization: RecordingOrganization;
-  recording: Pick<RecordingRow, "id" | "client_id" | "project_id" | "folder_id">;
+  recording: Pick<RecordingRow, "id" | "client_id" | "project_id" | "folder_id"> & { visibility?: string; organization_policy?: RecordingOrganizationPolicy };
   showSummary?: boolean;
   initiallyOpen?: boolean;
   saveAction?: SaveAction;
+  previewAction?: typeof previewRecordingOrganizationAction;
 };
 
 type DismissedSaveError = {
@@ -35,6 +39,20 @@ type RecordingOrganizationDraft = {
   projectId: string;
   tagIds: Set<string>;
 };
+
+const organizationScopeLabels = { client: "klient", folder: "složka", project: "projekt" };
+
+// RecordingOrganizationSummary renders only the safe metadata already supplied to the current viewer.
+export function RecordingOrganizationSummary({ organization }: { organization: RecordingOrganization }) {
+  const chips = [
+    organization.client ? { color: organization.client.color, id: `client-${organization.client.id}`, label: organization.client.name } : null,
+    organization.project ? { color: organization.project.color, id: `project-${organization.project.id}`, label: organization.project.name } : null,
+    organization.folder ? { color: organization.folder.color, id: `folder-${organization.folder.id}`, label: organization.folder.name } : null,
+    ...organization.tags.map(tag => ({ color: tag.color, id: `tag-${tag.id}`, label: tag.name }))
+  ].filter((chip): chip is { color: string | null; id: string; label: string } => chip !== null);
+  return <span className="recording-organization-badges" aria-label="Zařazení nahrávky">{chips.length ? chips.map(chip => <span className={`organization-chip${chip.color ? " organization-chip-colored" : ""}`} key={chip.id}
+    style={chip.color ? { "--organization-color": chip.color } as CSSProperties : undefined}>{chip.label}</span>) : <span className="organization-chip organization-chip-muted">Bez zařazení</span>}</span>;
+}
 
 // createPersistedSignature tracks meaningful persisted assignment changes without array identity.
 function createPersistedSignature(organization: RecordingOrganization, recording: RecordingOrganizationEditorProps["recording"]) {
@@ -61,13 +79,22 @@ function createSubmittedDraft(formData: FormData): RecordingOrganizationDraft {
 export function RecordingOrganizationEditor({
   embedded = false,
   onPendingChange,
-  options,
+  options: allOptions,
   organization,
   recording,
   showSummary = true,
   initiallyOpen = false,
-  saveAction = assignRecordingOrganizationAction
+  saveAction = assignRecordingOrganizationAction,
+  previewAction = previewRecordingOrganizationAction
 }: RecordingOrganizationEditorProps) {
+  const policy = recording.organization_policy;
+  const options = useMemo(() => policy ? {
+    clients: policy.personalEditable ? allOptions.clients : [],
+    folders: policy.personalEditable ? allOptions.folders : [],
+    tags: policy.personalEditable ? allOptions.tags : [],
+    projects: allOptions.projects.filter((project) => policy.projectIds.includes(project.id))
+  } : allOptions, [allOptions, policy]);
+  const [impact, setImpact] = useState<{ signature: string; preview: RecordingOrganizationPreview } | null>(null);
   const persistedTagIdsSignature = organization.tags.map((tag) => tag.id).sort().join("\u001f");
   const persistedDraft = useMemo<RecordingOrganizationDraft>(() => ({
     clientId: recording.client_id ?? "",
@@ -105,12 +132,28 @@ export function RecordingOrganizationEditor({
   }, []);
 
   const scopedSaveAction = useCallback(
-    (previousState: ReturnType<typeof createInitialSaveActionState>, formData: FormData) => {
+    async (previousState: ReturnType<typeof createInitialSaveActionState>, formData: FormData) => {
+      if (policy) {
+        const signature = JSON.stringify([recording.id, String(formData.get("clientId") ?? ""), String(formData.get("projectId") ?? ""), String(formData.get("folderId") ?? ""), formData.getAll("tagIds").sort()]);
+        if (!formData.get("organizationFingerprint")) {
+          let result: Awaited<ReturnType<typeof previewRecordingOrganizationAction>>;
+          try { result = await previewAction(formData); }
+          catch { return createSaveError(previousState.revision, recording.id, "Náhled zařazení se nepodařilo načíst. Zkuste to znovu."); }
+          if (result.error || !result.preview) return createSaveError(previousState.revision, recording.id, result.error ?? "Náhled se nepodařilo načíst.");
+          if (recording.visibility !== "private" || result.preview.addedPaths.length || result.preview.removedPaths.length) {
+            setImpact({ signature, preview: result.preview });
+            return previousState;
+          }
+          formData.set("organizationFingerprint", result.preview.fingerprint);
+        }
+      }
       submittedDraftRef.current = createSubmittedDraft(formData);
       submittedPersistedSignatureRef.current = persistedSignatureRef.current;
-      return runSaveActionSafely(saveAction, previousState, formData, recording.id);
+      const result = await runSaveActionSafely(saveAction, previousState, formData, recording.id);
+      setImpact(null);
+      return result;
     },
-    [recording.id, saveAction]
+    [policy, previewAction, recording.id, recording.visibility, saveAction]
   );
   const [actionState, formAction, isPending] = useActionState(
     scopedSaveAction,
@@ -118,8 +161,8 @@ export function RecordingOrganizationEditor({
   );
   useEffect(() => { onPendingChange?.(isPending); }, [isPending, onPendingChange]);
   const matchingProjects = useMemo(
-    () => options.projects.filter((project) => (project.client_id ?? "") === clientId),
-    [clientId, options.projects]
+    () => options.projects.filter((project) => policy?.personalEditable === false || (project.client_id ?? "") === clientId),
+    [clientId, options.projects, policy]
   );
   const closeAfterSuccess = useCallback(() => {
     const submittedDraft = submittedDraftRef.current;
@@ -136,6 +179,7 @@ export function RecordingOrganizationEditor({
 
   // resetDraft restores the persisted organization values for the current recording.
   const resetDraft = useCallback(() => {
+    setImpact(null);
     applyDraft(persistedDraftRef.current);
     lastSyncedPersistedSignatureRef.current = persistedSignatureRef.current;
   }, [applyDraft]);
@@ -162,6 +206,7 @@ export function RecordingOrganizationEditor({
   useEffect(() => {
     if (previousRecordingIdRef.current === recording.id) return;
     previousRecordingIdRef.current = recording.id;
+    setImpact(null);
     submittedDraftRef.current = null;
     submittedPersistedSignatureRef.current = null;
     lastSyncedPersistedSignatureRef.current = persistedSignatureRef.current;
@@ -200,12 +245,8 @@ export function RecordingOrganizationEditor({
     });
   }
 
-  const chips = [
-    organization.client ? { color: organization.client.color, id: `client-${organization.client.id}`, label: organization.client.name } : null,
-    organization.project ? { color: organization.project.color, id: `project-${organization.project.id}`, label: organization.project.name } : null,
-    organization.folder ? { color: organization.folder.color, id: `folder-${organization.folder.id}`, label: organization.folder.name } : null,
-    ...organization.tags.map((tag) => ({ color: tag.color, id: `tag-${tag.id}`, label: tag.name }))
-  ].filter((chip): chip is { color: string | null; id: string; label: string } => chip !== null);
+  const currentDraftSignature = JSON.stringify([recording.id, clientId, projectId, folderId, [...tagIds].sort()]);
+  const currentImpact = impact?.signature === currentDraftSignature ? impact.preview : null;
 
   // renderEditor shares the form while leaving dismissal to the combined surface when embedded.
   const renderEditor = (children: ReactNode) => embedded ? <section aria-label="Zařazení"><h3>Zařazení</h3>{children}</section> : (
@@ -217,19 +258,7 @@ export function RecordingOrganizationEditor({
   return (
     <div className="recording-organization-editor">
       <div className="recording-organization-summary" aria-label="Zařazení nahrávky">
-        {showSummary ? chips.length > 0
-          ? chips.map((chip) => (
-            <span
-              className={`organization-chip${chip.color ? " organization-chip-colored" : ""}`}
-              key={chip.id}
-              style={chip.color
-                ? ({ "--organization-color": chip.color } as CSSProperties)
-                : undefined}
-            >
-              {chip.label}
-            </span>
-          ))
-          : <span className="organization-chip organization-chip-muted">Bez zařazení</span> : null}
+        {showSummary ? <RecordingOrganizationSummary organization={organization} /> : null}
         {renderEditor(
           <form
             action={formAction}
@@ -242,10 +271,12 @@ export function RecordingOrganizationEditor({
           >
             <input name="recordingId" readOnly type="hidden" value={recording.id} />
             <input name="scopeKey" readOnly type="hidden" value={recording.id} />
+            {currentImpact ? <input name="organizationFingerprint" readOnly type="hidden" value={currentImpact.fingerprint} /> : null}
             <div className="recording-organization-fields">
               <label>
                 <span>Klient</span>
                 <select
+                  disabled={isPending || policy?.personalEditable === false}
                   name="clientId"
                   onChange={(event) => {
                     const nextClientId = event.target.value;
@@ -268,6 +299,7 @@ export function RecordingOrganizationEditor({
               <label>
                 <span>Projekt</span>
                 <select
+                  disabled={isPending}
                   name="projectId"
                   onChange={(event) => setProjectId(event.target.value)}
                   value={projectId}
@@ -280,7 +312,7 @@ export function RecordingOrganizationEditor({
               </label>
               <label>
                 <span>Složka</span>
-                <select name="folderId" onChange={(event) => setFolderId(event.target.value)} value={folderId}>
+                <select disabled={isPending || policy?.personalEditable === false} name="folderId" onChange={(event) => setFolderId(event.target.value)} value={folderId}>
                   <option value="">Bez složky</option>
                   {options.folders.map((folder) => (
                     <option key={folder.id} value={folder.id}>{folder.name}</option>
@@ -288,7 +320,8 @@ export function RecordingOrganizationEditor({
                 </select>
               </label>
             </div>
-            <fieldset className="recording-organization-tags">
+            {policy?.personalEditable === false ? <p>Osobní klient, složka a štítky autora zůstávají beze změny.</p> : options.folders.length === 0 ? <p>Nemáte žádnou vlastní složku. <Link href="/recordings">Otevřít seznam nahrávek a Spravovat</Link>.</p> : null}
+            <fieldset className="recording-organization-tags" disabled={isPending}>
               <legend>Štítky</legend>
               {options.tags.length > 0 ? options.tags.map((tag) => (
                 <label key={tag.id}>
@@ -304,6 +337,13 @@ export function RecordingOrganizationEditor({
               )) : <span>Žádné štítky</span>}
             </fieldset>
             <div className="recording-organization-feedback">
+              {currentImpact ? <section aria-label="Dopad zařazení">
+                <p>Vybrané zařazení: {options.clients.find((item) => item.id === clientId)?.name ?? "Bez klienta"}, {options.projects.find((item) => item.id === projectId)?.name ?? "Bez projektu"}, {options.folders.find((item) => item.id === folderId)?.name ?? "Bez složky"}.</p>
+                <p>Zachovaní konkrétní příjemci: {currentImpact.exactRecipients.map((item) => `${item.label} (${item.role === "editor" ? "editor" : "čtenář"})`).join(", ") || "žádní"}.</p>
+                <p>Přidané přístupové cesty: {currentImpact.addedPaths.map((item) => `${item.label} (${item.kind ? organizationScopeLabels[item.kind] : "přístup"}, ${item.role === "editor" ? "editor" : "čtenář"})`).join(", ") || "žádné"}.</p>
+                <p>Odebrané přístupové cesty: {currentImpact.removedPaths.map((item) => `${item.label} (${item.kind ? organizationScopeLabels[item.kind] : "přístup"}, ${item.role === "editor" ? "editor" : "čtenář"})`).join(", ") || "žádné"}. Další platné cesty zůstávají zachovány.</p>
+                {currentImpact.pendingInvitations?.length ? <p>Čekající pozvánky v cílovém rozsahu: {currentImpact.pendingInvitations.map((item) => `${item.label} (${item.role === "editor" ? "editor" : "čtenář"})`).join(", ")}. Přístup vznikne až po přijetí.</p> : null}
+              </section> : null}
               {isCurrentSettlement && actionState.status === "error" && !isPending && !isCurrentErrorDismissed ? (
                 <p role="alert">{actionState.message}</p>
               ) : null}
@@ -315,7 +355,7 @@ export function RecordingOrganizationEditor({
                 type="submit"
               >
                 <Save aria-hidden="true" size={15} />
-                {isPending ? "Ukládám…" : embedded ? "Uložit zařazení" : "Uložit"}
+                {isPending ? "Ukládám…" : currentImpact ? "Potvrdit zařazení" : embedded ? "Uložit zařazení" : "Uložit"}
               </button>
               <button
                 disabled={isPending}

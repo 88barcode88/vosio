@@ -101,7 +101,7 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
 
   const filters = page.getByRole("form", { name: "Filtrování nahrávek" });
   await ensureAdvancedFiltersOpen(filters);
-  await expect(filters.getByLabel("Projekt")).toBeDisabled();
+  await expect(filters.getByLabel("Projekt")).toBeEnabled();
   await filters.getByLabel("Klient").selectOption({ label: "Acme" });
   await expect(page).toHaveURL((url) => url.searchParams.get("scope") === scope
     && url.searchParams.get("q") === "call"
@@ -111,12 +111,13 @@ test("creates, assigns and preserves canonical ALL-tag filters across refresh", 
   await filters.getByLabel("Projekt").selectOption({ label: "Project X" });
   await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("project")));
   await ensureAdvancedFiltersOpen(filters);
+  const selectedProject = await filters.getByLabel("Projekt").inputValue();
   await filters.getByLabel("Klient").selectOption("");
   await expect(page).toHaveURL((url) => !url.searchParams.has("client")
-    && !url.searchParams.has("project"));
+    && url.searchParams.get("project") === selectedProject);
   await ensureAdvancedFiltersOpen(filters);
-  await expect(filters.getByLabel("Projekt")).toBeDisabled();
-  await expect(filters.getByLabel("Projekt")).toHaveValue("");
+  await expect(filters.getByLabel("Projekt")).toBeEnabled();
+  await expect(filters.getByLabel("Projekt")).toHaveValue(selectedProject);
   await filters.getByLabel("Klient").selectOption({ label: "Acme" });
   await expect(page).toHaveURL((url) => Boolean(url.searchParams.get("client")));
   await ensureAdvancedFiltersOpen(filters);
@@ -188,12 +189,15 @@ test("uses the accessible color popover, preserves focus and renders badges in b
     const controlHeights = await colorDialog.getByRole("button").evaluateAll((buttons) =>
       buttons.map((button) => button.getBoundingClientRect().height)
     );
-    expect(controlHeights.every((height) => height >= 44)).toBe(true);
+    const compactDesktop = await page.evaluate(() => matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches);
+    expect(controlHeights.every((height) => height >= (compactDesktop ? 30 : 44))).toBe(true);
+    if (compactDesktop) expect(controlHeights.every((height) => height <= 32)).toBe(true);
   }
   expect(pickerBackgrounds[0]).not.toBe(pickerBackgrounds[1]);
   const customColor = colorDialog.getByLabel("Vlastní HEX barva");
   const applyCustomColor = colorDialog.getByRole("button", { name: "Použít" });
-  await expect(customColor).toHaveCSS("min-height", "44px");
+  const compactDesktop = await page.evaluate(() => matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches);
+  await expect(customColor).toHaveCSS("min-height", compactDesktop ? "30px" : "44px");
   await customColor.fill("#12GG45");
   await applyCustomColor.click();
   await expect(hiddenColor).toHaveValue("");
@@ -219,7 +223,7 @@ test("uses the accessible color popover, preserves focus and renders badges in b
   await expect(colorPicker).toBeFocused();
   await expect(page.locator("form.organization-create-form")).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Správa organizace" })).toBeVisible();
-  await expect(colorPicker).toHaveCSS("min-height", "44px");
+  await expect(colorPicker).toHaveCSS("min-height", compactDesktop ? "30px" : "44px");
   await page.getByRole("button", { name: "Uložit" }).click();
   await expect(page.getByRole("textbox", { name: "Název" })).toHaveCount(0);
 
