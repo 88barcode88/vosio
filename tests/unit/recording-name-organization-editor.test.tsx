@@ -9,10 +9,10 @@ import type { RecordingOrganizationOptions } from "@/lib/recording-organization/
 
 const mocks = vi.hoisted(() => ({ title: vi.fn(), organization: vi.fn(), load: vi.fn() }));
 vi.mock("@/lib/recordings/actions", () => ({ updateRecordingTitleStateAction: mocks.title }));
-vi.mock("@/lib/recording-organization/actions", () => ({ assignRecordingOrganizationAction: mocks.organization }));
+vi.mock("@/lib/recording-organization/actions", () => ({ assignRecordingOrganizationAction: mocks.organization, previewRecordingOrganizationAction: vi.fn() }));
 vi.mock("@/lib/recording-organization/load-recording-action", () => ({ loadRecordingOrganizationAction: mocks.load }));
 const options: RecordingOrganizationOptions = { clients: [], projects: [], folders: [], tags: [] };
-const recording = { id: "recording", title: "Původní", client_id: null, project_id: null, folder_id: null, tag_ids: [] } as unknown as RecordingRow;
+const recording = { id: "recording", visibility: "private", title: "Původní", client_id: null, project_id: null, folder_id: null, tag_ids: [] } as unknown as RecordingRow;
 let root: Root;
 let container: HTMLDivElement;
 

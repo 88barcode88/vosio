@@ -7,11 +7,12 @@ async function compactPaint(control: Locator) {
   const geometry = await control.evaluate((element) => {
     const box = element.getBoundingClientRect();
     const paint = getComputedStyle(element, "::before");
-    return { height: box.height, width: box.width, inset: paint.top, content: paint.content, icon: element.querySelector("svg")?.getBoundingClientRect().width };
+    return { compactDesktop: matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches, height: box.height, width: box.width, inset: paint.top, content: paint.content, icon: element.querySelector("svg")?.getBoundingClientRect().width };
   });
-  expect(geometry.height).toBeGreaterThanOrEqual(44);
-  expect(geometry.width).toBeGreaterThanOrEqual(44);
-  expect(geometry.inset).toBe("7px");
+  expect(geometry.height).toBeGreaterThanOrEqual(geometry.compactDesktop ? 30 : 44);
+  if (geometry.compactDesktop) expect(geometry.height).toBeLessThanOrEqual(32);
+  expect(geometry.width).toBeGreaterThanOrEqual(geometry.compactDesktop ? 30 : 44);
+  expect(geometry.inset).toBe(geometry.compactDesktop ? "0px" : "7px");
   expect(geometry.content).toBe('""');
   if (geometry.icon !== undefined) expect(geometry.icon).toBe(15);
 }

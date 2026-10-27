@@ -2,6 +2,10 @@
 
 ## Finální směr
 
+Společnou referencí drobných akcí celého webu jsou Filtry / Spravovat / Nedokončené. Na fine desktopu nad 900 px bez coarse vstupu mají celé cíle i viditelná tlačítka přibližně 30–32 px a akční ikony 15 px; úzké, coarse a hybridní ovládání zachovává nejméně 44px nepřekrývající se cíle. Řádky nesmí roztahovat neviditelný obal tlačítka nebo nadbytečný padding. Pracovní plochy jsou ploché, bez opakovaných rámečků kolem panelu, skupiny a každého řádku.
+
+Detail má malý souhrn zařazení vedle aktuálního stavu nahrávky a Upravit zařazení před Exportem v horních akcích. Mazání celého checklistu patří do hlavičky úkolů vedle malých Kopírovat / MD; při chybě se úkoly obnoví a přepis ani zdrojové AI výstupy se nemažou.
+
 Tým používá schválený kompaktní návrh 2 z dalšího kola: lidé vlevo bez vnořených panelů, jednoduché aktivní přístupy, inline výběr více rozsahů po úrovních a jedno společné uložení. Klient ukazuje projekty a nahrávky bez projektu; projekt ukazuje složky a nahrávky bez odpovídající složky. Aktuální soukromí je viditelné před výslovným sdílením konkrétní nahrávky. Desktopové řádky/viditelné akce mají přibližně 30–32 px; mobilní/dotykové cíle nejméně 44 px. Podrobnosti určuje DESIGN.md.
 
 Vosio je neutrální Appica-inspired pracovní audio workspace ve stylu moderního CRM. Nejde o landing page ani marketingovou prezentaci. Hlavní objekt aplikace je vždy nahrávka.

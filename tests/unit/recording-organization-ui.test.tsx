@@ -9,7 +9,7 @@ import {
   OrganizationManager,
   type OrganizationManagerActions
 } from "@/components/workspace/organization-manager";
-import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
+import { RecordingOrganizationEditor, RecordingOrganizationSummary } from "@/components/workspace/recording-organization-editor";
 import { createSaveError, createSaveSuccess, type SaveAction, type SaveActionState } from "@/lib/forms/save-action-state";
 import type {
   RecordingOrganization,
@@ -167,6 +167,66 @@ afterEach(async () => {
 });
 
 describe("RecordingOrganizationEditor", () => {
+  it("previews selected recipients and paths before saving, refreshes confirmation after a stale save and preserves draft", async () => {
+    const previewAction = vi.fn().mockResolvedValue({ preview: { fingerprint: "reviewed", exactRecipients: [{ id: "grant", userId: "reader", label: "reader@example.invalid", role: "reader" }], addedPaths: [{ id: "scope", userId: "editor", label: "editor@example.invalid", role: "editor", kind: "client" }], removedPaths: [], pendingInvitations: [{ id: "invite", label: "pending@example.invalid", role: "reader", kind: "folder" }] } });
+    const saveAction = vi.fn().mockImplementation(async (state, data) => createSaveError(state.revision, String(data.get("scopeKey")), "Obnovte náhled"));
+    await act(async () => root.render(<RecordingOrganizationEditor embedded options={options} organization={organization}
+      recording={{ ...createRecording(), visibility: "selected", organization_policy: { personalEditable: true, projectIds: [projectA] } }} saveAction={saveAction} previewAction={previewAction} />));
+    await clickButton("Uložit zařazení");
+    expect(previewAction).toHaveBeenCalledOnce();
+    expect(saveAction).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("reader@example.invalid");
+    expect(container.textContent).toContain("editor@example.invalid");
+    expect(container.textContent).toContain("editor@example.invalid (klient, editor)");
+    expect(container.textContent).toContain("Čekající pozvánky v cílovém rozsahu: pending@example.invalid");
+    expect(container.textContent).toContain("Přístup vznikne až po přijetí.");
+    await clickButton("Potvrdit zařazení");
+    expect(previewAction).toHaveBeenCalledOnce();
+    expect(saveAction.mock.calls[0][1].get("organizationFingerprint")).toBe("reviewed");
+    expect(container.textContent).toContain("Obnovte náhled");
+    expect(container.querySelector<HTMLSelectElement>('[name="clientId"]')?.value).toBe(clientA);
+    await clickButton("Uložit zařazení");
+    expect(previewAction).toHaveBeenCalledTimes(2);
+    expect(saveAction).toHaveBeenCalledOnce();
+  });
+
+  it("settles a preview transport failure without saving or losing draft", async () => {
+    const previewAction = vi.fn().mockRejectedValue(new Error("transport secret"));
+    const saveAction = vi.fn();
+    await act(async () => root.render(<RecordingOrganizationEditor embedded options={options} organization={organization}
+      recording={{ ...createRecording(), visibility: "selected", organization_policy: { personalEditable: true, projectIds: [projectA] } }} saveAction={saveAction} previewAction={previewAction} />));
+    await clickButton("Uložit zařazení");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Náhled zařazení se nepodařilo načíst");
+    expect(container.textContent).not.toContain("secret");
+    expect(container.querySelector<HTMLSelectElement>('[name="clientId"]')?.value).toBe(clientA);
+    expect(saveAction).not.toHaveBeenCalled();
+  });
+
+  it("invalidates reviewed impact when the draft target changes and limits choices to manager-authorized projects", async () => {
+    const previewAction = vi.fn().mockResolvedValue({ preview: { fingerprint: "reviewed", exactRecipients: [], addedPaths: [], removedPaths: [] } });
+    const saveAction = vi.fn();
+    await act(async () => root.render(<RecordingOrganizationEditor embedded options={options} organization={organization}
+      recording={{ ...createRecording(), visibility: "selected", organization_policy: { personalEditable: true, projectIds: [projectA] } }} saveAction={saveAction} previewAction={previewAction} />));
+    expect(Array.from(container.querySelector<HTMLSelectElement>('[name="projectId"]')!.options).map((item) => item.value)).not.toContain(projectB);
+    await clickButton("Uložit zařazení");
+    await setSelect("folderId", "");
+    expect(container.textContent).not.toContain("Potvrdit zařazení");
+    await clickButton("Uložit zařazení");
+    expect(previewAction).toHaveBeenCalledTimes(2);
+    expect(saveAction).not.toHaveBeenCalled();
+  });
+
+  it("does not offer a foreign author's personal taxonomy and explains empty folders truthfully", async () => {
+    await act(async () => root.render(<RecordingOrganizationEditor embedded options={options}
+      organization={{ client: null, project: organization.project, folder: null, tags: [] }}
+      recording={{ id: recordingA, client_id: null, project_id: projectA, folder_id: null, visibility: "project", organization_policy: { personalEditable: false, projectIds: [projectA] } }} saveAction={vi.fn()} />));
+    expect(container.querySelector<HTMLSelectElement>('[name="clientId"]')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLSelectElement>('[name="folderId"]')?.disabled).toBe(true);
+    expect(container.querySelectorAll('[name="tagIds"]')).toHaveLength(0);
+    expect(container.textContent).toContain("Osobní klient, složka a štítky autora");
+    expect(container.textContent).not.toContain("Beta");
+  });
+
   it("renders colored detail chips while leaving neutral chips uncolored", async () => {
     await act(async () => root.render(
       <RecordingOrganizationEditor organization={organization} options={options} recording={createRecording()} saveAction={vi.fn()} />
@@ -741,5 +801,17 @@ describe("organization UI integration", () => {
     expect(detailPageSource.match(/listRecordingOrganizationOptions\(supabase\)/g)).toHaveLength(1);
     expect(detailPageSource.match(/getRecordingOrganization\(supabase, recording\)/g)).toHaveLength(1);
     expect(detailPageSource).not.toMatch(/recordings\.map[\s\S]*getRecordingOrganization/);
+  });
+});
+
+
+describe("safe organization status summary", () => {
+  it("renders supplied labels without editor controls or additional reads", async () => {
+    await act(async () => root.render(<RecordingOrganizationSummary organization={organization} />));
+    expect(container.textContent).toBe("AcmeProjekt AObchodPriorita");
+    expect(container.querySelector("[aria-label='Zařazení nahrávky']")).not.toBeNull();
+    expect(container.querySelector("button, input, select, details")).toBeNull();
+    await act(async () => root.render(<RecordingOrganizationSummary organization={{ client: null, project: null, folder: null, tags: [] }} />));
+    expect(container.textContent).toBe("Bez zařazení");
   });
 });

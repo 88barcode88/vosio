@@ -215,7 +215,7 @@
   }
 }
 
-/* Detail actions reuse Export's 30px visible surface inside a separate 44px target. */
+/* Detail actions reuse the shared toolbar surface and pointer-aware target. */
 .tab-panel :is(.ai-job-row button, .ai-job-cleanup-all, .ai-state button, .timeline-list .secondary-inline-action, .speaker-summary-feedback button, .recording-chat-composer button[type="submit"], .recording-chat-reconcile) {
   position: relative;
   isolation: isolate;
@@ -242,7 +242,7 @@
   content: "";
   position: absolute;
   z-index: -1;
-  inset: 7px 0;
+  inset: var(--control-surface-inset) 0;
   border: 1px solid var(--border);
   border-radius: inherit;
   background: var(--surface);
