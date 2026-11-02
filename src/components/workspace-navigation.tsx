@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Drawer } from "@/components/ui/drawer";
 import { getEmailInitials } from "@/components/workspace/utils";
 import { signOutAction } from "@/lib/auth/actions";
+import { useWorkspaceNavigationPresentation } from "@/components/workspace-navigation-state";
 import {
   documentationNavigationItem,
   primaryNavigationItems,
@@ -282,15 +283,18 @@ function MobileMoreDrawer({
 export function MobileNav({
   activeView,
   canManageTeam = false,
+  navigationPending = false,
   hrefOverrides,
   userEmail = ""
 }: {
   activeView: WorkspaceView;
   canManageTeam?: boolean;
+  navigationPending?: boolean;
   hrefOverrides?: NavigationHrefOverrides;
   userEmail?: string;
 }) {
   const pathname = usePathname();
+  const presentation = useWorkspaceNavigationPresentation({ canManageTeam, userEmail }, navigationPending);
   const [moreReady, setMoreReady] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [pendingHref, setPendingHref] = useState<WorkspaceNavigationHref | null>(null);
@@ -354,12 +358,12 @@ export function MobileNav({
 
       <MobileMoreDrawer
         activeView={activeView}
-        canManageTeam={canManageTeam}
+        canManageTeam={presentation.canManageTeam}
         hrefOverrides={hrefOverrides}
         onClose={() => setMoreOpen(false)}
         open={moreOpen}
         setPendingHref={setPendingHref}
-        userEmail={userEmail}
+        userEmail={presentation.userEmail}
       />
     </>
   );

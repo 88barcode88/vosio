@@ -1,5 +1,11 @@
 # Gotchas
 
+`WorkspaceLoading` nemá vlastní potvrzenou roli ani e-mail. Musí označit
+`navigationPending`, aby společný root provider zachoval poslední potvrzenou
+navigaci. Výchozí `false` a prázdný účet během přechodu způsobují zmizení Týmu
+a změnu iniciál. Po cold loadu se oprávnění neodhaduje; nová hotová stránka má
+vždy přednost a odchod na přihlášení nebo jinou veřejnou cestu paměť vymaže.
+
 Sjednocený editor detailu zachovává samostatné operace. Dokud není změna klienta,
 projektu, složky nebo štítků potvrzená, sdílení a nové pozvánky nesmějí použít
 starý kontext. Nejistý sharing request drží původní UUID/payload a zůstává
