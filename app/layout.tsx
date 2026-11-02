@@ -5,6 +5,7 @@ import { PwaRegistration } from "@/components/pwa-registration";
 import { ThemeStorageMigration } from "@/components/theme-storage-migration";
 import { PersistentRecordingSessionProvider } from "@/components/persistent-recording-session";
 import { RecordingNavigationGuardProvider } from "@/components/recording-navigation-guard";
+import { WorkspaceNavigationProvider } from "@/components/workspace-navigation-state";
 import { getVosioLicenseMarker } from "@/lib/license-marker";
 import { normalizeTheme, VOSIO_THEME_COOKIE } from "@/lib/theme";
 import "./globals.css";
@@ -61,11 +62,13 @@ export default async function RootLayout({
     <html data-theme={initialTheme} data-theme-source={themeSource} lang="cs" suppressHydrationWarning>
       <body className={inter.variable}>
         <ThemeStorageMigration />
-        <RecordingNavigationGuardProvider>
-          <PersistentRecordingSessionProvider>
-            {children}
-          </PersistentRecordingSessionProvider>
-        </RecordingNavigationGuardProvider>
+        <WorkspaceNavigationProvider>
+          <RecordingNavigationGuardProvider>
+            <PersistentRecordingSessionProvider>
+              {children}
+            </PersistentRecordingSessionProvider>
+          </RecordingNavigationGuardProvider>
+        </WorkspaceNavigationProvider>
         <PwaRegistration />
       </body>
     </html>
