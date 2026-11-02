@@ -47,6 +47,13 @@ export function RecordingTitleEditor({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  // preserveDraftOnReset prevents React's native action reset from erasing a controlled title draft.
+  const preserveDraftOnReset = useCallback((form: HTMLFormElement | null) => {
+    if (!form) return;
+    const preventReset = (event: Event) => event.preventDefault();
+    form.addEventListener("reset", preventReset);
+    return () => form.removeEventListener("reset", preventReset);
+  }, []);
   const scopedSaveAction = useCallback(
     (previousState: ReturnType<typeof createInitialSaveActionState>, formData: FormData) =>
       runSaveActionSafely(
@@ -161,6 +168,7 @@ export function RecordingTitleEditor({
           aria-busy={isPending}
           aria-label="Název"
           className={`recording-title-form${embedded ? "" : " recording-title-popover"}`}
+          ref={preserveDraftOnReset}
           onClick={(event) => event.stopPropagation()}
           onSubmit={(event) => {
             if (isPending) {
@@ -182,6 +190,7 @@ export function RecordingTitleEditor({
             />
           </label>
           <div className="recording-title-feedback">
+            {embedded && isCurrentSettlement && actionState.status === "success" && !isPending ? <p role="status">{actionState.message}</p> : null}
             {isCurrentSettlement
               && actionState.status === "error"
               && !isPending

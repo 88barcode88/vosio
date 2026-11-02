@@ -1,0 +1,56 @@
+.shell {
+  align-items: start;
+  min-height: 100svh;
+  padding: clamp(16px, 4vw, 24px);
+  padding-top: clamp(24px, 8svh, 64px);
+}
+
+.content {
+  width: min(100%, 430px);
+  min-width: 0;
+}
+
+.content h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.content p {
+  margin: 12px 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.content :global(.auth-form) {
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.content :global(.auth-form) label {
+  min-width: 0;
+  gap: 6px;
+}
+
+.content :global(.auth-form) input {
+  min-width: 0;
+}
+
+.content :global(.auth-form) details label {
+  margin-top: 10px;
+}
+
+.content button {
+  width: 100%;
+  min-height: var(--control-hit-size);
+  border: 0;
+  border-radius: 5px;
+  color: var(--accent-text);
+  background: var(--accent);
+  padding: 8px 12px;
+  font-weight: 600;
+}
+
+.content a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
