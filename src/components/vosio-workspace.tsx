@@ -53,6 +53,7 @@ import type {
 
 type VosioWorkspaceProps = {
   pendingContent?: ReactNode;
+  navigationPending?: boolean;
   canManageTeam?: boolean;
   teamWorkspace?: TeamWorkspace;
   activeRecordingId?: string;
@@ -138,6 +139,7 @@ export function getContentAreaClassName({
 // VosioWorkspace composes the workspace shell and routes each view into its working area.
 export function VosioWorkspace({
   pendingContent,
+  navigationPending = false,
   canManageTeam = false,
   teamWorkspace,
   activeRecordingId,
@@ -221,6 +223,7 @@ export function VosioWorkspace({
     <main className="workspace-shell">
       <WorkspaceSidebar
         activeView={view}
+        navigationPending={navigationPending}
         canManageTeam={canManageTeam}
         navigationHrefOverrides={navigationHrefOverrides}
         userEmail={userEmail}
@@ -320,6 +323,7 @@ export function VosioWorkspace({
 
       <MobileNav
         activeView={view}
+        navigationPending={navigationPending}
         canManageTeam={canManageTeam}
         hrefOverrides={navigationHrefOverrides}
         userEmail={userEmail}

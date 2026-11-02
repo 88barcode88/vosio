@@ -14,6 +14,7 @@ import {
   type WorkspaceView
 } from "@/lib/workspace-data";
 import { getEmailInitials } from "@/components/workspace/utils";
+import { useWorkspaceNavigationPresentation } from "@/components/workspace-navigation-state";
 
 const SIDEBAR_STORAGE_KEY = "vosio-sidebar-collapsed";
 
@@ -21,14 +22,17 @@ const SIDEBAR_STORAGE_KEY = "vosio-sidebar-collapsed";
 export function WorkspaceSidebar({
   activeView,
   canManageTeam = false,
+  navigationPending = false,
   navigationHrefOverrides,
   userEmail
 }: {
   activeView: WorkspaceView;
   canManageTeam?: boolean;
+  navigationPending?: boolean;
   navigationHrefOverrides?: NavigationHrefOverrides;
   userEmail: string;
 }) {
+  const presentation = useWorkspaceNavigationPresentation({ canManageTeam, userEmail }, navigationPending);
   const [collapsed, setCollapsed] = useState(false);
 
   // Restore a non-sensitive display preference after hydration.
@@ -61,12 +65,12 @@ export function WorkspaceSidebar({
         {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
       </button>
       <div className="workspace-switcher" aria-hidden="true">
-        <span className="avatar">{getEmailInitials(userEmail)}</span>
+        <span className="avatar">{getEmailInitials(presentation.userEmail)}</span>
         <span className="navigation-label">Můj pracovní prostor</span>
       </div>
       <WorkspaceNavigation
         activeView={activeView}
-        canManageTeam={canManageTeam}
+        canManageTeam={presentation.canManageTeam}
         compact={collapsed}
         hrefOverrides={navigationHrefOverrides}
       />
@@ -76,7 +80,7 @@ export function WorkspaceSidebar({
         hrefOverrides={navigationHrefOverrides}
       />
       <SupportLink compact={collapsed} />
-      <UserCard userEmail={userEmail} />
+      <UserCard userEmail={presentation.userEmail} />
     </aside>
   );
 }
