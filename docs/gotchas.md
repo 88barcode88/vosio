@@ -1,5 +1,14 @@
 # Gotchas
 
+Sjednocený editor detailu zachovává samostatné operace. Dokud není změna klienta,
+projektu, složky nebo štítků potvrzená, sdílení a nové pozvánky nesmějí použít
+starý kontext. Nejistý sharing request drží původní UUID/payload a zůstává
+připojený i po skrytí dialogu; přejmenování ani přesun nesmí tento retry změnit.
+Zakázání právě fokusovaného tlačítka může v Chromiu vrátit focus na body; po
+dokončení požadavku se focus obnoví do otevřeného dialogu, aby fungoval Escape.
+Přehled konkrétních příjemců neobsahuje všechny dynamické klientské/složkové
+cesty, proto nesmí tvrdit, že nesoukromou nahrávku vidí výhradně vybrané osoby.
+
 Organizační preview je mezikrok React form action. Nativní reset během commitu
 musí být zastaven přímo na formuláři, jinak se DOM selecty rozcházejí s draftem
 a potvrzeným fingerprintem. Stale potvrzení vrací terminální `PT409` přes forward

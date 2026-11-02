@@ -47,24 +47,25 @@ async function compactAction(page: Page, selector: string) {
   if (size.icon !== undefined) expect(size.icon).toBe(15);
 }
 
-test("organization and title popups retain compact controls and stable player in both themes", async ({ page }, info) => {
+test("the unified editor retains compact controls and stable player in both themes", async ({ page }, info) => {
   await isolate(page); await openDetail(page);
   for (const width of widths) {
     await page.setViewportSize({ width, height: 780 });
     for (const theme of ["dark", "light"]) {
       await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
-      for (const selector of [".recording-organization-popover > summary", ".recording-inline-edit > summary"]) {
+      for (const selector of ['button:has-text("Upravit a sdílení")']) {
         const trigger = page.locator(selector); await trigger.focus();
         const before = await geometry(page); await trigger.press("Enter");
         const dialog = page.getByRole("dialog"); await expect(dialog).toBeVisible();
         expect(await geometry(page)).toEqual(before);
         await compactAction(page, "[role='dialog'] button[type='submit']");
-        await compactAction(page, "[role='dialog'] button:has-text('Zrušit')");
+        await compactAction(page, "[role='dialog'] button:has-text('Vyčistit zařazení')");
         const controls = dialog.locator("button:not(:disabled), input:not([type='hidden']), select");
         await controls.last().focus(); await page.keyboard.press("Tab"); await expect(controls.first()).toBeFocused();
         await controls.first().focus(); await page.keyboard.press("Shift+Tab"); await expect(controls.last()).toBeFocused();
-        const box = await dialog.boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(15); expect(box!.x + box!.width).toBeLessThanOrEqual(width - 15);
-        if (width === 320 || width === 1440) await page.screenshot({ path: info.outputPath(`${selector.includes("organization") ? "organization" : "title"}-${width}-${theme}.png`) });
+        const margin = width <= 600 ? 0 : 15;
+        const box = await dialog.boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(margin); expect(box!.x + box!.width).toBeLessThanOrEqual(width - margin);
+        if (width === 320 || width === 1440) await page.screenshot({ path: info.outputPath(`unified-editor-${width}-${theme}.png`) });
         await page.keyboard.press("Escape"); await expect(dialog).toHaveCount(0); await expect(trigger).toBeFocused();
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);

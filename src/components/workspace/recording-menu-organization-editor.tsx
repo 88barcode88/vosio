@@ -5,12 +5,17 @@ import { Pencil } from "lucide-react";
 import { RecordingOrganizationEditor } from "@/components/workspace/recording-organization-editor";
 import { assignRecordingOrganizationAction } from "@/lib/recording-organization/actions";
 import { loadRecordingOrganizationAction } from "@/lib/recording-organization/load-recording-action";
-import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
+import type { RecordingAssignment, RecordingOrganizationOptions } from "@/lib/recording-organization/types";
+import type { RecordingVisibility } from "@/lib/recording-sharing/types";
 
 // RecordingMenuOrganizationEditor lazily obtains tags missing from search results before editing.
-export function RecordingMenuOrganizationEditor({ recordingId, options, embedded = false, onPendingChange }: {
+export function RecordingMenuOrganizationEditor({ recordingId, options, embedded = false, onPendingChange, onDirtyChange, onSaved, visibility, hashtagLabels = false }: {
   embedded?: boolean;
   onPendingChange?: (pending: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSaved?: (assignment: RecordingAssignment) => void;
+  visibility?: RecordingVisibility;
+  hashtagLabels?: boolean;
   recordingId: string;
   options: RecordingOrganizationOptions;
 }) {
@@ -34,6 +39,9 @@ export function RecordingMenuOrganizationEditor({ recordingId, options, embedded
   if (recording) return <RecordingOrganizationEditor
     embedded={embedded}
     onPendingChange={onPendingChange}
+    onDirtyChange={onDirtyChange}
+    onSaved={onSaved}
+    hashtagLabels={hashtagLabels}
     initiallyOpen
     key={recording.id}
     options={options}
@@ -43,7 +51,7 @@ export function RecordingMenuOrganizationEditor({ recordingId, options, embedded
       folder: options.folders.find((item) => item.id === recording.folder_id) ?? null,
       tags: options.tags.filter((item) => recording.tag_ids.includes(item.id))
     }}
-    recording={recording}
+    recording={{ ...recording, visibility: visibility ?? recording.visibility }}
     saveAction={async (state, formData) => {
       const result = await assignRecordingOrganizationAction(state, formData);
       if (result.status === "success") setRecording({

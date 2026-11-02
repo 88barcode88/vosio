@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { accessListSchema, type AccessList, type InvitationScope } from "@/lib/recording-sharing/invitation-contract";
+import { accessListSchema, revokeAccessSchema, type AccessList, type InvitationScope } from "@/lib/recording-sharing/invitation-contract";
 
-type Props = { scope: InvitationScope; recordingId?: string; onBusyChange?: (busy: boolean) => void };
+export type RevokedRecordingGrant = Pick<AccessList["grants"][number], "recordingId" | "userId">;
+export type ConfirmedAccessRevocation = ({ kind: "grant" } & RevokedRecordingGrant) | { kind: "member"; projectId: string; userId: string };
+type Props = { scope: InvitationScope; recordingId?: string; onBusyChange?: (busy: boolean) => void; onAccessRevoked?: (revocation: ConfirmedAccessRevocation) => void; refreshKey?: number; disabled?: boolean; heading?: string; inviteLabel?: string };
 
 // invitationMutationFailure translates only safe outcome codes and validated retry seconds into UI copy.
 function invitationMutationFailure(result: unknown, status: number) {
@@ -20,7 +22,7 @@ function invitationMutationFailure(result: unknown, status: number) {
 }
 
 // AccessManager presents only current-manager RPC projections; its props never authorize server operations.
-export function AccessManager({ scope, recordingId, onBusyChange }: Props) {
+export function AccessManager({ scope, recordingId, onBusyChange, onAccessRevoked, refreshKey = 0, disabled = false, heading = "Správa přístupu", inviteLabel = "Pozvat" }: Props) {
   const [access, setAccess] = useState<AccessList | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -40,11 +42,11 @@ export function AccessManager({ scope, recordingId, onBusyChange }: Props) {
       } catch { if (!controller.signal.aborted) { setAccess(null); setMessage("Přístupy se nepodařilo načíst."); } }
     }
     void loadAccess(); return () => controller.abort();
-  }, [listQuery]);
+  }, [listQuery, refreshKey]);
 
   // mutate serializes UI changes and refreshes the manager projection after each confirmed response.
   async function mutate(path: string, method: string, body?: unknown) {
-    if (pending.current) return;
+    if (pending.current || disabled) return;
     pending.current = true; setBusy(true);
     try {
       const response = await fetch(path, { method, headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), cache: "no-store" });
@@ -55,6 +57,11 @@ export function AccessManager({ scope, recordingId, onBusyChange }: Props) {
         if (result.revoked !== true || typeof result.changed !== "boolean") throw new Error("unavailable");
         setMessage(result.changed ? "Pozvánka byla zrušena. Existující přístupy se tím nemění." : "Pozvánka už byla zrušena. Existující přístupy se tím nemění.");
       } else {
+        if (method === "DELETE" && path === "/api/recording-invitations") {
+          const revoked = revokeAccessSchema.safeParse(body);
+          if (result.revoked !== true || !revoked.success) throw new Error("unavailable");
+          onAccessRevoked?.(revoked.data);
+        }
         setMessage(result.delivery === "failed" ? "Pozvánka je uložená, e-mail se nepodařilo odeslat. Možnosti dalšího odeslání jsou uvedené v seznamu." : result.delivery === "pending" ? "Pozvánka je uložená, výsledek odeslání není potvrzený. Při novém odeslání přestane starý odkaz platit." : result.delivery === "sent" ? "Pozvánka byla předána k odeslání. Přístup vznikne až po přijetí." : "Přístup byl odebrán.");
       }
       const refreshed = await fetch(`/api/recording-invitations?${listQuery}`, { cache: "no-store" });
@@ -71,25 +78,25 @@ export function AccessManager({ scope, recordingId, onBusyChange }: Props) {
   }
 
   return <section aria-label="Správa přístupu" aria-busy={busy}>
-    <h3>Správa přístupu</h3>
+    <h3>{heading}</h3>
     <p>{scope.scope === "project" ? "Pozvánka platí pro současné i budoucí nahrávky sdílené v projektu. Soukromé nahrávky se nesdílejí." : "Pozvánka platí jen pro zvolené nahrávky. Přístup vznikne až po jejím přijetí; ostatní soukromé nahrávky zůstanou soukromé."}</p>
     <form className="auth-form" onSubmit={invite}>
-      <label>E-mail<input name="email" type="email" autoComplete="email" required maxLength={254} disabled={busy} /></label>
-      <label>Oprávnění<select name="role" defaultValue="reader" disabled={busy}><option value="reader">Čtení</option><option value="editor">Úpravy</option></select></label>
-      <button type="submit" disabled={busy}>Pozvat</button>
+      <label>E-mail<input name="email" type="email" autoComplete="email" required maxLength={254} disabled={busy || disabled} /></label>
+      <label>Oprávnění<select name="role" defaultValue="reader" disabled={busy || disabled}><option value="reader">Čtení</option><option value="editor">Úpravy</option></select></label>
+      <button type="submit" disabled={busy || disabled}>{inviteLabel}</button>
     </form>
     <p role="status" aria-live="polite">{message}</p>
     {access?.invitations.length ? <ul>{access.invitations.map((invitation) => <li key={invitation.id}>
       {invitation.email} · {invitation.role === "editor" ? "Úpravy" : "Čtení"} · {invitation.deliveryState === "sent" ? "Odesláno" : invitation.deliveryState === "failed" ? "Odeslání selhalo" : "Čeká na potvrzení odeslání"}
       {invitation.attemptCount >= 5 ? <span> Limit pěti odeslání této pozvánky je vyčerpaný.</span> : null}
-      <button type="button" disabled={busy || invitation.attemptCount >= 5} onClick={() => void mutate(`/api/recording-invitations/${invitation.id}`, "PATCH")}>Odeslat znovu ({invitation.attemptCount}/5)</button>
-      <button type="button" disabled={busy} onClick={() => void mutate(`/api/recording-invitations/${invitation.id}`, "DELETE")}>Zrušit pozvánku</button>
+      <button type="button" disabled={busy || disabled || invitation.attemptCount >= 5} onClick={() => void mutate(`/api/recording-invitations/${invitation.id}`, "PATCH")}>Odeslat znovu ({invitation.attemptCount}/5)</button>
+      <button type="button" disabled={busy || disabled} onClick={() => void mutate(`/api/recording-invitations/${invitation.id}`, "DELETE")}>Zrušit pozvánku</button>
     </li>)}</ul> : null}
     {access?.members.map((member) => <p key={member.userId}>Uživatel {member.userId} · {member.role === "editor" ? "Úpravy" : "Čtení"}
-      <button type="button" disabled={busy} onClick={() => scope.scope !== "standalone" && void mutate("/api/recording-invitations", "DELETE", { kind: "member", projectId: scope.projectId, userId: member.userId })}>Odebrat z projektu</button>
+      <button type="button" disabled={busy || disabled} onClick={() => scope.scope !== "standalone" && void mutate("/api/recording-invitations", "DELETE", { kind: "member", projectId: scope.projectId, userId: member.userId })}>Odebrat z projektu</button>
     </p>)}
     {access?.grants.map((grant) => <p key={`${grant.recordingId}:${grant.userId}`}>Uživatel {grant.userId} · {grant.role === "editor" ? "Úpravy" : "Čtení"}
-      <button type="button" disabled={busy} onClick={() => void mutate("/api/recording-invitations", "DELETE", { kind: "grant", recordingId: grant.recordingId, userId: grant.userId })}>Odebrat přístup k nahrávce</button>
+      <button type="button" disabled={busy || disabled} onClick={() => void mutate("/api/recording-invitations", "DELETE", { kind: "grant", recordingId: grant.recordingId, userId: grant.userId })}>Odebrat přístup k nahrávce</button>
     </p>)}
   </section>;
 }

@@ -3,6 +3,8 @@ import { VosioWorkspace } from "@/components/vosio-workspace";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
 import type { RecordingRow } from "@/lib/recordings/types";
+import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
+import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 import type { RecordingMarkerRow } from "@/lib/recording-markers/types";
 import { defaultUserSettings } from "@/lib/settings/types";
 import type { TranscriptTab } from "@/components/transcript-tabs/types";
@@ -62,8 +64,21 @@ const fixtureMarkers: RecordingMarkerRow[] = [{
   user_id: userId
 }];
 const fixtureScopePattern = /^[0-9a-f]{12}$/;
-const fixtureModes = ["blocks", "raw", "ai", "ai-many", "timeline", "files", "chat", "transcription", "transcribing"] as const;
+const fixtureModes = ["blocks", "raw", "ai", "ai-many", "timeline", "files", "chat", "transcription", "transcribing", "editor", "editor-title-only", "editor-reader"] as const;
 type FixtureMode = (typeof fixtureModes)[number];
+
+const editorClientId = "00000000-0000-4000-8000-000000000311";
+const editorProjectId = "00000000-0000-4000-8000-000000000312";
+const editorTagId = "00000000-0000-4000-8000-000000000313";
+const editorOptions: RecordingOrganizationOptions = {
+  clients: [{ id: editorClientId, name: "Lucern", color: null, user_id: userId, created_at: "2026-08-06T10:00:00Z", updated_at: "2026-08-06T10:00:00Z" }],
+  projects: [{ id: editorProjectId, client_id: editorClientId, name: "CRM Lucern", color: null, can_manage_access: true, created_at: "2026-08-06T10:00:00Z", updated_at: "2026-08-06T10:00:00Z" }],
+  folders: [],
+  tags: [
+    { id: editorTagId, name: "Lucern", color: null, user_id: userId, created_at: "2026-08-06T10:00:00Z", updated_at: "2026-08-06T10:00:00Z" },
+    { id: "00000000-0000-4000-8000-000000000314", name: "Okna", color: null, user_id: userId, created_at: "2026-08-06T10:00:00Z", updated_at: "2026-08-06T10:00:00Z" }
+  ]
+};
 
 // createFixtureSegments produces alternating speaker blocks that overflow the detail viewport.
 function createFixtureSegments() {
@@ -133,6 +148,7 @@ function isFixtureMode(value: string | undefined): value is FixtureMode {
 
 // getFixtureInitialTab maps transcript-content fixture modes to the transcript tab.
 function getFixtureInitialTab(mode: FixtureMode): TranscriptTab {
+  if (mode === "editor" || mode === "editor-title-only" || mode === "editor-reader") return "transcript";
   if (mode === "ai-many") return "ai";
   if (mode === "transcription" || mode === "transcribing") return "transcript";
   return mode === "blocks" || mode === "raw" ? "transcript" : mode;
@@ -159,6 +175,14 @@ export default async function RecordingLayoutE2EPage({
   }
 
   const fixtureMode = mode === "raw" ? "raw" : "blocks";
+  const isEditorFixture = mode === "editor" || mode === "editor-title-only" || mode === "editor-reader";
+  const recording = createFixtureRecording();
+  // Editor fixtures use synthetic tags and capabilities; browser tests intercept every mutation boundary.
+  const editorRecording: RecordingRow = {
+    ...recording, client_id: editorClientId, tag_ids: [editorTagId],
+    capabilities: mode === "editor-reader" ? { ...NO_RECORDING_CAPABILITIES, read: true }
+      : mode === "editor-title-only" ? { ...NO_RECORDING_CAPABILITIES, read: true, editTitle: true } : recording.capabilities
+  };
 
   return (
     <VosioWorkspace
@@ -167,9 +191,9 @@ export default async function RecordingLayoutE2EPage({
       initialTranscriptTab={getFixtureInitialTab(mode)}
       initialTranscriptTabFromCookie
       recordingMarkers={fixtureMarkers}
-      recordingOrganization={{ client: null, folder: null, project: null, tags: [] }}
-      recordingOrganizationOptions={{ clients: [], folders: [], projects: [], tags: [] }}
-      recordings={[{ ...createFixtureRecording(), ...(mode === "transcription" ? { status: "uploaded" } : mode === "transcribing" ? { status: "transcribing" } : {}) }]}
+      recordingOrganization={isEditorFixture ? { client: editorOptions.clients[0]!, folder: null, project: null, tags: [editorOptions.tags[0]!] } : { client: null, folder: null, project: null, tags: [] }}
+      recordingOrganizationOptions={isEditorFixture ? editorOptions : { clients: [], folders: [], projects: [], tags: [] }}
+      recordings={[{ ...(isEditorFixture ? editorRecording : recording), ...(mode === "transcription" ? { status: "uploaded" } : mode === "transcribing" ? { status: "transcribing" } : {}) }]}
       structuredItems={mode === "ai-many" ? emptyFixtureStructuredItems : fixtureStructuredItems}
       transcripts={mode === "transcription" || mode === "transcribing" ? [] : [createFixtureTranscript(fixtureMode)]}
       userSettings={defaultUserSettings}
