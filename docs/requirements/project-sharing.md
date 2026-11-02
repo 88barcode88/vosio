@@ -31,6 +31,26 @@ a audit se nesdílí. Autorství není trvalé oprávnění.
 
 ## Tým, klienti a složky
 
+### Jednotné úpravy detailu nahrávky
+
+`Upravit a sdílení` otevírá jeden kompaktní dialog s názvem, klientem, projektem,
+složkou, vždy viditelnými hashtagy a stavem sdílení. Štítků i konkrétních příjemců
+lze zvolit více. Uložené role stávajících konkrétních příjemců se při otevření
+zachovají. Souhrn konkrétních lidí nenahrazuje další platné přístupy přes klienta,
+složku či projekt; ty se u nesoukromé nahrávky popisují zvlášť.
+
+Název, zařazení, sdílení a odeslání pozvánky mají vlastní výsledky. Změna
+zařazení nejprve potvrdí dopad existujícím náhledem; teprve uložený kontext smí
+použít navazující sdílení. Nejisté sdílení zachová identitu a celý payload pro
+přesný replay a uzamkne sourozenecké změny. Zavření a opětovné otevření dialogu
+nesmí tento neuzavřený požadavek zahodit.
+
+Čtenář nemá editační akci. Editor názvu bez správy přístupů vidí jen název.
+Pozvání do projektu je samostatné a patří pouze správci příslušného projektu.
+Samotné zařazení ani výběr hashtagů nemění soukromou viditelnost.
+
+### Správa lidí a rozsahů
+
 Tým je dostupný instalačnímu správci a zakladateli projektu; běžný člen nemá
 správcovský přehled ani přes přímou adresu/API. Správce instalace je výslovný
 neveřejný registr účtů bez bootstrapu. Seznam lidí je vlastní, ne globální adresář.

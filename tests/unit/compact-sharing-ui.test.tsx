@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({ rpc: vi.fn(), share: vi.fn(), refresh: vi.fn()
 vi.mock("@/lib/recording-organization/load-recording-action", () => ({ loadRecordingOrganizationAction: mocks.loadOrganization }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
 vi.mock("@/lib/supabase/browser", () => ({ createClient: () => ({ rpc: mocks.rpc }) }));
-vi.mock("@/lib/recording-sharing/bulk", () => ({ bulkShareRecordings: mocks.share }));
+vi.mock("@/lib/recording-sharing/bulk", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/recording-sharing/bulk")>(), bulkShareRecordings: mocks.share }));
 vi.mock("@/components/workspace/recording-access-manager", () => ({ RecordingAccessManager: ({ projectId }: { projectId: string | null }) => <p>Access:{projectId ?? "standalone"}</p> }));
 vi.mock("@/components/live-recording-recovery-panel", () => ({ LiveRecordingRecoveryPanel: () => null }));
 vi.mock("@/components/workspace/recording-filters", () => ({ RecordingFilters: () => <span>Filtry</span> }));

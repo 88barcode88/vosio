@@ -1,15 +1,13 @@
 import Link from "next/link";
 import { RecordingCompletionNotice } from "@/components/persistent-recording-session";
-import { RecordingSharingPopover } from "@/components/workspace/recording-sharing-popover";
+import { RecordingEditSharingDialog } from "@/components/workspace/recording-edit-sharing-dialog";
 import { ChevronLeft } from "lucide-react";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { TranscriptTabs } from "@/components/transcript-tabs";
 import { ExportControls } from "@/components/transcript-tabs/export-controls";
 import { TranscriptAiStateProvider } from "@/components/transcript-tabs/use-transcript-ai-state";
 import { TranscriptionControls } from "@/components/transcription-controls";
-import { RecordingDetailTitleEditor } from "@/components/workspace/recording-detail-title-editor";
-import { RecordingOrganizationEditor, RecordingOrganizationSummary } from "@/components/workspace/recording-organization-editor";
-import { RecordingMenuOrganizationEditor } from "@/components/workspace/recording-menu-organization-editor";
+import { RecordingOrganizationSummary } from "@/components/workspace/recording-organization-editor";
 import { RecordingCapabilityProvider } from "@/components/recording-capability-context";
 import type { StructuredAiItems } from "@/lib/ai/structured-types";
 import type { AiOutputView } from "@/lib/ai/types";
@@ -131,6 +129,7 @@ function RecordingCard({
           <div className="recording-meta">
             <span className={getRecordingDotClassName(activeRecording?.status)} />
             <span>Nahrávka · {activeRecording ? getStatusLabel(activeRecording.status) : "Připraveno"}</span>
+            {activeRecordingRow ? <span className="organization-chip">{activeRecordingRow.visibility === "project" ? "Projekt" : activeRecordingRow.visibility === "selected" ? "Vybraní lidé" : "Soukromá"}</span> : null}
             {activeRecordingRow ? <RecordingOrganizationSummary organization={activeRecordingOrganization} /> : null}
           </div>
           <div className="recording-title-line">
@@ -157,27 +156,16 @@ function RecordingCard({
         </div>
         {activeRecordingRow ? (
           <div className="recording-detail-actions">
-            {activeRecordingRow.capabilities?.manageAccess ? activeRecordingRow.visibility === "private" ? <RecordingOrganizationEditor
-              key={`organization-${activeRecordingRow.id}`}
+            <RecordingEditSharingDialog
+              key={`edit-sharing-${activeRecordingRow.id}`}
               options={recordingOrganizationOptions}
               organization={activeRecordingOrganization}
               recording={activeRecordingRow}
-              showSummary={false}
-            /> : <RecordingMenuOrganizationEditor
-              key={`organization-${activeRecordingRow.id}`}
-              options={recordingOrganizationOptions}
-              recordingId={activeRecordingRow.id}
-            /> : null}
+            />
             <ExportControls
               activeRecording={activeRecordingView}
               activeTranscript={activeTranscript}
             />
-            {activeRecordingRow.capabilities?.editTitle ? <RecordingDetailTitleEditor
-              key={activeRecordingRow.id}
-              recordingId={activeRecordingRow.id}
-              title={activeRecordingRow.title}
-            /> : null}
-            <RecordingSharingPopover key={`sharing-${activeRecordingRow.id}`} recording={activeRecordingRow} />
             {activeRecordingRow.capabilities?.delete ? <DeleteRecordingForm
               label="Smazat nahrávku"
               next="/recordings"

@@ -12,13 +12,17 @@ import type {
   RecordingOrganization,
   RecordingOrganizationOptions,
   RecordingOrganizationPolicy,
-  RecordingOrganizationPreview
+  RecordingOrganizationPreview,
+  RecordingAssignment
 } from "@/lib/recording-organization/types";
 import type { RecordingRow } from "@/lib/recordings/types";
 
 type RecordingOrganizationEditorProps = {
   embedded?: boolean;
   onPendingChange?: (pending: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSaved?: (assignment: RecordingAssignment) => void;
+  hashtagLabels?: boolean;
   options: RecordingOrganizationOptions;
   organization: RecordingOrganization;
   recording: Pick<RecordingRow, "id" | "client_id" | "project_id" | "folder_id"> & { visibility?: string; organization_policy?: RecordingOrganizationPolicy };
@@ -79,6 +83,9 @@ function createSubmittedDraft(formData: FormData): RecordingOrganizationDraft {
 export function RecordingOrganizationEditor({
   embedded = false,
   onPendingChange,
+  onDirtyChange,
+  onSaved,
+  hashtagLabels = false,
   options: allOptions,
   organization,
   recording,
@@ -103,6 +110,7 @@ export function RecordingOrganizationEditor({
     tagIds: new Set(persistedTagIdsSignature ? persistedTagIdsSignature.split("\u001f") : [])
   }), [persistedTagIdsSignature, recording.client_id, recording.folder_id, recording.project_id]);
   const persistedSignature = createPersistedSignature(organization, recording);
+  const [savedDraftSignature, setSavedDraftSignature] = useState(() => JSON.stringify([recording.id, persistedDraft.clientId, persistedDraft.projectId, persistedDraft.folderId, [...persistedDraft.tagIds].sort()]));
   const [isOpen, setIsOpen] = useState(initiallyOpen);
   const [clientId, setClientId] = useState(persistedDraft.clientId);
   const [projectId, setProjectId] = useState(persistedDraft.projectId);
@@ -175,12 +183,15 @@ export function RecordingOrganizationEditor({
   const closeAfterSuccess = useCallback(() => {
     const submittedDraft = submittedDraftRef.current;
     const serverPropsChanged = submittedPersistedSignatureRef.current !== persistedSignatureRef.current;
-    applyDraft(submittedDraft && !serverPropsChanged ? submittedDraft : persistedDraftRef.current);
+    const saved = submittedDraft && !serverPropsChanged ? submittedDraft : persistedDraftRef.current;
+    applyDraft(saved);
+    setSavedDraftSignature(JSON.stringify([recording.id, saved.clientId, saved.projectId, saved.folderId, [...saved.tagIds].sort()]));
+    onSaved?.({ clientId: saved.clientId || null, projectId: saved.projectId || null, folderId: saved.folderId || null, tagIds: [...saved.tagIds] });
     lastSyncedPersistedSignatureRef.current = persistedSignatureRef.current;
     submittedDraftRef.current = null;
     submittedPersistedSignatureRef.current = null;
     if (!embedded) setIsOpen(false);
-  }, [applyDraft, embedded]);
+  }, [applyDraft, embedded, onSaved, recording.id]);
   const isCurrentSettlement = actionState.scopeKey === recording.id;
   const isCurrentErrorDismissed = dismissedError?.scopeKey === recording.id
     && actionState.revision <= dismissedError.revision;
@@ -188,9 +199,11 @@ export function RecordingOrganizationEditor({
   // resetDraft restores the persisted organization values for the current recording.
   const resetDraft = useCallback(() => {
     setImpact(null);
+    const saved = persistedDraftRef.current;
+    setSavedDraftSignature(JSON.stringify([recording.id, saved.clientId, saved.projectId, saved.folderId, [...saved.tagIds].sort()]));
     applyDraft(persistedDraftRef.current);
     lastSyncedPersistedSignatureRef.current = persistedSignatureRef.current;
-  }, [applyDraft]);
+  }, [applyDraft, recording.id]);
 
   // dismissEditor closes only an idle editor and suppresses its currently visible error revision.
   const dismissEditor = useCallback(() => {
@@ -214,6 +227,8 @@ export function RecordingOrganizationEditor({
   useEffect(() => {
     if (previousRecordingIdRef.current === recording.id) return;
     previousRecordingIdRef.current = recording.id;
+    const saved = persistedDraftRef.current;
+    setSavedDraftSignature(JSON.stringify([recording.id, saved.clientId, saved.projectId, saved.folderId, [...saved.tagIds].sort()]));
     setImpact(null);
     submittedDraftRef.current = null;
     submittedPersistedSignatureRef.current = null;
@@ -254,6 +269,7 @@ export function RecordingOrganizationEditor({
   }
 
   const currentDraftSignature = JSON.stringify([recording.id, clientId, projectId, folderId, [...tagIds].sort()]);
+  useEffect(() => { onDirtyChange?.(currentDraftSignature !== savedDraftSignature); }, [currentDraftSignature, onDirtyChange, savedDraftSignature]);
   const currentImpact = impact?.signature === currentDraftSignature ? impact.preview : null;
 
   // renderEditor shares the form while leaving dismissal to the combined surface when embedded.
@@ -341,7 +357,7 @@ export function RecordingOrganizationEditor({
                     type="checkbox"
                     value={tag.id}
                   />
-                  <span>{tag.name}</span>
+                  <span>{hashtagLabels && !tag.name.startsWith("#") ? "#" : ""}{tag.name}</span>
                 </label>
               )) : <span>Žádné štítky</span>}
             </fieldset>

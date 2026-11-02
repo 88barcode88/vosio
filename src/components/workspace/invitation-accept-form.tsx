@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { verifyInvitationIdentityAction } from "@/lib/auth/actions";
 import { invitationPreviewSchema, invitationTokenSchema, type InvitationPreview } from "@/lib/recording-sharing/invitation-contract";
 
-// InvitationAcceptForm keeps the email link token in memory and requires an explicit acceptance click.
+// InvitationAcceptForm verifies the invited identity and opens its recordings only after explicit acceptance.
 export function InvitationAcceptForm() {
   const router = useRouter();
   const [token, setToken] = useState("");
@@ -59,14 +59,15 @@ export function InvitationAcceptForm() {
     finally { pending.current = false; setBusy(false); }
   }
 
-  // accept explicitly redeems the token once; uncertain responses permit the same-user idempotent retry.
+  // accept redeems the token once, replaces the spent invitation URL and refreshes newly granted access.
   async function accept() {
     if (pending.current) return;
     pending.current = true; setBusy(true);
     try {
       const response = await fetch("/api/recording-invitations/accept", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }), cache: "no-store" });
       if (!response.ok) throw new Error("unavailable");
-      setAccepted(true); setToken(""); loadedToken.current = null; setMessage("Pozvánka byla přijata.");
+      setAccepted(true); setToken(""); loadedToken.current = null; setMessage("Pozvánka byla přijata. Otevírám nahrávky…");
+      router.replace("/recordings");
       router.refresh();
     } catch { setMessage("Pozvánku nelze přijmout. Zkuste to znovu, případně požádejte o novou pozvánku."); }
     finally { pending.current = false; setBusy(false); }
@@ -74,7 +75,7 @@ export function InvitationAcceptForm() {
 
   return <>
     <p role="status" aria-live="polite">{message}</p>
-    {accepted ? <Link href="/recordings">Otevřít nahrávky</Link> : preview ? <>
+    {accepted ? <Link href="/recordings" prefetch={false} data-touch-target="action">Otevřít nahrávky</Link> : preview ? <>
       <p>Přístup: {preview.role === "editor" ? "Úpravy" : "Čtení"}. {preview.scope === "project" ? "Nahrávky sdílené v projektu včetně budoucích."
         : preview.scope === "client" || preview.scope === "folder" ? `Přístup k současným i budoucím nesoukromým nahrávkám ${preview.scope === "client" ? "klienta" : "složky"} v rozsahu pozvánky.`
         : `Vybrané nahrávky: ${preview.recordingCount}.`}</p>
@@ -83,7 +84,7 @@ export function InvitationAcceptForm() {
         : "Přístup získáte pouze k nahrávkám v pozvánce. Ostatní soukromé nahrávky zůstanou soukromé."}</p>
       <button type="button" disabled={busy} onClick={accept}>{busy ? "Přijímám…" : "Přijmout pozvánku"}</button>
     </> : token ? <form className="auth-form" onSubmit={verifyIdentity}>
-      <label>E-mail z pozvánky<input autoComplete="email" name="email" type="email" required disabled={busy} /></label>
+      <label>E-mail z pozvánky<input autoComplete="email" autoCapitalize="none" spellCheck={false} name="email" type="email" required disabled={busy} /></label>
       <label>Kód z e-mailu<input autoComplete="one-time-code" name="code" inputMode="numeric" pattern="[0-9]{6,10}" required disabled={busy} /></label>
       {type === "invite" ? <>
         <label>Nové heslo<input autoComplete="new-password" name="password" type="password" minLength={8} maxLength={128} required disabled={busy} /></label>
@@ -95,5 +96,6 @@ export function InvitationAcceptForm() {
       <button type="submit" disabled={busy}>{busy ? "Ověřuji…" : "Ověřit e-mail"}</button>
       <p>Po obnovení stránky otevřete znovu odkaz z e-mailu.</p>
     </form> : null}
+    {!accepted ? <p><Link href="/recordings" prefetch={false} data-touch-target="action">Zpět na nahrávky</Link></p> : null}
   </>;
 }

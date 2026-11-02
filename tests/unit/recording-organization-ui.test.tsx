@@ -822,7 +822,7 @@ describe("organization UI integration", () => {
     expect(recordingStyles).not.toMatch(/\[data-theme="light"\] \.delete-recording-icon,/);
   });
 
-  it("keeps the existing title editor and loads organization data once per exclusive list route branch", () => {
+  it("uses the unified detail editor and loads organization data once per exclusive list route branch", () => {
     const workbenchSource = readFileSync(
       join(process.cwd(), "src", "components", "workspace", "recording-workbench.tsx"),
       "utf8"
@@ -833,9 +833,8 @@ describe("organization UI integration", () => {
       "utf8"
     );
 
-    expect(workbenchSource).toContain("<RecordingDetailTitleEditor");
-    expect(workbenchSource).toContain("<RecordingOrganizationEditor");
-    expect(workbenchSource).toContain('key={`organization-${activeRecordingRow.id}`}');
+    expect(workbenchSource).toContain("<RecordingEditSharingDialog");
+    expect(workbenchSource).toContain('key={`edit-sharing-${activeRecordingRow.id}`}');
     const listOrganizationLoads = listPageSource.match(/listRecordingOrganizationOptions\(supabase\)/g);
 
     // Filtered URLs must load choices before canonicalization, while unfiltered URLs load them in the concurrent read phase.

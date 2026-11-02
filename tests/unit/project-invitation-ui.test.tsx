@@ -3,11 +3,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ refresh: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
+const mocks = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }) }));
 vi.mock("@/lib/auth/actions", () => ({ verifyInvitationIdentityAction: vi.fn() }));
 import { RecordingAccessManager } from "@/components/workspace/recording-access-manager";
 import { InvitationAcceptForm } from "@/components/workspace/invitation-accept-form";
+import { verifyInvitationIdentityAction } from "@/lib/auth/actions";
 
 const recordingId = "30000000-0000-4000-8000-000000000003";
 const projectId = "20000000-0000-4000-8000-000000000002";
@@ -50,7 +51,7 @@ describe("first standalone email invitation caller boundary", () => {
     expect(container.querySelector("form")).toBeNull(); expect(fetch).not.toHaveBeenCalled();
   });
 
-  it.each([200, 403])("refreshes capability/visibility reads only after successful explicit accept (%s)", async (status) => {
+  it.each([200, 403])("opens fresh recordings only after successful explicit accept (%s)", async (status) => {
     const token = "z".repeat(43);
     window.history.replaceState(null, "", `/invitations/accept#token=${token}&type=email`);
     vi.stubGlobal("fetch", vi.fn(async (_path: string, options?: RequestInit) => new Response(JSON.stringify(options?.method === "POST" ? { id: invitationId } : { id: invitationId, scope: "recordings", role: "reader", expiresAt: "2030-01-01T00:00:00Z", recordingCount: 1 }), { status: options?.method === "POST" ? status : 200 })));
@@ -62,7 +63,57 @@ describe("first standalone email invitation caller boundary", () => {
     await act(async () => button.click());
     expect(fetch).toHaveBeenLastCalledWith("/api/recording-invitations/accept", expect.objectContaining({ method: "POST", body: JSON.stringify({ token }) }));
     expect(mocks.refresh).toHaveBeenCalledTimes(status === 200 ? 1 : 0);
+    if (status === 200) expect(mocks.replace).toHaveBeenCalledExactlyOnceWith("/recordings");
+    else expect(mocks.replace).not.toHaveBeenCalled();
     expect(container.textContent).toContain(status === 200 ? "Pozvánka byla přijata" : "Pozvánku nelze přijmout");
+  });
+
+  it("keeps a home link when the invitation URL is missing or incomplete", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    await act(async () => root.render(<InvitationAcceptForm />));
+    const home = container.querySelector<HTMLAnchorElement>('a[href="/recordings"]');
+    expect(home?.textContent).toBe("Zpět na nahrávky");
+    expect(container.textContent).toContain("Otevřete úplný odkaz");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("verifies the invited account and password before accepting, then opens its recordings", async () => {
+    const token = "z".repeat(43);
+    window.history.replaceState(null, "", `/invitations/accept#token=${token}&type=invite`);
+    const preview = { id: invitationId, scope: "recordings" as const, role: "reader" as const, expiresAt: "2030-01-01T00:00:00Z", recordingCount: 1 };
+    vi.stubGlobal("fetch", vi.fn(async (_path: string, options?: RequestInit) => options?.method === "POST" ? Response.json({ id: invitationId }) : new Response(null, { status: 403 })));
+    vi.mocked(verifyInvitationIdentityAction).mockResolvedValue({ ok: true, preview });
+    await act(async () => root.render(<InvitationAcceptForm />));
+    for (const [name, value] of Object.entries({ email: "recipient@example.test", code: "123456", password: "safe-test-password", confirmation: "safe-test-password" })) {
+      container.querySelector<HTMLInputElement>(`input[name="${name}"]`)!.value = value;
+    }
+    await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(verifyInvitationIdentityAction).toHaveBeenCalledExactlyOnceWith({ token, type: "invite", email: "recipient@example.test", code: "123456", password: "safe-test-password", confirmation: "safe-test-password" });
+    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
+    await act(async () => [...container.querySelectorAll("button")].find((button) => button.textContent === "Přijmout pozvánku")!.click());
+    expect(mocks.replace).toHaveBeenCalledExactlyOnceWith("/recordings");
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("keeps acceptance available after a failed save without duplicate POSTs or early navigation", async () => {
+    window.history.replaceState(null, "", `/invitations/accept#token=${"z".repeat(43)}&type=email`);
+    let finishAccept!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => { finishAccept = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (_path: string, options?: RequestInit) => options?.method === "POST" ? response : Response.json({ id: invitationId, scope: "recordings", role: "reader", expiresAt: "2030-01-01T00:00:00Z", recordingCount: 1 })));
+    await act(async () => root.render(<InvitationAcceptForm />));
+    const button = [...container.querySelectorAll("button")].find((item) => item.textContent === "Přijmout pozvánku")!;
+    await act(async () => { button.click(); button.click(); });
+    expect(button.disabled).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+    expect(mocks.replace).not.toHaveBeenCalled();
+    await act(async () => finishAccept(new Response(null, { status: 503 })));
+    expect(button.disabled).toBe(false);
+    expect(container.textContent).toContain("Pozvánku nelze přijmout");
+    expect(container.querySelector('a[href="/recordings"]')).not.toBeNull();
+    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(mocks.refresh).not.toHaveBeenCalled();
   });
 
   it.each(["client", "folder"])("explains current and future nonprivate %s access before explicit acceptance", async (scope) => {

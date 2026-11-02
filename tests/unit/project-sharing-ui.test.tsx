@@ -29,33 +29,38 @@ describe("server-resolved sharing controls", () => {
   it.each([undefined, { ...NO_RECORDING_CAPABILITIES, read: true }])("keeps saved content but hides actions without server grants", (capabilities) => {
     const html = renderWorkbench({ capabilities });
     expect(html).toContain("Saved content");
+    expect(html).not.toContain("Upravit a sdílení");
     expect(html).not.toMatch(/Access manager|Delete recording|Edit title|Provider controls|Edit organization|Load shared organization/);
   });
   it("gives E title controls but no management, destruction or provider controls", () => {
     const html = renderWorkbench({ capabilities: { ...NO_RECORDING_CAPABILITIES, read: true, editTitle: true, editSpeakers: true, editTaskStatus: true } });
-    expect(html).toContain("Edit title");
+    expect(html).toContain("Upravit a sdílení");
     expect(html).not.toMatch(/Access manager|Delete recording|Provider controls|Edit organization|Load shared organization/);
   });
   it("mounts shared-project founder management without foreign personal AI", () => {
     const html = renderWorkbench({ capabilities: { ...NO_RECORDING_CAPABILITIES, read: true, manageAccess: true, delete: true } });
-    expect(html).toContain("Sdílet</summary>");
+    expect(html).toContain("Upravit a sdílení");
     expect(html).not.toContain("Access manager:project");
     expect(html).toContain("Delete recording");
     expect(html).not.toContain("Provider controls");
-    expect(html).toContain("Load shared organization");
+    expect(html).not.toContain("Load shared organization");
   });
-  it("loads authoritative organization for selected while retaining the existing private editor", () => {
+  it("keeps selected and private management lazy behind the one detail action", () => {
     const capabilities = { ...NO_RECORDING_CAPABILITIES, read: true, manageAccess: true };
     const shared = renderWorkbench({ project_id: null, visibility: "selected", capabilities });
-    expect(shared).toContain("Load shared organization");
+    expect(shared).toContain("Upravit a sdílení");
+    expect(shared).toContain("Vybraní lidé");
+    expect(shared).not.toContain("Load shared organization");
     expect(shared).not.toContain("Edit organization");
     const personal = renderWorkbench({ project_id: null, visibility: "private", capabilities });
-    expect(personal).toContain("Edit organization");
+    expect(personal).toContain("Upravit a sdílení");
+    expect(personal).toContain("Soukromá");
+    expect(personal).not.toContain("Edit organization");
     expect(personal).not.toContain("Load shared organization");
   });
   it("supports standalone owner management but withholds project-private exact sharing", () => {
     const capabilities = { ...NO_RECORDING_CAPABILITIES, read: true, manageAccess: true };
-    expect(renderWorkbench({ project_id: null, visibility: "private", capabilities })).toContain("Sdílet</summary>");
+    expect(renderWorkbench({ project_id: null, visibility: "private", capabilities })).toContain("Upravit a sdílení");
     expect(renderWorkbench({ visibility: "private", capabilities })).not.toContain("Access manager");
   });
 });

@@ -104,6 +104,14 @@ after that preview succeeds. Existing-account OTP also offers an optional passwo
 setup after this fresh identity verification, allowing recovery after a previous
 invite's password update failed. These actions do not grant project/recording access.
 The recipient must click **Přijmout pozvánku**, which sends the explicit accept POST.
+After confirmed acceptance, the client replaces the spent invitation URL with
+`/recordings` and refreshes the workspace so the recipient sees current access.
+Opening or verifying an invitation alone never navigates or grants access.
+The public acceptance page uses the shared Auth control sizes, a single narrow
+column that fits mobile screens, and a **Zpět na nahrávky** link in onboarding,
+preview and error states. The success state retains a recordings link as a
+fallback while navigation completes. No identity or permissions are read from
+the navigation link; the recordings route still verifies the current session.
 Failure after OTP consumption may require another manager-triggered resend; no
 reusable password-reset or public email-send endpoint is added.
 

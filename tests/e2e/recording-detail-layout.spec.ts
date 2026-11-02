@@ -11,8 +11,7 @@ for (const width of [390, 768, 900, 901, 1024, 1440]) {
       await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
       for (const [trigger, panel] of [
         [".export-controls > summary", ".export-controls-menu"],
-        [".recording-inline-edit > summary", ".recording-title-form"],
-        [".recording-detail-actions .compact-popover:not(.export-controls):not(.recording-inline-edit):not(.recording-organization-popover) > summary", ".recording-detail-actions [role='dialog'][aria-label='Sdílení a přístup']"]
+        ['button:has-text("Upravit a sdílení")', "[role='dialog'][aria-label='Upravit a sdílení']"]
       ]) {
         const before = await page.locator(trigger).boundingBox();
         await page.locator(trigger).click();
@@ -25,13 +24,16 @@ for (const width of [390, 768, 900, 901, 1024, 1440]) {
         expect(after?.height).toBeGreaterThanOrEqual(compactDesktop ? 30 : 44);
         if (compactDesktop) expect(after?.height).toBeLessThanOrEqual(32);
         const popup = page.locator(".recording-detail-actions [role='dialog']");
-        const closeBox = await popup.locator(".compact-popover-header > button").boundingBox();
-        expect(closeBox!.width).toBeCloseTo(compactDesktop ? 30 : 44, 0);
-        expect(closeBox!.height).toBeCloseTo(compactDesktop ? 30 : 44, 0);
+        const closeBox = await popup.locator("header > button").boundingBox();
+        for (const size of [closeBox!.width, closeBox!.height]) {
+          expect(size).toBeGreaterThanOrEqual(compactDesktop ? 30 : 44);
+          expect(size).toBeLessThanOrEqual(compactDesktop ? 32 : 44);
+        }
         const popupBox = await popup.boundingBox();
-        expect(popupBox!.x).toBeGreaterThanOrEqual(15);
-        expect(popupBox!.x + popupBox!.width).toBeLessThanOrEqual(width - 15);
-        expect(popupBox!.y + popupBox!.height).toBeLessThanOrEqual(525);
+        const margin = panel.includes("Upravit a sdílení") && width <= 600 ? 0 : 15;
+        expect(popupBox!.x).toBeGreaterThanOrEqual(margin);
+        expect(popupBox!.x + popupBox!.width).toBeLessThanOrEqual(width - margin);
+        expect(popupBox!.y + popupBox!.height).toBeLessThanOrEqual(540 - margin);
         for (const control of await page.locator(panel).locator("input:not([type=hidden]), select, button").all()) {
           if (!await control.isVisible()) continue;
           await control.evaluate((element) => element.scrollIntoView({ block: "center" }));
@@ -45,8 +47,8 @@ for (const width of [390, 768, 900, 901, 1024, 1440]) {
           })).toBe(true);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
-        if ((width === 390 || width === 1440) && panel === ".recording-title-form") {
-          await page.screenshot({ path: testInfo.outputPath(`compact-title-${width}-${theme}.png`), fullPage: false });
+        if ((width === 390 || width === 1440) && panel.includes("Upravit a sdílení")) {
+          await page.screenshot({ path: testInfo.outputPath(`compact-editor-${width}-${theme}.png`), fullPage: false });
         }
         await popup.press("Escape");
         await expect(popup).toHaveCount(0);
@@ -524,14 +526,14 @@ test("desktop sticky player stays directly below the global topbar", async ({ pa
 test("desktop organization editor keeps save visually distinct", async ({ page }) => {
   await page.setViewportSize({ height: 720, width: 1024 });
   await openFixture(page);
-  const organizationButton = page.getByRole("button", { name: "Upravit zařazení" });
+  const organizationButton = page.getByRole("button", { name: "Upravit a sdílení", exact: true });
   await expect(organizationButton).toBeVisible();
 
   await organizationButton.click();
   const actionGroup = page.locator(".recording-organization-actions");
   await expect(actionGroup).toBeVisible();
-  const save = actionGroup.getByRole("button", { name: "Uložit" });
-  const cancel = actionGroup.getByRole("button", { name: "Zrušit" });
+  const save = actionGroup.getByRole("button", { name: "Uložit zařazení", exact: true });
+  const cancel = actionGroup.getByRole("button", { name: "Vyčistit zařazení", exact: true });
   const styles = await actionGroup.evaluate((element) => {
     const computed = getComputedStyle(element);
     return {
