@@ -16,4 +16,12 @@ describe("getAiOutputSummary", () => {
   it("keeps hyphens and time ranges inside sentences", () => {
     expect(getAiOutputSummary(buildOutput("Kapitola 00:00 - 00:06 a e-mail"))).toBe("Kapitola 00:00 - 00:06 a e-mail");
   });
+
+  it("keeps Czech ordinal dates and arithmetic asterisks", () => {
+    expect(getAiOutputSummary(buildOutput("3. listopadu klient potvrdil\n1. Druhý bod\nCena 5*3 a soubor my__file.txt"))).toBe("3. listopadu klient potvrdil Druhý bod Cena 5*3 a soubor my__file.txt");
+  });
+
+  it("strips emphasis glued to punctuation", () => {
+    expect(getAiOutputSummary(buildOutput("**M1 – Mluvčí 2:*Zavolat* _hned_"))).toBe("M1 – Mluvčí 2:Zavolat hned");
+  });
 });

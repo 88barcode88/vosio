@@ -4,6 +4,7 @@ import { getAudioPlaybackEligibility } from "@/lib/recordings/audio-playback";
 import { RECORDINGS_BUCKET } from "@/lib/recordings/types";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthorizedAudioLocator } from "@/lib/recordings/audio-locator.server";
+import { buildDownloadFileName } from "@/lib/recordings/audio-download-name";
 
 const routeParamsSchema = z.object({
   recordingId: z.uuid()
@@ -55,10 +56,11 @@ function isValidSignedAudioUrl(value: unknown): value is string {
   }
 }
 
-// GET authorizes the exact recording then signs its canonical object through session Storage RLS; `?download=1` signs it as an attachment.
+// GET authorizes the exact recording then signs its canonical object through session Storage RLS; `?download=1&name=<title>` signs it as a named attachment.
 export async function GET(request: NextRequest, context: RouteContext) {
   const params = routeParamsSchema.safeParse(await context.params);
-  const asDownload = new URL(request.url).searchParams.get("download") === "1";
+  const searchParams = new URL(request.url).searchParams;
+  const asDownload = searchParams.get("download") === "1";
 
   if (!params.success) {
     return privateJson({ error: "Neplatné ID nahrávky." }, 400);
@@ -111,7 +113,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const bucket = supabase.storage.from(RECORDINGS_BUCKET);
     const path = recording.storage_path as string;
     return asDownload
-      ? bucket.createSignedUrl(path, AUDIO_URL_EXPIRES_IN_SECONDS, { download: true })
+      ? bucket.createSignedUrl(path, AUDIO_URL_EXPIRES_IN_SECONDS, { download: buildDownloadFileName(searchParams.get("name"), path) })
       : bucket.createSignedUrl(path, AUDIO_URL_EXPIRES_IN_SECONDS);
   });
 

@@ -270,10 +270,10 @@ describe("GET recording audio", () => {
     const mock = createSupabaseMock();
     mocks.createClient.mockResolvedValue(mock.supabase);
 
-    const response = await callRoute(recordingId, "?download=1");
+    const response = await callRoute(recordingId, "?download=1&name=Porada%20%C4%8Desko");
 
     expect(response.status).toBe(200);
-    expect(mock.createSignedUrl).toHaveBeenCalledWith(`${userId}/${recordingId}/audio.webm`, 300, { download: true });
+    expect(mock.createSignedUrl).toHaveBeenCalledWith(`${userId}/${recordingId}/audio.webm`, 300, { download: "Porada-cesko.webm" });
   });
   it("denies revoked access before creating an admin client", async () => {
     const mock = createSupabaseMock();

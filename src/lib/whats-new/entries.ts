@@ -85,7 +85,7 @@ export const whatsNewReleases: readonly WhatsNewRelease[] = [
         id: "audio-download",
         kind: "new",
         title: "Stažení audia",
-        summary: "Na záložce Soubory v detailu nahrávky stáhnete původní audio tlačítkem Stáhnout audio.",
+        summary: "Na záložce Soubory v detailu nahrávky stáhnete původní audio tlačítkem Stáhnout audio. Soubor se uloží pod názvem nahrávky.",
         detail: "Audio uložené po částech zatím jako jeden soubor stáhnout nejde, přehrajete ho ale v přehrávači.",
         href: "/recordings"
       },
