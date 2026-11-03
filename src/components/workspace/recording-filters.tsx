@@ -131,7 +131,7 @@ export function RecordingFilters({ filters, options, searchQuery }: RecordingFil
       <div className="recording-filter-basic-row">
         <label className="recording-filter-search">
           <span className="visually-hidden">Hledat v nahrávkách</span>
-          <Search aria-hidden="true" className="recording-filter-search-icon" size={16} />
+          <Search aria-hidden="true" className="recording-filter-search-icon" size={15} />
           <input
             aria-label="Hledat v nahrávkách"
             maxLength={120}

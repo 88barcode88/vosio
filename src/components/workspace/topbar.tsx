@@ -5,6 +5,7 @@ import type { WorkspaceView } from "@/lib/workspace-data";
 const workspaceViewLabels: Record<WorkspaceView, string> = {
   ai: "AI archiv",
   documentation: "Dokumentace",
+  "whats-new": "Novinky",
   recordings: "Nahrávky",
   settings: "Nastavení",
   templates: "AI prompty",
@@ -30,7 +31,7 @@ export function WorkspaceTopbar({
       <div className="workspace-breadcrumbs" aria-label="Drobečková navigace">
         <FileAudio aria-hidden="true" size={15} />
         <span>Pracovní prostor</span>
-        <ChevronRight aria-hidden="true" size={14} />
+        <ChevronRight aria-hidden="true" size={13} />
         <strong>{currentLabel}</strong>
       </div>
       <ThemeToggle compact />

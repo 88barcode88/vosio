@@ -85,10 +85,10 @@ export function DeleteRecordingForm({
         <input defaultValue={recordingId} name="recordingId" type="hidden" />
         {next ? <input defaultValue={next} name="next" type="hidden" /> : null}
         <button aria-label={effectiveLabel} disabled={isDeleting} title={effectiveLabel} type="submit">
-          <Trash2 size={16} />
-          {variant === "danger" ? <span>{isDeleting ? "Mažu..." : effectiveLabel}</span> : null}
+          <Trash2 size={15} />
+          {variant === "danger" ? <span>{isDeleting ? "Mažu…" : effectiveLabel}</span> : null}
           {variant === "compact" ? (
-            <span className="recording-action-label">{isDeleting ? "Mažu..." : effectiveLabel}</span>
+            <span className="recording-action-label">{isDeleting ? "Mažu…" : effectiveLabel}</span>
           ) : null}
           {variant === "icon" ? <span className="visually-hidden">{effectiveLabel}</span> : null}
         </button>

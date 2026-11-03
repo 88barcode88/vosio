@@ -37,7 +37,7 @@ export type TranscriptAiStateContextValue = LoadedManualAiState & {
   acceptJob: (job: { id: string; status: ManualAiJobStatus }, processingType: string) => void;
   applyCleanupMutation: (mutation: ManualAiCleanupMutationResponse) => void;
   confirmTaskDeletion: (task: StructuredTaskRow) => void;
-  confirmChecklistDeletion: (taskIds: string[], outputIds: string[]) => void;
+  confirmChecklistDeletion: (itemIds: string[], outputIds: string[]) => void;
   confirmTaskStatus: (task: StructuredTaskRow, status: StructuredTaskRow["status"]) => void;
   error: string | null;
   isLoaded: boolean;
@@ -398,13 +398,13 @@ export function TranscriptAiStateProvider({
 
   const hasPollEligibleJobs = state.classifications.some((classification) => classification.poll_eligible);
 
-  // confirmChecklistDeletion fences exactly reviewed old sources while allowing later new AI generations.
-  const confirmChecklistDeletion = useCallback((taskIds: string[], outputIds: string[]) => {
+  // confirmChecklistDeletion fences exactly reviewed task/decision/risk rows and old sources while allowing later new AI generations.
+  const confirmChecklistDeletion = useCallback((itemIds: string[], outputIds: string[]) => {
     if (!transcriptId || scopeRef.current.transcriptId !== transcriptId) return;
-    taskIds.forEach((id) => taskDeletionTombstonesRef.current.add(`id:${id}`));
+    itemIds.forEach((id) => taskDeletionTombstonesRef.current.add(`id:${id}`));
     outputIds.forEach((id) => taskDeletionTombstonesRef.current.add(`output:${id}`));
     taskStatusOverridesRef.current.forEach((override, key) => {
-      if ((override.id && taskIds.includes(override.id)) || outputIds.includes(override.ai_output_id)) {
+      if ((override.id && itemIds.includes(override.id)) || outputIds.includes(override.ai_output_id)) {
         taskStatusOverridesRef.current.delete(key);
       }
     });
@@ -591,6 +591,11 @@ function mergeInitialManualAiState(current: LoadedManualAiState, incoming: Loade
   };
 }
 
+// isChecklistRowDeleted tells whether a decision/risk row was removed by a confirmed whole-checklist delete (exact ID or suppressed source).
+function isChecklistRowDeleted(row: { id?: string; ai_output_id: string }, tombstones: Set<string>) {
+  return tombstones.has(`id:${row.id}`) || tombstones.has(`output:${row.ai_output_id}`);
+}
+
 // applyClientGuards reapplies confirmed client mutations after any older server response settles.
 function applyClientGuards(
   state: LoadedManualAiState,
@@ -612,7 +617,9 @@ function applyClientGuards(
         .map((task) => {
           const status = taskStatusOverrides.get(getTaskDedupeKey(task))?.status;
           return status ? { ...task, status } : task;
-        })
+        }),
+      decisions: withoutOutputs.structuredItems.decisions.filter((row) => !isChecklistRowDeleted(row, taskDeletionTombstones)),
+      risks: withoutOutputs.structuredItems.risks.filter((row) => !isChecklistRowDeleted(row, taskDeletionTombstones))
     }
   };
 }

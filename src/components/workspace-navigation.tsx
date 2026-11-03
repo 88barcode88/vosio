@@ -9,12 +9,14 @@ import { Drawer } from "@/components/ui/drawer";
 import { getEmailInitials } from "@/components/workspace/utils";
 import { signOutAction } from "@/lib/auth/actions";
 import { useWorkspaceNavigationPresentation } from "@/components/workspace-navigation-state";
+import { useWhatsNewUnseen } from "@/lib/whats-new/use-whats-new-unseen";
 import {
   documentationNavigationItem,
   primaryNavigationItems,
   teamNavigationItem,
   utilityNavigationItems,
   VOSIO_SUPPORT_URL,
+  whatsNewNavigationItem,
   type NavigationHrefOverrides,
   type NavigationItem,
   type WorkspaceNavigationHref,
@@ -64,7 +66,7 @@ export function NewRecordingNavigationLink({
       }}
       title={compact ? "Nová nahrávka" : undefined}
     >
-      <Plus size={16} />
+      <Plus size={15} />
       <span className="navigation-label">Nová nahrávka</span>
     </Link>
   );
@@ -127,7 +129,7 @@ export function WorkspaceNavigation({
               }}
               title={compact ? item.label : undefined}
             >
-              <item.icon size={16} />
+              <item.icon size={15} />
               <span className="navigation-label">{item.label}</span>
             </Link>
         );
@@ -140,15 +142,18 @@ export function WorkspaceNavigation({
 export function SidebarUtilityNavigation({
   activeView,
   compact = false,
-  hrefOverrides
+  hrefOverrides,
+  userKey = ""
 }: {
   activeView: WorkspaceView;
   compact?: boolean;
   hrefOverrides?: NavigationHrefOverrides;
+  userKey?: string;
 }) {
+  const whatsNewUnseen = useWhatsNewUnseen(userKey);
   const pathname = usePathname();
   const [pendingHref, setPendingHref] = useState<WorkspaceNavigationHref | null>(null);
-  const items = [...utilityNavigationItems, documentationNavigationItem];
+  const items = [...utilityNavigationItems, documentationNavigationItem, whatsNewNavigationItem];
 
   useEffect(() => {
     setPendingHref(null);
@@ -177,8 +182,9 @@ export function SidebarUtilityNavigation({
             }}
             title={compact ? item.label : undefined}
           >
-            <item.icon size={16} />
+            <item.icon size={15} />
             <span className="navigation-label">{item.label}</span>
+            {item.view === "whats-new" && whatsNewUnseen ? <span aria-label="Nové položky" className="nav-item-dot" role="img" /> : null}
           </Link>
         );
       })}
@@ -197,7 +203,7 @@ function MobileAccount({ userEmail }: { userEmail: string }) {
       </div>
       <form action={signOutAction} className="mobile-more-sign-out" data-navigation-guard="true">
         <button type="submit">
-          <LogOut size={16} />
+          <LogOut size={15} />
           Odhlásit
         </button>
       </form>
@@ -224,14 +230,15 @@ function MobileMoreDrawer({
   userEmail: string;
 }) {
   const pathname = usePathname();
-  const drawerItems = [...(canManageTeam ? [teamNavigationItem] : []), utilityNavigationItems[0], documentationNavigationItem];
+  const drawerItems = [...(canManageTeam ? [teamNavigationItem] : []), utilityNavigationItems[0], documentationNavigationItem, whatsNewNavigationItem];
+  const whatsNewUnseen = useWhatsNewUnseen(userEmail);
 
   return (
     <Drawer className="mobile-more-drawer" label="Další možnosti" onClose={onClose} open={open}>
       <header className="mobile-more-header">
         <div>
           <strong>Další možnosti</strong>
-          <span>Workspace a účet</span>
+          <span>Pracovní prostor a účet</span>
         </div>
         <button aria-label="Zavřít další možnosti" className="mobile-more-close" onClick={onClose} type="button">
           <X aria-hidden="true" size={15} />
@@ -254,8 +261,9 @@ function MobileMoreDrawer({
                 onClose();
               }}
             >
-              <item.icon aria-hidden="true" size={16} />
+              <item.icon aria-hidden="true" size={15} />
               {item.label}
+              {item.view === "whats-new" && whatsNewUnseen ? <span aria-label="Nové položky" className="nav-item-dot" role="img" /> : null}
             </Link>
           );
         })}
@@ -265,7 +273,7 @@ function MobileMoreDrawer({
           rel="noopener noreferrer"
           target="_blank"
         >
-          <Coffee aria-hidden="true" size={16} />
+          <Coffee aria-hidden="true" size={15} />
           Kup mi kafe
         </a>
       </nav>
@@ -298,8 +306,8 @@ export function MobileNav({
   const [moreReady, setMoreReady] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [pendingHref, setPendingHref] = useState<WorkspaceNavigationHref | null>(null);
-  const moreIsActive = activeView === "trash" || activeView === "documentation" || activeView === "team";
-  const moreIsPending = pendingHref === "/trash" || pendingHref === "/documentation" || pendingHref === "/team";
+  const moreIsActive = activeView === "trash" || activeView === "documentation" || activeView === "whats-new" || activeView === "team";
+  const moreIsPending = pendingHref === "/trash" || pendingHref === "/documentation" || pendingHref === "/whats-new" || pendingHref === "/team";
 
   // Mark More interactive only after React owns its client event handler.
   useEffect(() => {
@@ -334,7 +342,7 @@ export function MobileNav({
                 setPendingHref(item.href);
               }}
             >
-              <item.icon aria-hidden="true" size={16} />
+              <item.icon aria-hidden="true" size={15} />
               <span>{item.label}</span>
             </Link>
           );

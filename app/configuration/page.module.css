@@ -15,7 +15,7 @@
   padding: clamp(24px, 5vw, 48px);
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: var(--panel);
+  background: var(--surface);
   box-shadow: 0 12px 32px color-mix(in srgb, var(--text) 10%, transparent);
 }
 
@@ -25,23 +25,23 @@
 }
 
 .card h1 {
-  font-size: clamp(2rem, 7vw, 3.125rem);
-  line-height: 1.04;
+  font-size: var(--text-xl);
+  line-height: var(--leading-tight);
   letter-spacing: -0.03em;
 }
 
 .eyebrow {
   color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 800;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .status,
 .guidance {
-  color: var(--muted);
-  line-height: 1.65;
+  color: var(--text-secondary);
+  line-height: var(--leading-body);
 }
 
 .status {
@@ -50,7 +50,7 @@
   padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--panel-soft);
+  background: var(--surface-muted);
 }
 
 .status strong {
@@ -84,7 +84,7 @@
 .variables code {
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 
 @media (max-width: 520px) {

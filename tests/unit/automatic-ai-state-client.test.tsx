@@ -88,12 +88,12 @@ it("keeps checklist tombstones through late hydration and exports while allowing
     await act(async () => state.confirmChecklistDeletion(["old-task"], ["old"]));
     await act(async () => {
       resolveOld(Response.json({ output: { id: "old", output_text: "Original source still exists" }, structuredItems: {
-        chapters: [], decisions: [{ id: "decision", ai_output_id: "old" }], risks: [], tasks: [{ id: "old-task", ai_output_id: "old", title: "Same title", position: 1 }]
+        chapters: [], decisions: [{ id: "decision", ai_output_id: "old" }], risks: [{ id: "risk", ai_output_id: "old" }], tasks: [{ id: "old-task", ai_output_id: "old", title: "Same title", position: 1 }]
       } }));
       expect((await pending)?.structuredItems.tasks).toEqual([]);
     });
     expect(state.loadedOutputs.map((output) => output.id)).toEqual(["old"]);
-    expect(state.structuredItems.tasks).toEqual([]); expect(state.structuredItems.decisions).toHaveLength(1);
+    expect(state.structuredItems.tasks).toEqual([]); expect(state.structuredItems.decisions).toEqual([]); expect(state.structuredItems.risks).toEqual([]);
     let exported: Awaited<ReturnType<TranscriptAiStateContextValue["loadAllOutputs"]>>;
     await act(async () => { exported = await state.loadAllOutputs(); });
     expect(exported!.structuredItems.tasks).toEqual([]);

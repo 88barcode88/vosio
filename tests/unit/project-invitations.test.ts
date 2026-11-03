@@ -127,7 +127,11 @@ describe("invitation orchestration (RPC boundary, not database proof)", () => {
 
   it("lists safe access and revokes project membership / standalone grants via their narrow RPCs", async () => {
     const db = client(); db.rpc.mockResolvedValue({ data: { members: [{ userId: id, role: "reader", secret: "private" }], grants: [], invitations: [], secret: "private" }, error: null });
-    expect(await listAccess(db, { projectId, recordingId: null })).toEqual({ members: [{ userId: id, role: "reader" }], grants: [], invitations: [] });
+    expect(await listAccess(db, { projectId, recordingId: null })).toEqual({ members: [{ userId: id, email: null, role: "reader" }], grants: [], invitations: [] });
+    db.rpc.mockResolvedValue({ data: { members: [{ userId: id, email: "member@example.test", role: "editor", secret: "private" }], grants: [{ recordingId, userId: id, email: null, role: "reader" }], invitations: [] }, error: null });
+    expect(await listAccess(db, { projectId, recordingId: null })).toEqual({
+      members: [{ userId: id, email: "member@example.test", role: "editor" }], grants: [{ recordingId, userId: id, email: null, role: "reader" }], invitations: []
+    });
     await revokeAccess(db, { kind: "member", projectId, userId: id });
     expect(db.rpc).toHaveBeenLastCalledWith("revoke_project_member_v1", { p_project_id: projectId, p_user_id: id });
     await revokeAccess(db, { kind: "grant", recordingId, userId: id });

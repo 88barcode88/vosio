@@ -8,7 +8,11 @@ const taskId = "00000000-0000-4000-8000-000000000307";
 const hiddenTaskId = "00000000-0000-4000-8000-000000000399";
 const snapshot = { transcriptId, generation: null, transcriptVersion: "1",
   outputs: [outputId, hiddenOutputId].map((id) => ({ id, version: "1" })),
-  tasks: [taskId, hiddenTaskId].map((id) => ({ id, version: "1", updatedAt: "2026-10-03", status: "new" })) };
+  tasks: [taskId, hiddenTaskId].map((id) => ({ id, version: "1", updatedAt: "2026-10-03", status: "new" })),
+  decisions: [], risks: [] };
+const review = { snapshot, rowCount: 2, logicalCounts: { tasks: 2, decisions: 0, risks: 0 } };
+const receipt = { ok: true, transcriptId, deletedIds: [taskId, hiddenTaskId], deletedCounts: { tasks: 2, decisions: 0, risks: 0 },
+  suppressionIds: [outputId, hiddenOutputId], deletedCount: 2 };
 
 for (const theme of ["light", "dark"] as const) {
   test(`${theme} whole checklist review includes unloaded sources and stale props cannot restore tasks`, async ({ page, context, baseURL }) => {
@@ -17,9 +21,9 @@ for (const theme of ["light", "dark"] as const) {
     await page.route("**/api/transcripts/*/automatic-timeline", (route) => route.fulfill({ json: { status: "not_scheduled" } }));
     await page.route("**/api/transcripts/*/ai-state", (route) => route.fulfill({ json: { jobs: [], outputs: [] } }));
     await page.route("**/api/transcripts/*/checklist", (route) => {
-      if (route.request().method() === "GET") return route.fulfill({ json: { snapshot, rowCount: 2, logicalCount: 2 } });
+      if (route.request().method() === "GET") return route.fulfill({ json: review });
       deleteBody = route.request().postDataJSON();
-      return route.fulfill({ json: { ok: true, transcriptId, deletedIds: [taskId, hiddenTaskId], suppressionIds: [outputId, hiddenOutputId], deletedCount: 2 } });
+      return route.fulfill({ json: receipt });
     });
     await page.goto(`/login/manual-ai-refresh-e2e?scope=${randomBytes(6).toString("hex")}`);
     await expect(page.locator(".structured-task-row")).toHaveCount(1);
@@ -30,7 +34,7 @@ for (const theme of ["light", "dark"] as const) {
     await page.getByRole("button", { name: "Smazat celý checklist", exact: true }).click();
     await expect(page.locator(".structured-task-row")).toHaveCount(0);
     await expect(page.locator(".checklist-delete-control")).toHaveCount(0);
-    expect(deleteBody).toEqual({ snapshot }); expect(confirmation).toContain("(2 položek)");
+    expect(deleteBody).toEqual({ snapshot }); expect(confirmation).toContain("Odstraní se 2 úkoly tohoto přepisu.");
     await page.getByRole("button", { name: "Přehrát staré server props" }).click();
     await expect(page.locator(".structured-task-row")).toHaveCount(0);
     const source = page.locator(".ai-output-detail");
@@ -46,9 +50,9 @@ test("a checklist delete committed while another tab is open stays deleted on re
   await page.route("**/api/transcripts/*/automatic-timeline", (route) => route.fulfill({ json: { status: "not_scheduled" } }));
   await page.route("**/api/transcripts/*/ai-state", (route) => route.fulfill({ json: { jobs: [], outputs: [] } }));
   await page.route("**/api/transcripts/*/checklist", async (route) => {
-    if (route.request().method() === "GET") return route.fulfill({ json: { snapshot, rowCount: 2, logicalCount: 2 } });
+    if (route.request().method() === "GET") return route.fulfill({ json: review });
     await deleteGate;
-    await route.fulfill({ json: { ok: true, transcriptId, deletedIds: [taskId, hiddenTaskId], suppressionIds: [outputId, hiddenOutputId], deletedCount: 2 } });
+    await route.fulfill({ json: receipt });
   });
   await page.goto(`/login/manual-ai-refresh-e2e?scope=${randomBytes(6).toString("hex")}`);
   await expect(page.locator(".structured-task-row")).toHaveCount(1);

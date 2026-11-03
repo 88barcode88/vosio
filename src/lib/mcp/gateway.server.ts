@@ -33,11 +33,11 @@ async function boundedBytes(stream: ReadableStream<Uint8Array> | null, maximum: 
   } finally { clearTimeout(timer); if (!complete) void reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
 
-// Read a small public metadata document without auth cookies, redirects or secret configuration.
-export async function getMcpMetadata() {
+// Read a small public metadata document without auth cookies, redirects or secret configuration; callers that only display it may pass a shorter timeout.
+export async function getMcpMetadata(timeoutMs = 15000) {
   try {
     const backend = target();
-    const response = await fetch(`${backend.resource}/metadata`, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15000), headers: { apikey: backend.key } });
+    const response = await fetch(`${backend.resource}/metadata`, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(timeoutMs), headers: { apikey: backend.key } });
     if (!response.ok) return null;
     const data = metadataSchema.parse(JSON.parse(new TextDecoder().decode(await boundedBytes(response.body, 16000))));
     if (data.resource !== backend.resource || new URL(data.webOrigin).origin !== data.webOrigin || !data.webOrigin.startsWith("https://") || data.issuer !== data.webOrigin

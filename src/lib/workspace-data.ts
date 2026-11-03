@@ -7,16 +7,18 @@ import {
   FileText,
   ListChecks,
   Mail,
+  Newspaper,
   Settings2,
   Trash2,
   Users
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-export type WorkspaceView = "recordings" | "ai" | "templates" | "documentation" | "trash" | "settings" | "team";
+export type WorkspaceView = "recordings" | "ai" | "templates" | "documentation" | "whats-new" | "trash" | "settings" | "team";
 
 export type WorkspaceNavigationHref =
   | "/documentation"
+  | "/whats-new"
   | "/recordings"
   | "/recordings/new"
   | "/settings"
@@ -50,6 +52,13 @@ export const documentationNavigationItem: NavigationItem = {
   icon: BookOpen,
   label: "Dokumentace",
   view: "documentation"
+};
+
+export const whatsNewNavigationItem: NavigationItem = {
+  href: "/whats-new",
+  icon: Newspaper,
+  label: "Novinky",
+  view: "whats-new"
 };
 
 export const VOSIO_SUPPORT_URL = "https://donate.stripe.com/3cI7sLdRHaWJ1Lke48dZ602";

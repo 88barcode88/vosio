@@ -154,6 +154,12 @@ page in application code, or widen table column grants to keep old queries alive
 resolver for `recording_capabilities_v1`; RPC errors, incomplete/malformed flags
 and denied read resolve to all-false. Server pages pass those flags into action UI.
 Server mutation and provider routes independently resolve current authority.
+`accessible_recording_rows_v1` (and so list/count) starts from an indexable candidate
+superset (own recordings, recordings of owned/member projects, explicit grants, team
+client/folder scope grants) and only then applies `can_read_recording`; a new access
+path in `recording_access_role_v1` must add its candidate branch there, otherwise rows
+silently disappear from lists. `supabase/tests/db_performance_authz_equivalence.sql`
+compares it with the previous implementation for every path.
 Use the returned permitted project label directly; a selected-only recipient need
 not and must not load the general project list to render it.
 

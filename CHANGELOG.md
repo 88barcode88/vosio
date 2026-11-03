@@ -4,6 +4,30 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ## [Unreleased]
 
+### Added
+
+- Dokumentace obsahuje návod na připojení AI asistenta (Claude, Codex) včetně bezpečnostních rad; adresa serveru se zobrazí jen v instalaci se zapnutým MCP.
+- Stránka Novinky s přehledem změn psaným pro uživatele, filtrem druhu změny, rozbalovacími podrobnostmi a tečkou v menu u nepřečtených novinek.
+- Záložka Soubory v detailu nahrávky umí stáhnout původní audio (jeden soubor) přes krátkodobý podepsaný odkaz.
+
+### Changed
+
+- Sjednocená typografie (pět velikostí a tři tloušťky písma), ikony (13, 15 a 20 px), tlačítka a barevné tokeny napříč aplikací; role se všude jmenují Úpravy a Čtení.
+- Karta účtu v postranním menu je kompaktní.
+- Malé akce používají jednotné ikony a kompaktní vzhled; zařazení nahrávky se upravuje v kontextovém okně místo velkého inline formuláře.
+- Seznam nahrávek dává přednost obsahu; obnova a hromadné sdílení jsou v kompaktních oknech. Název, export a přístup v detailu používají malé kontextové nabídky.
+- Nová nahrávka začíná soukromě, rozšířené zařazení je volitelné a technické informace o bucketu nezabírají hlavní plochu.
+- Spouštěč Upravit a sdílení a tlačítka sdílení v detailu už nevypadají jako nativní šedá tlačítka.
+- Chat zachovává načtenou historii a rozepsanou zprávu; otázku zobrazí ihned s trojtečkovým indikátorem až do odpovědi. Pozdní odpověď po přepnutí nahrávky nepřepíše novější odeslání.
+- Přepisovací ovládání a stavový řádek přehrávače zachovávají místo při načítání, kontrole i chybě a neposouvají záložky ani chat.
+- Přepis při vypnuté službě vysvětluje potřebnou provozní aktivaci místo neurčitého hlášení o nedostupnosti.
+- Staré nedokončené live nahrávky mohou bezpečně doplnit serverové mezery z původní místní kopie, včetně opakování po neúspěšném doplnění. Diagnostika rozlišuje místní a serverový obsah.
+- Odstranění místní zálohy a přesun serverové nahrávky do Koše jsou oddělené potvrzované akce. Obnova místní kopii automaticky nemaže při neúspěchu.
+- Nepotvrzené hromadné sdílení zachovává původní požadavek a příjemce při změně filtru nebo seznamu.
+- Smazat celý checklist maže atomicky úkoly, rozhodnutí i rizika/blokery přepisu (migrace `20261103140000`, `_v2` RPC); před deployem aplikace musí být migrace aplikovaná.
+- Chat má nový vzhled: prázdný stav s návrhy otázek, klidnější bubliny, čitelnější odpovědi, citace jako chipy s časem a kompaktní pole pro dotaz.
+- Přepsat znovu je v jedné řadě s akcemi detailu; řádky mluvčích, načítání AI, akce uložených výstupů a časová osa jsou zarovnané.
+
 ## [0.3.2] - 2026-10-12
 
 ### Added

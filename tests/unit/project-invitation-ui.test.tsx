@@ -146,6 +146,31 @@ describe("manager outcomes stay truthful", () => {
     expect(container.textContent).not.toContain("Přístup byl odebrán");
   });
 
+  it("shows e-mail (or an unknown-user label, never the raw UUID) for members and grants with Czech role labels", async () => {
+    const memberId = "40000000-0000-4000-8000-000000000004";
+    const granteeId = "40000000-0000-4000-8000-000000000005";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      members: [{ userId: memberId, email: "member@example.test", role: "editor" }],
+      grants: [{ recordingId, userId: granteeId, email: null, role: "reader" }],
+      invitations: []
+    }))));
+    await act(async () => root.render(<RecordingAccessManager recordingId={recordingId} projectId={null} visibility="selected" canManageAccess />));
+    expect(container.textContent).toContain("member@example.test · Úpravy");
+    expect(container.textContent).toContain("Neznámý uživatel · Čtení");
+    expect(container.textContent).not.toContain(memberId);
+    expect(container.textContent).not.toContain(granteeId);
+    expect(container.textContent).not.toContain("Uživatel ");
+  });
+
+  it("treats an access list from an older server without e-mail as unknown users", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      members: [], grants: [{ recordingId, userId: projectId, role: "editor" }], invitations: []
+    }))));
+    await act(async () => root.render(<RecordingAccessManager recordingId={recordingId} projectId={null} visibility="selected" canManageAccess />));
+    expect(container.textContent).toContain("Neznámý uživatel · Úpravy");
+    expect(container.textContent).not.toContain(projectId);
+  });
+
   it("refreshes accepted-first conflict into active access without claiming revoke success", async () => {
     let accepted = false;
     vi.stubGlobal("fetch", vi.fn(async (_path: string, options?: RequestInit) => {

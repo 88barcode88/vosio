@@ -77,7 +77,7 @@ export function RecordingWorkbench({
     >
       <section className="recording-workbench" aria-label="Aktuální nahrávka">
         <Link className="recording-detail-back" href="/recordings">
-          <ChevronLeft aria-hidden="true" size={16} />
+          <ChevronLeft aria-hidden="true" size={15} />
           Zpět na nahrávky
         </Link>
         {activeRecording ? <RecordingCompletionNotice recordingId={activeRecording.id} /> : null}
@@ -156,6 +156,9 @@ function RecordingCard({
         </div>
         {activeRecordingRow ? (
           <div className="recording-detail-actions">
+            {activeRecordingRow.capabilities?.runPersonalAi ? <div className="recording-header-operations" aria-label="Akce přepisu">
+              <CommandBar activeRecording={activeRecordingView} activeTranscript={activeTranscript} />
+            </div> : null}
             <RecordingEditSharingDialog
               key={`edit-sharing-${activeRecordingRow.id}`}
               options={recordingOrganizationOptions}
@@ -175,13 +178,6 @@ function RecordingCard({
           </div>
         ) : null}
       </div>
-      {activeRecordingRow ? (
-        <>
-          <div className="recording-header-operations" aria-label="Akce přepisu">
-            {activeRecordingRow.capabilities?.runPersonalAi ? <CommandBar activeRecording={activeRecordingView} activeTranscript={activeTranscript} /> : null}
-          </div>
-        </>
-      ) : null}
     </section>
   );
 }

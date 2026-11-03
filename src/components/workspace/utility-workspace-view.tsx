@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FileText, Sparkles, Trash2 } from "lucide-react";
 import { AiArchive } from "@/components/ai-archive";
 import { DocumentationPanel } from "@/components/documentation-panel";
+import { WhatsNewPanel } from "@/components/whats-new-panel";
 import { PromptTemplateEditor, type PromptTemplateActions } from "@/components/prompt-template-editor";
 import type { TrashRecordingAction } from "@/components/purge-recording-form";
 import { SettingsPanel } from "@/components/settings-panel";
@@ -38,6 +39,7 @@ type UtilityWorkspaceViewProps = {
   deletedRecordings: RecordingClientView[];
   disableAccountSecurity?: boolean;
   installationStatus?: InstallationStatus;
+  mcpResourceUrl?: string | null;
   promptTemplateActions?: PromptTemplateActions;
   promptTemplateBaseHref?: string;
   promptTemplateNavigationState?: PromptTemplateNavigationState;
@@ -56,7 +58,7 @@ type UtilityWorkspaceViewProps = {
   trashRestoreAction?: TrashRecordingAction;
   usageState?: CurrentMonthUsageState;
   userEmail?: string;
-  view: "ai" | "templates" | "documentation" | "trash" | "settings";
+  view: "ai" | "templates" | "documentation" | "whats-new" | "trash" | "settings";
 };
 
 // UtilityWorkspaceView renders secondary data-driven app sections outside recording detail.
@@ -69,6 +71,7 @@ export function UtilityWorkspaceView({
   deletedRecordings,
   disableAccountSecurity = false,
   installationStatus,
+  mcpResourceUrl = null,
   promptTemplateActions,
   promptTemplateBaseHref,
   promptTemplateNavigationState = { kind: "list" },
@@ -109,13 +112,14 @@ export function UtilityWorkspaceView({
     );
   }
 
-  if (view === "documentation") return <DocumentationPanel />;
+  if (view === "documentation") return <DocumentationPanel mcpResourceUrl={mcpResourceUrl} />;
+  if (view === "whats-new") return <WhatsNewPanel userEmail={userEmail ?? ""} />;
 
   if (view === "ai") {
     return (
       <section className="utility-panel utility-panel-document" data-utility-surface="ai-archive" aria-label="AI archiv">
         <div className="utility-header utility-header-actions">
-          <Sparkles size={18} />
+          <Sparkles size={20} />
           <div>
             <h1>AI archiv</h1>
             <p>Celé uložené generace napříč nahrávkami. Nové výstupy spouštíte v detailu nahrávky.</p>
@@ -137,7 +141,7 @@ export function UtilityWorkspaceView({
     return (
       <section className="utility-panel utility-panel-document" data-utility-surface="prompt-templates" aria-label="AI prompty">
         <div className="utility-header utility-header-actions">
-          <FileText size={18} />
+          <FileText size={20} />
           <div>
             <h1>AI prompty</h1>
             <p>Upravte instrukce, které používají existující AI tlačítka. Upravený prompt lze kdykoli obnovit na systémový výchozí stav.</p>
@@ -157,7 +161,7 @@ export function UtilityWorkspaceView({
   return (
     <section className="utility-panel utility-panel-trash" data-utility-surface="trash" aria-label="Koš">
       <div className="utility-header">
-        <Trash2 size={18} />
+        <Trash2 size={20} />
         <div>
           <h1>Koš</h1>
           <p>Smazané nahrávky. Tady lze položku trvale odstranit včetně souboru, přepisu a AI výstupů.</p>

@@ -21,7 +21,7 @@ import {
   searchOwnRecordings
 } from "@/lib/recordings/search";
 import { listRecordingOrganizationOptions } from "@/lib/recording-organization/queries";
-import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
+import { resolveRecordingCapabilitiesBatch } from "@/lib/recording-sharing/resolve-capabilities";
 import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { createClient } from "@/lib/supabase/server";
@@ -98,9 +98,9 @@ async function loadRecordingData(
       )
     : listRecordings(supabase, { organizationFilters: filters, status })
       .then((recordings) => ({ recordings, searchError: null, searchPage: null })));
-  await Promise.all([...recordingData.recordings, ...(recordingData.searchPage?.results ?? [])].map(async (recording) => {
-    recording.capabilities = await resolveRecordingCapabilities(supabase, recording.id);
-  }));
+  const listedRecordings = [...recordingData.recordings, ...(recordingData.searchPage?.results ?? [])];
+  const capabilities = await resolveRecordingCapabilitiesBatch(supabase, listedRecordings.map((recording) => recording.id));
+  for (const recording of listedRecordings) recording.capabilities = capabilities.get(recording.id);
   return recordingData;
 }
 
@@ -188,9 +188,11 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
   }
 
   const initialSearchParams = createRecordingSearchParams(params);
-  const readPhase = await loadWithSingleRetry(() =>
-    loadRecordingReadPhase(supabase, initialSearchParams, searchQuery)
-  );
+  // The team role lookup never rejects (fails closed to null), so it can safely run beside the list reads.
+  const [readPhase, teamRole] = await Promise.all([
+    loadWithSingleRetry(() => loadRecordingReadPhase(supabase, initialSearchParams, searchQuery)),
+    resolveTeamRole(supabase)
+  ]);
   if ("redirectHref" in readPhase) {
     redirect(readPhase.redirectHref);
   }
@@ -231,7 +233,7 @@ export default async function RecordingsPage({ searchParams }: RecordingsPagePro
 
   return (
     <VosioWorkspace
-      canManageTeam={Boolean(await resolveTeamRole(supabase))}
+      canManageTeam={Boolean(teamRole)}
       aiOutputs={[]}
       recordings={recordings}
       recordingsError={(Array.isArray(params.error) ? params.error[0] : params.error) ?? null}

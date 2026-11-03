@@ -114,7 +114,7 @@ export function TranscriptImportForm({ captureScope, captureRequestId, redirectA
     }
 
     setIsImporting(true);
-    setImportState({ message: "Ukládám hotový přepis...", tone: "working" });
+    setImportState({ message: "Ukládám hotový přepis…", tone: "working" });
 
     try {
       const response = await fetch("/api/recordings/import-transcript", {
@@ -197,13 +197,13 @@ export function TranscriptImportForm({ captureScope, captureRequestId, redirectA
         <textarea
           disabled={isImporting}
           name="rawText"
-          placeholder="Vložte hotový přepis, nebo vyberte soubor výše..."
+          placeholder="Vložte hotový přepis, nebo vyberte soubor výše…"
           rows={8}
         />
       </label>
       <button disabled={isImporting} type="submit">
         <FileText aria-hidden="true" size={15} />
-        {isImporting ? "Ukládám..." : "Uložit přepis"}
+        {isImporting ? "Ukládám…" : "Uložit přepis"}
       </button>
       {importState ? (
         <p

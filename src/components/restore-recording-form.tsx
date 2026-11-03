@@ -2,7 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useRef, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { Undo2 } from "lucide-react";
 import { markNearestOptimisticDeleteTarget, restoreOptimisticDeleteTarget } from "@/components/optimistic-delete";
 import type { TrashRecordingAction } from "@/components/purge-recording-form";
 import { restoreRecordingAction } from "@/lib/recordings/actions";
@@ -63,8 +63,8 @@ export function RestoreRecordingForm({
           <input defaultValue={value} key={name} name={name} type="hidden" />
         ))}
         <button className="trash-action" disabled={isRestoring} type="submit">
-          <RotateCcw size={15} />
-          <span>{isRestoring ? "Obnovuji..." : "Obnovit"}</span>
+          <Undo2 size={15} />
+          <span>{isRestoring ? "Obnovuji…" : "Obnovit"}</span>
         </button>
       </form>
       {restoreError ? <p className="trash-action-error" role="alert">{restoreError}</p> : null}

@@ -49,6 +49,8 @@ Automatické AI používá výhradně serverový šestitypový resolver čerstv�
 
 - Primární UI je pracovní aplikace, ne landing page.
 - Při změnách UI čti `DESIGN.md` a `docs/requirements/ui-direction.md`.
+- Typografie, ikony, radius a barvy berou jen tokeny z `app/styles/base.css` (pět velikostí `--text-*`, tři `--weight-*`, tři `--leading-*`, `--icon-*`, `--radius-*`); legacy aliasy a hardcoded barvy se nevracejí. Nová tlačítka používají `.ui-button` / `.ui-segmented`.
+- Každá změna viditelná uživateli aktualizuje Dokumentaci v aplikaci a Novinky (`src/lib/whats-new/entries.ts`), psané pro uživatele bez technického žargonu.
 - Login je interní vstup do aplikace, ne veřejná registrační stránka.
 - Pracovní plocha nesmí jako výchozí stav prezentovat fake meeting/transcript data; pokud funkce ještě není hotová, ukaž reálný prázdný nebo čekající stav.
 - Mobil a desktop jsou stejně důležité.

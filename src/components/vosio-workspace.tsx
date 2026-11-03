@@ -70,6 +70,7 @@ type VosioWorkspaceProps = {
   initialTranscriptTabFromCookie?: boolean;
   initialTranscriptTabFromUrl?: boolean;
   installationStatus?: InstallationStatus;
+  mcpResourceUrl?: string | null;
   navigationHrefOverrides?: NavigationHrefOverrides;
   newRecordingCaptureSlots?: NewRecordingCaptureSlots;
   newRecordingUploadRedirectAfterSuccess?: "detail" | "list" | "stay";
@@ -156,6 +157,7 @@ export function VosioWorkspace({
   initialTranscriptTabFromCookie = false,
   initialTranscriptTabFromUrl = false,
   installationStatus,
+  mcpResourceUrl = null,
   navigationHrefOverrides,
   newRecordingCaptureSlots,
   newRecordingUploadRedirectAfterSuccess,
@@ -270,7 +272,7 @@ export function VosioWorkspace({
               />
             ) : view === "team" && teamWorkspace ? (
               <TeamManager initialWorkspace={teamWorkspace} />
-            ) : view === "ai" || view === "templates" || view === "documentation" || view === "trash" || view === "settings" ? (
+            ) : view === "ai" || view === "templates" || view === "documentation" || view === "whats-new" || view === "trash" || view === "settings" ? (
               <UtilityWorkspaceView
                 aiArchiveActionAlert={aiArchiveActionAlert}
                 aiArchiveBaseHref={aiArchiveBaseHref}
@@ -281,6 +283,7 @@ export function VosioWorkspace({
                 deletedRecordings={deletedRecordingViews}
                 disableAccountSecurity={disableAccountSecurity}
                 installationStatus={installationStatus}
+                mcpResourceUrl={mcpResourceUrl}
                 promptTemplates={promptTemplates}
                 promptTemplateActions={promptTemplateActions}
                 promptTemplateBaseHref={promptTemplateBaseHref}

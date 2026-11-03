@@ -41,6 +41,15 @@ const maliciousNextPaths = [
 ];
 
 describe("getSafeNextPath", () => {
+  it("allows the Novinky route and its sub-paths but not look-alikes or foreign targets", () => {
+    expect(getSafeNextPath("/whats-new")).toBe("/whats-new");
+    expect(getSafeNextPath("/whats-new/")).toBe("/whats-new/");
+    expect(getSafeNextPath("/whats-new?x=1#a")).toBe("/whats-new?x=1#a");
+    expect(getSafeNextPath("/whats-newx")).toBe("/");
+    expect(getSafeNextPath("//evil.example")).toBe("/");
+    expect(getSafeNextPath("https://evil.example/whats-new")).toBe("/");
+  });
+
   it("keeps ordinary same-app paths including query strings and fragments", () => {
     expect(getSafeNextPath("/recordings/123?tab=ai")).toBe("/recordings/123?tab=ai");
     expect(getSafeNextPath("/recordings/123?tab=ai#details")).toBe(

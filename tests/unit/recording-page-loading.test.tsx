@@ -4,6 +4,7 @@ import RecordingDetailPage from "../../app/recordings/[recordingId]/page";
 
 const mocks = vi.hoisted(() => ({
   capabilities: vi.fn(),
+  capabilitiesBatch: vi.fn(),
   countStatuses: vi.fn(),
   createClient: vi.fn(),
   getRecording: vi.fn(),
@@ -12,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   listRecordings: vi.fn(),
   listTranscripts: vi.fn(),
   organization: vi.fn(),
-  search: vi.fn()
+  search: vi.fn(),
+  teamRole: vi.fn()
 }));
 
 vi.mock("next/navigation", () => ({
@@ -21,7 +23,11 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
-vi.mock("@/lib/recording-sharing/resolve-capabilities", () => ({ resolveRecordingCapabilities: mocks.capabilities }));
+vi.mock("@/lib/recording-sharing/resolve-capabilities", () => ({
+  resolveRecordingCapabilities: mocks.capabilities,
+  resolveRecordingCapabilitiesBatch: mocks.capabilitiesBatch
+}));
+vi.mock("@/lib/team/queries.server", () => ({ resolveTeamRole: mocks.teamRole }));
 vi.mock("@/lib/recordings/queries", () => ({
   getRecordingById: mocks.getRecording,
   listRecordings: mocks.listRecordings,
@@ -61,6 +67,8 @@ beforeEach(() => {
     from: () => threadQuery
   });
   mocks.capabilities.mockResolvedValue(capabilities);
+  mocks.capabilitiesBatch.mockResolvedValue(new Map([["recording-1", capabilities]]));
+  mocks.teamRole.mockResolvedValue(null);
   mocks.countStatuses.mockResolvedValue({ deleted: 0 });
   mocks.listOptions.mockResolvedValue(options);
   mocks.listRecordings.mockResolvedValue([{ id: "recording-1" }]);
@@ -76,13 +84,13 @@ describe("recording page read scheduling", () => {
     const pendingOptions = deferred<typeof options>();
     const pendingCapabilities = deferred<typeof capabilities>();
     mocks.listOptions.mockReturnValue(pendingOptions.promise);
-    mocks.capabilities.mockReturnValue(pendingCapabilities.promise);
+    mocks.capabilitiesBatch.mockReturnValue(pendingCapabilities.promise.then((value) => new Map([["recording-1", value]])));
     let rendered = false;
     const page = RecordingsPage({ searchParams: Promise.resolve(search ? { q: "call" } : {}) })
       .then((element) => { rendered = true; return element; });
 
     try {
-      await vi.waitFor(() => expect(mocks.capabilities).toHaveBeenCalledWith(expect.anything(), "recording-1"));
+      await vi.waitFor(() => expect(mocks.capabilitiesBatch).toHaveBeenCalledWith(expect.anything(), ["recording-1"]));
       pendingOptions.resolve(options);
       await Promise.resolve();
       expect(rendered).toBe(false);
@@ -90,10 +98,53 @@ describe("recording page read scheduling", () => {
       const element = await page;
       const rows = search ? element.props.recordingSearchPage.results : element.props.recordings;
       expect(rows[0].capabilities).toBe(capabilities);
-      expect(mocks.capabilities).toHaveBeenCalledOnce();
+      expect(mocks.capabilitiesBatch).toHaveBeenCalledOnce();
     } finally {
       pendingOptions.resolve(options);
       pendingCapabilities.resolve(capabilities);
+      await page;
+    }
+  });
+
+  it.each([false, true])("starts the team role lookup beside pending list reads and keeps its result (search=%s)", async (search) => {
+    const pendingOptions = deferred<typeof options>();
+    mocks.listOptions.mockReturnValue(pendingOptions.promise);
+    mocks.teamRole.mockResolvedValue("installation_admin");
+    const page = RecordingsPage({ searchParams: Promise.resolve(search ? { q: "call" } : {}) });
+    try {
+      await vi.waitFor(() => expect(mocks.teamRole).toHaveBeenCalledOnce());
+      pendingOptions.resolve(options);
+      expect((await page).props.canManageTeam).toBe(true);
+    } finally {
+      pendingOptions.resolve(options);
+      await page;
+    }
+  });
+
+  it("shows no team management when the role lookup resolves to null", async () => {
+    const element = await RecordingsPage({ searchParams: Promise.resolve({}) });
+    expect(element.props.canManageTeam).toBe(false);
+  });
+
+  it("still fails the list page when a list read fails", async () => {
+    mocks.listRecordings.mockRejectedValue(new Error("db down"));
+    await expect(RecordingsPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("db down");
+  });
+
+  it("starts the detail team role lookup only after authz, in parallel with content reads", async () => {
+    const pendingTranscript = deferred<never[]>();
+    mocks.listTranscripts.mockReturnValue(pendingTranscript.promise);
+    mocks.teamRole.mockResolvedValue("founder");
+    const page = RecordingDetailPage({
+      params: Promise.resolve({ recordingId: "recording-1" }), searchParams: Promise.resolve({})
+    });
+    try {
+      await vi.waitFor(() => expect(mocks.teamRole).toHaveBeenCalledOnce());
+      expect(mocks.listTranscripts).toHaveBeenCalled();
+      pendingTranscript.resolve([]);
+      expect((await page).props.canManageTeam).toBe(true);
+    } finally {
+      pendingTranscript.resolve([]);
       await page;
     }
   });
@@ -121,7 +172,7 @@ describe("recording page read scheduling", () => {
     await expect(RecordingDetailPage({
       params: Promise.resolve({ recordingId: "recording-1" }), searchParams: Promise.resolve({})
     })).rejects.toThrow("not-found");
-    for (const read of [mocks.getRecording, mocks.listMarkers, mocks.listTranscripts, mocks.listOptions, mocks.organization]) {
+    for (const read of [mocks.getRecording, mocks.listMarkers, mocks.listTranscripts, mocks.listOptions, mocks.organization, mocks.teamRole]) {
       expect(read).not.toHaveBeenCalled();
     }
   });

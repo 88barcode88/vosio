@@ -14,7 +14,7 @@ const errors = { recordings: RecordingsError, ai: AiError, settings: SettingsErr
   templates: TemplatesError, trash: TrashError, documentation: DocumentationError };
 
 // WorkspaceErrorFixture exercises actual route recovery controls without database or provider calls.
-export function WorkspaceErrorFixture({ view }: { view: Exclude<WorkspaceView, "team"> }) {
+export function WorkspaceErrorFixture({ view }: { view: Exclude<WorkspaceView, "team" | "whats-new"> }) {
   const [phase, setPhase] = useState("error");
   const ErrorView = errors[view];
   if (phase === "error") return <ErrorView error={new Error("synthetic route failure")} reset={() => {

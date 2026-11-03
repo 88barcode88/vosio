@@ -323,7 +323,7 @@ describe("live recording local recovery", () => {
     let finish!: (response: Response) => void;
     vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     await act(async () => action("Dokončit s uloženým přepisem")?.click());
-    expect(action("Dokončuji...")?.closest("fieldset")?.disabled).toBe(true);
+    expect(action("Dokončuji…")?.closest("fieldset")?.disabled).toBe(true);
     expect(action("Obnovit")?.closest("fieldset")?.disabled).toBe(true);
     expect(action("Přesunout nahrávku do Koše")?.closest("fieldset")?.disabled).toBe(true);
     expect(action("Odstranit místní kopii")?.closest("fieldset")?.disabled).toBe(true);

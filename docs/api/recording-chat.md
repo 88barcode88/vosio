@@ -42,7 +42,7 @@ Neplatná identita/payload vrací `400`, nepřihlášený user `401`, cizí nebo
 
 Chat je v tabulkách `transcript_chat_threads` a `transcript_chat_turns`. Kompozitní foreign keys vážou thread a turn na stejný `user_id`, `recording_id` a `transcript_id`; smazání nebo nahrazení přepisu proto smaže i starý chat. Authenticated user má přes forced RLS pouze `SELECT` svých řádků. Pro `authenticated` nejsou granty ani policies pro create, update nebo delete; tyto mutace provádí pouze autorizovaný server přes `service_role` po owner kontrole.
 
-Provider vrací nejvýše osm krátkých citací, nikoli autoritativní čas nebo speaker ID. Server každou citaci hledá proti plným uloženým Soniox tokenům. Pouze jedinečný exact contiguous match uloží quote i `start_ms`/`end_ms`; nejednoznačná, nenalezená nebo duplicitní citace se nezobrazí jako důkaz. Kliknutí na uložený důkaz vede do existující navigace přepisu a, když je k dispozici jedno audio, i na odpovídající čas přehrávače.
+Provider vrací nejvýše osm krátkých citací, nikoli autoritativní čas nebo speaker ID. Server každou citaci hledá proti plným uloženým Soniox tokenům, které před porovnáním složí do textu tak, jak ho vidí model a UI (token bez úvodní mezery pokračuje předchozí slovo; změna mluvčího je hranice slova). Pouze jedinečný exact contiguous celoslovní match uloží quote i `start_ms`/`end_ms`; nejednoznačná, nenalezená nebo duplicitní citace se nezobrazí jako důkaz. Kliknutí na uložený důkaz vede do existující navigace přepisu a, když je k dispozici jedno audio, i na odpovídající čas přehrávače.
 
 ## Source migrace a self-host provoz
 

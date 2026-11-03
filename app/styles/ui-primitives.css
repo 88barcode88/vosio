@@ -6,7 +6,7 @@
 .ui-panel {
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--panel);
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 
@@ -17,9 +17,9 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 3px 8px;
-  font-size: 0.75rem;
-  font-weight: 650;
-  line-height: 1.2;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
 }
 
 .ui-status-neutral {
@@ -58,7 +58,7 @@
   border: 1px solid var(--border);
   border-radius: 9px;
   color: var(--text);
-  background: var(--panel);
+  background: var(--surface);
   padding: 0 12px;
   transition: color 150ms ease-out, background-color 150ms ease-out, border-color 150ms ease-out;
 }
@@ -162,7 +162,7 @@
 }
 
 .ui-empty-state strong {
-  font-size: 0.9375rem;
+  font-size: var(--text-md);
 }
 
 .ui-empty-state p {
@@ -172,6 +172,101 @@
 
 .ui-empty-state-action {
   margin-top: 4px;
+}
+
+/* Reference compact action: 12px medium label, 15px icon, surface painted on ::before (same technique as the global action whitelist).
+   The Správa přístupu alias styles buttons of a component that is edited elsewhere without touching its markup. */
+.ui-button,
+section[aria-label="Správa přístupu"] :is(li, p) > button,
+.ui-segmented > button {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: var(--control-hit-size);
+  min-height: var(--control-hit-size);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  padding: 0 9px;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-ui);
+  cursor: pointer;
+  touch-action: manipulation;
+  --compact-action-background: var(--surface);
+  --compact-action-border: var(--border);
+}
+
+.ui-button::before,
+section[aria-label="Správa přístupu"] :is(li, p) > button::before,
+.ui-segmented > button::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: var(--control-surface-inset) 0;
+  border: 1px solid var(--compact-action-border);
+  border-radius: var(--radius-sm);
+  background: var(--compact-action-background);
+}
+
+.ui-button > svg,
+section[aria-label="Správa přístupu"] :is(li, p) > button > svg,
+.ui-segmented > button > svg {
+  flex: 0 0 var(--control-icon-size);
+  width: var(--control-icon-size);
+  height: var(--control-icon-size);
+}
+
+.ui-button:hover:not(:disabled):not([aria-disabled="true"])::before,
+section[aria-label="Správa přístupu"] :is(li, p) > button:hover:not(:disabled)::before,
+.ui-segmented > button:hover:not(:disabled)::before {
+  filter: brightness(0.94);
+}
+
+.ui-button:focus-visible,
+section[aria-label="Správa přístupu"] :is(li, p) > button:focus-visible,
+.ui-segmented > button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ui-button:disabled,
+section[aria-label="Správa přístupu"] :is(li, p) > button:disabled,
+.ui-segmented > button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+:root .ui-button.ui-button--primary {
+  color: var(--accent-text);
+  --compact-action-background: var(--accent);
+  --compact-action-border: var(--accent);
+}
+
+:root .ui-button.ui-button--danger {
+  color: var(--danger);
+}
+
+:root .ui-button.ui-button--icon {
+  padding: 0;
+}
+
+.ui-segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ui-segmented > button[aria-pressed="true"] {
+  font-weight: var(--weight-semibold);
+  --compact-action-background: var(--surface-muted);
+  --compact-action-border: var(--text-secondary);
 }
 
 .ui-icon-action,
