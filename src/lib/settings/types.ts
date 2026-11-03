@@ -5,7 +5,8 @@ import {
   aiReasoningEfforts,
   DEFAULT_AI_MODEL_ID,
   normalizeAiModelId,
-  sonioxRealtimeModelIds
+  sonioxRealtimeModelIds,
+  legacySonioxRealtimeModelIds
 } from "@/lib/model-options";
 import { sonioxRealtimeLanguageIds } from "@/lib/soniox/languages";
 import { sonioxRegionSchema } from "@/lib/soniox/region";
@@ -32,7 +33,7 @@ export const supabaseStoragePlans = ["auto", "free", "paid"] as const;
 export const trashRetentionHours = [24, 168, 720] as const;
 
 const sonioxRealtimeModelSchema = z.preprocess(
-  (value) => value === "stt-rt-v4" ? "stt-rt-v5" : value,
+  (value) => typeof value === "string" && legacySonioxRealtimeModelIds.includes(value) ? sonioxRealtimeModelIds[0] : value,
   z.enum(sonioxRealtimeModelIds)
 );
 
@@ -52,7 +53,7 @@ export const defaultUserSettings = {
   outputLanguage: "call_language",
   sonioxRegion: "global",
   sonioxRealtimeLanguage: "auto",
-  sonioxRealtimeModel: "stt-rt-v5",
+  sonioxRealtimeModel: "stt-rt-v6",
   supabaseStoragePlan: "auto",
   trashRetentionHours: 720
 } satisfies UserSettings;

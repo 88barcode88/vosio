@@ -33,9 +33,10 @@ export function getAiOutputSummary(output: AiOutputView) {
   const preview = getAiOutputPreview(output)
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^\s*>\s?/gm, "")
-    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
+    .replace(/^\s*(?:[-*+]\s+|\d+\.\s+(?![\s\p{Ll}]))/gmu, "")
     .replace(/\[[ xX]\]\s*/g, "")
-    .replace(/\*+|__|`/g, "")
+    .replace(/\*\*|`/g, "")
+    .replace(/(?<![\p{L}\p{N}*_])[*_]+|[*_]+(?![\p{L}\p{N}*_])/gu, "")
     .replace(/\s+/g, " ")
     .trim();
 

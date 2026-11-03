@@ -180,14 +180,28 @@ export const openAiModelOptions = aiModelOptions.filter((option) => option.provi
 
 export const sonioxRealtimeModelOptions = [
   {
-    description: "Aktuální Soniox realtime STT model pro živé titulky, nízkou latenci a diarizaci mluvčích.",
-    id: "stt-rt-v5",
-    label: "Soniox realtime v5",
+    description: "Nejnovější Soniox realtime STT model pro živé titulky, nízkou latenci a rozpoznání mluvčích.",
+    id: "stt-rt-v6",
+    label: "Soniox realtime v6",
     price: "Soniox účtuje STT zvlášť podle jejich aktuálního API ceníku."
   }
 ] as const;
 
-export const sonioxRealtimeModelIds = ["stt-rt-v5"] as const;
+export const sonioxRealtimeModelIds = ["stt-rt-v6"] as const;
+
+// Older realtime models that saved settings may still name; Soniox retires v5 on 15.12.2026, so they move to v6.
+export const legacySonioxRealtimeModelIds: readonly string[] = ["stt-rt-v4", "stt-rt-v5"];
+
+// Reviewed async models the transcription worker may send to Soniox. The first one is the default for new work;
+// v5 stays accepted only so work frozen before the switch can finish. Each one also needs an active row in
+// public.recording_transcription_models_v1, so adding a model is always a code change plus a migration.
+export const sonioxAsyncModelIds = ["stt-async-v6", "stt-async-v5"] as const;
+export const DEFAULT_SONIOX_ASYNC_MODEL = sonioxAsyncModelIds[0];
+
+// isApprovedSonioxAsyncModel tells whether a model name is on the reviewed async allowlist above.
+export function isApprovedSonioxAsyncModel(model: string): model is (typeof sonioxAsyncModelIds)[number] {
+  return (sonioxAsyncModelIds as readonly string[]).includes(model);
+}
 
 const legacyAiModelAliases: Readonly<Record<string, (typeof aiModelIds)[number]>> = {
   "gemini-3.1-flash-lite": DEFAULT_GEMINI_MODEL_ID,

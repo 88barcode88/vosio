@@ -374,7 +374,7 @@ describe("settings workspace layout", () => {
       const draft = {
         defaultOpenaiModel: "gpt-6-astra",
         sonioxRealtimeLanguage: "de",
-        sonioxRealtimeModel: "stt-rt-v5",
+        sonioxRealtimeModel: "stt-rt-v6",
         sonioxRegion: "eu",
         liveAudioQuality: "high",
         supabaseStoragePlan: "paid"

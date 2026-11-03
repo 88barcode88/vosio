@@ -98,7 +98,7 @@ test("stored settings save with pending, safe failure drafts and a no-JS EU warn
   const failedDraft = {
     defaultOpenaiModel: "gpt-6-astra",
     sonioxRealtimeLanguage: "de",
-    sonioxRealtimeModel: "stt-rt-v5",
+    sonioxRealtimeModel: "stt-rt-v6",
     sonioxRegion: "eu",
     supabaseStoragePlan: "paid"
   };
@@ -142,7 +142,7 @@ test("stored settings save with pending, safe failure drafts and a no-JS EU warn
   await expect(page.getByLabel("Region Soniox")).toHaveValue("global");
   await expect(page.locator('select[name="defaultOpenaiModel"]')).toHaveValue("gpt-6.1-sol");
   await expect(page.locator('select[name="sonioxRealtimeLanguage"]')).toHaveValue("auto");
-  await expect(page.locator('select[name="sonioxRealtimeModel"]')).toHaveValue("stt-rt-v5");
+  await expect(page.locator('select[name="sonioxRealtimeModel"]')).toHaveValue("stt-rt-v6");
   await expect(page.locator('select[name="supabaseStoragePlan"]')).toHaveValue("free");
   await expect(page.locator(".settings-alert-error")).toHaveCount(0);
   expect(failures.filter((failure) => /hydration|#418/iu.test(failure))).toEqual([]);

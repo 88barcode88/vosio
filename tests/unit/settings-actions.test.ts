@@ -33,7 +33,7 @@ function createCompleteSettingsForm(region: "eu" | "global") {
   formData.set("outputLanguage", "cs");
   formData.set("sonioxRegion", region);
   formData.set("sonioxRealtimeLanguage", "de");
-  formData.set("sonioxRealtimeModel", "stt-rt-v5");
+  formData.set("sonioxRealtimeModel", "stt-rt-v6");
   formData.set("liveAudioQuality", "high");
   formData.set("supabaseStoragePlan", "paid");
   formData.set("trashRetentionHours", "168");
@@ -77,7 +77,7 @@ describe("settings form", () => {
     formData.set("outputLanguage", "cs");
     formData.set("sonioxRegion", "eu");
     formData.set("sonioxRealtimeLanguage", "de");
-    formData.set("sonioxRealtimeModel", "stt-rt-v5");
+    formData.set("sonioxRealtimeModel", "stt-rt-v6");
     formData.set("liveAudioQuality", "high");
     formData.set("supabaseStoragePlan", "paid");
     formData.set("trashRetentionHours", "168");
@@ -100,7 +100,7 @@ describe("settings form", () => {
           outputLanguage: "cs",
           sonioxRegion: "eu",
           sonioxRealtimeLanguage: "de",
-          sonioxRealtimeModel: "stt-rt-v5",
+          sonioxRealtimeModel: "stt-rt-v6",
           liveAudioQuality: "high",
           supabaseStoragePlan: "paid",
           trashRetentionHours: 168

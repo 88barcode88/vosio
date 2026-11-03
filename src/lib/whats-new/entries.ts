@@ -85,7 +85,7 @@ export const whatsNewReleases: readonly WhatsNewRelease[] = [
         id: "audio-download",
         kind: "new",
         title: "Stažení audia",
-        summary: "Na záložce Soubory v detailu nahrávky stáhnete původní audio tlačítkem Stáhnout audio.",
+        summary: "Na záložce Soubory v detailu nahrávky stáhnete původní audio tlačítkem Stáhnout audio. Soubor se uloží pod názvem nahrávky.",
         detail: "Audio uložené po částech zatím jako jeden soubor stáhnout nejde, přehrajete ho ale v přehrávači.",
         href: "/recordings"
       },
@@ -94,6 +94,27 @@ export const whatsNewReleases: readonly WhatsNewRelease[] = [
         kind: "improved",
         title: "Úhlednější záložky v detailu",
         summary: "Jména a role mluvčích jsou zarovnané s poli, časová osa má víc místa u časů a mluvčích, tlačítka u uložených AI výstupů jsou pohromadě a načítání se ukáže na jednom řádku."
+      },
+      {
+        id: "recordings-sort-columns",
+        kind: "new",
+        title: "Řazení a přehlednější seznam nahrávek",
+        summary: "Seznam nahrávek seřadíte podle klienta, od nejnovějších, od nejstarších, podle názvu nebo délky. Název, datum, typ, délka, klient, projekt a stav mají každý svůj sloupec, takže řádky jsou nižší.",
+        href: "/recordings"
+      },
+      {
+        id: "soniox-v6",
+        kind: "improved",
+        title: "Přesnější přepis",
+        summary: "Přepis souborů i živé nahrávání používá nejnovější model Soniox v6 s vyšší přesností a lepším rozpoznáním mluvčích. Uložené nastavení živého přepisu se převede samo.",
+        href: "/settings"
+      },
+      {
+        id: "project-sharing-hint",
+        kind: "improved",
+        title: "Srozumitelnější sdílení s projektem",
+        summary: "Volba se jmenuje Členové projektu. Dokud nahrávka nemá projekt, okno vysvětlí, že ji nejdřív přiřadíte k projektu v Zařazení.",
+        href: "/recordings"
       },
       {
         id: "consistent-look",

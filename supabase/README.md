@@ -16,7 +16,7 @@ The public source includes project sharing/capture/recovery, model/checklist for
 
 ## Fresh Project
 
-A new empty project must apply all 41 migrations in timestamp order:
+A new empty project must apply all 50 migrations in timestamp order:
 
 1. `20260617000000_initial_schema.sql`
 2. `20260804100000_add_evidence_locations.sql`
@@ -59,8 +59,20 @@ A new empty project must apply all 41 migrations in timestamp order:
 39. `20261006122518_add_transcription_recovery.sql`
 40. `20261006140000_add_transcription_recovery_read.sql`
 41. `20261007100000_vosio_mcp_dynamic_registration.sql`
+42. `20261022104326_team_access_management.sql`
+43. `20261022104521_team_scope_invitations.sql`
+44. `20261022105524_team_exact_project_invitations.sql`
+45. `20261026160001_team_scope_picker_batch.sql`
+46. `20261027074514_shared_recording_organization.sql`
+47. `20261027122647_organization_confirmation_conflict.sql`
+48. `20261103120000_db_performance_authz_paths.sql`
+49. `20261103120100_access_list_member_email.sql`
+50. `20261103140000_checklist_delete_all_items.sql`
+51. `20261103200000_soniox_async_v6.sql`
 
 The baseline alone is not the current schema. Preserve existing migration bytes and apply the complete ordered chain.
+
+**Upgrade order:** apply every new migration before you deploy the matching web version. The app may call new RPCs right away (for example the whole-checklist delete calls the `_v2` functions from `20261103140000_checklist_delete_all_items.sql`); an automatic deploy from `main` does not wait for the database. Before that checklist migration, run a read-only check that every `transcript_decisions` and `transcript_risks` row matches its `ai_outputs` row (same transcript, job and user), see [checklist delete](../docs/api/checklist-delete.md).
 
 Apply the chain with the Supabase CLI:
 

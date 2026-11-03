@@ -70,7 +70,8 @@ Vosio expects the required variables below. `GEMINI_API_KEY` and `MISTRAL_API_KE
 `SONIOX_ASYNC_MODEL`
 
 - Optional async transcription model.
-- Defaults to `stt-async-v5`.
+- Defaults to `stt-async-v6`. Accepted values are only the reviewed list `sonioxAsyncModelIds` in `src/lib/model-options.ts` (`stt-async-v6`, `stt-async-v5`); any other value stops transcription with "configuration requires review".
+- Each accepted model also needs an active row in `public.recording_transcription_models_v1` (`stt-async-v6` is added by `20261103200000_soniox_async_v6.sql`). Apply that migration before the web release.
 
 `OPENAI_API_KEY`
 
@@ -113,8 +114,8 @@ The official `@soniox/client` 2.3.0 still sends the key in the first message. Vo
 
 - Not needed as a Vercel runtime variable.
 - Realtime STT model is a safe user preference in `/settings`.
-- Current default is `stt-rt-v5`.
-- Soniox async transcription remains on the current `stt-async-v5` model.
+- Current and only selectable model is `stt-rt-v6`; saved `stt-rt-v4`/`stt-rt-v5` preferences are normalized to it.
+- Soniox has no "latest" alias and new models are not picked up automatically: a new model is a reviewed code change (and, for async, a migration).
 
 `sonioxRealtimeLanguage` (app-managed preference)
 
