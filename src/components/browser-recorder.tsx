@@ -242,7 +242,7 @@ export function BrowserRecorder({
   onCompletionChange,
   realtimeLanguage = "auto",
   redirectAfterSave,
-  realtimeModel = "stt-rt-v5"
+  realtimeModel = "stt-rt-v6"
 }: BrowserRecorderProps) {
   assertDevelopmentRecordingFactoryAllowed(developmentRecordingFactory);
   const router = useRouter();

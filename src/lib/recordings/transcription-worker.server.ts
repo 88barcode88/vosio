@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { getServerEnv } from "@/lib/env.server";
+import { isApprovedSonioxAsyncModel } from "@/lib/model-options";
 import { createSonioxTranscription, getSonioxTranscription, getSonioxTranscript } from "@/lib/soniox/client";
 import { extractTranscriptSpeakerSummaries } from "@/lib/transcripts/speakers";
 import { indexCapturedTranscript } from "@/lib/transcripts/capture-index.server";
@@ -20,7 +21,7 @@ const observedSchema = z.object({ id: providerId, status: z.enum(["queued", "pro
 // Reject an unreviewed environment model before allocating or claiming any new provider work.
 export function assertTranscriptionModel() {
   const model = getServerEnv().sonioxAsyncModel;
-  if (model !== "stt-async-v5") throw new Error("Transcription model configuration requires review");
+  if (!isApprovedSonioxAsyncModel(model)) throw new Error("Transcription model configuration requires review");
   return model;
 }
 
@@ -50,7 +51,9 @@ function offsetToken(token: unknown, offset: number) {
 // Execute one claimed unit; no branch can automatically repeat a provider POST.
 export async function executeTranscriptionWork(admin: SupabaseClient, raw: unknown) {
   const work = workSchema.parse(raw);
-  if (work.model !== assertTranscriptionModel()) throw new Error("Frozen transcription model mismatch");
+  // Work keeps the model frozen when it was prepared, so jobs started before a model switch still finish.
+  assertTranscriptionModel();
+  if (!isApprovedSonioxAsyncModel(work.model)) throw new Error("Frozen transcription model mismatch");
   const exact = { p_operation_id: work.operation_id, p_job_id: work.job_id, p_claim_id: work.claim_id };
   if (work.work_kind === "submit") {
     if (!work.job_id || !work.storage_path || work.client_reference_id !== work.job_id || work.provider_job_id !== null) throw new Error("Invalid submission claim");

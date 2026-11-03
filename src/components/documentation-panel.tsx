@@ -31,7 +31,8 @@ const documentationSections: DocumentationSection[] = [
   {
     body: [
       "Nahrávky jsou inbox všech uložených callů. Řádek se otevírá kliknutím, název jde upravit samostatně a smazání nejdřív přesune položku do Koše.",
-      "U každé položky je vidět stav, zdroj, velikost a datum. Cílem je rychle najít správný call a přejít do detailu bez zbytečných tlačítek navíc.",
+      "Seznam má samostatné sloupce Název, Datum, Typ, Délka, Klient, Projekt a Stav. Na užším okně se Typ a Klient schovají, na telefonu se datum a typ ukážou pod názvem.",
+      "Vedle počtů podle stavu zvolíte řazení: Podle klienta (výchozí, skupiny podle klienta), Nejnovější, Nejstarší, Název A–Z nebo Nejdelší. Řazení se pamatuje v adrese stránky spolu s filtry.",
       "Export, úprava názvu a zařazení nahrávky se rozbalují přímo v detailu. Přehrávač začíná jako malý řádek s přehráváním a rozbalením. Rozbalení ukáže posun v audiu; sbalení ani přepnutí záložky přehrávání nepřeruší. Na mobilu zůstává přehrávač nahoře v detailu a nezakrývá spodní navigaci.",
       "Vyhledávání na stránce Nahrávky umí prohledat názvy i uložené přepisy. Fulltext vrátí konkrétní úryvek a po otevření přejde na odpovídající místo v přepisu.",
       "V nabídce nahrávky otevřete Název a zařazení. Název a zařazení mají vlastní tlačítka Uložit; uložení jedné části neuloží druhou. Klient a Projekt se v seznamu zobrazují odděleně."
@@ -42,7 +43,7 @@ const documentationSections: DocumentationSection[] = [
   },
   {
     body: [
-      "Přepis vzniká ze Soniox jobu. U uploadu se používá async přepis, u live režimu realtime WebSocket. Detail nahrávky umí kontrolovat dokončení jobu a u rozpracovaného přepisu průběžně polluje stav v otevřeném prohlížeči.",
+      "Přepis vzniká ze Soniox jobu. U uploadu se používá async přepis (model Soniox v6), u live režimu realtime WebSocket s modelem zvoleným v Nastavení (výchozí Soniox realtime v6). Detail nahrávky umí kontrolovat dokončení jobu a u rozpracovaného přepisu průběžně polluje stav v otevřeném prohlížeči.",
       "Pokud Soniox vrátí diarizaci, Vosio zobrazí přepis jako řádkovanou tabulku se sloupci čas, mluvčí a text. U mluvčích lze ručně doplnit jméno a roli Klient / Dodavatel / Nepřiřazeno; tyto údaje se uloží k transcriptu a AI je používá jako kontext."
     ],
     id: "prepis",
@@ -82,6 +83,7 @@ const documentationSections: DocumentationSection[] = [
     body: [
       "Tým najdete v hlavní navigaci, na mobilu pod Více. Je dostupný správci instalace a zakladateli projektu. Zakladatel spravuje lidi a pozvánky svých projektů; role správce sama nezpřístupňuje obsah cizích nahrávek.",
       "Vyberte člověka a přidělte mu přístup k nahrávce, projektu, klientovi nebo složce. Nového člověka pozvěte e-mailem. Čekající pozvánka ještě neuděluje přístup.",
+      "V Upravit a sdílení máte tři volby: Soukromá, Vybraní lidé a Členové projektu. Členové projektu dostanou nahrávku včetně těch, kdo do projektu přibudou později. Volba je dostupná až po přiřazení nahrávky k projektu v části Zařazení.",
       "Sdílení klienta nebo složky zahrnuje současné i budoucí nesoukromé nahrávky v uvedeném rozsahu. Soukromé nahrávky se vždy vynechají. Při odebrání potvrzujete jednu cestu přístupu; další platné přístupy zůstávají v detailu viditelné."
     ],
     id: "tym",

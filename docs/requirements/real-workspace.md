@@ -26,7 +26,7 @@ When the user starts transcription:
 1. The app calls `POST /api/recordings/{recordingId}/transcription`.
 2. The server verifies ownership through Supabase Auth and RLS.
 3. The server creates a short-lived signed URL for the private Storage object.
-4. The server creates a Soniox async transcription job with model `stt-async-v5`.
+4. The server creates a Soniox async transcription job with model `stt-async-v6` (the model frozen on the operation).
 5. The app stores the provider job and provider configuration in `transcription_jobs`.
 6. The recording moves to status `transcribing`.
 
@@ -191,7 +191,7 @@ The URL target never creates autoplay. With `single` audio it performs at most o
 
 The action-items prompt treats `decisions_to_confirm` as unresolved confirmations only. Already agreed choices belong to `decided_items`, tasks or risks so the UI can show them as agreed decisions instead of open confirmations. The prompt explicitly checks short mentions of Customer Portal, permissions, documents, email templates and process-stage decisions because these often create product follow-up items.
 
-Live recording uses the Soniox realtime model and default language stored in app settings. The current selectable realtime STT model is `stt-rt-v5`; the live language contract is documented above. No setting for warning after a number of recording minutes is part of the active recorder lifecycle.
+Live recording uses the Soniox realtime model and default language stored in app settings. The current selectable realtime STT model is `stt-rt-v6` (saved v4/v5 preferences move to it); the live language contract is documented above. No setting for warning after a number of recording minutes is part of the active recorder lifecycle.
 
 The settings screen shows a compact read-only usage summary for the current month. It counts AI processing jobs from `ai_processing_jobs`, sums stored input/output token counts, estimates AI cost from the stored model id and the app's local model price map, and counts recordings from `recordings`. Total recording duration and file size are displayed only from rows that have `duration_seconds` or `file_size_bytes`; missing metadata is shown as incomplete coverage, not inferred. Soniox cost is an approximate app-side estimate from completed Soniox STT jobs and known recording durations: async transcription uses roughly `$0.10/h`, realtime uses roughly `$0.12/h`. Jobs without known duration are excluded from the estimate and shown as incomplete coverage. Provider dashboards remain the source of truth for billing.
 

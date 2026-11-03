@@ -279,3 +279,30 @@
   .recordings-inbox .recordings-row:has(.recording-sharing-checkbox,.recording-sharing-checkbox-placeholder) { grid-template-columns:var(--control-hit-size) minmax(0,1fr) var(--control-hit-size); }
 }
 .capture-scope-picker label,.bulk-recording-sharing label { min-height:var(--control-hit-size); }
+
+/* Recordings list: title, date, type, duration, client, project and status each get their own column.
+   The .ui-panel selector outranks the older 4-column variable that pushed the fifth cell onto a second line. */
+.recordings-inbox.ui-panel {
+  --recordings-main-columns: minmax(180px, 1fr) 118px 96px 64px minmax(80px, 130px) minmax(80px, 140px) 112px;
+  --recordings-column-gap: 14px;
+}
+.recordings-inbox .recordings-row-compact-meta { display: none; }
+.recordings-inbox .recordings-row-cell { color: var(--text-secondary); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.recordings-list-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-width: 0; }
+.recordings-sort { display: inline-flex; align-items: center; gap: 6px; min-height: var(--control-hit-size); color: var(--text-secondary); font-size: var(--text-sm); }
+.recordings-sort select { min-height: 32px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--surface-raised); padding: 0 28px 0 10px; font: inherit; }
+.recordings-sort select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+@container recordings-inbox (max-width: 1080px) {
+  .recordings-inbox.ui-panel { --recordings-main-columns: minmax(160px, 1fr) 118px 64px minmax(80px, 130px) minmax(80px, 140px) 112px; }
+  .recordings-inbox .recordings-col-type { display: none; }
+}
+@container recordings-inbox (max-width: 880px) {
+  .recordings-inbox.ui-panel { --recordings-main-columns: minmax(150px, 1fr) 112px 60px minmax(80px, 140px) 108px; --recordings-column-gap: 10px; }
+  .recordings-inbox .recordings-col-client { display: none; }
+}
+@container recordings-inbox (max-width: 680px) {
+  .recordings-inbox .recordings-col-date { display: none; }
+  .recordings-inbox .recordings-col-client { display: inline; }
+  .recordings-inbox .recordings-row-compact-meta { display: inline; }
+}
+.recording-sharing-project-hint { margin: 6px 0 0; color: var(--text-muted); font-size: var(--text-xs); }

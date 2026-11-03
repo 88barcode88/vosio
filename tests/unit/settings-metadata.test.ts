@@ -134,7 +134,15 @@ describe("settings metadata", () => {
     });
 
     expect(settings.aiTemperature).toBe(0.3);
-    expect(settings.sonioxRealtimeModel).toBe("stt-rt-v5");
+    expect(settings.sonioxRealtimeModel).toBe("stt-rt-v6");
+  });
+
+  it("moves saved Soniox realtime v5 settings to v6 before v5 is retired", () => {
+    const settings = getUserSettingsFromMetadata({
+      [USER_SETTINGS_METADATA_KEY]: { sonioxRealtimeModel: "stt-rt-v5" }
+    });
+
+    expect(settings.sonioxRealtimeModel).toBe("stt-rt-v6");
   });
 
   it("migrates removed AI models to the new provider defaults", () => {

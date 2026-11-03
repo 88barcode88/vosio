@@ -85,7 +85,7 @@ describe("recording edit and sharing dialog", () => {
     expect(container.querySelector('[role="dialog"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Nejprve potvrďte změnu zařazení");
     expect(mocks.rpc).toHaveBeenLastCalledWith("list_project_capture_recipients_v1", { p_project_id: projectId });
-    await clickButton("Projekt"); await clickButton("Uložit sdílení");
+    await clickButton("Členové projektu"); await clickButton("Uložit sdílení");
     expect(mocks.share.mock.calls[0][1]).toMatchObject({ projectId, visibility: "project" });
     expect(container.querySelector('[role="dialog"]')).not.toBeNull();
     await clickButton("Pozvat do projektu");
