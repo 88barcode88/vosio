@@ -34,7 +34,7 @@ export function ThemeToggle({ compact = false }: ThemeToggleProps) {
       onClick={toggleTheme}
       type="button"
     >
-      {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+      {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
       {compact ? null : <span>{theme === "dark" ? "Světlý" : "Tmavý"}</span>}
     </button>
   );

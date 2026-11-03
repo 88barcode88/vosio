@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Link2, RotateCcw, Sparkles, Square } from "lucide-react";
+import { ChevronDown, Link2, RotateCw, Sparkles, Square } from "lucide-react";
 import { CompactPopover } from "@/components/ui/compact-popover";
 import { createClient } from "@/lib/supabase/browser";
 import { getCaptureState } from "@/lib/recordings/capture";
@@ -82,7 +82,7 @@ function getTranscriptionMessage(
   const status = payload?.job?.status;
 
   if (status === "done" || payload?.transcript) {
-    return "Přepis je hotový. Načítám uložený transcript.";
+    return "Přepis je hotový. Načítám uložený přepis.";
   }
 
   if (status === "failed") {
@@ -195,7 +195,7 @@ export function TranscriptionControls({
         ? "Odesílám požadavek na přepis… Původní přepis zůstává uložený."
         : method === "POST"
           ? "Odesílám požadavek na přepis…"
-          : "Kontroluji stav přepisu...");
+          : "Kontroluji stav přepisu…");
     }
 
     try {
@@ -385,6 +385,8 @@ export function TranscriptionControls({
       window.removeEventListener("online", pollWhenVisible);
     };
   }, [callTranscriptionEndpoint, recordingId, shouldPollTranscription]);
+  // A finished transcript already on screen needs no "hotovo" status lines under the header actions.
+  const settledDone = hasTranscript && lastJobStatus === "done" && !isWorking && !shouldPollTranscription && !recoveryError;
 
   return (
     <div className={`transcription-controls${showRecovery || recoveryError ? " transcription-controls-recovery" : ""}`} aria-busy={isWorking} ref={controlsRef}>
@@ -401,7 +403,7 @@ export function TranscriptionControls({
           <section className="transcription-recovery-choice">
             <strong>2. Když se původní přepis nenajde</strong>
             <p>Ověříme a uzavřeme starý pokus, potom spustíme nový placený přepis. Běžící nebo hotový přepis nejdřív dohledáme.</p>
-            <button className="command-button" disabled={isWorking} onClick={() => recoverTranscription("stop", true)} type="button"><RotateCcw aria-hidden="true" size={15} />Spustit nový přepis</button>
+            <button className="command-button" disabled={isWorking} onClick={() => recoverTranscription("stop", true)} type="button"><RotateCw aria-hidden="true" size={15} />Spustit nový přepis</button>
           </section>
         </> : <p>Přepis čeká nebo běží. Stav kontrolujeme automaticky; kontrolu můžete spustit i ručně.</p>}
         <div className="transcription-recovery-secondary">
@@ -435,7 +437,7 @@ export function TranscriptionControls({
             : "Tento přepis nemá uložené audio, takže ho nejde dopočítat znovu."}
           type="button"
         >
-          <RotateCcw aria-hidden="true" size={15} />
+          <RotateCw aria-hidden="true" size={15} />
           <span className="transcription-action-label">
             <span aria-hidden={isWorking}>Přepsat znovu</span>
             <span aria-hidden={!isWorking}>Pracuji…</span>
@@ -459,18 +461,18 @@ export function TranscriptionControls({
         <p className="command-state command-state-live">
           {lastJobStatus === "queued" ? "Přepis čeká na zpracování." : "Přepis se zpracovává na pozadí."}{" "}
           {isAutoChecking
-            ? "Právě kontroluji stav..."
+            ? "Právě kontroluji stav…"
             : lastCheckedAt
               ? `Poslední kontrola ${lastCheckedAt}.`
               : "Kontrola se spustí automaticky."}
         </p>
       ) : null}
-      {lastJobStatus && !isBlocked ? (
+      {lastJobStatus && !isBlocked && !settledDone ? (
         <p className="command-state">Stav přepisu: {getJobStatusLabel(lastJobStatus)}.</p>
       ) : null}
       {isBlocked ? <p className="command-state" role="status">Přepis je zablokovaný. Původní pokus zatím není potvrzený; nový placený přepis se nespustil.</p> : null}
       {recoveryError ? <p className="command-state transcription-recovery-error" role="alert">{recoveryError}</p>
-        : message && !isBlocked ? <p aria-live="polite" className="command-state" role="status">{message}</p> : null}
+        : message && !isBlocked && !settledDone ? <p aria-live="polite" className="command-state" role="status">{message}</p> : null}
       {storedAudioMode === "segments" && !shouldPollTranscription ? (
         <p className="command-state">
           Tahle live nahrávka je uložená po částech. Přepis z audia se spouští jako dávka segmentů.

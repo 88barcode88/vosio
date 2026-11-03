@@ -26,7 +26,8 @@ const fixtureViews = [
   "recordings",
   "settings",
   "templates",
-  "trash"
+  "trash",
+  "whats-new"
 ] as const;
 
 const settingsFixtureStorage: RecordingStorageConfig = {
@@ -96,7 +97,8 @@ function createFixtureNavigationOverrides(scope: string): NavigationHrefOverride
     "/recordings/new": fixtureHref("new"),
     "/settings": fixtureHref("settings"),
     "/templates": fixtureHref("templates"),
-    "/trash": fixtureHref("trash")
+    "/trash": fixtureHref("trash"),
+    "/whats-new": fixtureHref("whats-new")
   };
 }
 
@@ -197,6 +199,7 @@ export function WorkspaceShellFixture({
       deletedRecordings={view === "trash" && trashMode !== "empty" ? createDeletedFixtureRecordings() : []}
       disableAccountSecurity
       initialTranscriptTabFromCookie={isDetail}
+      mcpResourceUrl={view === "documentation" ? "https://example-project.supabase.co/functions/v1/vosio-mcp" : null}
       isCreatingRecording={view === "new"}
       navigationHrefOverrides={createFixtureNavigationOverrides(scope)}
       recordings={view === "recordings" || isDetail ? [recording] : []}

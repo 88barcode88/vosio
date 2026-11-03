@@ -87,8 +87,8 @@ export function DeleteAiOutputForm({
         <input defaultValue={next} name="next" type="hidden" />
         {onDeleted ? <input defaultValue="quiet" name="completion" type="hidden" /> : null}
         <button aria-label={label} disabled={isDeleting || ids.length === 0} title={label} type="submit">
-          <Trash2 size={14} />
-          <span>{isDeleting ? "Mažu..." : label}</span>
+          <Trash2 size={15} />
+          <span>{isDeleting ? "Mažu…" : label}</span>
         </button>
       </form>
       {deleteError ? <p className="ai-output-delete-error" role="alert">{deleteError}</p> : null}

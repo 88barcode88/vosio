@@ -4,6 +4,7 @@ import { z } from "zod";
 import { captureScopeSchema, type CaptureScope } from "@/lib/recordings/capture";
 import type { RecordingProjectRow } from "@/lib/recording-organization/types";
 import { createClient } from "@/lib/supabase/browser";
+import { sharingRoleLabel } from "@/lib/team/role-labels";
 
 export const privateCaptureScope: CaptureScope = { projectId: null, visibility: "private", recipients: [] };
 const approvalsSchema = z.array(z.object({ request_id: z.uuid(), recipients: captureScopeSchema.shape.recipients, expires_at: z.string(), recipient_labels: z.array(z.string().nullable()).optional() }));
@@ -57,7 +58,7 @@ export function CaptureScopePicker({ projects, value, onChange }: {
         p_recipients: scope.recipients, p_expires_at: new Date(Date.now() + 3_600_000).toISOString()
       });
       if (result.error) throw new Error();
-      setMessage("Editor najde schválený výběr v aplikaci. Platí hodinu pro jednu nahrávku.");
+      setMessage("Osoba s právem Úpravy najde schválený výběr v aplikaci. Platí hodinu pro jednu nahrávku.");
     } catch { setMessage("Schválení se nepodařilo uložit."); }
   }
 
@@ -73,9 +74,9 @@ export function CaptureScopePicker({ projects, value, onChange }: {
       {founder || !value.projectId || value.visibility === "selected" ? <option value="selected">Vybraní lidé</option> : null}
     </select></label>
     {value.visibility === "selected" && (founder || !value.projectId) ? <div aria-label="Vybraní příjemci">
-      {members.map((member) => <label key={member.userId}><input type="checkbox" checked={value.recipients.some((r) => r.userId === member.userId)} onChange={(event) => onChange({ ...value, recipients: event.target.checked ? [...value.recipients, { userId: member.userId, role: member.role }] : value.recipients.filter((r) => r.userId !== member.userId) })} />{member.email} ({member.role === "editor" ? "editor" : "čtenář"})</label>)}
+      {members.map((member) => <label key={member.userId}><input type="checkbox" checked={value.recipients.some((r) => r.userId === member.userId)} onChange={(event) => onChange({ ...value, recipients: event.target.checked ? [...value.recipients, { userId: member.userId, role: member.role }] : value.recipients.filter((r) => r.userId !== member.userId) })} />{member.email} ({sharingRoleLabel(member.role)})</label>)}
       {!value.projectId ? <p>Vyberte dříve potvrzené příjemce. Nový e-mail můžete pozvat až z detailu uložené nahrávky.</p> : <>
-      <label>Schválit nahrávání editorovi <select value={authorId} onChange={(event) => setAuthorId(event.target.value)}><option value="">Vyberte editora</option>{members.filter((m) => m.role === "editor").map((m) => <option key={m.userId} value={m.userId}>{m.email}</option>)}</select></label>
+      <label>Schválit nahrávání osobě s právem Úpravy <select value={authorId} onChange={(event) => setAuthorId(event.target.value)}><option value="">Vyberte osobu</option>{members.filter((m) => m.role === "editor").map((m) => <option key={m.userId} value={m.userId}>{m.email}</option>)}</select></label>
       <button type="button" onClick={() => void authorizeEditor()}>Připravit schválení</button></>}
     </div> : null}
     {!founder && approvals.length > 0 ? <label>Schválený výběr od zakladatele <select defaultValue="" onChange={(event) => {

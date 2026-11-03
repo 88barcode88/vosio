@@ -54,7 +54,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
         <section className="auth-card" aria-label="Přihlášení do Vosio">
           <div className="auth-heading">
-            <ShieldCheck size={22} />
+            <ShieldCheck size={20} />
             <h1>Přihlášení</h1>
             <p>Použijte svůj účet Vosio.</p>
           </div>
@@ -84,7 +84,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               />
             </label>
             <button type="submit">
-              <LockKeyhole size={18} />
+              <LockKeyhole size={15} />
               Přihlásit se
             </button>
           </form>

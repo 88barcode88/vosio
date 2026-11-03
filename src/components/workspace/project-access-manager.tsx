@@ -7,6 +7,9 @@ export type RevokedRecordingGrant = Pick<AccessList["grants"][number], "recordin
 export type ConfirmedAccessRevocation = ({ kind: "grant" } & RevokedRecordingGrant) | { kind: "member"; projectId: string; userId: string };
 type Props = { scope: InvitationScope; recordingId?: string; onBusyChange?: (busy: boolean) => void; onAccessRevoked?: (revocation: ConfirmedAccessRevocation) => void; refreshKey?: number; disabled?: boolean; heading?: string; inviteLabel?: string };
 
+// Shown when a listed member/grantee has no e-mail; a raw user id is never displayed.
+const UNKNOWN_ACCESS_USER_LABEL = "Neznámý uživatel";
+
 // invitationMutationFailure translates only safe outcome codes and validated retry seconds into UI copy.
 function invitationMutationFailure(result: unknown, status: number) {
   const value = result !== null && typeof result === "object" ? result as { code?: unknown; retryAfterSeconds?: unknown } : {};
@@ -92,10 +95,10 @@ export function AccessManager({ scope, recordingId, onBusyChange, onAccessRevoke
       <button type="button" disabled={busy || disabled || invitation.attemptCount >= 5} onClick={() => void mutate(`/api/recording-invitations/${invitation.id}`, "PATCH")}>Odeslat znovu ({invitation.attemptCount}/5)</button>
       <button type="button" disabled={busy || disabled} onClick={() => void mutate(`/api/recording-invitations/${invitation.id}`, "DELETE")}>Zrušit pozvánku</button>
     </li>)}</ul> : null}
-    {access?.members.map((member) => <p key={member.userId}>Uživatel {member.userId} · {member.role === "editor" ? "Úpravy" : "Čtení"}
+    {access?.members.map((member) => <p key={member.userId}>{member.email ?? UNKNOWN_ACCESS_USER_LABEL} · {member.role === "editor" ? "Úpravy" : "Čtení"}
       <button type="button" disabled={busy || disabled} onClick={() => scope.scope !== "standalone" && void mutate("/api/recording-invitations", "DELETE", { kind: "member", projectId: scope.projectId, userId: member.userId })}>Odebrat z projektu</button>
     </p>)}
-    {access?.grants.map((grant) => <p key={`${grant.recordingId}:${grant.userId}`}>Uživatel {grant.userId} · {grant.role === "editor" ? "Úpravy" : "Čtení"}
+    {access?.grants.map((grant) => <p key={`${grant.recordingId}:${grant.userId}`}>{grant.email ?? UNKNOWN_ACCESS_USER_LABEL} · {grant.role === "editor" ? "Úpravy" : "Čtení"}
       <button type="button" disabled={busy || disabled} onClick={() => void mutate("/api/recording-invitations", "DELETE", { kind: "grant", recordingId: grant.recordingId, userId: grant.userId })}>Odebrat přístup k nahrávce</button>
     </p>)}
   </section>;

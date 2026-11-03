@@ -24,9 +24,11 @@ export const invitationSummarySchema = z.object({
   attemptId: z.uuid(), attemptCount: z.number().int().min(1).max(5), deliveryState: z.enum(["pending", "sent", "failed"]),
   lastAttemptAt: z.string(), nextAttemptAt: z.string(), authorizationCurrent: z.boolean(),
 });
+// E-mail of a listed member/grantee as returned to the current manager only; absent or null means unknown.
+const accessEmail = z.string().max(254).nullable().default(null);
 export const accessListSchema = z.object({
-  members: z.array(z.object({ userId: z.uuid(), role: recordingShareRoleSchema })),
-  grants: z.array(z.object({ recordingId: z.uuid(), userId: z.uuid(), role: recordingShareRoleSchema })),
+  members: z.array(z.object({ userId: z.uuid(), email: accessEmail, role: recordingShareRoleSchema })),
+  grants: z.array(z.object({ recordingId: z.uuid(), userId: z.uuid(), email: accessEmail, role: recordingShareRoleSchema })),
   invitations: z.array(invitationSummarySchema),
 });
 export const revokeAccessSchema = z.discriminatedUnion("kind", [

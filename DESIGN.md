@@ -10,7 +10,7 @@ Rychlé AI akce používají stejnou malou jednořádkovou plochu. Jejich doplň
 
 Jediná reference drobných akcí pro celý web je toolbar Filtry / Spravovat / Nedokončené. Na desktopu od 901 px s jemným ukazatelem bez coarse mají akce i nativní jednořádková pole přibližně 30–32 px a akční ikony 15 px. Na mobilu, coarse i hybridních zařízeních zůstávají nepřekrývající se cíle nejméně 44 px; menší viditelnou plochu od skutečného cíle odděluje společný inset. Pevný 7px inset platí jen pro 44px cíl, na fine desktopu je nulový. Souhrn identity mluvčího je svisle vystředěný; saving/error feedback zůstává v příslušném sloupci. AI/Timeline akce používají existující command vzor. V chatu lze modelové nastavení sbalit; vybraný model a uvažování zůstávají v souhrnu a cenová nápověda je dostupná po rozbalení. Escape vrátí focus na souhrn.
 
-Inbox odděluje Klient a Projekt v desktopových sloupcích i mobilních popiscích. Ellipsis otevírá přímo pojmenovaný popup `Název a zařazení` s oddělenými sekcemi `Uložit název` a `Uložit zařazení`. Výsledek jedné sekce nevydává za společný úspěch. Jednotlivé uložené změny popup automaticky nezavírají; pending blokuje zavření a chyby zachovávají koncepty.
+Inbox odděluje Klient a Projekt v desktopových sloupcích i mobilních popiscích. Ellipsis otevírá přímo pojmenovaný popup `Název a zařazení` s oddělenými sekcemi Název (pole a `Uložit` na jednom řádku) a Zařazení (`Uložit zařazení`). Výsledek jedné sekce nevydává za společný úspěch. Jednotlivé uložené změny popup automaticky nezavírají; pending blokuje zavření a chyby zachovávají koncepty.
 
 Pro sekci Tým uživatel schválil nový kompaktní návrh 2: úzký neobalený seznam osob vlevo a detail přístupů vpravo. Nahrazuje původní rámované rozložení A. Aktivní přístupy mají krátké řádky typ/název/hranice, role a Odebrat, bez opakovaných vysvětlivek. Přidělit přístup rozbaluje inline procházení klient → projekt → dostupná složka → nahrávka s drobečkovou navigací, hromadným výběrem, společnou rolí a jedním uložením. Desktopové řádky a viditelné akce mají přibližně 30–32 px, avatary 24 px; na mobilu a pro dotykové ovládání mají cíle nejméně 44 px. Tým používá stejnou globální rozměrovou politiku jako ostatní obrazovky. Nevkládat rámované panely do dalších panelů.
 
@@ -126,9 +126,9 @@ Light mode je neutrální světle šedé plátno s bílými pracovními panely, 
 - `--warning`: `#a46a18`
 - `--info`: `#4d6dba`
 
-### Temporary Compatibility Aliases
+### Aliasy a hardcoded barvy
 
-`--text-muted` zůstává schválený token pro skutečně doplňkový text. Dokud nejsou migrované existující 12px textové prvky, legacy alias `--muted` mapuj na `--text-secondary`, aby jejich kontrast zůstal čitelný. Tento alias je dočasný a při migraci jednotlivých komponent se má nahradit vhodným sémantickým tokenem.
+Legacy aliasy (`--muted`, `--teal`, `--panel*`, `--red`, `--green`, `--orange`, `--blue`, `--foreground`) a tyrkysové `rgba(...)` neexistují a nesmí se vracet. Doplňkový text používá `--text-secondary` (běžný) nebo `--text-muted` (skutečně vedlejší), akcent `--accent`, plochy `--surface`, `--surface-muted`, `--surface-raised`, stavy `--danger`, `--success`, `--warning`, `--info`. Průhledné odstíny stavových ploch se skládají přes `color-mix(in srgb, var(--info) 10%, transparent)`. Checkboxy a radia mají globálně `accent-color: var(--accent)`.
 
 ## Speaker Colors
 
@@ -149,35 +149,46 @@ Dark mode speaker chips mají být jemné tinted surfaces. Light mode speaker ch
 Primary UI font:
 
 - `Inter` přes `next/font/google` a proměnnou `--font-ui`,
-- fallback: `Segoe UI`, `system-ui`, `sans-serif`.
-
-Heading font:
-
-- `Inter` přes stejnou proměnnou `--font-ui`,
-- pro nadpisy `h1` až `h3` i běžné UI, formuláře a metadata,
-- fallback: `Segoe UI`, `system-ui`, `sans-serif`.
+- fallback: `Segoe UI`, `system-ui`, `sans-serif`,
+- stejný font pro nadpisy, formuláře i metadata; samostatný heading font neexistuje.
 
 Data/monospace font:
 
 - fallback: `JetBrains Mono`, `Consolas`, `monospace`.
 
-Typography rules:
+Škála písma je uzavřená: pět velikostí, tři tloušťky, tři řádkování. Velikosti jsou v `rem` (hodnoty v px platí při výchozím kořenovém písmu 16 px), aby fungovalo zvětšení textu v prohlížeči. Mimo tokeny `font-size`, `font-weight` ani `line-height` nepiš (výjimka: číselný displej časovače nahrávání, označený komentářem).
 
-- aplikace nepoužívá hero-scale typografii,
-- běžný text: 12.5-13.5 px,
-- UI label: 11.5-12.5 px,
-- page title: 20-24 px,
-- section title / H2: 16-18 px,
-- card title / H3: 14-15 px,
-- transcript body: 13.5-14.5 px podle hustoty,
-- čas, velikost souboru a timer používají `font-variant-numeric: tabular-nums`.
+| Token | Hodnota | Použití |
+|---|---|---|
+| `--text-xs` | 11 px | metadata, badge, popisky polí, časy |
+| `--text-sm` | 12 px | výchozí UI: tlačítka, inputy, selecty, navigace, běžné texty v panelech |
+| `--text-md` | 14 px | čtecí text (přepis, AI výstup, chat), nadpis karty nebo sekce v dialogu |
+| `--text-lg` | 17 px | nadpis sekce stránky (H2) |
+| `--text-xl` | 21 px | titulek stránky (H1), stejný na všech stránkách včetně detailu |
+
+| Token | Hodnota | Použití |
+|---|---|---|
+| `--weight-regular` | 400 | běžný text |
+| `--weight-medium` | 500 | tlačítka, labely, navigace |
+| `--weight-semibold` | 600 | nadpisy, důraz |
+
+| Token | Hodnota | Použití |
+|---|---|---|
+| `--leading-tight` | 1.2 | titulky, jednořádkové prvky |
+| `--leading-ui` | 1.35 | ovládání, krátké popisky |
+| `--leading-body` | 1.5 | souvislý text |
+
+- Mobilní textová pole používají `--text-lg`, aby iOS při zaostření nepřibližoval stránku (hranice 16 px).
+- Čas, velikost souboru a timer používají `font-variant-numeric: tabular-nums`.
 
 Icon rules:
 
-- běžné ikony v navigaci a tlačítkách: 15-16 px,
-- primární akční ikony: maximálně 18 px,
-- velké dekorativní ikony se nepoužívají,
-- logo může být výraznější, ale nesmí určovat velikost ostatního UI.
+- velikost ikony určuje CSS token, `size` prop v TSX má stejnou hodnotu (15 výchozí), aby kód nelhal,
+- `--icon-sm` 13 px: inline v metadatech a drobečkové navigaci,
+- `--icon-md` 15 px (= `--control-icon-size`): všechna tlačítka a navigace,
+- `--icon-lg` 20 px: prázdné stavy, nahrávání a play,
+- jedna ikona = jedna akce: Uložit `Save`, Zavřít/Zrušit `X`, Smazat `Trash2`, Sdílet `Share2`, Upravit `Pencil`, Zkusit znovu `RotateCw`, Obnovit z koše `Undo2`, Obnovit výchozí text `RotateCcw`, Varování `TriangleAlert`, Nahrát `Upload`,
+- velké dekorativní ikony se nepoužívají, logo nesmí určovat velikost ostatního UI.
 
 ## Borders and Shadows
 
@@ -211,11 +222,10 @@ Density:
 
 Radius scale:
 
-- small controls: 8-10 px,
-- buttons: 10-12 px,
-- cards/panels: 12-14 px,
-- modals/popovers: 14-16 px,
-- pills: 999 px.
+- `--radius-sm` 5 px: ovládací prvky (tlačítka, inputy, selecty, chipy),
+- `--radius-md` 8 px: menší karty a seznamové plochy,
+- `--radius-lg` 12 px: panely a modaly,
+- `--radius-pill` 999 px: pilulky.
 
 Nested radius musí být opticky konzistentní: vnitřní radius má být menší než vnější.
 
@@ -225,7 +235,7 @@ Pracovní plochy inboxu, filtrů, řádků, Draweru, capture a Koše používaj�
 
 Desktop shell:
 
-- sidebar: 248 px rozbalený a 64 px sbalený,
+- sidebar: 224 px rozbalený a 64 px sbalený,
 - content: full viewport width,
 - max app width se nepoužívá pro hlavní workspace,
 - detail nahrávky používá jeden hlavní pracovní sloupec bez dominantního pravého AI panelu.
@@ -241,6 +251,20 @@ Breakpoint do 900 px zachovává přesně pět cílů spodní mobilní navigace.
 
 ## Components
 
+### Tlačítka
+
+- Referenční vzhled je toolbar Filtry / Spravovat / Nedokončené: 12 px, `--weight-medium`, ikona 15 px, výška z `--control-hit-size`, plocha vykreslená přes `::before`.
+- Nové tlačítko nikdy nezůstává nativní šedé. Používej `.ui-button` (+ `--primary`, `--danger`, `--icon`) a `.ui-segmented` z `app/styles/ui-primitives.css`; globální whitelist v `compact-recordings.css` se dál nerozšiřuje.
+- Role se všude jmenují `Úpravy` a `Čtení`. Tři tečky se píší jako `…`.
+
+### Účet v sidebaru
+
+Kompaktní řádek: avatar 28 px, `Vosio účet` v `--text-sm` a `--weight-semibold`, e-mail v `--text-xs` na jeden řádek s ellipsis, odhlášení jako icon-button. Ve sbaleném sidebaru zůstává jen avatar.
+
+### Dokumentace a Novinky
+
+Každá změna viditelná uživateli aktualizuje Dokumentaci v aplikaci (`/documentation`) a Novinky (`/whats-new`, data v `src/lib/whats-new/entries.ts`). Novinky jsou psané pro uživatele: co uvidí, bez technických detailů.
+
 ### Sidebar
 
 Sidebar je hlavní navigace, ne dashboard.
@@ -254,7 +278,7 @@ Obsah:
 - `AI prompty`,
 - `Koš`,
 - `Nastavení`,
-- sekundární `Dokumentace` nad user/account area na desktopu,
+- sekundární `Dokumentace` a `Novinky` (s tečkou, dokud je uživatel neotevře) nad user/account area na desktopu,
 - user/account area.
 
 Na mobilu může `Dokumentace` zůstat ve spodní navigaci, protože user/account area se tam nezobrazuje.

@@ -64,7 +64,7 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
 
   const capabilities = await resolveRecordingCapabilities(supabase, recordingId);
   if (!capabilities.read) notFound();
-  const [{ recording, recordingOrganization }, recordingMarkers, transcripts, organizationOptions, audioLocator, ownThread] = await Promise.all([
+  const [{ recording, recordingOrganization }, recordingMarkers, transcripts, organizationOptions, audioLocator, ownThread, teamRole] = await Promise.all([
     getRecordingById(supabase, recordingId).then(async (recording) => ({
       recording,
       recordingOrganization: recording ? await getRecordingOrganization(supabase, recording) : undefined
@@ -73,7 +73,8 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
     listTranscriptsForRecording(supabase, recordingId),
     listRecordingOrganizationOptions(supabase),
     getAuthorizedAudioLocator(supabase, recordingId),
-    supabase.from("transcript_chat_threads").select("id").eq("recording_id", recordingId).eq("user_id", user.id).limit(1)
+    supabase.from("transcript_chat_threads").select("id").eq("recording_id", recordingId).eq("user_id", user.id).limit(1),
+    resolveTeamRole(supabase)
   ]);
 
   if (!recording) {
@@ -100,7 +101,7 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
 
   return (
     <VosioWorkspace
-      canManageTeam={Boolean(await resolveTeamRole(supabase))}
+      canManageTeam={Boolean(teamRole)}
       activeRecordingId={recordingId}
       aiOutputs={[]}
       initialTranscriptDeepLink={initialDeepLink}

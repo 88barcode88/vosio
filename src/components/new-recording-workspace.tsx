@@ -75,7 +75,7 @@ export function NewRecordingWorkspace({
       >
         <article className="capture-card capture-card-primary" data-primary-capture="live">
           <div className="capture-card-heading">
-            <Mic aria-hidden="true" size={16} />
+            <Mic aria-hidden="true" size={15} />
             <div>
               <strong>Nahrávat live</strong>
               <span>
@@ -103,7 +103,7 @@ export function NewRecordingWorkspace({
 
         <article className="capture-card capture-card-primary" data-primary-capture="upload">
           <div className="capture-card-heading">
-            <Upload aria-hidden="true" size={16} />
+            <Upload aria-hidden="true" size={15} />
             <div>
               <strong>Nahrát soubor</strong>
               <span>{getRecordingFormatSummary(allowedMimeTypes ?? [])}</span>
@@ -131,7 +131,7 @@ export function NewRecordingWorkspace({
         <details aria-label="Import hotového přepisu" className="transcript-import-disclosure">
           <summary>
             <span className="capture-card-heading">
-              <FileText aria-hidden="true" size={16} />
+              <FileText aria-hidden="true" size={15} />
               <span>
                 <strong>Vložit přepis</strong>
                 <small>Vedlejší možnost pro text bez audio souboru</small>

@@ -99,7 +99,7 @@ describe("manual AI retry feedback and deadlines", () => {
       onOpenEvidence: () => undefined, resolveEvidenceTarget: () => null,
       structuredItems: { chapters: [], decisions: [], risks: [], tasks: [] }, userSettings: {} as never };
     await act(async () => root.render(createElement(OwnerAiProcessingContent, { ...props, isLoaded: false, isLoading: false })));
-    expect(container.textContent).toContain("Načítám AI stav");
+    expect(container.textContent).toContain("Načítám AI výstupy");
     expect(container.textContent).not.toContain("Zatím žádné AI výstupy");
     await act(async () => root.render(createElement(OwnerAiProcessingContent, { ...props, isLoaded: true, isLoading: false })));
     expect(container.textContent).toContain("Zatím žádné AI výstupy");

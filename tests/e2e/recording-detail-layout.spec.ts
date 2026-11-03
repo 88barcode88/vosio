@@ -399,7 +399,7 @@ for (const width of [320, 390, 768, 900, 1024, 1440]) {
     await openFixture(page, "ai");
 
     await expect(page.locator(".recording-object-header .export-controls")).toBeVisible();
-    await expect(page.locator(".recording-object-header .command-bar")).toBeVisible();
+    await expect(page.locator(".recording-object-header .recording-detail-actions .recording-header-operations .command-button").first()).toBeVisible();
     await expect(page.locator(".tabs-row .export-controls")).toHaveCount(0);
     const order = await page.evaluate(() => {
       const header = document.querySelector(".recording-object-header");

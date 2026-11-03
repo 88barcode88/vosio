@@ -16,6 +16,7 @@ import type {
   RecordingAssignment
 } from "@/lib/recording-organization/types";
 import type { RecordingRow } from "@/lib/recordings/types";
+import { sharingRoleLabel } from "@/lib/team/role-labels";
 
 type RecordingOrganizationEditorProps = {
   embedded?: boolean;
@@ -345,7 +346,7 @@ export function RecordingOrganizationEditor({
                 </select>
               </label>
             </div>
-            {policy?.personalEditable === false ? <p>Osobní klient, složka a štítky autora zůstávají beze změny.</p> : options.folders.length === 0 ? <p>Nemáte žádnou vlastní složku. <Link href="/recordings">Otevřít seznam nahrávek a Spravovat</Link>.</p> : null}
+            {policy?.personalEditable === false ? <p>Osobní klient, složka a štítky autora zůstávají beze změny.</p> : options.folders.length === 0 ? <p>Zatím nemáte žádnou složku. Vytvoříte ji v <Link href="/recordings">seznamu nahrávek</Link> přes Spravovat.</p> : null}
             <fieldset className="recording-organization-tags" disabled={isPending}>
               <legend>Štítky</legend>
               {options.tags.length > 0 ? options.tags.map((tag) => (
@@ -364,10 +365,10 @@ export function RecordingOrganizationEditor({
             <div className="recording-organization-feedback">
               {currentImpact ? <section aria-label="Dopad zařazení">
                 <p>Vybrané zařazení: {options.clients.find((item) => item.id === clientId)?.name ?? "Bez klienta"}, {options.projects.find((item) => item.id === projectId)?.name ?? "Bez projektu"}, {options.folders.find((item) => item.id === folderId)?.name ?? "Bez složky"}.</p>
-                <p>Zachovaní konkrétní příjemci: {currentImpact.exactRecipients.map((item) => `${item.label} (${item.role === "editor" ? "editor" : "čtenář"})`).join(", ") || "žádní"}.</p>
-                <p>Přidané přístupové cesty: {currentImpact.addedPaths.map((item) => `${item.label} (${item.kind ? organizationScopeLabels[item.kind] : "přístup"}, ${item.role === "editor" ? "editor" : "čtenář"})`).join(", ") || "žádné"}.</p>
-                <p>Odebrané přístupové cesty: {currentImpact.removedPaths.map((item) => `${item.label} (${item.kind ? organizationScopeLabels[item.kind] : "přístup"}, ${item.role === "editor" ? "editor" : "čtenář"})`).join(", ") || "žádné"}. Další platné cesty zůstávají zachovány.</p>
-                {currentImpact.pendingInvitations?.length ? <p>Čekající pozvánky v cílovém rozsahu: {currentImpact.pendingInvitations.map((item) => `${item.label} (${item.role === "editor" ? "editor" : "čtenář"})`).join(", ")}. Přístup vznikne až po přijetí.</p> : null}
+                <p>Zachovaní konkrétní příjemci: {currentImpact.exactRecipients.map((item) => `${item.label} (${sharingRoleLabel(item.role)})`).join(", ") || "žádní"}.</p>
+                <p>Přidané přístupové cesty: {currentImpact.addedPaths.map((item) => `${item.label} (${item.kind ? organizationScopeLabels[item.kind] : "přístup"}, ${sharingRoleLabel(item.role)})`).join(", ") || "žádné"}.</p>
+                <p>Odebrané přístupové cesty: {currentImpact.removedPaths.map((item) => `${item.label} (${item.kind ? organizationScopeLabels[item.kind] : "přístup"}, ${sharingRoleLabel(item.role)})`).join(", ") || "žádné"}. Další platné cesty zůstávají zachovány.</p>
+                {currentImpact.pendingInvitations?.length ? <p>Čekající pozvánky v cílovém rozsahu: {currentImpact.pendingInvitations.map((item) => `${item.label} (${sharingRoleLabel(item.role)})`).join(", ")}. Přístup vznikne až po přijetí.</p> : null}
               </section> : null}
               {isCurrentSettlement && actionState.status === "error" && !isPending && !isCurrentErrorDismissed ? (
                 <p role="alert">{actionState.message}</p>

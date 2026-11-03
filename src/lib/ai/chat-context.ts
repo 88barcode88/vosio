@@ -5,6 +5,13 @@ export const CHAT_RAW_TRANSCRIPT_MAX_CHARS = 60_000;
 export const CHAT_TRANSCRIPT_CONTEXT_MAX_CHARS = 100_000;
 export const CHAT_HISTORY_CONTEXT_MAX_CHARS = 24_000;
 
+// Application-owned citation contract appended to the stored system prompt so wording changes need no data migration.
+const CHAT_CITATION_GUIDANCE = `<citations>
+The application shows clickable citations next to the answer. It builds them only from the evidence field after verifying each quote against the saved transcript; no other text becomes a citation.
+Put the quotes that support the answer into evidence: up to 6 verbatim, short, contiguous quotes (a few words up to one sentence) copied character for character from the transcript text of a single speaker utterance. Never paraphrase, translate, correct, join distant passages or add words to a quote.
+Do not mention citations, quotes, evidence, timestamps or links in answer_markdown and never tell the user to open, click or look something up. Return an empty evidence array when no exact quote supports the answer.
+</citations>`;
+
 type ChatHistoryItem = {
   answerMarkdown: string | null;
   createdAt: string;
@@ -129,6 +136,6 @@ export function buildRecordingChatContext(input: RecordingChatContextInput): Rec
       transcriptMode,
       transcriptTruncated
     },
-    systemInstruction: stripPromptDataSlots(input.systemPrompt)
+    systemInstruction: [stripPromptDataSlots(input.systemPrompt), CHAT_CITATION_GUIDANCE].join("\n\n")
   };
 }

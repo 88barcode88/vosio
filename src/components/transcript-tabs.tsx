@@ -634,7 +634,7 @@ export function TranscriptTabs({
         ) : null}
       </div>
       <div className="live-transcript">
-        <AudioLines size={18} />
+        <AudioLines size={15} />
         {getTranscriptStatusLabel(activeRecording, activeTranscript)}
       </div>
     </>

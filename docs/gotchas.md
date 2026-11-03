@@ -147,15 +147,23 @@ Odinstalování pluginu samo nezruší backend grant. Viz [runbook](api/mcp-plug
 
 ## P1 source forwardy a historické AI zdroje
 
-Smazání checklistu ponechává původní raw AI text jako historický artefakt.
-Aktivní checklist a jeho export používají uložené projekce a přesné tombstones;
-raw text není náhradním zdrojem právě smazaných úkolů. HTTP timeout po DELETE
+Smazání checklistu odstraní úkoly, rozhodnutí i rizika/blokery přepisu a ponechává
+původní raw AI text i kapitoly časové osy. Aktivní checklist a jeho export používají
+uložené projekce a přesné tombstones; raw text není náhradním zdrojem právě
+smazaných položek. App volá `_v2` RPC, takže migrace `20261103140000` musí být
+aplikovaná před deploymentem. HTTP timeout po DELETE
 neprokazuje rollback: další ověření je read, další delete vyžaduje nový rozsah
 a potvrzení. Odstranění modelu z nabídky nesmí vynulovat cenu historického usage
 ani změnit přijatý provider snapshot. Pro model/reasoning picker P1 uživatel
 zvolil variantu A; AI detail, Nastavení a Chat používají společné ovládání.
 
-Potlačené úkoly se filtrují před deduplikací příchozích props i lazy bodies.
+Pozdní projekce potlačeného výstupu se tiše zahodí: když pipeline uloží `ai_outputs`
+řádek a jeho úkoly/rozhodnutí/rizika vloží až po potvrzeném smazání checklistu,
+trigger `lock_checklist_item_parent_v2` (a pro úkoly v1 trigger) INSERT přeskočí
+bez chyby a potvrzovací dialog tyto položky nezapočítal. Je to záměr – smazaný
+výstup se nemá vrátit. Nová generace (nový `ai_output_id`) se uloží normálně.
+
+Potlačené úkoly (a stejně rozhodnutí a rizika přes `id:`/`output:` tombstones) se filtrují před deduplikací příchozích props i lazy bodies.
 Jinak starý `done` řádek vytlačí nový `new` úkol a následný filtr odstraní oba.
 Potvrzené smazání ruší pouze status overrides daných task/source ID.
 Úspěšný DELETE receipt vlastní transcript provider i po přepnutí záložky;
@@ -639,8 +647,32 @@ Po úspěchu obnov aktuální čtení. Po nejasné odpovědi drž stejný reques
 neoznamuj rollback jen proto, že HTTP request selhal. Provozní akceptace a bezpečný
 backout jsou v [sharing runbooku](api/project-sharing-runbook.md).
 
+## Globální whitelist tlačítek a nativní šedá tlačítka
+
+Většina akcí dostává kompaktní vzhled ze seznamu selektorů v `app/styles/compact-recordings.css` (`transparent !important` + surface na `::before`). Tlačítko mimo tento seznam zůstane nativní šedé (tak vypadal i spouštěč „Upravit a sdílení“). Nové tlačítko proto dostane `.ui-button` / `.ui-segmented` z `app/styles/ui-primitives.css`; whitelist se nerozšiřuje. Tlačítka komponenty, kterou nelze upravit (`project-access-manager.tsx`), stylují aliasové selektory v týchž primitivech. Varianty `--primary` a `--danger` mají vyšší specificitu (`:root .ui-button.…`), jinak je přebije whitelist.
+
+## `.recording-title-edit` styl přenášený do dialogu Upravit a sdílení
+
+Editor názvu v dialogu znovu používá inboxovou komponentu s třídami `.recording-title-edit`, `.recording-title-form` a `.recording-title-popover-actions`. Jejich řádkové chrome (výška, ohraničení, absolutně skrytý popisek) se proto v `recording-edit-sharing-dialog.module.css` přes `:global(...)` neutralizuje. Změna těchto globálních tříd může rozbít rozložení „název + Uložit na jednom řádku“ v dialogu.
+
+## Písma, ikony a mobilní pole formulářů
+
+Velikost písma a ikon bere jen tokeny z `base.css`. Textová pole na mobilu/coarse používají `--text-lg` (17 px), protože pod 16 px iOS Safari při zaostření přiblíží stránku; neměň je na `--text-sm`. Výjimka mimo škálu je jen číselný displej `.timer`.
+
 ## Limity importu DOCX a AI odpovědí
 
 DOCX import skenuje značky jedním dopředným průchodem a odmítá neuzavřené nebo vnořené textové značky. Souborový limit 10 MiB a inflační limit 64 MiB samy nechrání proti kvadratickému regex parsování; token scanner nesmí opakovaně hledat konec textu pro každou neuzavřenou značku.
 
 OpenAI, Gemini i Mistral pro processing i chat používají společný transportní deadline 240 sekund od zahájení fetch až po dočtení těla a limit 2 MiB skutečně načtených (dekódovaných) bajtů JSON odpovědi. Limit platí i pro chybové odpovědi a nespoléhá na Content-Length. Překročení limitu nebo zrušení ukončí čtení streamu; dřívější caller AbortSignal zůstává účinný. Existující bezpečná normalizace provider chyb zůstává zachována, bez automatického opakování placeného požadavku. Timeout klienta není potvrzení, že provider zrušil výpočet nebo účtování. Tyto limity nenahrazují provider spend cap, output-token budget ani konfiguraci retence.
+
+## Storage RLS helper nesmí skenovat všechny nahrávky
+
+**Problém:** `storage.search`/`list()` vyhodnocuje policy `recordings storage read exact object` pro každý objekt; původní `can_read_recording_object_v1` pro každý objekt prošla celou tabulku `recordings` a volala `can_read_recording` (průměr 8,8 s, 96 % DB času při živém nahrávání).
+**Proč:** RLS funkce běží per řádek cizí tabulky, takže jakýkoli sken uvnitř se násobí počtem objektů.
+**Řešení:** helper nejdřív najde kandidáty přesným lookupem (unikátní `storage_path`, unikátní `recording_live_part_registrations.storage_path`, UUID z 2. segmentu cesty) a teprve na ně aplikuje stejná pravidla; nevalidní cesta vrací `false`. Stejný vzor platí pro `accessible_recording_rows_v1` (kandidátní nadmnožina) – nová přístupová cesta v `recording_access_role_v1` musí přidat svou větev i tam.
+
+## Citace v chatu: Soniox tokeny jsou části slov
+
+**Problém:** všech 28 dokončených chat turnů mělo `verified_evidence = []`, ačkoli model citace vracel.
+**Proč:** verifikace spojovala každý normalizovaný token mezerou, ale Soniox dělí česká slova na části (`Dob`+`rý`, jen token s úvodní mezerou začíná nové slovo; ~50 % tokenů nemá úvodní mezeru), takže doslovná citace `dobrý den` nikdy nenašla `dob rý den`. Prompt pro model skládá tokeny bez mezer, tedy správně.
+**Řešení:** `resolveEvidenceLocation` skládá text z tokenů stejně jako prompt a UI (změna mluvčího je hranice slova), normalizuje po znacích a vyžaduje unikátní celoslovní shodu. Parafráze se dál zahazují. Citační smlouva pro model (`<citations>`) je přidaná v kódu `chat-context.ts`, ne v DB promptu; odpověď nesmí o citacích mluvit, zobrazení řídí jen ověřené `evidence`.

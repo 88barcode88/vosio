@@ -131,11 +131,11 @@ export function ExportControls({
         </label>
         <div className="export-controls-actions">
           <button disabled={!canExport} onClick={() => void downloadSelectedExport()} type="button">
-            <Download size={14} />
+            <Download size={15} />
             <span>MD</span>
           </button>
           <button disabled={!canExport} onClick={copySelectedExport} type="button">
-            <Copy size={14} />
+            <Copy size={15} />
             <span>Kopírovat</span>
           </button>
         </div>

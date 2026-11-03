@@ -89,7 +89,7 @@ export function AiProcessingContent({
   resolveEvidenceTarget: (reference: TranscriptEvidenceReference) => TranscriptTarget | null;
   structuredItems: StructuredAiItems;
   onTaskDeleted?: Parameters<typeof StructuredItemsContent>[0]["onTaskDeleted"];
-  onChecklistDeleted?: (taskIds: string[], outputIds: string[]) => void;
+  onChecklistDeleted?: (itemIds: string[], outputIds: string[]) => void;
   onTaskStatusConfirmed?: Parameters<typeof StructuredItemsContent>[0]["onTaskStatusConfirmed"];
   stateError?: string | null;
   userSettings: UserSettings;
@@ -97,8 +97,10 @@ export function AiProcessingContent({
   const retryProcessing = useAiProcessingRun(activeTranscript?.id ?? null, onJobAccepted);
   const [pendingChecklist, setPendingChecklist] = useState<{ transcriptId: string; ids: string[] | null } | null>(null);
   const pendingChecklistIds = pendingChecklist?.transcriptId === activeTranscript?.id ? pendingChecklist?.ids : null;
-  const visibleStructuredItems = pendingChecklistIds ? { ...structuredItems,
-    tasks: structuredItems.tasks.filter((task) => !task.id || !pendingChecklistIds.includes(task.id)) } : structuredItems;
+  // isNotPending hides rows of the reviewed checklist while its deletion request is in flight.
+  const isNotPending = (row: { id?: string }) => !row.id || !pendingChecklistIds?.includes(row.id);
+  const visibleStructuredItems = pendingChecklistIds ? { ...structuredItems, tasks: structuredItems.tasks.filter(isNotPending),
+    decisions: structuredItems.decisions.filter(isNotPending), risks: structuredItems.risks.filter(isNotPending) } : structuredItems;
   const hasStructuredItems = hasAnyStructuredItems(structuredItems);
   const artifacts = outputMetadata ?? aiOutputs.map((output) => ({
     body_loaded: true,
@@ -147,10 +149,10 @@ export function AiProcessingContent({
           {stateError} <button className="secondary-inline-action" onClick={() => void onReload?.()} type="button">Zkusit znovu</button>
         </p>
       ) : null}
-      {(!isLoaded || isLoading) && !stateError && artifacts.length === 0 ? <div className="ai-empty-card" aria-busy="true"><p role="status">Načítám AI stav…</p></div> : null}
+      {(!isLoaded || isLoading) && !stateError && artifacts.length === 0 ? <div className="ai-empty-card ai-empty-card--loading" aria-busy="true"><Sparkles aria-hidden="true" size={15} /><p role="status">Načítám AI výstupy…</p></div> : null}
       {isLoaded && !isLoading && !stateError && artifacts.length === 0 ? (
         <div className="ai-empty-card">
-          <Settings2 size={16} />
+          <Settings2 size={15} />
           <strong>Zatím žádné AI výstupy</strong>
           <p>Po dokončení přepisu spusťte shrnutí, úkoly, zápis ze schůzky, CRM poznámku, e-mail po hovoru nebo časovou osu.</p>
         </div>
@@ -504,11 +506,11 @@ function AiOutputCard({
       <div className="ai-output-actions">
         {output ? <>
         <button onClick={copyAiOutput} type="button">
-          <Copy size={14} />
+          <Copy size={15} />
           <span>Kopírovat</span>
         </button>
         <button onClick={downloadAiOutput} type="button">
-          <Download size={14} />
+          <Download size={15} />
           <span>MD</span>
         </button>
         {isFollowUpEmail ? (
@@ -516,7 +518,7 @@ function AiOutputCard({
             data-touch-target="action"
             href={createMailtoHref(getFollowUpEmailSubject(output), getAiOutputPreview(output))}
           >
-            <Mail size={14} />
+            <Mail size={15} />
             <span>Otevřít e-mail</span>
           </a>
         ) : null}

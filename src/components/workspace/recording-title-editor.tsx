@@ -22,13 +22,13 @@ type DismissedSaveError = {
 };
 
 // RecordingTitleSaveButton reflects the pending state of its nearest title form.
-function RecordingTitleSaveButton({ embedded = false }: { embedded?: boolean }) {
+function RecordingTitleSaveButton() {
   const { pending } = useFormStatus();
 
   return (
     <button disabled={pending} type="submit">
       <Save aria-hidden="true" size={15} />
-      {pending ? "Ukládám…" : embedded ? "Uložit název" : "Uložit"}
+      {pending ? "Ukládám…" : "Uložit"}
     </button>
   );
 }
@@ -201,7 +201,7 @@ export function RecordingTitleEditor({
               ) : null}
           </div>
           <div className="recording-title-popover-actions">
-            <RecordingTitleSaveButton embedded={embedded} />
+            <RecordingTitleSaveButton />
             {embedded ? null : <button disabled={isPending} onClick={dismissEditor} type="button">
               <X aria-hidden="true" size={15} />
               Zrušit

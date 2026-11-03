@@ -84,8 +84,8 @@ function createSupabaseMock({
 }
 
 // callRoute invokes the route with App Router's asynchronous params contract.
-function callRoute(id: string) {
-  return GET(new Request(`https://vosio.test/api/recordings/${id}/audio`) as never, {
+function callRoute(id: string, query = "") {
+  return GET(new Request(`https://vosio.test/api/recordings/${id}/audio${query}`) as never, {
     params: Promise.resolve({ recordingId: id })
   });
 }
@@ -265,6 +265,15 @@ describe("GET recording audio", () => {
       mimeType: "audio/webm",
       url: "https://signed.example/audio"
     });
+  });
+  it("signs the same object as an attachment when download is requested", async () => {
+    const mock = createSupabaseMock();
+    mocks.createClient.mockResolvedValue(mock.supabase);
+
+    const response = await callRoute(recordingId, "?download=1");
+
+    expect(response.status).toBe(200);
+    expect(mock.createSignedUrl).toHaveBeenCalledWith(`${userId}/${recordingId}/audio.webm`, 300, { download: true });
   });
   it("denies revoked access before creating an admin client", async () => {
     const mock = createSupabaseMock();
