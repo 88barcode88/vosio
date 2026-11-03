@@ -676,3 +676,15 @@ OpenAI, Gemini i Mistral pro processing i chat používají společný transport
 **Problém:** všech 28 dokončených chat turnů mělo `verified_evidence = []`, ačkoli model citace vracel.
 **Proč:** verifikace spojovala každý normalizovaný token mezerou, ale Soniox dělí česká slova na části (`Dob`+`rý`, jen token s úvodní mezerou začíná nové slovo; ~50 % tokenů nemá úvodní mezeru), takže doslovná citace `dobrý den` nikdy nenašla `dob rý den`. Prompt pro model skládá tokeny bez mezer, tedy správně.
 **Řešení:** `resolveEvidenceLocation` skládá text z tokenů stejně jako prompt a UI (změna mluvčího je hranice slova), normalizuje po znacích a vyžaduje unikátní celoslovní shodu. Parafráze se dál zahazují. Citační smlouva pro model (`<citations>`) je přidaná v kódu `chat-context.ts`, ne v DB promptu; odpověď nesmí o citacích mluvit, zobrazení řídí jen ověřené `evidence`.
+
+## Sloupce seznamu nahrávek a specificita proměnné (03.11.2026)
+
+**Problém:** Hlavička seznamu měla pět buněk, ale mřížka jen čtyři sloupce, takže Délka padala na druhý řádek a řádky byly dvakrát vyšší.
+**Proč:** `--recordings-main-columns` je definovaná na `.recordings-inbox.ui-panel` (dvě třídy) v `appica-recordings.css`; novější přepis na `.recordings-inbox` v `compact-recordings.css` se kvůli nižší specificitě nikdy neuplatnil, i když se načítá později.
+**Řešení:** Počet sloupců měň vždy na `.recordings-inbox.ui-panel` a drž ho v souladu s počtem buněk v `recordings-manager.tsx` (teď sedm: Název, Datum, Typ, Délka, Klient, Projekt, Stav; užší kontejner schová Typ a Klient).
+
+## Soniox modely se nepřepínají samy (03.11.2026)
+
+**Problém:** Soniox nemá alias „latest“ a v5 končí 15.12.2026 (pak ji Soniox sám směruje na v6).
+**Proč:** Async model je záměrně schválený seznam (`sonioxAsyncModelIds`) plus aktivní řádek v `recording_transcription_models_v1`; neznámý model se odmítne, aby env nebo prohlížeč nemohl spustit dražší či neprověřený model. Operace si model zmrazí při přípravě.
+**Řešení:** Nový model = úprava `src/lib/model-options.ts` + migrace se schválením modelu, migrace před webem. Starý model nech v seznamu i v DB aktivní, dokud mohou doběhnout operace na něm zmrazené.

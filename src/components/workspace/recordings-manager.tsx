@@ -24,6 +24,8 @@ import {
 } from "@/lib/recording-organization/filters";
 import type { RecordingOrganizationOptions } from "@/lib/recording-organization/types";
 import { buildRecordingStatusSearchParams } from "@/lib/recordings/list-filters";
+import { parseRecordingSort, sortRecordings } from "@/lib/recordings/list-sort";
+import { RecordingSortSelect } from "@/components/workspace/recording-sort-select";
 import type { RecordingStatusCounts } from "@/lib/recordings/queries";
 import { buildRecordingSearchResultHref } from "@/lib/recordings/search";
 import {
@@ -264,11 +266,16 @@ export function RecordingsManager({
     recordingStatus || searchQuery || filters.clientId || filters.projectId || filters.folderId || filters.tagIds.length
   );
   const errorMessage = getRecordingsErrorMessage(errorCode);
-  const clientGroups = groupRecordingsByClient(recordings, organizationOptions);
+  const statusSearchParams = new URLSearchParams(recordingsSearchParams);
+  const sort = parseRecordingSort(statusSearchParams);
+  // Client order keeps the labelled client groups; every other order is one flat, unlabelled list.
+  const clientGroups: { clientId: string | null; label: string | null; recordings: RecordingRow[] }[] = sort === "client"
+    ? groupRecordingsByClient(recordings, organizationOptions)
+    : [{ clientId: null, label: null, recordings: sortRecordings(recordings, sort) }];
   const filterKey = JSON.stringify([searchQuery, filters.clientId, filters.projectId, filters.folderId, filters.tagIds]);
   const statusRecords = searchQuery && searchPage ? searchPage.results : recordings;
   const statusCounts = recordingStatusCounts ?? getRecordingCounts(statusRecords);
-  const statusSearchParams = new URLSearchParams(recordingsSearchParams);
+  const showSort = !(searchQuery && searchPage) && recordings.length > 1;
 
   return (
     <RecordingSharingSelectionProvider recordings={recordings}>
@@ -300,12 +307,17 @@ export function RecordingsManager({
           Filtrovaný výsledek: {formatRecordingResultCount(recordings.length)}.
         </p>
       ) : null}
-      {!searchError ? (
-        <RecordingStatusSummary
-          activeStatus={recordingStatus}
-          counts={statusCounts}
-          searchParams={statusSearchParams}
-        />
+      {!searchError || showSort ? (
+        <div className="recordings-list-controls">
+          {!searchError ? (
+            <RecordingStatusSummary
+              activeStatus={recordingStatus}
+              counts={statusCounts}
+              searchParams={statusSearchParams}
+            />
+          ) : null}
+          {showSort ? <RecordingSortSelect searchParams={recordingsSearchParams} value={sort} /> : null}
+        </div>
       ) : null}
       {searchQuery && searchPage ? (
         <RecordingSearchResults
@@ -323,16 +335,18 @@ export function RecordingsManager({
               <div className="recordings-table-head" aria-hidden="true">
                 <div className="recordings-table-head-main">
                   <span>Název nahrávky</span>
-                  <span>Klient</span>
+                  <span className="recordings-col-date">Datum</span>
+                  <span className="recordings-col-type">Typ</span>
+                  <span>Délka</span>
+                  <span className="recordings-col-client">Klient</span>
                   <span>Projekt</span>
                   <span>Stav</span>
-                  <span>Délka</span>
                 </div>
                 <span className="recordings-table-head-actions" />
               </div>
               {clientGroups.map((group) => (
                 <section className="recording-client-group" key={group.clientId ?? "unclassified"}>
-                  <h2>{group.label}<span>{group.recordings.length}</span></h2>
+                  {group.label !== null ? <h2>{group.label}<span>{group.recordings.length}</span></h2> : null}
                   {group.recordings.map((recording) => {
                     const clientName = organizationOptions.clients.find((item) => item.id === recording.client_id)?.name;
                     const folderName = organizationOptions.folders.find((item) => item.id === recording.folder_id)?.name;
@@ -354,20 +368,26 @@ export function RecordingsManager({
                             >
                               <strong>{recording.title}</strong>
                             </Link>
-                            <span>
+                            {/* Narrow cards hide the date and type columns and show them here instead. */}
+                            <span className="recordings-row-compact-meta">
                               {formatRecordingDate(recording.created_at)} · {getSourceTypeLabel(recording.source_type)}
-                              {recording.file_size_bytes ? ` · ${formatFileSize(recording.file_size_bytes)}` : ""}
                             </span>
                             {folderName || tagNames.length ? <span>{[folderName, ...tagNames].filter(Boolean).join(" · ")}</span> : null}
                           </div>
-                          <span aria-label="Klient" className="recordings-row-organization">
+                          <span aria-label="Datum" className="recordings-row-cell recordings-col-date">
+                            {formatRecordingDate(recording.created_at)}
+                          </span>
+                          <span aria-label="Typ" className="recordings-row-cell recordings-col-type">
+                            {getSourceTypeLabel(recording.source_type)}
+                          </span>
+                          <span className="recordings-row-duration">{formatDuration(recording.duration_seconds)}</span>
+                          <span aria-label="Klient" className="recordings-row-organization recordings-col-client">
                             {getOrganizationLabel(recording.client_id, clientName)}
                           </span>
                           <span aria-label="Projekt" className="recordings-row-organization">
                             {getOrganizationLabel(recording.project_id, recording.project_name)}
                           </span>
                           <StatusBadge tone={getStatusTone(recording.status)}>{getStatusLabel(recording.status)}</StatusBadge>
-                          <span className="recordings-row-duration">{formatDuration(recording.duration_seconds)}</span>
                         </div>
                         <div
                           className="recordings-row-actions"

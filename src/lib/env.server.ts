@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { DEFAULT_SONIOX_ASYNC_MODEL } from "@/lib/model-options";
 
 // emptyStringToUndefined lets optional Vercel env vars be left blank without failing validation.
 function emptyStringToUndefined(value: unknown) {
@@ -53,7 +54,7 @@ function parseServerEnv(): ServerEnv {
     mistralApiKey: parsed.data.MISTRAL_API_KEY ?? null,
     openaiApiKey: parsed.data.OPENAI_API_KEY ?? null,
     sonioxApiKey: parsed.data.SONIOX_API_KEY,
-    sonioxAsyncModel: parsed.data.SONIOX_ASYNC_MODEL ?? "stt-async-v5",
+    sonioxAsyncModel: parsed.data.SONIOX_ASYNC_MODEL ?? DEFAULT_SONIOX_ASYNC_MODEL,
     supabaseServiceRoleKey: parsed.data.SUPABASE_SERVICE_ROLE_KEY,
     supabaseUrl: parsed.data.NEXT_PUBLIC_SUPABASE_URL
   };

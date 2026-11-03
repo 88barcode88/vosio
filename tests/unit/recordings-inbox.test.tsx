@@ -342,7 +342,7 @@ describe("recordings inbox", () => {
     expect(tableHead?.children).toHaveLength(2);
     expect(tableHeadMain?.classList.contains("recordings-table-head-main")).toBe(true);
     expect(Array.from(tableHeadMain?.children ?? []).map((cell) => cell.textContent))
-      .toEqual(["Název nahrávky", "Klient", "Projekt", "Stav", "Délka"]);
+      .toEqual(["Název nahrávky", "Datum", "Typ", "Délka", "Klient", "Projekt", "Stav"]);
     expect(tableHead?.children.item(1)?.classList.contains("recordings-table-head-actions"))
       .toBe(true);
     expect(tableHead?.children.item(1)?.textContent).toBe("");
@@ -367,5 +367,19 @@ describe("recordings inbox", () => {
     const groupLabels = Array.from(container.querySelectorAll(".recording-client-group > h2"))
       .map((heading) => heading.firstChild?.textContent?.trim());
     expect(groupLabels).toEqual(["Acme"]);
+  });
+
+  it("shows a flat list without client headings when another order is chosen in the URL", async () => {
+    const older = { ...createRecording("older", "completed", clientA), created_at: "2026-10-01T10:00:00.000Z", title: "Beta" };
+    const newer = { ...createRecording("newer", "completed", null), created_at: "2026-11-01T10:00:00.000Z", title: "Alfa" };
+    await renderInbox([older, newer], organizationActions, { searchParams: "sort=newest" });
+
+    expect(container.querySelector<HTMLSelectElement>('select[name="sort"]')?.value).toBe("newest");
+    expect(container.querySelectorAll(".recording-client-group > h2")).toHaveLength(0);
+    expect(Array.from(container.querySelectorAll(".recordings-row")).map((row) => row.getAttribute("data-recording-id")))
+      .toEqual(["newer", "older"]);
+    const newerRow = container.querySelector('[data-recording-id="newer"]');
+    expect(newerRow?.querySelector('[aria-label="Typ"]')?.textContent).toBe("Soubor");
+    expect(newerRow?.querySelector('[aria-label="Datum"]')?.textContent).not.toBe("");
   });
 });

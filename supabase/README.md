@@ -68,6 +68,7 @@ A new empty project must apply all 50 migrations in timestamp order:
 48. `20261103120000_db_performance_authz_paths.sql`
 49. `20261103120100_access_list_member_email.sql`
 50. `20261103140000_checklist_delete_all_items.sql`
+51. `20261103200000_soniox_async_v6.sql`
 
 The baseline alone is not the current schema. Preserve existing migration bytes and apply the complete ordered chain.
 

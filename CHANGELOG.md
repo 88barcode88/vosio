@@ -8,15 +8,19 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 - Dokumentace obsahuje návod na připojení AI asistenta (Claude, Codex) včetně bezpečnostních rad; adresa serveru se zobrazí jen v instalaci se zapnutým MCP.
 - Stránka Novinky s přehledem změn psaným pro uživatele, filtrem druhu změny, rozbalovacími podrobnostmi a tečkou v menu u nepřečtených novinek.
+- Seznam nahrávek má řazení (Podle klienta, Nejnovější, Nejstarší, Název A–Z, Nejdelší) uložené v parametru `sort` a samostatné sloupce Datum, Typ a Délka.
 - Záložka Soubory v detailu nahrávky umí stáhnout původní audio (jeden soubor) přes krátkodobý podepsaný odkaz.
 
 ### Changed
 
 - Sjednocená typografie (pět velikostí a tři tloušťky písma), ikony (13, 15 a 20 px), tlačítka a barevné tokeny napříč aplikací; role se všude jmenují Úpravy a Čtení.
 - Karta účtu v postranním menu je kompaktní.
+- Přepis používá Soniox `stt-async-v6` a `stt-rt-v6`; uložené realtime nastavení v4/v5 se převede na v6. Rozpracované async operace zmrazené na v5 doběhnou. Vyžaduje migraci `20261103200000_soniox_async_v6.sql` před nasazením webu.
+- Volba sdílení „Projekt“ se jmenuje „Členové projektu“ a bez přiřazeného projektu ukáže vysvětlení.
 - Malé akce používají jednotné ikony a kompaktní vzhled; zařazení nahrávky se upravuje v kontextovém okně místo velkého inline formuláře.
 - Seznam nahrávek dává přednost obsahu; obnova a hromadné sdílení jsou v kompaktních oknech. Název, export a přístup v detailu používají malé kontextové nabídky.
 - Nová nahrávka začíná soukromě, rozšířené zařazení je volitelné a technické informace o bucketu nezabírají hlavní plochu.
+- Řádek seznamu nahrávek už nezalamuje délku na další řádek (proměnná sloupců s vyšší specificitou přebíjela novější rozložení).
 - Spouštěč Upravit a sdílení a tlačítka sdílení v detailu už nevypadají jako nativní šedá tlačítka.
 - Chat zachovává načtenou historii a rozepsanou zprávu; otázku zobrazí ihned s trojtečkovým indikátorem až do odpovědi. Pozdní odpověď po přepnutí nahrávky nepřepíše novější odeslání.
 - Přepisovací ovládání a stavový řádek přehrávače zachovávají místo při načítání, kontrole i chybě a neposouvají záložky ani chat.
