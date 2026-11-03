@@ -83,7 +83,7 @@ Desktopový sidebar má 224 px rozbalený a 64 px sbalený. Sbalení je pouze lo
 
 Pracovní obsah na desktopu využívá celou zbývající šířku viewportu. Globální max-width se nepoužívá; čitelnost delších textů se řídí pouze na úrovni konkrétních odstavců.
 
-`/settings` zobrazuje část Účet s přihlášeným e-mailem a změnou hesla hned pod hlavičkou, před nastavením AI, přepisu a nahrávání. `/login` používá stejnou neutrální typografii, bílé logo a na desktopu kompaktní dvousloupcovou plochu; na mobilu se skládá do jednoho sloupce.
+`/settings` má šířku nejvýš 1240 px, obsah sekcí (vlevo od 1040 px šířky panelu, jinak vodorovná řada odkazů) a lepivou ukládací lištu u spodního okraje se stavem neuložené změny / chyba / uloženo a akcí Zrušit změny. Část Účet je první: přihlášený e-mail a změna hesla rozbalovaná přes `summary` Změnit heslo. AI sekce má vlevo model a vysvětlení Model a kvalita, vpravo automatické výstupy a časovou osu. Jazyk a přepis ukazuje modely jako fakta (realtime z nastavení, async ze `SONIOX_ASYNC_MODEL` / výchozí) a varuje u neschváleného async modelu; výběr realtime modelu se ukáže, jen když existuje víc možností. Vzhled je segmentový přepínač Světlý/Tmavý. `/login` používá stejnou neutrální typografii, bílé logo a na desktopu kompaktní dvousloupcovou plochu; na mobilu se skládá do jednoho sloupce.
 
 `AI zpracování` se nemá zobrazovat jako samostatná primární položka v sidebaru, pokud pouze pracuje s výstupy konkrétní nahrávky. AI patří do detailu nahrávky jako tab.
 

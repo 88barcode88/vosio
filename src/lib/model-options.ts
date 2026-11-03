@@ -198,6 +198,12 @@ export const legacySonioxRealtimeModelIds: readonly string[] = ["stt-rt-v4", "st
 export const sonioxAsyncModelIds = ["stt-async-v6", "stt-async-v5"] as const;
 export const DEFAULT_SONIOX_ASYNC_MODEL = sonioxAsyncModelIds[0];
 
+// Readable names for the reviewed async models shown in Settings.
+export const sonioxAsyncModelLabels: Record<(typeof sonioxAsyncModelIds)[number], string> = {
+  "stt-async-v5": "Soniox async v5",
+  "stt-async-v6": "Soniox async v6"
+};
+
 // isApprovedSonioxAsyncModel tells whether a model name is on the reviewed async allowlist above.
 export function isApprovedSonioxAsyncModel(model: string): model is (typeof sonioxAsyncModelIds)[number] {
   return (sonioxAsyncModelIds as readonly string[]).includes(model);

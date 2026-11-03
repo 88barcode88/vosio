@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getInstallationStatus } from "@/lib/installation-status.server";
 import { getAiProviderConfigurationError } from "@/lib/env.server";
 
@@ -9,6 +9,10 @@ const REQUIRED_NAMES = [
   "SONIOX_API_KEY",
   "OPENAI_API_KEY"
 ] as const;
+
+beforeEach(() => {
+  vi.stubEnv("SONIOX_ASYNC_MODEL", "");
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -22,6 +26,11 @@ function configureRequiredEnvironment() {
 }
 
 describe("installation status", () => {
+  it("names the configured file transcription model without treating it as a secret", () => {
+    vi.stubEnv("SONIOX_ASYNC_MODEL", "stt-async-v5");
+    expect(getInstallationStatus().fileTranscriptionModel).toBe("stt-async-v5");
+  });
+
   it("keeps Mistral optional while returning fixed setup guidance when its key is missing", () => {
     configureRequiredEnvironment();
     vi.stubEnv("MISTRAL_API_KEY", "");
@@ -40,6 +49,7 @@ describe("installation status", () => {
 
     expect(getInstallationStatus()).toEqual({
       environment: "preview",
+      fileTranscriptionModel: "stt-async-v6",
       geminiConfigured: false,
       mistralConfigured: false,
       missingRequiredNames: [],
@@ -57,6 +67,7 @@ describe("installation status", () => {
 
     expect(getInstallationStatus()).toEqual({
       environment: "development",
+      fileTranscriptionModel: "stt-async-v6",
       geminiConfigured: true,
       mistralConfigured: true,
       missingRequiredNames: ["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "OPENAI_API_KEY"],
@@ -77,6 +88,7 @@ describe("installation status", () => {
     expect(status.environment).toBe("production");
     expect(Object.keys(status).sort()).toEqual([
       "environment",
+      "fileTranscriptionModel",
       "geminiConfigured",
       "missingRequiredNames",
       "mistralConfigured",

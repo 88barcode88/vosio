@@ -74,20 +74,56 @@ function getAtRuleBlocks(css: string, header: string) {
 }
 
 describe("settings workspace layout", () => {
-  it("keeps model guidance beside the selector on desktop and stacks it throughout the mobile shell range", () => {
+  it("puts model guidance under the selector and groups automatic outputs beside it, stacking on narrow panels", () => {
     const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
-    const formsCss = readFileSync("app/styles/forms-settings-ai.css", "utf8");
-    const responsiveCss = readFileSync("app/styles/responsive.css", "utf8");
-    const mobileShellCss = getAtRuleBlocks(responsiveCss, "@media (max-width: 900px)").join("\n");
+    const layoutCss = readFileSync("app/styles/settings-layout.css", "utf8");
+    const narrowCss = getAtRuleBlocks(layoutCss, "@container settings-panel (max-width: 820px)").join("\n");
 
     expect(markup).toContain('class="settings-grid settings-model-row"');
-    expect(markup).toContain('<strong id="settings-model-guidance-title">Model a kvalita</strong>');
+    expect(markup).toContain("<strong>Model a kvalita: </strong>");
     expect(markup).not.toMatch(/<button[^>]*>Model a kvalita<\/button>/u);
-    expect(markup.indexOf('name="defaultOpenaiModel"')).toBeLessThan(
-      markup.indexOf('id="settings-model-guidance-title"')
+    expect(markup.indexOf('name="defaultOpenaiModel"')).toBeLessThan(markup.indexOf("Model a kvalita: "));
+    expect(markup.indexOf("Model a kvalita: ")).toBeLessThan(markup.indexOf("<legend>Automaticky po dokončení přepisu</legend>"));
+    expect(markup.indexOf('value="follow_up_email"')).toBeLessThan(markup.indexOf('name="autoTimelineAfterTranscription"'));
+    expect(layoutCss).toMatch(/\.settings-model-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/u);
+    expect(narrowCss).toMatch(/\.settings-model-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/u);
+  });
+
+  it("links every section from the settings navigation", () => {
+    const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
+    for (const id of ["settings-account", "settings-ai", "settings-transcription", "settings-recording", "settings-storage", "settings-appearance", "settings-diagnostics"]) {
+      expect(markup).toContain(`href="#${id}"`);
+      expect(markup).toContain(`id="${id}"`);
+    }
+  });
+
+  it("shows both transcription models as facts and warns about an unapproved file model", () => {
+    const approved = renderToStaticMarkup(
+      <SettingsPanel accountEmail="user@example.test" installationStatus={{ ...installationStatus, fileTranscriptionModel: "stt-async-v6" }}
+        recordingStorageConfig={storageConfig} settings={defaultUserSettings} status={null}
+        usageState={{ error: "x", summary: null }} />
     );
-    expect(formsCss).toMatch(/\.settings-model-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*520px\)\s+minmax\(0,\s*1fr\)/u);
-    expect(mobileShellCss).toMatch(/\.settings-model-row\s*\{[^}]*grid-template-columns:\s*1fr/u);
+    expect(approved).toContain('<input type="hidden" name="sonioxRealtimeModel" value="stt-rt-v6"/>');
+    expect(approved).not.toContain('<select name="sonioxRealtimeModel"');
+    expect(approved).toContain("Soniox realtime v6");
+    expect(approved).toContain("Soniox async v6");
+
+    const legacy = renderToStaticMarkup(
+      <SettingsPanel accountEmail="user@example.test" installationStatus={{ ...installationStatus, fileTranscriptionModel: "stt-async-v5" }}
+        recordingStorageConfig={storageConfig} settings={defaultUserSettings} status={null}
+        usageState={{ error: "x", summary: null }} />
+    );
+    expect(legacy).toContain("Soniox async v5");
+    expect(legacy).toContain("15.12.2026");
+
+    const invalid = renderToStaticMarkup(
+      <SettingsPanel accountEmail="user@example.test" installationStatus={{ ...installationStatus, fileTranscriptionModel: "stt-async-preview" }}
+        recordingStorageConfig={storageConfig} settings={defaultUserSettings} status={null}
+        usageState={{ error: "x", summary: null }} />
+    );
+    expect(invalid).toContain('class="settings-model-invalid" role="alert"');
+    expect(invalid).toContain("stt-async-preview");
+    expect(invalid).toContain("Nové přepisy souborů selžou");
   });
 
   it("renders account security as a separate non-nested form", () => {
@@ -218,7 +254,7 @@ describe("settings workspace layout", () => {
 
     expect(headingPositions.every((position) => position >= 0)).toBe(true);
     expect([...headingPositions].sort((left, right) => left - right)).toEqual(headingPositions);
-    expect(markup).toContain("Zatím bez usage v tomto měsíci.");
+    expect(markup).toContain("Tento měsíc zatím bez využití.");
     expect(markup).toContain("Technické informace");
     expect(markup).not.toContain("Globální limit projektu");
   });
@@ -239,7 +275,7 @@ describe("settings workspace layout", () => {
       expect(markup).toMatch(new RegExp(`<input[^>]+name="${name}"[^>]+type="hidden"|<input[^>]+type="hidden"[^>]+name="${name}"`, "u"));
       expect(markup).not.toContain(`<select name="${name}"`);
     }
-    expect(markup).toContain("Některé dříve uložené preference zatím aplikace nepoužívá.");
+    expect(markup).not.toContain("Některé dříve uložené preference zatím aplikace nepoužívá.");
     expect(markup).toContain("Automaticky vytvořit časovou osu po přepisu");
     expect(markup).toContain("Usage se teď nepodařilo načíst.");
     expect(markup).toContain('autoComplete="off"');
@@ -278,9 +314,10 @@ describe("settings workspace layout", () => {
       expect(container.querySelector<HTMLButtonElement>(".settings-form .settings-save-button")?.disabled).toBe(true);
       const technicalDisclosure = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
         .find((button) => button.textContent === "Technické informace")!;
-      const themeToggle = container.querySelector<HTMLButtonElement>(".theme-toggle")!;
+      const themeButtons = Array.from(container.querySelectorAll<HTMLButtonElement>(".theme-choice button"));
       expect(technicalDisclosure.disabled).toBe(false);
-      expect(themeToggle.disabled).toBe(false);
+      expect(themeButtons.map((button) => button.textContent)).toEqual(["Světlý", "Tmavý"]);
+      expect(themeButtons.every((button) => !button.disabled)).toBe(true);
       await act(async () => technicalDisclosure.click());
       expect(technicalDisclosure.getAttribute("aria-expanded")).toBe("true");
     } finally {
@@ -374,7 +411,6 @@ describe("settings workspace layout", () => {
       const draft = {
         defaultOpenaiModel: "gpt-6-astra",
         sonioxRealtimeLanguage: "de",
-        sonioxRealtimeModel: "stt-rt-v6",
         sonioxRegion: "eu",
         liveAudioQuality: "high",
         supabaseStoragePlan: "paid"
@@ -404,6 +440,7 @@ describe("settings workspace layout", () => {
 
       expect(saveAction).toHaveBeenCalledOnce();
       expect(saveAction.mock.calls[0]?.[1].get("defaultReasoningEffort")).toBe("max");
+      expect(saveAction.mock.calls[0]?.[1].get("sonioxRealtimeModel")).toBe("stt-rt-v6");
       expect(container.querySelector('input[type="range"]')?.getAttribute("aria-valuetext")).toBe("Maximum (max)");
       for (const [name, value] of Object.entries(draft)) {
         expect(saveAction.mock.calls[0]?.[1].get(name)).toBe(value);

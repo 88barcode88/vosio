@@ -98,7 +98,6 @@ test("stored settings save with pending, safe failure drafts and a no-JS EU warn
   const failedDraft = {
     defaultOpenaiModel: "gpt-6-astra",
     sonioxRealtimeLanguage: "de",
-    sonioxRealtimeModel: "stt-rt-v6",
     sonioxRegion: "eu",
     supabaseStoragePlan: "paid"
   };
@@ -142,7 +141,7 @@ test("stored settings save with pending, safe failure drafts and a no-JS EU warn
   await expect(page.getByLabel("Region Soniox")).toHaveValue("global");
   await expect(page.locator('select[name="defaultOpenaiModel"]')).toHaveValue("gpt-6.1-sol");
   await expect(page.locator('select[name="sonioxRealtimeLanguage"]')).toHaveValue("auto");
-  await expect(page.locator('select[name="sonioxRealtimeModel"]')).toHaveValue("stt-rt-v6");
+  await expect(page.locator('input[name="sonioxRealtimeModel"]')).toHaveValue("stt-rt-v6");
   await expect(page.locator('select[name="supabaseStoragePlan"]')).toHaveValue("free");
   await expect(page.locator(".settings-alert-error")).toHaveCount(0);
   expect(failures.filter((failure) => /hydration|#418/iu.test(failure))).toEqual([]);
@@ -166,7 +165,7 @@ test("technical information returns only readiness, missing names and optional G
 
 test("six automatic choices stay independent through failed save and settings remain compact", async ({ page }) => {
   await page.goto(fixturePath({ installation: "ready", region: "global", save: "error", surface: "settings" }));
-  const choices = page.locator('.settings-automatic-options input[type="checkbox"]');
+  const choices = page.locator('.settings-automatic-group input[type="checkbox"]');
   await expect(choices).toHaveCount(6);
   for (let index = 0; index < 6; index++) await expect(choices.nth(index)).not.toBeChecked();
   await choices.nth(0).check(); await choices.nth(5).check();

@@ -37,7 +37,7 @@ describe("documentation and not found surfaces", () => {
 
     expect(markup).not.toContain("Začít s prvním callem");
     expect(markup).toContain("Model a kvalita");
-    expect(markup).toContain("Změna hesla");
+    expect(markup).toContain("Změnit heslo");
     expect(markup).toContain("každý ze šesti automatických výstupů zapnout samostatně");
     expect(markup).toContain("Výchozí stav je vypnuto; dříve výslovně zapnutá časová osa zůstává zapnutá");
     expect(markup).toContain("šest samostatných voleb: shrnutí, úkoly, zápis ze schůzky, CRM poznámka, navazující e-mail a časová osa");
