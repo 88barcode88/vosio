@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
-import { CheckCircle2, Save, Settings2, TriangleAlert } from "lucide-react";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { useActionState, useEffect, useRef, useState, type RefObject } from "react";
+import { CheckCircle2, CircleDot, Save, Settings2, TriangleAlert } from "lucide-react";
+import { ThemeChoice } from "@/components/theme-toggle";
 import { AccountSecurityPanel } from "@/components/account-security-panel";
 import { AiModelPicker, createAiModelSelection } from "@/components/ai-model-picker";
 import { Disclosure } from "@/components/ui/disclosure";
@@ -22,6 +22,9 @@ import {
 } from "@/lib/settings/types";
 import {
   AI_MODEL_QUALITY_GUIDANCE,
+  isApprovedSonioxAsyncModel,
+  sonioxAsyncModelIds,
+  sonioxAsyncModelLabels,
   sonioxRealtimeModelOptions
 } from "@/lib/model-options";
 import { sonioxRealtimeLanguageOptions } from "@/lib/soniox/languages";
@@ -85,6 +88,82 @@ function SettingsSaveButton({ disabled, pending }: { disabled: boolean; pending:
     </button>
   );
 }
+
+const settingsErrorMessages: Record<NonNullable<SettingsActionState["errorCode"]>, string> = {
+  invalid_settings: "Nastavení se nepodařilo uložit: některá volba není platná. Zkontrolujte výběr a uložte znovu.",
+  save_failed: "Nastavení se nepodařilo uložit. Změny zůstaly ve formuláři, zkuste to znovu za chvíli."
+};
+
+// SettingsSaveStatus tells whether the form holds unsaved edits, failed to save, or matches the saved state.
+function SettingsSaveStatus({ actionState, dirty, errorRef }: {
+  actionState: SettingsActionState;
+  dirty: boolean;
+  errorRef: RefObject<HTMLDivElement | null>;
+}) {
+  if (actionState.status === "error") {
+    return (
+      <div aria-live="assertive" className="settings-alert settings-alert-error" ref={errorRef} role="alert" tabIndex={-1}>
+        <TriangleAlert aria-hidden="true" size={15} />
+        <span>{settingsErrorMessages[actionState.errorCode ?? "save_failed"]}</span>
+      </div>
+    );
+  }
+  if (dirty) {
+    return (
+      <div aria-live="polite" className="settings-alert settings-alert-dirty" role="status">
+        <CircleDot aria-hidden="true" size={15} />
+        <span>Máte neuložené změny.</span>
+      </div>
+    );
+  }
+  if (actionState.status === "saved") {
+    return (
+      <div aria-live="polite" className="settings-alert settings-alert-success" role="status">
+        <CheckCircle2 aria-hidden="true" size={15} />
+        <span>Nastavení je uložené.</span>
+      </div>
+    );
+  }
+  return <p className="settings-savebar-hint">Heslo a motiv se ukládají samostatně hned po změně.</p>;
+}
+
+// FileTranscriptionModel shows which reviewed async model new uploads use and warns when the server value is unusable.
+function FileTranscriptionModel({ model }: { model: string | undefined }) {
+  if (!model) return <dd>Nezjištěno</dd>;
+  if (!isApprovedSonioxAsyncModel(model)) {
+    return (
+      <dd className="settings-model-invalid" role="alert">
+        <code>{model}</code> není schválený model. Nové přepisy souborů selžou, dokud proměnnou SONIOX_ASYNC_MODEL ve Vercelu nesmažete nebo nenastavíte na {sonioxAsyncModelIds.join(" nebo ")}.
+      </dd>
+    );
+  }
+  return (
+    <dd>
+      {sonioxAsyncModelLabels[model]}
+      {model !== sonioxAsyncModelIds[0] ? (
+        <small> Starší model, Soniox ho ukončí 15.12.2026. Smažte SONIOX_ASYNC_MODEL ve Vercelu, aby se použil {sonioxAsyncModelLabels[sonioxAsyncModelIds[0]]}.</small>
+      ) : null}
+    </dd>
+  );
+}
+
+const settingsSections = [
+  { id: "settings-account", label: "Účet" },
+  { id: "settings-ai", label: "AI a výstupy" },
+  { id: "settings-transcription", label: "Jazyk a přepis" },
+  { id: "settings-recording", label: "Nahrávání" },
+  { id: "settings-storage", label: "Úložiště" },
+  { id: "settings-appearance", label: "Vzhled" },
+  { id: "settings-diagnostics", label: "Využití" }
+] as const;
+
+const processingTypeLabels: Record<(typeof settingsProcessingTypes)[number], string> = {
+  action_items: "Úkoly",
+  crm_note: "CRM poznámka",
+  follow_up_email: "Navazující e-mail",
+  meeting_minutes: "Zápis ze schůzky",
+  summary: "Shrnutí"
+};
 
 const installationEnvironmentLabels: Record<InstallationEnvironment, string> = {
   development: "Vývoj",
@@ -167,7 +246,7 @@ function UsageContent({ state }: { state: CurrentMonthUsageState }) {
   if (isEmpty) {
     return (
       <article className="settings-usage-state settings-usage-empty">
-        <strong>Zatím bez usage v tomto měsíci.</strong>
+        <strong>Tento měsíc zatím bez využití.</strong>
         <p>Po první nahrávce nebo AI výstupu se zde objeví orientační souhrn.</p>
       </article>
     );
@@ -259,6 +338,7 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
   const storageLimitSummary = getRecordingStorageLimitSummary(recordingStorageConfig, visibleDraft.supabaseStoragePlan);
   const sonioxRealtimeModel = sonioxRealtimeModelOptions.find((option) => option.id === visibleDraft.sonioxRealtimeModel)
     ?? sonioxRealtimeModelOptions[0];
+  const dirty = JSON.stringify(visibleDraft) !== visibleSettingsKey;
 
   useEffect(() => {
     if (actionState.status === "error") {
@@ -283,19 +363,11 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         </div>
       </div>
 
-      {actionState.status !== "idle" ? (
-        <div
-          aria-live="polite"
-          className={actionState.status === "saved" ? "settings-alert settings-alert-success" : "settings-alert settings-alert-error"}
-          ref={actionState.status === "error" ? errorAlertRef : undefined}
-          role={actionState.status === "saved" ? "status" : "alert"}
-          tabIndex={actionState.status === "error" ? -1 : undefined}
-        >
-          <CheckCircle2 size={15} />
-          {actionState.status === "saved" ? "Nastavení je uložené." : "Nastavení se nepodařilo uložit."}
-        </div>
-      ) : null}
-
+      <div className="settings-layout">
+      <nav aria-label="Sekce nastavení" className="settings-nav">
+        {settingsSections.map((section) => <a href={`#${section.id}`} key={section.id}>{section.label}</a>)}
+      </nav>
+      <div className="settings-content">
       <AccountSecurityPanel disabled={disableAccountSecurity} email={accountEmail} />
 
       <form action={disableSave ? undefined : formAction} autoComplete="off" className="settings-form">
@@ -315,54 +387,57 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         <section className="settings-section" aria-labelledby="settings-ai">
           <div className="settings-section-heading"><h2 id="settings-ai">AI a výstupy</h2><p>Model se používá pro ruční AI zpracování i pro novou automatickou časovou osu.</p></div>
           <div className="settings-grid settings-model-row">
-            <AiModelPicker
-              disabled={disableSave || pending}
-              modelLabel="Výchozí AI model"
-              modelName="defaultOpenaiModel"
-              onChange={(selection) => setVisibleDraft((draft) => ({
-                ...draft,
-                defaultOpenaiModel: selection.model as UserSettings["defaultOpenaiModel"],
-                defaultReasoningEffort: selection.reasoningEffort
-              }))}
-              preserveReasoningPreference
-              reasoningName="defaultReasoningEffort"
-              scope="Výchozí volba pro nové AI požadavky."
-              value={createAiModelSelection(visibleDraft.defaultOpenaiModel, visibleDraft.defaultReasoningEffort)}
-            />
-            <aside aria-labelledby="settings-model-guidance-title" className="settings-model-guidance">
-              <strong id="settings-model-guidance-title">Model a kvalita</strong>
-              <p>{AI_MODEL_QUALITY_GUIDANCE}</p>
-            </aside>
-          </div>
-          <p className="settings-stored-note">Automatické výstupy pro nově dokončené přepisy. Každý zapnutý výstup se zpracuje samostatně výchozím AI modelem. Vše vypnuto znamená žádné automatické AI zpracování.</p>
-          <div className="settings-automatic-options">
-          {settingsProcessingTypes.map((type) => (
-            <label className="settings-checkbox-row" key={type}>
-              <input checked={visibleDraft.automaticOutputTypes.includes(type)} disabled={disableSave}
-                name="automaticOutputTypes" type="checkbox" value={type}
-                onChange={(event) => {
-                  const checked = event.currentTarget.checked;
-                  setVisibleDraft((draft) => ({ ...draft, automaticOutputTypes: checked
-                    ? [...draft.automaticOutputTypes, type] : draft.automaticOutputTypes.filter((item) => item !== type) }));
-                }} />
-              <span><strong>{{ summary: "Shrnutí", action_items: "Úkoly", meeting_minutes: "Zápis ze schůzky", crm_note: "CRM poznámka", follow_up_email: "Navazující e-mail" }[type]}</strong></span>
-            </label>
-          ))}
-          <label className="settings-checkbox-row">
-            <input
-              checked={visibleDraft.autoTimelineAfterTranscription}
-              disabled={disableSave}
-              name="autoTimelineAfterTranscription"
-              onChange={(event) => {
-                const value = event.currentTarget.checked;
-                setVisibleDraft((draft) => ({ ...draft, autoTimelineAfterTranscription: value }));
-              }}
-              type="checkbox"
-            />
-            <span>
-              <strong>Automaticky vytvořit časovou osu po přepisu</strong>
-            </span>
-          </label>
+            <div className="settings-model-column">
+              <AiModelPicker
+                disabled={disableSave || pending}
+                modelLabel="Výchozí AI model"
+                modelName="defaultOpenaiModel"
+                onChange={(selection) => setVisibleDraft((draft) => ({
+                  ...draft,
+                  defaultOpenaiModel: selection.model as UserSettings["defaultOpenaiModel"],
+                  defaultReasoningEffort: selection.reasoningEffort
+                }))}
+                preserveReasoningPreference
+                reasoningName="defaultReasoningEffort"
+                scope="Výchozí volba pro nové AI požadavky."
+                value={createAiModelSelection(visibleDraft.defaultOpenaiModel, visibleDraft.defaultReasoningEffort)}
+              />
+              <p className="settings-model-guidance"><strong>Model a kvalita: </strong>{AI_MODEL_QUALITY_GUIDANCE}</p>
+            </div>
+            <fieldset className="settings-automatic-group">
+              <legend>Automaticky po dokončení přepisu</legend>
+              <p className="settings-stored-note">Každý zapnutý výstup se zpracuje samostatně výchozím AI modelem. Vše vypnuto znamená žádné automatické AI zpracování.</p>
+              <div className="settings-automatic-options">
+                {settingsProcessingTypes.map((type) => (
+                  <label className="settings-checkbox-row" key={type}>
+                    <input checked={visibleDraft.automaticOutputTypes.includes(type)} disabled={disableSave}
+                      name="automaticOutputTypes" type="checkbox" value={type}
+                      onChange={(event) => {
+                        const checked = event.currentTarget.checked;
+                        setVisibleDraft((draft) => ({ ...draft, automaticOutputTypes: checked
+                          ? [...draft.automaticOutputTypes, type] : draft.automaticOutputTypes.filter((item) => item !== type) }));
+                      }} />
+                    <span><strong>{processingTypeLabels[type]}</strong></span>
+                  </label>
+                ))}
+              </div>
+              <label className="settings-checkbox-row settings-timeline-option">
+                <input
+                  checked={visibleDraft.autoTimelineAfterTranscription}
+                  disabled={disableSave}
+                  name="autoTimelineAfterTranscription"
+                  onChange={(event) => {
+                    const value = event.currentTarget.checked;
+                    setVisibleDraft((draft) => ({ ...draft, autoTimelineAfterTranscription: value }));
+                  }}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Automaticky vytvořit časovou osu po přepisu</strong>
+                  <small>Časová osa se vytvoří i bez zapnutých výstupů.</small>
+                </span>
+              </label>
+            </fieldset>
           </div>
         </section>
 
@@ -398,21 +473,27 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
                 {sonioxRealtimeLanguageOptions.map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}
               </select>
             </label>
-            <label>
-              <span>Soniox realtime model</span>
-              <select
-                disabled={disableSave}
-                name="sonioxRealtimeModel"
-                onChange={(event) => {
-                  const value = event.currentTarget.value as UserSettings["sonioxRealtimeModel"];
-                  setVisibleDraft((draft) => ({ ...draft, sonioxRealtimeModel: value }));
-                }}
-                value={visibleDraft.sonioxRealtimeModel}
-              >
-                {sonioxRealtimeModelOptions.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-              </select>
-            </label>
+            {sonioxRealtimeModelOptions.length > 1 ? (
+              <label>
+                <span>Soniox realtime model</span>
+                <select
+                  disabled={disableSave}
+                  name="sonioxRealtimeModel"
+                  onChange={(event) => {
+                    const value = event.currentTarget.value as UserSettings["sonioxRealtimeModel"];
+                    setVisibleDraft((draft) => ({ ...draft, sonioxRealtimeModel: value }));
+                  }}
+                  value={visibleDraft.sonioxRealtimeModel}
+                >
+                  {sonioxRealtimeModelOptions.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                </select>
+              </label>
+            ) : <input name="sonioxRealtimeModel" type="hidden" value={visibleDraft.sonioxRealtimeModel} />}
           </div>
+          <dl aria-label="Modely přepisu" className="settings-model-list">
+            <div><dt>Živý přepis</dt><dd>{sonioxRealtimeModel.label}</dd></div>
+            <div><dt>Nahrané soubory</dt><FileTranscriptionModel model={installationStatus.fileTranscriptionModel} /></div>
+          </dl>
           <aside aria-live="polite" className="settings-region-warning" role="note">
             <TriangleAlert aria-hidden="true" size={15} />
             <p>
@@ -471,7 +552,6 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
               <small>Změna platí jen pro nahrávky přesunuté do Koše po uložení.</small>
             </label>
           </div>
-          <p className="settings-stored-note">Některé dříve uložené preference zatím aplikace nepoužívá. Zachováváme je beze změny, ale nevydáváme je za aktivní ovládání.</p>
         </section>
 
         <section className="settings-section" aria-labelledby="settings-storage">
@@ -497,8 +577,8 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
         </section>
 
         <section className="settings-section" aria-labelledby="settings-appearance">
-          <div className="settings-section-heading"><h2 id="settings-appearance">Vzhled</h2><p>Motiv se uloží do cookie a localStorage, ne do Auth metadata.</p></div>
-          <ThemeToggle />
+          <div className="settings-section-heading"><h2 id="settings-appearance">Vzhled</h2><p>Motiv se přepne a uloží v tomto prohlížeči hned, bez tlačítka Uložit.</p></div>
+          <ThemeChoice />
         </section>
 
         <section className="settings-section settings-diagnostics" aria-labelledby="settings-diagnostics">
@@ -513,15 +593,28 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
               <div><dt>Manuální upload</dt><dd>{storageLimitSummary.manualUploadLimit}</dd></div>
               <div><dt>Live audio</dt><dd>{storageLimitSummary.liveAudioLimit}</dd></div>
               <InstallationStatusDetails status={installationStatus} />
+              <div className="settings-technical-wide"><dt>Skryté preference</dt><dd>Některé dříve uložené preference zatím aplikace nepoužívá. Zachováváme je beze změny, ale nevydáváme je za aktivní ovládání.</dd></div>
               <div><dt>Serverové hranice</dt><dd>Dlouhodobé provider klíče zůstávají pouze na serveru. Klient pro live přepis získá krátkodobý Soniox api_key a konfiguraci regionu a WebSocketu.</dd></div>
             </dl>
             <p className="settings-limit-warning">{storageLimitSummary.warning}</p>
           </Disclosure>
         </section>
 
-        <SettingsSaveButton disabled={disableSave} pending={pending} />
+        <div className="settings-savebar">
+          <SettingsSaveStatus actionState={actionState} dirty={dirty} errorRef={errorAlertRef} />
+          <div className="settings-savebar-actions">
+            {dirty ? (
+              <button className="ghost-action" onClick={() => setVisibleDraft(createVisibleSettingsDraft(settings))} type="button">
+                Zrušit změny
+              </button>
+            ) : null}
+            <SettingsSaveButton disabled={disableSave} pending={pending} />
+          </div>
+        </div>
         </fieldset>
       </form>
+      </div>
+      </div>
     </section>
   );
 }

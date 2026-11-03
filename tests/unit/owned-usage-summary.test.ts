@@ -60,6 +60,6 @@ describe("owner-scoped usage RPC adoption", () => {
   it.each(["get_owned_job_usage_v1", "get_owned_recording_usage_summary_v1", "get_owned_recording_durations_v1"])("fails closed on %s errors", async (failedName) => {
     const f = fixture([empty], [job("r")]);
     f.rpc.mockImplementation(async (name) => ({ data: name === "get_owned_job_usage_v1" ? { ai: [], soniox: [job("r")] } : name === "get_owned_recording_usage_summary_v1" ? [empty] : [], error: name === failedName ? { message: "denied" } : null }));
-    expect(await loadCurrentMonthUsageState(f.client)).toEqual({ error: "Usage se teď nepodařilo načíst.", summary: null });
+    expect(await loadCurrentMonthUsageState(f.client)).toEqual({ error: "Přehled využití se teď nepodařilo načíst. Zkuste stránku obnovit.", summary: null });
   });
 });

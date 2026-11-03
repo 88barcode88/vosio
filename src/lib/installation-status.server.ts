@@ -1,4 +1,5 @@
 import "server-only";
+import { DEFAULT_SONIOX_ASYNC_MODEL } from "@/lib/model-options";
 
 const requiredEnvironmentNames = [
   "NEXT_PUBLIC_SUPABASE_URL",
@@ -12,6 +13,8 @@ export type InstallationEnvironment = "production" | "preview" | "development" |
 
 export type InstallationStatus = {
   environment: InstallationEnvironment;
+  // Async Soniox model name new file transcriptions use (not a secret); absent in fixtures.
+  fileTranscriptionModel?: string;
   geminiConfigured: boolean;
   mistralConfigured: boolean;
   missingRequiredNames: string[];
@@ -44,6 +47,7 @@ export function getInstallationStatus(): InstallationStatus {
 
   return {
     environment: getInstallationEnvironment(),
+    fileTranscriptionModel: process.env.SONIOX_ASYNC_MODEL?.trim() || DEFAULT_SONIOX_ASYNC_MODEL,
     geminiConfigured: isConfiguredValue(process.env.GEMINI_API_KEY),
     mistralConfigured: isConfiguredValue(process.env.MISTRAL_API_KEY),
     missingRequiredNames,
