@@ -356,7 +356,7 @@ export async function loadCurrentMonthUsageState(supabase: SupabaseClient): Prom
     };
   } catch {
     return {
-      error: "Usage se teď nepodařilo načíst.",
+      error: "Přehled využití se teď nepodařilo načíst. Zkuste stránku obnovit.",
       summary: null
     };
   }

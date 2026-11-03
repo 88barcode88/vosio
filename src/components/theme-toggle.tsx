@@ -39,3 +39,28 @@ export function ThemeToggle({ compact = false }: ThemeToggleProps) {
     </button>
   );
 }
+
+const themeChoices = [
+  { icon: Sun, id: "light", label: "Světlý" },
+  { icon: Moon, id: "dark", label: "Tmavý" }
+] as const;
+
+// ThemeChoice shows both Vosio themes side by side for Settings and applies the pick immediately.
+export function ThemeChoice() {
+  const theme = useSyncExternalStore(
+    subscribeToTheme,
+    getThemeSnapshot,
+    getServerThemeSnapshot
+  );
+
+  return (
+    <div aria-label="Motiv" className="theme-choice" role="group">
+      {themeChoices.map(({ icon: Icon, id, label }) => (
+        <button aria-pressed={theme === id} key={id} onClick={() => setThemeSnapshot(id)} type="button">
+          <Icon aria-hidden="true" size={15} />
+          <span>{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}

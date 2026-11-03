@@ -103,8 +103,10 @@ const documentationSections: DocumentationSection[] = [
   },
   {
     body: [
-      "Nastavení obsahuje netajné uživatelské preference. U výchozího AI modelu je vždy viditelné vysvětlení Model a kvalita; pomáhá zvolit rychlost, cenu a míru kontroly výsledku.",
-      "V části Účet je Změna hesla. Vyžaduje současné heslo, nové heslo a potvrzení; hesla se do nastavení neukládají.",
+      "Nastavení obsahuje netajné uživatelské preference. Na širší obrazovce je vlevo obsah sekcí, na telefonu řada odkazů nahoře. Pod výběrem výchozího AI modelu je vysvětlení Model a kvalita; pomáhá zvolit rychlost, cenu a míru kontroly výsledku.",
+      "V části Účet je tlačítko Změnit heslo. Po rozbalení vyžaduje současné heslo, nové heslo (alespoň 8 znaků) a potvrzení; heslo se uloží hned a do nastavení se neukládá.",
+      "Lišta u spodního okraje ukazuje, jestli máte neuložené změny, jestli uložení selhalo (změny zůstanou ve formuláři) nebo jestli je vše uložené. Zrušit změny vrátí formulář do uloženého stavu. Motiv (Světlý nebo Tmavý) se uloží hned v tomto prohlížeči.",
+      "Jazyk a přepis ukazuje použitý model Soniox pro živý přepis i pro nahrané soubory. Model pro soubory nastavuje správce instalace; pokud je neplatný, Nastavení na to upozorní.",
       "Automatické výstupy mají šest samostatných voleb: shrnutí, úkoly, zápis ze schůzky, CRM poznámka, navazující e-mail a časová osa. Když jsou všechny vypnuté, AI se samo nespustí. Vysvětlení live přepisu je viditelné přímo u nastavení. Technické informace mají vlastní sbalenou část; Diagnostika a využití zachovává podrobnosti pod Více informací."
       ,"Pro budoucí položky v Koši můžete zvolit 24 hodin, 7 dní nebo 30 dní. Výchozí volba je 30 dní a změna nemění termín položek, které už v Koši jsou. Usage ukazuje orientační AI a Soniox náklady; skutečné vyúčtování najdete u poskytovatelů."
     ],

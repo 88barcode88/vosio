@@ -25,7 +25,7 @@ import type { UserSettings } from "@/lib/settings/types";
 import type { CurrentMonthUsageState } from "@/lib/usage/summary";
 
 const unavailableUsageState: CurrentMonthUsageState = {
-  error: "Usage se teď nepodařilo načíst.",
+  error: "Přehled využití se teď nepodařilo načíst. Zkuste stránku obnovit.",
   summary: null
 };
 

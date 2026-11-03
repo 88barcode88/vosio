@@ -688,3 +688,9 @@ OpenAI, Gemini i Mistral pro processing i chat používají společný transport
 **Problém:** Soniox nemá alias „latest“ a v5 končí 15.12.2026 (pak ji Soniox sám směruje na v6).
 **Proč:** Async model je záměrně schválený seznam (`sonioxAsyncModelIds`) plus aktivní řádek v `recording_transcription_models_v1`; neznámý model se odmítne, aby env nebo prohlížeč nemohl spustit dražší či neprověřený model. Operace si model zmrazí při přípravě.
 **Řešení:** Nový model = úprava `src/lib/model-options.ts` + migrace se schválením modelu, migrace před webem. Starý model nech v seznamu i v DB aktivní, dokud mohou doběhnout operace na něm zmrazené.
+
+## Nastavení: kontrola 44px na izolované stránce (03.11.2026)
+
+**Problém:** `tests/e2e/soniox-installation-settings.spec.ts` měří všechny `button`, `select` a `summary` na fixture `/login/soniox-installation-e2e` a vyžaduje výšku aspoň 44 px.
+**Proč:** fixture neleží v `.workspace-shell`, takže `control-hit-targets.css` (30 px na desktopu s jemným ukazatelem) se tam neuplatní; v aplikaci tatáž pravidla nové ovládání zmenší.
+**Řešení:** nové ovládací prvky Nastavení stylovat s `min-height: 44px` v `settings-layout.css`; `control-hit-targets.css` musí zůstat posledním importem v `app/globals.css` (hlídá unit test).

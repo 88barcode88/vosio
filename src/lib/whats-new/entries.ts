@@ -96,6 +96,14 @@ export const whatsNewReleases: readonly WhatsNewRelease[] = [
         summary: "Jména a role mluvčích jsou zarovnané s poli, časová osa má víc místa u časů a mluvčích, tlačítka u uložených AI výstupů jsou pohromadě a načítání se ukáže na jednom řádku."
       },
       {
+        id: "settings-clearer",
+        kind: "improved",
+        title: "Přehlednější Nastavení",
+        summary: "Nastavení má vlevo obsah sekcí, užší a lépe uspořádané bloky a lištu u spodního okraje, která ukáže neuložené změny, chybu i potvrzení uložení.",
+        detail: "Změna hesla je schovaná pod tlačítkem Změnit heslo. Automatické výstupy po přepisu jsou seskupené vedle výběru AI modelu. V části Jazyk a přepis vidíte, jaký model Soniox se používá pro živý přepis a pro nahrané soubory. Motiv přepnete tlačítky Světlý a Tmavý; heslo a motiv se ukládají hned, ostatní volby tlačítkem Uložit nastavení, které můžete i zrušit.",
+        href: "/settings"
+      },
+      {
         id: "recordings-sort-columns",
         kind: "new",
         title: "Řazení a přehlednější seznam nahrávek",

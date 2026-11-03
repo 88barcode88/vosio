@@ -13,6 +13,7 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ### Changed
 
+- Nastavení má obsah sekcí, omezenou šířku, změnu hesla pod tlačítkem, automatické výstupy seskupené vedle AI modelu, přehled modelů Soniox (živý přepis i soubory, s upozorněním na neschválený `SONIOX_ASYNC_MODEL`), přepínač motivu Světlý/Tmavý a lepivou lištu s neuloženými změnami, chybou a Zrušit změny. Chyba uložení rozlišuje neplatnou volbu a selhání uložení.
 - Sjednocená typografie (pět velikostí a tři tloušťky písma), ikony (13, 15 a 20 px), tlačítka a barevné tokeny napříč aplikací; role se všude jmenují Úpravy a Čtení.
 - Karta účtu v postranním menu je kompaktní.
 - Přepis používá Soniox `stt-async-v6` a `stt-rt-v6`; uložené realtime nastavení v4/v5 se převede na v6. Rozpracované async operace zmrazené na v5 doběhnou. Vyžaduje migraci `20261103200000_soniox_async_v6.sql` před nasazením webu.
