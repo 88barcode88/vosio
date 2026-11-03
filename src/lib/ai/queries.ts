@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AiArchiveItem, AiOutputRow, AiOutputView } from "@/lib/ai/types";
 import type { RecordingStatus } from "@/lib/recordings/types";
 import { fetchAllRows } from "@/lib/supabase/pagination";
-import { resolveRecordingCapabilities } from "@/lib/recording-sharing/resolve-capabilities";
+import { resolveRecordingCapabilitiesBatch } from "@/lib/recording-sharing/resolve-capabilities";
 
 type AiOutputJoinRow = AiOutputRow;
 
@@ -80,8 +80,7 @@ export async function listAiArchiveItems(supabase: SupabaseClient) {
       transcript_id: row.transcript_id
     }];
   });
-  const capabilities = new Map(await Promise.all([...new Set(items.map((item) => item.recording.id))]
-    .map(async (id) => [id, await resolveRecordingCapabilities(supabase, id)] as const)));
+  const capabilities = await resolveRecordingCapabilitiesBatch(supabase, items.map((item) => item.recording.id));
   return items.map((item) => ({ ...item, capabilities: capabilities.get(item.recording.id) }));
 }
 

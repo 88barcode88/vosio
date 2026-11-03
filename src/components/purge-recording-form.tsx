@@ -101,7 +101,7 @@ export function PurgeRecordingForm({
           ))}
           <button disabled={isDeleting} onClick={() => setIsConfirming(false)} type="button">Zrušit</button>
           <button className="trash-confirm-danger" disabled={isDeleting} type="submit">
-            {isDeleting ? "Mažu..." : "Smazat trvale"}
+            {isDeleting ? "Mažu…" : "Smazat trvale"}
           </button>
         </form>
       </Modal>

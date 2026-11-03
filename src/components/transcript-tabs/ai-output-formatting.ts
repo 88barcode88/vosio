@@ -32,7 +32,10 @@ export function getAiOutputPreview(output: AiOutputView) {
 export function getAiOutputSummary(output: AiOutputView) {
   const preview = getAiOutputPreview(output)
     .replace(/^#{1,6}\s+/gm, "")
-    .replace(/[-*]\s+/g, "")
+    .replace(/^\s*>\s?/gm, "")
+    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
+    .replace(/\[[ xX]\]\s*/g, "")
+    .replace(/\*+|__|`/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -40,7 +43,7 @@ export function getAiOutputSummary(output: AiOutputView) {
     return preview || "Strukturovaný AI výstup.";
   }
 
-  return `${preview.slice(0, 180).trim()}...`;
+  return `${preview.slice(0, 180).trim()}…`;
 }
 
 // getAiOutputMarkdownText returns the best human-readable markdown for one AI generation.

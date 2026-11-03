@@ -283,7 +283,7 @@ export const RecordingAudioPlayer = forwardRef<
         onClick={togglePlayback}
         type="button"
       >
-        {isPlaying ? <Pause aria-hidden="true" size={17} /> : <Play aria-hidden="true" size={17} />}
+        {isPlaying ? <Pause aria-hidden="true" size={20} /> : <Play aria-hidden="true" size={20} />}
       </button>
       <div className="recording-audio-copy">
         <strong>{activeRecording?.title ?? "Nahrávka"}</strong>
@@ -297,7 +297,7 @@ export const RecordingAudioPlayer = forwardRef<
         onClick={() => setIsExpanded((expanded) => !expanded)}
         type="button"
       >
-        {isExpanded ? <ChevronUp aria-hidden="true" size={16} /> : <ChevronDown aria-hidden="true" size={16} />}
+        {isExpanded ? <ChevronUp aria-hidden="true" size={15} /> : <ChevronDown aria-hidden="true" size={15} />}
       </button>
       <label className="recording-audio-progress" hidden={!isExpanded} id={`recording-audio-progress-${recordingId}`}>
         <span className="visually-hidden">Pozice přehrávání</span>

@@ -32,6 +32,12 @@ type PendingChatSubmission = {
 
 const emptyHistory: ChatHistory = { thread: null, turns: [] };
 const CHAT_RUNNING_POLL_INTERVAL_MS = 5_000;
+// Suggested starter questions shown in the empty chat; clicking one fills the composer.
+const CHAT_SUGGESTED_QUESTIONS = [
+  "Shrň hlavní body hovoru.",
+  "Jaké úkoly z hovoru vyplývají?",
+  "Na čem se účastníci shodli?"
+] as const;
 
 // getChatError returns only the API's short public error message or a safe local fallback.
 function getChatError(payload: unknown) {
@@ -92,6 +98,7 @@ export function ChatContent({ activeTranscriptId, isActive = true, defaultModel,
   const reconcileInFlightRef = useRef<PendingChatSubmission | null>(null);
   const pollControllerRef = useRef<AbortController | null>(null);
   const pollInFlightRef = useRef(false);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   // updatePendingSubmission keeps the synchronous idempotency guard and rendered composer state in lockstep.
   const updatePendingSubmission = useCallback((pending: PendingChatSubmission | null) => {
@@ -387,6 +394,12 @@ export function ChatContent({ activeTranscriptId, isActive = true, defaultModel,
     await submitPendingTurn(pending);
   }
 
+  // applySuggestedQuestion fills the composer with a starter question and moves focus there for editing or sending.
+  function applySuggestedQuestion(question: string) {
+    setDraft(question);
+    composerRef.current?.focus();
+  }
+
   // handleComposerKeyDown shares the button submission path while preserving multiline input and IME confirmation.
   function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
@@ -426,14 +439,20 @@ export function ChatContent({ activeTranscriptId, isActive = true, defaultModel,
       <div className="recording-chat-history" aria-busy={isLoading || loadedTranscriptId !== activeTranscriptId}>
       {visibleTurns.length === 0 && !visiblePending && !isLoading && loadedTranscriptId === activeTranscriptId ? (
         <div className="recording-chat-empty">
-          <MessageCircle aria-hidden="true" size={16} />
-          <p>Zeptejte se na tento přepis.</p>
+          <span aria-hidden="true" className="recording-chat-empty-icon"><MessageCircle /></span>
+          <p className="recording-chat-empty-title">Zeptejte se na tento přepis.</p>
+          <p className="recording-chat-empty-help">Odpovědi vycházejí z přepisu a mohou odkazovat na konkrétní místa nahrávky.</p>
+          <div className="recording-chat-suggestions">
+            {CHAT_SUGGESTED_QUESTIONS.map((question) => (
+              <button disabled={isComposerDisabled} key={question} onClick={() => applySuggestedQuestion(question)} type="button">{question}</button>
+            ))}
+          </div>
         </div>
       ) : null}
       <ol className="recording-chat-turns" aria-busy={loadedTranscriptId !== activeTranscriptId}>
         {visibleTurns.map((turn) => <ChatTurn key={turn.id} onOpenEvidence={onOpenEvidence} transcriptId={activeTranscriptId} turn={turn} />)}
         {visiblePending ? <li className="recording-chat-turn recording-chat-turn-pending">
-          <div className="recording-chat-question"><strong>Vy</strong><p>{visiblePending.question}</p></div>
+          <div className="recording-chat-question"><strong className="visually-hidden">Vy</strong><p>{visiblePending.question}</p></div>
           <div className="recording-chat-answer">
             <header><strong>Vosio AI</strong><small>{getModelLabel(visiblePending.model)}</small></header>
             {isSubmitting ? <ChatAnswering /> : <p>Odeslání zatím není potvrzené. Ověřte stav nebo zopakujte původní odeslání.</p>}
@@ -452,8 +471,9 @@ export function ChatContent({ activeTranscriptId, isActive = true, defaultModel,
         </button>
       ) : null}
       <form className="recording-chat-composer" onSubmit={(event) => void submitQuestion(event)}>
-        <label htmlFor="recording-chat-question">Dotaz k přepisu</label>
+        <label className="visually-hidden" htmlFor="recording-chat-question">Dotaz k přepisu</label>
         <textarea
+          ref={composerRef}
           disabled={isComposerDisabled}
           id="recording-chat-question"
           onChange={(event) => setDraft(event.currentTarget.value)}
@@ -462,7 +482,6 @@ export function ChatContent({ activeTranscriptId, isActive = true, defaultModel,
           placeholder="Na co se chcete ze záznamu zeptat?"
           value={draft}
         />
-        <small id="recording-chat-keyboard-hint">Enter odešle zprávu · Shift+Enter vloží nový řádek</small>
         <div className="recording-chat-composer-controls">
           <details className="ai-settings-details recording-chat-model-settings" onKeyDown={(event) => {
             if (event.key !== "Escape" || !event.currentTarget.open) return;
@@ -479,8 +498,9 @@ export function ChatContent({ activeTranscriptId, isActive = true, defaultModel,
               value={selection}
             />
           </details>
+          <small className="recording-chat-hint" id="recording-chat-keyboard-hint">Enter odešle zprávu · Shift+Enter vloží nový řádek</small>
           <button disabled={isComposerDisabled || !draft.trim()} type="submit">
-            <ArrowUp aria-hidden="true" size={16} /> Odeslat
+            <ArrowUp aria-hidden="true" size={15} /> Odeslat
           </button>
         </div>
       </form>
@@ -512,7 +532,7 @@ function ChatTurn({
 
   return (
     <li className={`recording-chat-turn recording-chat-turn-${turn.status}`}>
-      <div className="recording-chat-question"><strong>Vy</strong><p>{turn.question}</p></div>
+      <div className="recording-chat-question"><strong className="visually-hidden">Vy</strong><p>{turn.question}</p></div>
       <div className="recording-chat-answer">
         <header><strong>Vosio AI</strong><small>{getModelLabel(turn.model)}</small></header>
         {turn.status === "queued" || turn.status === "running" ? <ChatAnswering /> : null}
@@ -527,7 +547,7 @@ function ChatTurn({
                 : <p key={`${line.text}-${index}`}>{line.text}</p>
           )}
         </div> : null}
-        {turn.evidence.map((evidence, index) => (
+        {turn.evidence.length > 0 ? <div className="recording-chat-evidence">{turn.evidence.map((evidence, index) => (
           <button
             aria-label={`Otevřít ověřený důkaz v ${formatEvidenceTime(evidence.startMs)}: ${evidence.quote}`}
             className="structured-evidence-action"
@@ -542,9 +562,10 @@ function ChatTurn({
             })}
             type="button"
           >
-            <time dateTime={`PT${Math.floor(evidence.startMs / 1_000)}S`}>{formatEvidenceTime(evidence.startMs)}</time> „{evidence.quote}“
+            <time dateTime={`PT${Math.floor(evidence.startMs / 1_000)}S`}>{formatEvidenceTime(evidence.startMs)}</time>
+            <span className="recording-chat-evidence-quote">„{evidence.quote}“</span>
           </button>
-        ))}
+        ))}</div> : null}
       </div>
     </li>
   );

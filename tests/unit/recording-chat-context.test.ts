@@ -30,6 +30,17 @@ describe("recording chat context", () => {
     expect(context.messages.at(-1)).toEqual({ content: "Co bylo dohodnuto?", role: "user" });
   });
 
+  it("appends the citation contract without promising citations in the answer text", () => {
+    const context = buildRecordingChatContext({
+      history: [], question: "Co bylo dohodnuto?", rawText: "text", segments: [], speakerContext: [], speakers: [], systemPrompt
+    });
+
+    expect(context.systemInstruction).toContain("<role>Answer from the recording.</role>");
+    expect(context.systemInstruction).toMatch(/<citations>[\s\S]*verbatim[\s\S]*<\/citations>$/);
+    expect(context.systemInstruction).toContain("Do not mention citations");
+    expect(context.systemInstruction).toContain("empty evidence array");
+  });
+
   it("uses compact speaker utterances and explicitly marks transcript truncation", () => {
     const tokenText = "x".repeat(1_000);
     const segments = Array.from({ length: 140 }, (_, index) => ({

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRecordingCapabilities } from "@/components/recording-capability-context";
 import {
-  AlertTriangle,
+  TriangleAlert,
   CheckCircle2,
   Circle,
   Copy,
@@ -59,6 +59,7 @@ export function StructuredItemsContent({
   resolveEvidenceTarget?: EvidenceTargetResolver;
 }) {
   const [checklistMessage, setChecklistMessage] = useState<string | null>(null);
+  const hasTasks = items.tasks.length > 0 || checklistPending;
   const hasStructuredItems = checklistPending || items.tasks.length > 0 || items.decisions.length > 0 || items.risks.length > 0;
   const activeEvidenceTargetResolver = resolveEvidenceTarget ?? resolveStoredEvidenceTarget;
 
@@ -80,20 +81,22 @@ export function StructuredItemsContent({
 
   return (
     <section className="structured-ai-section" aria-label="Strukturované AI položky">
-      {items.tasks.length > 0 || checklistPending ? (
+      {hasStructuredItems ? (
         <div className="structured-ai-block">
           <header>
-            <strong>Úkoly jako checklist</strong>
-            <span>{items.tasks.length} položek</span>
+            <strong>{hasTasks ? "Úkoly jako checklist" : "Checklist"}</strong>
+            {hasTasks ? <span>{items.tasks.length} položek</span> : null}
             <div className="structured-checklist-actions" aria-label="Akce checklistu">
-              <button disabled={checklistPending} onClick={copyChecklist} type="button">
-                <Copy size={13} />
-                Kopírovat
-              </button>
-              <button disabled={checklistPending} onClick={downloadChecklist} type="button">
-                <Download size={13} />
-                MD
-              </button>
+              {hasTasks ? <>
+                <button disabled={checklistPending} onClick={copyChecklist} type="button">
+                  <Copy size={13} />
+                  Kopírovat
+                </button>
+                <button disabled={checklistPending} onClick={downloadChecklist} type="button">
+                  <Download size={13} />
+                  MD
+                </button>
+              </> : null}
               {checklistAction}
             </div>
           </header>
@@ -449,7 +452,7 @@ function StructuredRiskList({
       <ul>
         {risks.map((risk) => (
           <li data-risk-row="true" key={risk.id ?? `${risk.ai_output_id}-${risk.position}`}>
-            <AlertTriangle size={13} />
+            <TriangleAlert size={13} />
             <span>
               <strong>{risk.title}</strong>
               {risk.impact ? <small>Dopad: {risk.impact}</small> : null}

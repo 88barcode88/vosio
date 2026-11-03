@@ -121,7 +121,7 @@ describe("Appica-inspired application shell navigation", () => {
     expect(Array.from(primary?.querySelectorAll("a") ?? [], (link) => link.textContent?.trim()))
       .toEqual(["Nová nahrávka", "Nahrávky", "AI prompty"]);
     expect(Array.from(utility?.querySelectorAll("a") ?? [], (link) => link.textContent?.trim()))
-      .toEqual(["Koš", "Nastavení", "Dokumentace"]);
+      .toEqual(["Koš", "Nastavení", "Dokumentace", "Novinky"]);
     expect(container.textContent).not.toContain("AI zpracování");
     expect(container.querySelector("a[href='/fixture/recordings']")?.textContent).toContain("Nahrávky");
     expect(container.querySelector("a[href='/fixture/templates']")?.textContent).toContain("AI prompty");

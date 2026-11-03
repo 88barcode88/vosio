@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { RotateCcw, Upload, X } from "lucide-react";
+import { RotateCw, Upload, X } from "lucide-react";
 import { useRecordingNavigationBlocker } from "@/components/recording-navigation-guard";
 import {
   formatFileSize,
@@ -318,7 +318,7 @@ export function RecordingUploadForm({
         onDrop={handleDrop}
         role="group"
       >
-        <Upload aria-hidden="true" size={22} />
+        <Upload aria-hidden="true" size={20} />
         <strong>Přetáhněte zvukový záznam nebo MP4 sem</strong>
         <span>{formatSummary}</span>
         <div className="real-upload-actions">
@@ -381,7 +381,7 @@ export function RecordingUploadForm({
           ) : null}
           {canRetry ? (
             <button className="secondary-upload-button" onClick={() => void processFiles(retryFilesRef.current)} type="button">
-              <RotateCcw aria-hidden="true" size={15} />
+              <RotateCw aria-hidden="true" size={15} />
               Zkusit znovu
             </button>
           ) : null}

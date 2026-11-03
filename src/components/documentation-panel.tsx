@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { McpDocumentationSection } from "@/components/documentation-mcp-section";
+
 type DocumentationSection = {
   body: string[];
   id: string;
@@ -89,6 +92,7 @@ const documentationSections: DocumentationSection[] = [
     body: [
       "Export je Markdown-first. Z detailu nahrávky lze stáhnout nebo zkopírovat celou nahrávku, pracovní balíček, samotný přepis nebo jeden vybraný AI výstup.",
       "Pracovní balíček spojuje metadata, přepis, AI výstupy a strukturované pracovní položky: checklist úkolů, kapitoly časové osy, rozhodnutí a rizika.",
+      "Původní audio stáhnete v detailu nahrávky na záložce Soubory tlačítkem Stáhnout audio. Audio uložené po částech zatím jako jeden soubor stáhnout nejde; přehrajete ho v přehrávači.",
       "E-mail po hovoru má navíc akci přes mailto, která otevře výchozí mailový handler v prohlížeči nebo systému. Přímé odesílání přes Gmail, Zoho nebo jiný mailbox je budoucí integrace."
     ],
     id: "export",
@@ -128,6 +132,15 @@ const documentationSections: DocumentationSection[] = [
   },
   {
     body: [
+      "Stránka Novinky v menu vysvětluje, co se ve Vosiu změnilo, a to jen z pohledu toho, co uvidíte. Změny můžete filtrovat podle druhu (Nové, Vylepšené, Opravené) a rozbalit podrobnosti. U položek s odkazem Ukázat v aplikaci se rovnou otevře příslušná stránka.",
+      "Tečka u položky Novinky v menu znamená, že jste novinky ještě neotevřeli. Zmizí po otevření stránky."
+    ],
+    id: "novinky",
+    kicker: "Co je nového",
+    title: "Novinky"
+  },
+  {
+    body: [
       "Vosio je PWA, takže se na mobilu dá používat přes browser a instalovat jako aplikace. Mobilní režim je online-first, protože uploady, auth session a stavy přepisů musí být aktuální.",
       "Výsledný limit aplikace vychází z limitu aktuálně připojeného Storage bucketu a z volby tarifu Supabase Auto, Free nebo Paid v Nastavení. U live audia aplikace ukazuje vyřešený limit, například Audio do 128 MB + přepis, a ukládání audia ukončí s bezpečnostní rezervou, zatímco přepis pokračuje. Globální projektový limit nelze bezpečně zjistit a aplikace ho zobrazuje jako Nezjištěn."
     ],
@@ -138,7 +151,7 @@ const documentationSections: DocumentationSection[] = [
 ];
 
 // DocumentationPanel renders the in-app manual for the current Vosio workflows.
-export function DocumentationPanel() {
+export function DocumentationPanel({ mcpResourceUrl = null }: { mcpResourceUrl?: string | null }) {
   return (
     <section className="documentation-panel" data-utility-surface="documentation" aria-label="Dokumentace">
       <header className="documentation-header">
@@ -154,6 +167,7 @@ export function DocumentationPanel() {
               {section.title}
             </a>
           ))}
+          <a href="#pripojeni-ai-asistenta">Připojení AI asistenta</a>
         </nav>
 
         <div className="documentation-content">
@@ -168,6 +182,8 @@ export function DocumentationPanel() {
               ))}
             </section>
           ))}
+          <McpDocumentationSection resourceUrl={mcpResourceUrl} />
+          <p className="documentation-more"><Link href="/whats-new">Otevřít Novinky</Link></p>
         </div>
       </div>
     </section>

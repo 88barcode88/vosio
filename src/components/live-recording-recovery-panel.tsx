@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { RotateCw } from "lucide-react";
 import { CompactPopover } from "@/components/ui/compact-popover";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { deleteRecordingAction } from "@/lib/recordings/actions";
@@ -260,7 +260,7 @@ export function LiveRecordingRecoveryPanel() {
     if (!window.confirm("Dokončit s uloženým přepisem? Uložený přepis bude označen jako dokončený a nahrávka zmizí z Nedokončených. Chybějící nebo nepotvrzené audio se tím neopraví. Serverové i místní části audia zůstanou zachované.")) return;
     operation.current = recording.id;
     setCompletingId(recording.id);
-    setMessage("Dokončuji uložený přepis...");
+    setMessage("Dokončuji uložený přepis…");
     setRecoveredPath(null);
     try {
       const admitted = await withDurableRecordingMutation(recording.id, async () => {
@@ -328,7 +328,7 @@ export function LiveRecordingRecoveryPanel() {
     if (operation.current) return;
     operation.current = recording.id;
     setRecoveringId(recording.id);
-    setMessage("Obnovuji nahrávku...");
+    setMessage("Obnovuji nahrávku…");
     setRecoveredPath(null);
 
     try {
@@ -479,11 +479,11 @@ export function LiveRecordingRecoveryPanel() {
 
   return (
     <CompactPopover label="Nedokončené live nahrávky" className="live-recovery-popover" busy={recoveringId !== null || deletingId !== null || completingId !== null}
-      trigger={<><RotateCcw aria-hidden="true" size={15} />Nedokončené · {recordings.length}{message ? <span aria-label="Obnova vyžaduje pozornost">!</span> : null}</>}>
+      trigger={<><RotateCw aria-hidden="true" size={15} />Nedokončené · {recordings.length}{message ? <span aria-label="Obnova vyžaduje pozornost">!</span> : null}</>}>
     <section className="live-recovery-panel" aria-label="Nedokončené live nahrávky" role="group">
       <div aria-label="Stav obnovy nahrávek" className="live-recovery-content" role="group">
         <div className="live-recovery-panel-header">
-          <RotateCcw size={16} />
+          <RotateCw size={15} />
           <h2>Nedokončené live nahrávky</h2>
         </div>
         {message ? <p aria-live="polite" role="status">{message}</p> : null}
@@ -512,10 +512,10 @@ export function LiveRecordingRecoveryPanel() {
               onClick={() => recording.canRecover === true ? void recoverRecording(recording) : router.push(`/recordings/${recording.id}`)}
               type="button"
             >
-              {recoveringId === recording.id ? "Obnovuji..." : recording.canRecover === true ? "Obnovit" : "Otevřít nahrávku"}
+              {recoveringId === recording.id ? "Obnovuji…" : recording.canRecover === true ? "Obnovit" : "Otevřít nahrávku"}
             </button>
             {recording.transcript_chars > 0 && !hasActiveWork(recording) ? <button type="button" onClick={() => void completeSavedTranscript(recording)}>
-              {completingId === recording.id ? "Dokončuji..." : "Dokončit s uloženým přepisem"}
+              {completingId === recording.id ? "Dokončuji…" : "Dokončit s uloženým přepisem"}
             </button> : null}
             {recording.canDelete === true ? <DeleteRecordingForm recordingId={recording.id} label="Přesunout nahrávku do Koše" variant="compact" deleteAction={trashRecording} /> : null}
             </> : null}

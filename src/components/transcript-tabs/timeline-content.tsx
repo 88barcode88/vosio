@@ -127,7 +127,7 @@ export function TimelineContent({
               <h3 id="recording-markers-title">Označené momenty</h3>
               <span>{orderedMarkers.length} uložených bodů nahrávky</span>
             </div>
-            <Flag aria-hidden="true" size={17} />
+            <Flag aria-hidden="true" size={15} />
           </header>
           <ol className="timeline-marker-list">
             {orderedMarkers.map((marker) => {
@@ -180,13 +180,13 @@ export function TimelineContent({
       </p> : null}
       {!activeTranscript ? (
         <div className="transcript-empty">
-          <AudioLines size={22} />
+          <AudioLines size={20} />
           <strong>Časová osa zatím není dostupná</strong>
           <p>Nejdřív dokončete přepis nahrávky.</p>
         </div>
       ) : stateError && chapters.length === 0 ? (
         <div className="transcript-empty" role="alert">
-          <AudioLines size={22} />
+          <AudioLines size={20} />
           <strong>Časovou osu se nepodařilo načíst</strong>
           <p>{stateError}</p>
           <button className="secondary-inline-action" onClick={() => void onReload?.()} type="button">
@@ -197,7 +197,7 @@ export function TimelineContent({
         <div className="transcript-empty" aria-busy="true"><p role="status">Načítám časovou osu…</p></div>
       ) : chapters.length === 0 ? (
         <div className="transcript-empty">
-          <AudioLines size={22} />
+          <AudioLines size={20} />
           <strong>{timelinePending ? "Časová osa se připravuje" : showRecovery ? "Časová osa vyžaduje kontrolu" : "Vytvořte obsahovou časovou osu"}</strong>
           <p>Časová osa vznikne z AI zpracování nad hotovým přepisem.</p>
           <button
@@ -211,7 +211,7 @@ export function TimelineContent({
             })}
             type="button"
           >
-            <Sparkles aria-hidden="true" size={16} />
+            <Sparkles aria-hidden="true" size={15} />
             <span>{timelinePending ? "Vytvářím časovou osu…" : showRecovery ? "Otevřít stav AI" : "Vytvořit časovou osu"}</span>
           </button>
           <p

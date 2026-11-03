@@ -291,7 +291,7 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
           role={actionState.status === "saved" ? "status" : "alert"}
           tabIndex={actionState.status === "error" ? -1 : undefined}
         >
-          <CheckCircle2 size={17} />
+          <CheckCircle2 size={15} />
           {actionState.status === "saved" ? "Nastavení je uložené." : "Nastavení se nepodařilo uložit."}
         </div>
       ) : null}
@@ -414,7 +414,7 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
             </label>
           </div>
           <aside aria-live="polite" className="settings-region-warning" role="note">
-            <TriangleAlert aria-hidden="true" size={17} />
+            <TriangleAlert aria-hidden="true" size={15} />
             <p>
               Region EU vyžaduje Soniox EU projekt a odpovídající regionální API klíč. Pokud se objeví chyba přístupu nebo autorizace, kontaktujte <a href="mailto:support@soniox.com">support@soniox.com</a>.
             </p>

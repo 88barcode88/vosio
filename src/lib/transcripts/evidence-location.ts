@@ -1,6 +1,6 @@
 import {
-  flattenTranscriptTokens,
   getTranscriptTokenEndMs,
+  getTranscriptTokenSpeakerId,
   getTranscriptTokenStartMs,
   getTranscriptTokenText
 } from "@/lib/transcripts/speakers";
@@ -16,8 +16,8 @@ type EvidenceMatch = {
 };
 
 type CanonicalTokenStream = {
-  endTokensByOffset: Map<number, unknown>;
-  startTokensByOffset: Map<number, unknown>;
+  // Token that produced each UTF-16 offset of text, used to map a matched word range back to timestamps.
+  ownersByOffset: unknown[];
   text: string;
 };
 
@@ -92,33 +92,80 @@ function isUsableEvidenceTimestamp(value: number | null): value is number {
   return value !== null && Number.isSafeInteger(value) && value >= 0;
 }
 
-// buildCanonicalTokenStream normalizes transcript tokens once and records whole-token boundaries.
-function buildCanonicalTokenStream(tokens: unknown[]): CanonicalTokenStream {
-  const startTokensByOffset = new Map<number, unknown>();
-  const endTokensByOffset = new Map<number, unknown>();
-  let text = "";
-
-  for (const token of tokens) {
-    const normalizedToken = normalizeEvidenceText(getTranscriptTokenText(token));
-
-    if (!normalizedToken) {
-      continue;
-    }
-
-    if (text) {
-      text += " ";
-    }
-
-    const startOffset = text.length;
-    text += normalizedToken;
-    startTokensByOffset.set(startOffset, token);
-    endTokensByOffset.set(text.length, token);
-  }
-
-  return { endTokensByOffset, startTokensByOffset, text };
+// isEvidenceBoundaryChar marks characters that normalization turns into a word boundary (whitespace and punctuation).
+function isEvidenceBoundaryChar(char: string) {
+  return /^[\p{P}\s]$/u.test(char);
 }
 
-// findUniqueEvidenceMatch uses native substring search but accepts only unique whole-token ranges.
+// listEvidenceTokens flattens segments like flattenTranscriptTokens but marks the first token of each nested segment as a word boundary.
+function listEvidenceTokens(segments: unknown) {
+  if (!Array.isArray(segments)) {
+    return [];
+  }
+
+  return segments.flatMap((segment, index) => {
+    const nested = (segment as { tokens?: unknown } | null)?.tokens;
+
+    if (!Array.isArray(nested)) {
+      return [{ boundaryBefore: false, token: segment }];
+    }
+
+    return nested.map((token, tokenIndex) => ({ boundaryBefore: index > 0 && tokenIndex === 0, token }));
+  });
+}
+
+// isPhraseToken detects a segment-level text (inner whitespace) that, unlike a Soniox sub-word piece, is a complete word group.
+function isPhraseToken(text: string) {
+  return /\S\s+\S/u.test(text.trim());
+}
+
+// buildCanonicalTokenStream rebuilds the spoken text from tokens (a token without leading whitespace continues the previous
+// word, as Soniox splits Czech words into pieces), normalizes it like a quote and remembers which token owns each character.
+function buildCanonicalTokenStream(tokens: ReturnType<typeof listEvidenceTokens>): CanonicalTokenStream {
+  const ownersByOffset: unknown[] = [];
+  let text = "";
+  let pendingBoundary = false;
+  let previousSpeaker: string | null | undefined;
+
+  for (const { boundaryBefore, token } of tokens) {
+    const speaker = getTranscriptTokenSpeakerId(token);
+    const tokenText = getTranscriptTokenText(token);
+    const phrase = isPhraseToken(tokenText);
+
+    if (boundaryBefore || phrase || (previousSpeaker !== undefined && speaker !== previousSpeaker)) {
+      pendingBoundary = true;
+    }
+
+    previousSpeaker = speaker;
+
+    for (const char of tokenText.normalize("NFC").toLocaleLowerCase("cs-CZ")) {
+      if (isEvidenceBoundaryChar(char)) {
+        pendingBoundary = true;
+        continue;
+      }
+
+      if (pendingBoundary && text) {
+        text += " ";
+        ownersByOffset.push(token);
+      }
+
+      pendingBoundary = false;
+      text += char;
+
+      for (let unit = 0; unit < char.length; unit += 1) {
+        ownersByOffset.push(token);
+      }
+    }
+
+    if (phrase) {
+      pendingBoundary = true;
+    }
+  }
+
+  return { ownersByOffset, text };
+}
+
+// findUniqueEvidenceMatch uses native substring search but accepts only unique whole-word ranges.
 function findUniqueEvidenceMatch(stream: CanonicalTokenStream, normalizedQuote: string): EvidenceMatch | null {
   let uniqueMatch: EvidenceMatch | null = null;
   let searchOffset = 0;
@@ -130,15 +177,19 @@ function findUniqueEvidenceMatch(stream: CanonicalTokenStream, normalizedQuote: 
       break;
     }
 
-    const startToken = stream.startTokensByOffset.get(matchOffset);
-    const endToken = stream.endTokensByOffset.get(matchOffset + normalizedQuote.length);
+    const endOffset = matchOffset + normalizedQuote.length;
+    const startsOnWord = matchOffset === 0 || stream.text[matchOffset - 1] === " ";
+    const endsOnWord = endOffset === stream.text.length || stream.text[endOffset] === " ";
 
-    if (startToken && endToken) {
+    if (startsOnWord && endsOnWord) {
       if (uniqueMatch) {
         return null;
       }
 
-      uniqueMatch = { endToken, startToken };
+      uniqueMatch = {
+        endToken: stream.ownersByOffset[endOffset - 1],
+        startToken: stream.ownersByOffset[matchOffset]
+      };
     }
 
     searchOffset = matchOffset + 1;
@@ -147,7 +198,7 @@ function findUniqueEvidenceMatch(stream: CanonicalTokenStream, normalizedQuote: 
   return uniqueMatch;
 }
 
-// resolveEvidenceLocation accepts only one exact normalized quote match with complete saved token timestamps.
+// resolveEvidenceLocation accepts only one exact whole-word normalized quote match with complete saved token timestamps.
 export function resolveEvidenceLocation(segments: unknown, quote: string | null | undefined): EvidenceLocation | null {
   const normalizedQuote = typeof quote === "string" ? normalizeEvidenceText(quote) : "";
 
@@ -156,7 +207,7 @@ export function resolveEvidenceLocation(segments: unknown, quote: string | null 
   }
 
   const match = findUniqueEvidenceMatch(
-    buildCanonicalTokenStream(flattenTranscriptTokens(segments)),
+    buildCanonicalTokenStream(listEvidenceTokens(segments)),
     normalizedQuote
   );
 

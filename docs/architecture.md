@@ -36,7 +36,7 @@ AI a Časová osa čtou společný transcript-scoped seznam serverových jobs. S
 
 Inbox i hledání oddělují klienta a projekt. Pojmenovaný editor `Název a zařazení` z nabídky nahrávky spojuje dvě samostatné ukládací sekce; title mutation a atomické organizační RPC zůstávají oddělené. Osobní taxonomie a capability filtry se tím nemění.
 
-Detail renderuje bezpečný prezentační souhrn zařazení vedle stavu a jeden editor před Exportem. Hlavička checklistu vlastní Copy/MD i stávající akci pro atomické mazání celého checklistu. Při optimistickém skrytí úkolů zůstává tato hlavička připojená až do výsledku DELETE, aby selhání obnovilo úkoly a nezahodilo stav chyby. Společné CSS sjednocuje jemné desktopové cíle 30–32 px a akční ikony 15 px, zatímco úzké/coarse/hybrid ovládání drží 44px cíle.
+Detail renderuje bezpečný prezentační souhrn zařazení vedle stavu a jeden editor před Exportem. Hlavička checklistu vlastní Copy/MD (jen když existují úkoly) i akci pro atomické mazání celého checklistu (úkoly, rozhodnutí, rizika); zobrazuje se, dokud existuje jakákoli z těchto položek. Při optimistickém skrytí položek zůstává tato hlavička připojená až do výsledku DELETE, aby selhání obnovilo úkoly a nezahodilo stav chyby. Společné CSS sjednocuje jemné desktopové cíle 30–32 px a akční ikony 15 px, zatímco úzké/coarse/hybrid ovládání drží 44px cíle.
 
 ## Přehled
 
@@ -501,10 +501,11 @@ Načtené kapitoly zůstávají při chybě background kontroly připojené. Roz
 zdrojového auditu a browser důkazu je v [loading kontraktu](requirements/ui-loading.md).
 
 Detail a archiv nabízejí smazání konkrétního AI výstupu podle jeho metadata ID
-i před načtením těla. Celý checklist používá samostatný task-only snapshot a
-atomický RPC: zachovává původní AI zdroje, zápisy, shrnutí, přepis a audio.
-Per-output suppression brání opožděné obnově projekcí ze starého zdroje;
-nové output ID může vytvářet nové úkoly. [Checklist kontrakt](api/checklist-delete.md)
+i před načtením těla. Celý checklist používá samostatný snapshot úkolů,
+rozhodnutí a rizik/blokerů a jediný atomický `_v2` RPC: zachovává původní AI
+zdroje, kapitoly, zápisy, shrnutí, přepis a audio. Per-output suppression brání
+opožděné obnově projekcí (úkolů, rozhodnutí i rizik) ze starého zdroje;
+nové output ID může vytvářet nové položky. [Checklist kontrakt](api/checklist-delete.md)
 a [modelový kontrakt](api/ai-model-selection.md) popisují source forwardy, které
 vyžadují samostatný DB apply a runtime proof před deploymentem.
 
@@ -562,7 +563,8 @@ Aktivní aplikační routy po přihlášení jsou:
 - `/recordings/[recordingId]` pro detail vybrané nahrávky,
 - `/ai` pro uložené AI výstupy,
 - `/templates` pro úpravu textu šesti AI promptů,
-- `/documentation` pro uživatelskou dokumentaci k workflow aplikace,
+- `/documentation` pro uživatelskou dokumentaci k workflow aplikace včetně sekce Připojení AI asistenta (MCP): adresu serveru zobrazí jen tehdy, když serverová `getMcpMetadata()` vrátí zapnutou instalaci (předává se jako `mcpResourceUrl`, pouze veřejná resource URL), jinak sekce říká, že připojení není zapnuté,
+- `/whats-new` pro Novinky psané pro uživatele: statická typovaná data v `src/lib/whats-new/entries.ts`, filtr Vše / Nové / Vylepšené / Opravené, rozbalovací detail a odkaz „Ukázat v aplikaci“. Tečka u položky Novinky v sidebaru a v mobilním menu Více svítí, dokud uživatel stránku neotevře; stav je per-uživatel v `localStorage` (`vosio-whats-new-seen:<e-mail>`, vždy v try/catch),
 - `/settings` pro netajné uživatelské preference,
 - `/trash` pro soft-smazané nahrávky.
 

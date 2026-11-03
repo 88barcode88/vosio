@@ -77,7 +77,7 @@ export function RecordingEditSharingDialog({ recording, organization, options }:
   if (!canManage && !recording.capabilities?.editTitle && !sharingUnsettled) return null;
 
   return <>
-    <button type="button" aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
+    <button className="ui-button" type="button" aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
       onClick={() => { setMounted(true); setOpen(true); }}>
       <Pencil aria-hidden="true" size={15} />Upravit a sdílení
     </button>
@@ -86,7 +86,7 @@ export function RecordingEditSharingDialog({ recording, organization, options }:
       <div className={`ui-modal ${styles.dialog}`} id={id} ref={dialogRef} role={open ? "dialog" : undefined}
         aria-modal={open ? "true" : undefined} aria-label="Upravit a sdílení" aria-busy={busy} tabIndex={-1}>
         <header className={styles.header}><div><h2>Upravit a sdílení</h2><p>Název, zařazení a sdílení se ukládají samostatně.</p></div>
-          <button type="button" aria-label="Zavřít Upravit a sdílení" disabled={busy} onClick={close}><X aria-hidden="true" size={15} /></button>
+          <button className="ui-button ui-button--icon" type="button" aria-label="Zavřít Upravit a sdílení" disabled={busy} onClick={close}><X aria-hidden="true" size={15} /></button>
         </header>
         <div className={styles.content}>
           {recording.capabilities?.editTitle ? <fieldset className={styles.section} disabled={organizationBusy || sharingUnsettled || accessBusy || projectAccessBusy}>
@@ -108,10 +108,10 @@ export function RecordingEditSharingDialog({ recording, organization, options }:
             {canManage ? <fieldset className={`${styles.section} ${styles.access}`} disabled={invitationsBlocked}>
               {canInviteRecording ? <AccessManager key={`recording-${current.project_id ?? "standalone"}`} recordingId={current.id}
                 scope={current.project_id ? { scope: "project-selected", projectId: current.project_id, recordingIds: [current.id] } : { scope: "standalone", recordingIds: [current.id] }}
-                heading="Pozvat k nahrávce" inviteLabel="Pozvat k nahrávce" disabled={invitationsBlocked} onBusyChange={setAccessBusy} onAccessRevoked={recordingAccessRevoked} refreshKey={accessRevision} />
+                heading="Pozvat k nahrávce" inviteLabel="Odeslat pozvánku" disabled={invitationsBlocked} onBusyChange={setAccessBusy} onAccessRevoked={recordingAccessRevoked} refreshKey={accessRevision} />
                 : <p>Pro pozvání ke konkrétní projektové nahrávce nejprve uložte sdílení s vybranými lidmi.</p>}
               {projectFounder && current.project_id ? <div className={styles.projectInvitation}>
-                <button type="button" aria-expanded={projectInvitationOpen} disabled={invitationsBlocked} onClick={() => setProjectInvitationOpen((value) => !value)}>Pozvat do projektu</button>
+                <button className="ui-button" type="button" aria-expanded={projectInvitationOpen} disabled={invitationsBlocked} onClick={() => setProjectInvitationOpen((value) => !value)}>Pozvat do projektu</button>
                 <p>Přístup k současným i budoucím nahrávkám sdíleným s projektem {project.name}.</p>
                 {projectInvitationOpen ? <AccessManager key={current.project_id} scope={{ scope: "project", projectId: current.project_id }}
                   heading={`Pozvánka do projektu ${project.name}`} inviteLabel="Odeslat pozvánku do projektu" disabled={invitationsBlocked || accessBusy} onBusyChange={setProjectAccessBusy} onAccessRevoked={recordingAccessRevoked} refreshKey={accessRevision} /> : null}
@@ -119,7 +119,7 @@ export function RecordingEditSharingDialog({ recording, organization, options }:
             </fieldset> : null}
           </> : null}
         </div>
-        <footer className={styles.footer}><button type="button" disabled={busy} onClick={close}>Zavřít</button></footer>
+        <footer className={styles.footer}><button className="ui-button" type="button" disabled={busy} onClick={close}>Zavřít</button></footer>
       </div>
     </div> : null}
   </>;

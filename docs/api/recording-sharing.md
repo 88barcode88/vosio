@@ -82,7 +82,7 @@ get_recording_invitation_delivery_v1(
 ) returns jsonb
 list_recording_access_v1(
   p_project_id uuid default null, p_recording_id uuid default null
-) returns jsonb
+) returns jsonb -- members/grants rows carry userId, nullable e-mail and role
 resend_recording_invitation_v1(
   p_invitation_id uuid, p_token_hash text, p_expires_at timestamptz
 ) returns jsonb

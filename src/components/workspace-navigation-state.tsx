@@ -12,7 +12,7 @@ const NavigationMemory = createContext<{
 
 // isWorkspacePath limits transient presentation reuse to workspace routes and guarded development fixtures.
 function isWorkspacePath(pathname: string | null) {
-  return /^\/(recordings|settings|team|templates|trash|documentation|ai)(\/|$)/.test(pathname ?? "")
+  return /^\/(recordings|settings|team|templates|trash|documentation|whats-new|ai)(\/|$)/.test(pathname ?? "")
     || (process.env.NODE_ENV === "development" && /^\/login\/(workspace-loading-e2e|workspace-shell-e2e|recording-layout-e2e|team-e2e)(\/|$)/.test(pathname ?? ""));
 }
 

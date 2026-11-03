@@ -226,7 +226,7 @@ describe("RecordingOrganizationEditor", () => {
     expect(saveAction).not.toHaveBeenCalled();
     expect(container.textContent).toContain("reader@example.invalid");
     expect(container.textContent).toContain("editor@example.invalid");
-    expect(container.textContent).toContain("editor@example.invalid (klient, editor)");
+    expect(container.textContent).toContain("editor@example.invalid (klient, Úpravy)");
     expect(container.textContent).toContain("Čekající pozvánky v cílovém rozsahu: pending@example.invalid");
     expect(container.textContent).toContain("Přístup vznikne až po přijetí.");
     await clickButton("Potvrdit zařazení");
@@ -810,14 +810,14 @@ describe("organization UI integration", () => {
     expect(recordingStyles).toMatch(/\.organization-rename-form\s*\{[\s\S]*?width:\s*min\(280px, 100%, calc\(100vw - 52px\)\)[\s\S]*?top:\s*calc\(100% \+ 6px\)/);
   });
 
-  it("targets the actual recording delete button in the light theme", () => {
+  it("styles the actual recording delete button through the theme-aware danger token", () => {
     const recordingStyles = readFileSync(
       join(process.cwd(), "app", "styles", "documentation-recordings.css"),
       "utf8"
     );
 
-    expect(recordingStyles).toMatch(/\[data-theme="light"\] \.delete-recording-form button/);
-    expect(recordingStyles).toContain("color: #7f2020;");
+    expect(recordingStyles).toMatch(/\.delete-recording-form button \{[^}]*color: var\(--danger\)/);
+    expect(recordingStyles).not.toContain("#7f2020");
     expect(recordingStyles).not.toMatch(/\[data-theme="light"\] \.delete-recording-button/);
     expect(recordingStyles).not.toMatch(/\[data-theme="light"\] \.delete-recording-icon,/);
   });

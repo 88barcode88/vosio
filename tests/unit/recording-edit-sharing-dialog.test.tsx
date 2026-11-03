@@ -80,7 +80,7 @@ describe("recording edit and sharing dialog", () => {
     await changeSelect("projectId", projectId);
     expect(container.textContent).toContain("Nejprve potvrďte změnu zařazení");
     expect([...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Uložit sdílení")?.disabled).toBe(true);
-    expect([...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Pozvat k nahrávce")?.matches(":disabled")).toBe(true);
+    expect([...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Odeslat pozvánku")?.matches(":disabled")).toBe(true);
     await act(async () => container.querySelector<HTMLFormElement>('form[aria-label="Zařazení"]')!.requestSubmit());
     expect(container.querySelector('[role="dialog"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Nejprve potvrďte změnu zařazení");
@@ -139,19 +139,20 @@ describe("recording edit and sharing dialog", () => {
   });
 
   it("allows an explicit regrant and applies a second confirmed revocation of the same identity once", async () => {
-    let grants = [{ recordingId, userId: recipientA, role: "editor" as "reader" | "editor" }];
+    const recipientAEmail = "recipient-a@example.test";
+    let grants = [{ recordingId, userId: recipientA, email: recipientAEmail as string | null, role: "editor" as "reader" | "editor" }];
     mocks.fetch.mockImplementation(async (_url, init) => {
       if (init?.method === "DELETE") { const body = JSON.parse(init.body); grants = grants.filter((grant) => grant.userId !== body.userId); return { ok: true, json: async () => ({ revoked: true }) }; }
       return { ok: true, json: async () => ({ members: [], grants, invitations: [] }) };
     });
-    mocks.share.mockImplementation(async (_client, attempt) => { grants = attempt.recipients.map((recipient: { userId: string; role: "reader" | "editor" }) => ({ recordingId, ...recipient })); });
+    mocks.share.mockImplementation(async (_client, attempt) => { grants = attempt.recipients.map((recipient: { userId: string; role: "reader" | "editor" }) => ({ recordingId, email: recipient.userId === recipientA ? recipientAEmail : null, ...recipient })); });
     await renderEditor({ ...row, visibility: "selected" }); await clickButton("Upravit a sdílení");
     await act(async () => container.querySelectorAll<HTMLInputElement>(".recording-sharing-recipients input")[1].click());
     await clickButton("Odebrat přístup k nahrávce");
     await act(async () => container.querySelector<HTMLInputElement>(".recording-sharing-recipients input")!.click());
     await clickButton("Uložit sdílení");
     expect(mocks.share.mock.calls[0][1].recipients).toContainEqual({ userId: recipientA, role: "editor" });
-    const revokeAgain = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Odebrat přístup k nahrávce" && button.parentElement?.textContent?.includes(recipientA))!;
+    const revokeAgain = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Odebrat přístup k nahrávce" && button.parentElement?.textContent?.includes(recipientAEmail))!;
     expect(revokeAgain).toBeTruthy();
     await act(async () => revokeAgain.click());
     const checks = container.querySelectorAll<HTMLInputElement>(".recording-sharing-recipients input");

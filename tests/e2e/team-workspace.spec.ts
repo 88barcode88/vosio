@@ -44,7 +44,7 @@ test("approved compact Team keeps inline selection, confirmation and mobile More
   await page.getByRole("combobox", { name: "Oprávnění pro celý výběr", exact: true }).selectOption("editor");
   await page.getByRole("button", { name: "Uložit přístupy", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Požadavek je potvrzený" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Detail osoby" }).getByRole("article").getByText("Editor", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("region", { name: "Detail osoby" }).getByRole("article").getByText("Úpravy", { exact: true })).toHaveCount(2);
   await page.getByRole("button", { name: "Odebrat přístup: Studio Sever / Web 2026", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Odebrat tento přístup" })).toContainText("Jiný platný přístup");
   await page.getByRole("button", { name: "Odebrat přístup", exact: true }).click();

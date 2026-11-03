@@ -62,7 +62,7 @@ export function WorkspaceSidebar({
         title={toggleLabel}
         type="button"
       >
-        {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
       </button>
       <div className="workspace-switcher" aria-hidden="true">
         <span className="avatar">{getEmailInitials(presentation.userEmail)}</span>
@@ -78,6 +78,7 @@ export function WorkspaceSidebar({
         activeView={activeView}
         compact={collapsed}
         hrefOverrides={navigationHrefOverrides}
+        userKey={presentation.userEmail}
       />
       <SupportLink compact={collapsed} />
       <UserCard userEmail={presentation.userEmail} />
@@ -108,7 +109,7 @@ function SupportLink({ compact }: { compact: boolean }) {
       target="_blank"
       title={compact ? "Kup mi kafe" : undefined}
     >
-      <Coffee size={16} />
+      <Coffee size={15} />
       <span className="navigation-label">Kup mi kafe</span>
     </a>
   );
@@ -125,7 +126,7 @@ function UserCard({ userEmail }: { userEmail: string }) {
       </div>
       <form action={signOutAction} className="sign-out-form" data-navigation-guard="true">
         <button type="submit" aria-label="Odhlásit">
-          <LogOut size={16} />
+          <LogOut size={15} />
         </button>
       </form>
     </section>

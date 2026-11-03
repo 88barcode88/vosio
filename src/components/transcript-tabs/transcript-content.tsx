@@ -271,7 +271,7 @@ export function TranscriptContent({
 
   return (
     <div className="transcript-empty">
-      <UploadCloud size={34} />
+      <UploadCloud size={20} />
       <strong>{getPendingTranscriptTitle(activeRecording)}</strong>
       <p>{getPendingTranscriptDescription(activeRecording)}</p>
     </div>

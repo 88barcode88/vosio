@@ -67,7 +67,7 @@ export function getSafeNextPath(value: unknown) {
 
   try {
     const url = new URL(value, "https://vosio.invalid");
-    const roots = ["/recordings", "/ai", "/settings", "/templates", "/trash", "/documentation"];
+    const roots = ["/recordings", "/ai", "/settings", "/templates", "/trash", "/documentation", "/whats-new"];
     return url.origin === "https://vosio.invalid" && (url.pathname === "/" || url.pathname === "/invitations/accept"
       || ["/mcp/consent", "/mcp/upstream-consent", "/mcp/connections"].includes(url.pathname)
       || roots.some((root) => url.pathname === root || url.pathname.startsWith(`${root}/`)))

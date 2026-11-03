@@ -169,11 +169,13 @@
     position: relative;
     min-width: 0;
     min-height: 52px;
+    padding-inline: 2px;
+    flex-direction: column;
     border: 0;
     border-radius: 9px;
-    color: var(--muted);
+    color: var(--text-secondary);
     background: transparent;
-    font-size: 0.625rem;
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
   .mobile-nav-item svg {
@@ -489,7 +491,7 @@
   }
   .tabs button {
     flex: 0 0 auto;
-    font-size: 0.8125rem;
+    font-size: var(--text-sm);
     min-width: max-content;
   }
   .tabs-row {
@@ -568,14 +570,14 @@
   .documentation-topics a {
     flex: 0 0 auto;
     border: 1px solid var(--border);
-    background: var(--panel-soft);
+    background: var(--surface-muted);
     white-space: nowrap;
   }
   .documentation-header h1 {
-    font-size: 1.25rem;
+    font-size: var(--text-xl);
   }
   .documentation-section > p {
-    font-size: 0.8125rem;
+    font-size: var(--text-sm);
   }
   .transcript-line {
     grid-template-columns: 64px 60px;
@@ -608,7 +610,7 @@
     width: 100%;
   }
   .speaker-summary-state {
-    font-size: 0.75rem;
+    font-size: var(--text-sm);
   }
   .transcript-panel {
     height: auto;

@@ -65,7 +65,7 @@ function getChapterDedupeKey(chapter: StructuredChapterRow) {
 }
 
 // getDecisionDedupeKey identifies repeated decisions and pending confirmations.
-function getDecisionDedupeKey(decision: StructuredDecisionRow) {
+export function getDecisionDedupeKey(decision: Pick<StructuredDecisionRow, "owner_category" | "status" | "title">) {
   return [
     normalizeDedupeText(decision.title),
     normalizeDedupeText(decision.status),
@@ -74,7 +74,7 @@ function getDecisionDedupeKey(decision: StructuredDecisionRow) {
 }
 
 // getRiskDedupeKey identifies repeated risks and blockers.
-function getRiskDedupeKey(risk: StructuredRiskRow) {
+export function getRiskDedupeKey(risk: Pick<StructuredRiskRow, "impact" | "title">) {
   return [
     normalizeDedupeText(risk.title),
     normalizeDedupeText(risk.impact)

@@ -54,7 +54,7 @@ export function AiArchive({
     <section className="ai-archive" data-utility-surface="ai-archive-results" aria-label="Archiv AI výstupů">
       {actionAlert ? <p className="ai-archive-action-alert" role="alert">{actionAlert}</p> : null}
       <div className="ai-archive-filters" aria-label="Filtry AI archivu">
-        <SlidersHorizontal aria-hidden="true" size={16} />
+        <SlidersHorizontal aria-hidden="true" size={15} />
         <label>
           Typ výstupu
           <select
@@ -94,7 +94,7 @@ export function AiArchive({
 
             return (
               <article className="ai-archive-row" data-ai-output-delete-target key={item.id}>
-                <div className="ai-archive-row-icon" aria-hidden="true"><Archive size={16} /></div>
+                <div className="ai-archive-row-icon" aria-hidden="true"><Archive size={15} /></div>
                 <div className="ai-archive-row-copy">
                   <div>
                     <strong>{getAiOutputTitle(item.processing_type)}</strong>
@@ -103,7 +103,7 @@ export function AiArchive({
                   <p>{getAiOutputPreview(item)}</p>
                   <Link className="ai-archive-recording-link" data-touch-target="action" href={recordingHref}>
                     <span>{item.recording.title}</span>
-                    {isTrashed ? <small>V koši</small> : <ChevronRight aria-hidden="true" size={14} />}
+                    {isTrashed ? <small>V koši</small> : <ChevronRight aria-hidden="true" size={13} />}
                   </Link>
                 </div>
                 <DeleteAiOutputForm

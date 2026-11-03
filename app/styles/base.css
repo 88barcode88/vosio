@@ -18,23 +18,29 @@
   --danger: #f79d9f;
   --warning: #ecc18c;
   --info: #abc2f8;
-  --panel: var(--surface);
-  --panel-strong: var(--surface-raised);
-  --panel-soft: var(--surface-muted);
-  --muted: var(--text-secondary);
-  --subtle: var(--text-secondary);
-  --teal: var(--accent);
-  --teal-strong: var(--accent-hover);
-  --green: var(--success);
-  --red: var(--danger);
-  --orange: var(--warning);
   --violet: #a99cf2;
-  --blue: var(--info);
-  --accent-bg: var(--accent);
-  --accent-bg-hover: var(--accent-hover);
   --control-hit-size: 44px;
   --control-surface-inset: 7px;
-  --control-icon-size: 15px;
+  /* Type scale in rem so browser text scaling and 200% zoom keep working (11 / 12 / 14 / 17 / 21 px at the default root size). */
+  --text-xs: 0.6875rem;
+  --text-sm: 0.75rem;
+  --text-md: 0.875rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.3125rem;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --leading-tight: 1.2;
+  --leading-ui: 1.35;
+  --leading-body: 1.5;
+  --icon-sm: 13px;
+  --icon-md: 15px;
+  --icon-lg: 20px;
+  --control-icon-size: var(--icon-md);
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 [data-theme="light"] {
@@ -73,8 +79,8 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui), "Segoe UI", system-ui, sans-serif;
-  font-size: 0.875rem;
-  line-height: 1.55;
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
   letter-spacing: 0;
 }
 h1,
@@ -90,6 +96,10 @@ select {
 }
 button {
   cursor: pointer;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
 }
 a {
   color: inherit;
@@ -115,7 +125,7 @@ a {
 .transcript-panel,
 .ai-panel {
   border: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 .sidebar {
@@ -173,7 +183,7 @@ a {
 }
 select option {
   color: var(--text);
-  background: var(--panel);
+  background: var(--surface);
 }
 select {
   color-scheme: dark;
@@ -195,7 +205,7 @@ select:focus-visible {
   justify-content: space-between;
   gap: 10px;
   margin: 0 8px 28px;
-  font-size: 1.45rem;
+  font-size: var(--text-xl);
   letter-spacing: -0.04em;
 }
 .brand-block > div {
@@ -217,12 +227,12 @@ select:focus-visible {
   min-height: 34px;
   border: 1px solid transparent;
   border-radius: 6px;
-  color: var(--muted);
+  color: var(--text-secondary);
   background: transparent;
 }
 .sidebar-collapse-button:hover {
   color: var(--text);
-  background: var(--panel-soft);
+  background: var(--surface-muted);
 }
 .sidebar[data-collapsed="true"] .sidebar-collapse-button {
   align-self: center;
@@ -244,7 +254,7 @@ select:focus-visible {
   display: block;
   width: 3px;
   border-radius: 999px;
-  background: var(--teal);
+  background: var(--accent);
   box-shadow: none;
 }
 .new-recording-button,
@@ -252,7 +262,7 @@ select:focus-visible {
 .command-primary {
   border: 0;
   color: var(--accent-text);
-  background: var(--accent-bg);
+  background: var(--accent);
   box-shadow: none;
 }
 .new-recording-button {
@@ -268,8 +278,8 @@ select:focus-visible {
   color: var(--text-secondary);
   background: transparent;
   padding: 0 12px;
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
 }
 .new-recording-button-active {
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent-text) 38%, transparent);
@@ -301,14 +311,14 @@ select:focus-visible {
   gap: 11px;
   min-height: 44px;
   border-radius: 9px;
-  color: var(--muted);
+  color: var(--text-secondary);
   padding: 0 12px;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }
 .nav-item-active,
 .nav-item:hover {
   color: var(--text);
-  background: var(--panel-soft);
+  background: var(--surface-muted);
 }
 .nav-item-pending {
   color: var(--text);
@@ -320,17 +330,17 @@ select:focus-visible {
   width: 5px;
   height: 5px;
   border-radius: 999px;
-  background: var(--teal);
+  background: var(--accent);
   content: "";
 }
 .empty-nav,
 .task-empty {
-  color: var(--muted);
-  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
 }
 .nav-item-active {
   border: 0;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 .sidebar-utility-nav {
   display: grid;
@@ -345,11 +355,11 @@ select:focus-visible {
   min-height: 40px;
   border: 1px solid transparent;
   border-radius: 9px;
-  color: var(--muted);
+  color: var(--text-secondary);
   background: transparent;
   padding: 0 10px;
-  font-size: 0.8125rem;
-  font-weight: 400;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-regular);
   transition-property: color, background-color, border-color, box-shadow;
   transition-duration: 150ms;
   transition-timing-function: ease-out;
@@ -357,13 +367,13 @@ select:focus-visible {
 .sidebar-support-link:hover {
   color: var(--text);
   border-color: transparent;
-  background: var(--panel-soft);
+  background: var(--surface-muted);
 }
 .sidebar-support-link {
   margin-top: 3px;
 }
 .sidebar-support-link svg {
-  color: var(--orange);
+  color: var(--warning);
 }
 .mobile-more-drawer {
   display: grid;
@@ -395,7 +405,7 @@ select:focus-visible {
 .mobile-more-account span {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -428,7 +438,7 @@ select:focus-visible {
   background: var(--surface-muted);
 }
 .mobile-more-support svg {
-  color: var(--orange);
+  color: var(--warning);
 }
 .mobile-more-theme {
   justify-content: space-between;
@@ -461,7 +471,7 @@ select:focus-visible {
   display: inline-grid;
   place-items: center;
   border-radius: 7px;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 .speaker-violet {
   background: rgba(156, 123, 255, 0.22);
@@ -484,7 +494,7 @@ select:focus-visible {
   color: #ffb4bd;
 }
 .speaker-teal {
-  background: rgba(56, 217, 208, 0.16);
+  background: color-mix(in srgb, #38d9d0 16%, transparent);
   color: #50e6df;
 }
 .speaker-cyan {
@@ -545,7 +555,7 @@ select:focus-visible {
 }
 .user-card {
   border: 1px solid var(--border);
-  background: var(--panel-soft);
+  background: var(--surface-muted);
   border-radius: 12px;
 }
 .user-card,
@@ -573,15 +583,15 @@ select:focus-visible {
 .prompt-box,
 .transcript-line time,
 .live-transcript {
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 .user-card {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 44px;
+  grid-template-columns: 28px minmax(0, 1fr) var(--control-hit-size);
   align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-  padding: 10px;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 4px 6px 8px;
 }
 .avatar {
   display: grid;
@@ -589,20 +599,30 @@ select:focus-visible {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: var(--panel);
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 800;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+.user-card .avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
 }
 .user-card div:nth-child(2) {
   display: grid;
-  gap: 2px;
   min-width: 0;
+  line-height: var(--leading-ui);
+}
+.user-card strong {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
 }
 .user-card span {
   overflow: hidden;
-  color: var(--muted);
-  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -615,17 +635,17 @@ select:focus-visible {
 .sign-out-form button {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: var(--control-hit-size);
+  height: var(--control-hit-size);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
-  background: var(--panel-soft);
+  background: var(--surface-muted);
 }
 .sign-out-form button:hover {
-  color: #ffd5d5;
-  border-color: rgba(255, 105, 105, 0.48);
-  background: rgba(255, 105, 105, 0.1);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 48%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
   .workspace-shell {

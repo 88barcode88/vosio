@@ -634,7 +634,7 @@ export function BrowserRecorder({
     liveMarkerRequestInFlightRef.current = true;
     setLiveMarkerPending(true);
     setLiveMarkerFeedback({
-      message: `Ukládám důležitý moment ${timestamp}...`,
+      message: `Ukládám důležitý moment ${timestamp}…`,
       offsetMs: attempt.offsetMs,
       tone: "working"
     });
@@ -1498,10 +1498,10 @@ export function BrowserRecorder({
 
     setRecorderFeedback(
       audioCaptureMode === "microphone_and_tab"
-        ? "Čekám na výběr karty hovoru se zapnutým sdílením zvuku..."
+        ? "Čekám na výběr karty hovoru se zapnutým sdílením zvuku…"
         : usesRealtime
-          ? "Připravuji mikrofon a live přepis..."
-          : "Připravuji mikrofon a audio záznam...",
+          ? "Připravuji mikrofon a live přepis…"
+          : "Připravuji mikrofon a audio záznam…",
       "working"
     );
 
@@ -1995,10 +1995,10 @@ export function BrowserRecorder({
 
     setRecorderFeedback(
       reason === "shared_tab_ended"
-        ? "Sdílení zvuku hovoru skončilo. Dokončuji a ukládám dosavadní přepis..."
+        ? "Sdílení zvuku hovoru skončilo. Dokončuji a ukládám dosavadní přepis…"
         : reason === "microphone_ended"
-          ? "Mikrofon se odpojil. Dokončuji a ukládám dosavadní přepis..."
-        : "Dokončuji live přepis a ukládám text...",
+          ? "Mikrofon se odpojil. Dokončuji a ukládám dosavadní přepis…"
+        : "Dokončuji live přepis a ukládám text…",
       "working"
     );
 
@@ -2278,14 +2278,14 @@ export function BrowserRecorder({
     try {
       setRecorderFeedback(
         reason === "audio_limit"
-          ? "Dosažen limit audia. Dokončuji a ukládám nahrávku..."
+          ? "Dosažen limit audia. Dokončuji a ukládám nahrávku…"
           : reason === "shared_tab_ended"
-            ? "Sdílení zvuku hovoru skončilo. Dokončuji a bezpečně ukládám dosavadní nahrávku..."
+            ? "Sdílení zvuku hovoru skončilo. Dokončuji a bezpečně ukládám dosavadní nahrávku…"
           : reason === "microphone_ended"
-            ? "Mikrofon se odpojil. Dokončuji a bezpečně ukládám dosavadní nahrávku..."
+            ? "Mikrofon se odpojil. Dokončuji a bezpečně ukládám dosavadní nahrávku…"
           : saveMode === "audio_only"
-          ? "Dokončuji audio a ukládám nahrávku..."
-          : "Dokončuji live přepis a ukládám nahrávku...",
+          ? "Dokončuji audio a ukládám nahrávku…"
+          : "Dokončuji live přepis a ukládám nahrávku…",
         "working"
       );
 
@@ -2779,11 +2779,11 @@ export function BrowserRecorder({
           onClick={status === "recording" ? () => void stopRecording() : startRecording}
           type="button"
         >
-          {status === "recording" ? <Square size={18} /> : <Mic size={18} />}
+          {status === "recording" ? <Square size={20} /> : <Mic size={20} />}
           {status === "recording"
             ? "Zastavit"
             : status === "starting"
-              ? "Spouštím..."
+              ? "Spouštím…"
               : "Nahrávat live"}
         </button>
         <span className="recording-timer">
@@ -2800,9 +2800,9 @@ export function BrowserRecorder({
               onClick={markImportantMoment}
               type="button"
             >
-              <Flag size={16} />
+              <Flag size={15} />
               {liveMarkerPending
-                ? "Ukládám moment..."
+                ? "Ukládám moment…"
                 : liveMarkerFeedback?.tone === "error"
                   ? "Zkusit moment znovu"
                   : "Označit moment"}

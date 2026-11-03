@@ -390,8 +390,8 @@ describe("recording chat service", () => {
     const fixture = createStore();
     transcript.segments = [
       { end_ms: 1_000, start_ms: 0, text: "opakovaný důkaz" },
-      { end_ms: 2_000, start_ms: 1_000, text: "unikátní důkaz" },
-      { end_ms: 3_000, start_ms: 2_000, text: "opakovaný důkaz" }
+      { end_ms: 2_000, start_ms: 1_000, text: " unikátní důkaz" },
+      { end_ms: 3_000, start_ms: 2_000, text: " opakovaný důkaz" }
     ];
 
     const result = await submitRecordingChatTurn(baseInput, {

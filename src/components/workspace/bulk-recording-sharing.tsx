@@ -12,6 +12,7 @@ import { z } from "zod";
 import { accessListSchema } from "@/lib/recording-sharing/invitation-contract";
 import type { RecordingVisibility } from "@/lib/recording-sharing/types";
 import type { RevokedRecordingGrant } from "./project-access-manager";
+import { sharingRoleLabel } from "@/lib/team/role-labels";
 
 type SharingOptions = {
   detail?: boolean;
@@ -149,7 +150,7 @@ function SharingSelection({ recordings, detail, embedded = false, disabled = fal
     <h3>Sdílení nahrávky</h3>
     <fieldset disabled={busy || retryPending || disabled}>
       <legend className="visually-hidden">Viditelnost</legend>
-      <div className="recording-visibility-options" role="group" aria-label="Viditelnost">
+      <div className="recording-visibility-options ui-segmented" role="group" aria-label="Viditelnost">
         <button type="button" aria-pressed={visibility === "private"} disabled={Boolean(recordings[0]?.project_id && recordings[0]?.visibility !== "private" && !recordings[0]?.capabilities?.runPersonalAi)} onClick={() => { setVisibility("private"); setRecipients([]); }}>Soukromá</button>
         <button type="button" aria-pressed={visibility === "selected"} disabled={!canSelectRecipients} title={!canSelectRecipients ? "Konkrétní příjemce projektové nahrávky spravuje zakladatel projektu." : undefined} onClick={() => { setVisibility("selected"); setRecipients(savedRecipients.current); }}>Vybraní lidé</button>
         <button type="button" aria-pressed={visibility === "project"} disabled={!recordings[0]?.project_id} onClick={() => { setVisibility("project"); setRecipients([]); }}>Projekt</button>
@@ -163,15 +164,15 @@ function SharingSelection({ recordings, detail, embedded = false, disabled = fal
         <div className="recording-sharing-recipients">
           {members.filter((member) => member.email.toLocaleLowerCase("cs").includes(query.toLocaleLowerCase("cs"))).map((member) => <label key={member.userId}>
             <input type="checkbox" checked={recipients.some((recipient) => recipient.userId === member.userId)} onChange={(event) => toggleRecipient(member.userId, member.role, event.target.checked)} />
-            <span>{member.email}</span><small>{member.role === "editor" ? "Úpravy" : "Čtení"}</small>
+            <span>{member.email}</span><small>{sharingRoleLabel(member.role)}</small>
           </label>)}
           {recipientState === "ready" && !members.some((member) => member.email.toLocaleLowerCase("cs").includes(query.toLocaleLowerCase("cs"))) ? <p>Žádní odpovídající potvrzení příjemci.</p> : null}
         </div>
       </> : null}
     </fieldset>
     {invitationCount > 0 ? <p>Uložení sdílení nahradí konkrétní příjemce a zruší čekající pozvánky k této nahrávce ({invitationCount}).</p> : null}
-    {recipientState === "loading" ? <p role="status">Načítám aktuální přístupy…</p> : recipientState === "error" ? <p role="alert">Přístupy se nepodařilo načíst. <button type="button" disabled={busy || retryPending} onClick={() => void loadRecipients(ids)}>Načíst znovu</button></p> : null}
-    <button type="button" disabled={busy || (!retryPending && (disabled || recipientState !== "ready" || (visibility === "selected" && !recipients.length)))} onClick={() => void submit()}>{busy ? "Ukládám…" : retryPending ? "Zopakovat stejné sdílení" : "Uložit sdílení"}</button>
+    {recipientState === "loading" ? <p role="status">Načítám aktuální přístupy…</p> : recipientState === "error" ? <p role="alert">Přístupy se nepodařilo načíst. <button className="ui-button" type="button" disabled={busy || retryPending} onClick={() => void loadRecipients(ids)}>Načíst znovu</button></p> : null}
+    <button className="ui-button ui-button--primary" type="button" disabled={busy || (!retryPending && (disabled || recipientState !== "ready" || (visibility === "selected" && !recipients.length)))} onClick={() => void submit()}>{busy ? "Ukládám…" : retryPending ? "Zopakovat stejné sdílení" : "Uložit sdílení"}</button>
     {message ? <p role="status">{message}</p> : null}
   </section> : null;
 
@@ -181,9 +182,9 @@ function SharingSelection({ recordings, detail, embedded = false, disabled = fal
       <label>Viditelnost <select value={visibility} onChange={(event) => { setVisibility(event.target.value as typeof visibility); setRecipients([]); }}>
         {detail && (!recordings[0]?.project_id || recordings[0]?.visibility === "private" || recordings[0]?.capabilities?.runPersonalAi) ? <option value="private">Soukromá</option> : null}
         {eligible.some((row) => row.project_id) || (retryPending && visibility === "project") ? <option value="project">Členové projektu</option> : null}<option value="selected">Vybraní lidé</option></select></label>
-      {visibility === "selected" ? members.map((member) => <label key={member.userId}><input type="checkbox" checked={recipients.some((r) => r.userId === member.userId)} onChange={(event) => toggleRecipient(member.userId, member.role, event.target.checked)} />{member.email} ({member.role === "reader" ? "čtenář" : "editor"})</label>) : null}
+      {visibility === "selected" ? members.map((member) => <label key={member.userId}><input type="checkbox" checked={recipients.some((r) => r.userId === member.userId)} onChange={(event) => toggleRecipient(member.userId, member.role, event.target.checked)} />{member.email} ({sharingRoleLabel(member.role)})</label>) : null}
     </fieldset>
-    <button type="button" disabled={busy || (!retryPending && (!ids.length || (visibility === "selected" && !recipients.length)))} onClick={() => void submit()}>{busy ? "Ukládám…" : retryPending ? "Zopakovat stejné sdílení" : "Sdílet celý výběr"}</button>
+    <button className="ui-button ui-button--primary" type="button" disabled={busy || (!retryPending && (!ids.length || (visibility === "selected" && !recipients.length)))} onClick={() => void submit()}>{busy ? "Ukládám…" : retryPending ? "Zopakovat stejné sdílení" : "Sdílet celý výběr"}</button>
     {message ? <p role="status">{message}</p> : null}
   </div>;
   if (detail) return eligible.length || retryPending ? <details className="bulk-recording-sharing" onToggle={(event) => { if (event.currentTarget.open && !retryPending) void loadRecipients(ids); }}><summary>Změnit viditelnost nahrávky</summary>{form}</details> : null;
