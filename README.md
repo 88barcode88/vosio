@@ -50,6 +50,8 @@ supabase link --project-ref VAS_PROJECT_REF
 supabase db push
 ```
 
+Při upgradu aplikujte nové migrace **dřív, než nasadíte novou verzi webu**. Nová verze může hned volat nové databázové funkce (např. mazání celého checklistu volá `_v2` z `20261103140000`) a automatický deploy z `main` na databázi nepočká.
+
 Na existující instalaci nejprve vytvořte ověřenou zálohu a porovnejte skutečné schéma i migrační historii. Aplikujte pouze chybějící forwards. Neresetujte produkci, neupravujte staré migrace a neopravujte historii bez plánu. Sdílení mění oprávnění a capture kontrakty: databázi, web a workery upgradujte společně. [Databázový návod](supabase/README.md), [upgrade a rollback hranice](docs/api/project-sharing-runbook.md).
 
 Po databázových migracích nastavte pozvánkové e-maily automaticky. Předejte vlastní `SUPABASE_ACCESS_TOKEN` přes prostředí procesu správce a spusťte:

@@ -52,7 +52,7 @@ export function FilesContent({ activeRecording }: { activeRecording: RecordingCl
           </article>
         ))}
       </div>
-      {activeRecording.audioAvailability === "single" ? <AudioDownloadButton recordingId={activeRecording.id} /> : (
+      {activeRecording.audioAvailability === "single" ? <AudioDownloadButton recordingId={activeRecording.id} title={activeRecording.title} /> : (
         <p className="file-details-note">Audio uložené po částech zatím nejde stáhnout jako jeden soubor. Přehrát ho můžete v přehrávači nahoře.</p>
       )}
     </div>
@@ -60,7 +60,7 @@ export function FilesContent({ activeRecording }: { activeRecording: RecordingCl
 }
 
 // AudioDownloadButton asks the authorized audio route for a short-lived download link and starts the browser download.
-function AudioDownloadButton({ recordingId }: { recordingId: string }) {
+function AudioDownloadButton({ recordingId, title }: { recordingId: string; title: string | null }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,7 +69,7 @@ function AudioDownloadButton({ recordingId }: { recordingId: string }) {
     setPending(true);
     setError(null);
     try {
-      const response = await fetch(`/api/recordings/${recordingId}/audio?download=1`, { cache: "no-store" });
+      const response = await fetch(`/api/recordings/${recordingId}/audio?${new URLSearchParams({ download: "1", name: title ?? "" })}`, { cache: "no-store" });
       const body = await response.json().catch(() => null) as { url?: unknown; error?: unknown } | null;
       if (!response.ok || typeof body?.url !== "string") {
         throw new Error(typeof body?.error === "string" ? body.error : "Audio se nepodařilo stáhnout.");
