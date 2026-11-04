@@ -271,11 +271,14 @@
 .structured-task-row[hidden],.structured-ai-compact-block li[hidden] { display:none; }
 /* Status icon colors target every li svg; action icons follow their button color instead. */
 .structured-ai-compact-block li .structured-item-actions svg { margin-top:0; color:inherit; }
-/* Light text-only copy right after the item title; height follows the shared 30/44px hit policy (control-hit-targets.css). */
-.structured-inline-copy { display:inline-flex; align-items:center; min-height:var(--control-hit-size); margin-left:4px; border:0; background:transparent; color:var(--text-muted); cursor:pointer; padding:0 6px; font:inherit; font-size:var(--text-sm); font-weight:var(--weight-regular); line-height:var(--leading-ui); text-decoration:underline dotted; text-underline-offset:3px; vertical-align:middle; }
-.structured-inline-copy:hover { color:var(--accent); text-decoration-style:solid; }
-.structured-inline-copy[data-copy-state="copied"] { color:var(--success); text-decoration:none; }
-.structured-inline-copy[data-copy-state="failed"] { color:var(--danger); text-decoration:none; }
+/* Icon-only sentence copy glued to the title's last word ("tečka, mezera, ikona"). The hit area keeps the shared
+   30/44px policy (control-hit-targets.css) but negative margins stop it from growing the line or the visual gap. */
+.structured-title-tail { white-space:nowrap; }
+.structured-inline-copy { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; width:var(--control-hit-size); min-height:var(--control-hit-size); margin-block:calc((1.4em - var(--control-hit-size)) / 2); margin-inline:calc((13px - var(--control-hit-size)) / 2); border:0; border-radius:var(--radius-sm); background:transparent; color:var(--text-muted); cursor:pointer; padding:0; vertical-align:middle; }
+.structured-inline-copy > svg { width:13px; height:13px; flex:0 0 13px; }
+.structured-inline-copy:hover { color:var(--accent); }
+.structured-inline-copy[data-copy-state="copied"] { color:var(--success); }
+.structured-inline-copy[data-copy-state="failed"] { color:var(--danger); }
 .ai-output-detail summary { min-height:var(--control-hit-size); border-bottom:1px solid var(--border); padding:5px 0; }
 .ai-output-detail .ai-markdown-preview { padding:8px 0; }
 .ai-tab-actions { padding:6px 0; }
