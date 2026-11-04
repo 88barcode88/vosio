@@ -11,7 +11,8 @@ import type { OrganizationManagerActions } from "@/components/workspace/organiza
 import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 import type { RecordingRow } from "@/lib/recordings/types";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), share: vi.fn(), refresh: vi.fn(), loadOrganization: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), share: vi.fn(), refresh: vi.fn(), loadOrganization: vi.fn(), trash: vi.fn() }));
+vi.mock("@/lib/recordings/actions", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/recordings/actions")>(), trashRecordingsBulkAction: mocks.trash }));
 vi.mock("@/lib/recording-organization/load-recording-action", () => ({ loadRecordingOrganizationAction: mocks.loadOrganization }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
 vi.mock("@/lib/supabase/browser", () => ({ createClient: () => ({ rpc: mocks.rpc }) }));
@@ -114,6 +115,35 @@ describe("compact sharing interactions", () => {
     mocks.share.mockResolvedValueOnce(undefined); await click(".bulk-recording-sharing-form > button");
     expect(mocks.share.mock.calls[1][1]).toEqual(original);
     expect(mocks.share).toHaveBeenCalledTimes(2);
+  });
+  it("moves selected rows to Trash, including shared rows that cannot be bulk-shared, and keeps failures selected", async () => {
+    const shared = { ...row, id: "00000000-0000-4000-8000-000000000004", title: "Sdílená nahrávka", visibility: "selected" as const, capabilities: { ...NO_RECORDING_CAPABILITIES, read: true, delete: true } };
+    const rows = [shared];
+    await act(async () => root.render(<RecordingSharingSelectionProvider recordings={rows}><RecordingSharingCheckbox recordingId={shared.id} title={shared.title} /><BulkRecordingSharing recordings={rows} /></RecordingSharingSelectionProvider>));
+    await click(".recording-sharing-checkbox input");
+    const toolbar = container.querySelector<HTMLDivElement>(".recording-selection-toolbar")!;
+    expect(toolbar.hidden).toBe(false);
+    expect(toolbar.querySelector(".compact-popover")).toBeNull();
+    expect(toolbar.querySelector(".recording-selection-trash")?.textContent).toBe("Do koše (1)");
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mocks.trash.mockResolvedValueOnce({ succeededIds: [], failures: [{ id: shared.id, code: "conflict" }] });
+    await click(".recording-selection-trash");
+    expect(mocks.trash.mock.calls[0][0].getAll("recordingId")).toEqual([shared.id]);
+    expect(container.querySelector(".recording-sharing-result[role='alert']")?.textContent).toContain("se nepodařilo přesunout do Koše");
+    expect(container.querySelector<HTMLInputElement>(".recording-sharing-checkbox input")?.checked).toBe(true);
+    mocks.trash.mockResolvedValueOnce({ succeededIds: [shared.id], failures: [] });
+    await click(".recording-selection-trash");
+    expect(container.querySelector(".recording-sharing-result[role='status']")?.textContent).toBe("Do Koše jsme přesunuli 1 nahrávku.");
+    expect(container.querySelector<HTMLInputElement>(".recording-sharing-checkbox input")?.checked).toBe(false);
+    expect(mocks.refresh).toHaveBeenCalledTimes(2);
+  });
+  it("does not move anything to Trash when the confirmation is cancelled", async () => {
+    const rows = [{ ...row, capabilities: { ...row.capabilities!, delete: true } }];
+    await act(async () => root.render(<RecordingSharingSelectionProvider recordings={rows}><RecordingSharingCheckbox recordingId={row.id} title={row.title} /><BulkRecordingSharing recordings={rows} /></RecordingSharingSelectionProvider>));
+    await click(".recording-sharing-checkbox input");
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    await click(".recording-selection-trash");
+    expect(mocks.trash).not.toHaveBeenCalled();
   });
   it("prunes idle selection separately and never selects rows without current manage grants", async () => {
     await renderInbox([row]); await click(".recording-sharing-checkbox input");

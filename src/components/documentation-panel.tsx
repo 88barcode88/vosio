@@ -31,6 +31,7 @@ const documentationSections: DocumentationSection[] = [
   {
     body: [
       "Nahrávky jsou inbox všech uložených callů. Řádek se otevírá kliknutím, název jde upravit samostatně a smazání nejdřív přesune položku do Koše.",
+      "V detailu nahrávky je název na vlastním řádku a hned pod ním datum, délka, velikost a zdroj; tlačítka akcí jsou vedle, na užší obrazovce pod nimi.",
       "Seznam má samostatné sloupce Název, Datum, Typ, Délka, Klient, Projekt a Stav. Na užším okně se Typ a Klient schovají, na telefonu se datum a typ ukážou pod názvem.",
       "Vedle počtů podle stavu zvolíte řazení: Podle klienta (výchozí, skupiny podle klienta), Nejnovější, Nejstarší, Název A–Z nebo Nejdelší. Řazení se pamatuje v adrese stránky spolu s filtry.",
       "Export, úprava názvu a zařazení nahrávky se rozbalují přímo v detailu. Přehrávač začíná jako malý řádek s přehráváním a rozbalením. Rozbalení ukáže posun v audiu; sbalení ani přepnutí záložky přehrávání nepřeruší. Na mobilu zůstává přehrávač nahoře v detailu a nezakrývá spodní navigaci.",
@@ -126,6 +127,7 @@ const documentationSections: DocumentationSection[] = [
   {
     body: [
       "Smazání nahrávky z hlavního seznamu je soft-delete. Položka zmizí z Nahrávek a objeví se v Koši, kde ji lze ještě zkontrolovat.",
+      "Více nahrávek najednou přesunete zaškrtnutím v seznamu a tlačítkem Do koše v liště výběru (nejvýše 100). Nahrávky, které smazat nesmíte, zůstanou vybrané; ty, které se nepodaří přesunout, také zůstanou vybrané a můžete to zkusit znovu.",
       "Ruční trvalé smazání je dostupné po 24 hodinách od přesunu do Koše, bez ohledu na zvolený automatický termín. Automatický termín se při přesunu uloží ke konkrétní nahrávce a ukáže se u ní v Koši.",
       "Automatické čištění je v repozitáři zatím pouze připravený zdrojový postup: není nasazen ani aktivní.",
       "Trvalé smazání maže databázový řádek i související storage objekt, přepisy, joby a AI výstupy. Proto je tato akce oddělená od běžného smazání."
