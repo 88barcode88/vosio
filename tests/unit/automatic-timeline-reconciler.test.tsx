@@ -9,7 +9,7 @@ import { AutomaticTimelineReconciler } from "@/components/automatic-timeline-rec
 beforeEach(() => {
   vi.clearAllMocks();
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "done" }), {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ status: "queued" }), {
     headers: { "content-type": "application/json" },
     status: 200
   })));
@@ -62,6 +62,48 @@ describe("automatic timeline next-open reconciler", () => {
     });
 
     expect(fetch).toHaveBeenCalledOnce();
+    await act(async () => root.unmount());
+  });
+
+  it("does not re-post when the parent re-renders with a new onReconciled identity, but does for a new transcript", async () => {
+    const root = createRoot(document.createElement("div"));
+    const first = vi.fn();
+    const second = vi.fn();
+    try {
+      await act(async () => root.render(<AutomaticTimelineReconciler transcriptId="transcript-a" onReconciled={first} canRunPersonalAi />));
+      expect(fetch).toHaveBeenCalledOnce();
+      await act(async () => root.render(<AutomaticTimelineReconciler transcriptId="transcript-a" onReconciled={second} canRunPersonalAi />));
+      expect(fetch).toHaveBeenCalledOnce();
+      await act(async () => root.render(<AutomaticTimelineReconciler transcriptId="transcript-b" onReconciled={second} canRunPersonalAi />));
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenLastCalledWith("/api/transcripts/transcript-b/automatic-timeline", { method: "POST" });
+      expect(first).toHaveBeenCalledOnce();
+      expect(second).toHaveBeenCalledOnce();
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("calls the latest onReconciled at response time when the callback changed mid-flight", async () => {
+    let resolve!: (response: Response) => void;
+    vi.mocked(fetch).mockReturnValueOnce(new Promise<Response>((settle) => { resolve = settle; }));
+    const root = createRoot(document.createElement("div"));
+    const stale = vi.fn();
+    const latest = vi.fn();
+    try {
+      await act(async () => root.render(<AutomaticTimelineReconciler transcriptId="t" onReconciled={stale} canRunPersonalAi />));
+      await act(async () => root.render(<AutomaticTimelineReconciler transcriptId="t" onReconciled={latest} canRunPersonalAi />));
+      await act(async () => resolve(new Response(JSON.stringify({ status: "queued" }), { status: 200 })));
+      expect(stale).not.toHaveBeenCalled();
+      expect(latest).toHaveBeenCalledOnce();
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it.each(["current", "not_scheduled"])("does not reload AI state when the server reports %s", async (status) => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ status }), { status: 200 }));
+    const root = createRoot(document.createElement("div"));
+    const onReconciled = vi.fn();
+    await act(async () => root.render(<AutomaticTimelineReconciler transcriptId="t" onReconciled={onReconciled} canRunPersonalAi />));
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(onReconciled).not.toHaveBeenCalled();
     await act(async () => root.unmount());
   });
 

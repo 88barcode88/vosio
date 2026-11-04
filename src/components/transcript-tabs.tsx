@@ -132,7 +132,8 @@ export function TranscriptTabs({
       if (disposed || requested || document.visibilityState === "hidden" || !navigator.onLine) return;
       if (activeTab !== "ai" && activeTab !== "timeline") return;
       requested = true;
-      void loadAiForPurpose?.(activeTab);
+      // Passive tab (re)entry may reuse state checked within the freshness window; explicit reloads always refresh.
+      void loadAiForPurpose?.(activeTab, { reuseFresh: true });
     };
 
     // Defer until layout invalidation and StrictMode cleanup have settled before starting a request.

@@ -23,7 +23,7 @@ function client(read: boolean) {
   });
   const rpc = vi.fn().mockResolvedValue({ data: { read, editTitle: false, editSpeakers: false, editTaskStatus: false,
     manageAccess: false, delete: false, restore: false, purge: false, runPersonalAi: false, usePrivateChat: false }, error: null });
-  mocks.client.mockResolvedValue({ from, rpc, auth: { getUser: async () => ({ data: { user: { id: "reader" } }, error: null }) } });
+  mocks.client.mockResolvedValue({ from, rpc, auth: { getUser: async () => ({ data: { user: { id: "reader" } }, error: null }), getClaims: async () => ({ data: { claims: { sub: "reader" } }, error: null }) } });
   return { from, rpc, selections };
 }
 beforeEach(() => { vi.clearAllMocks(); mocks.types.mockResolvedValue(new Map([[outputId, "summary"]])); });

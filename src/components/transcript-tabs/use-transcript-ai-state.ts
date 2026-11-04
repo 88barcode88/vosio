@@ -32,6 +32,8 @@ export type AiStatePurpose = "ai" | "metadata" | "timeline";
 type ExactOutputPayload = { output: AiOutputView; structuredItems: StructuredAiItems };
 type TaskStatusOverride = Pick<StructuredTaskRow, "id" | "ai_output_id" | "status">;
 const OUTPUT_BODY_LOAD_CONCURRENCY = 8;
+// Shared quiet window: lifecycle catch-up and tab re-entry both trust state checked within this period.
+const AI_STATE_FRESHNESS_MS = 30_000;
 
 export type TranscriptAiStateContextValue = LoadedManualAiState & {
   acceptJob: (job: { id: string; status: ManualAiJobStatus }, processingType: string) => void;
@@ -44,7 +46,7 @@ export type TranscriptAiStateContextValue = LoadedManualAiState & {
   isLoading: boolean;
   isRefreshing: boolean;
   loadAllOutputs: () => Promise<Pick<LoadedManualAiState, "loadedOutputs" | "structuredItems"> | null>;
-  loadForPurpose: (purpose: AiStatePurpose) => Promise<void>;
+  loadForPurpose: (purpose: AiStatePurpose, options?: { reuseFresh?: boolean }) => Promise<void>;
   loadOutput: (outputId: string) => Promise<ExactOutputPayload | null>;
   removeOutputs: (outputIds: string[]) => void;
   setActivePurpose: (purpose: "ai" | "timeline" | null) => void;
@@ -82,6 +84,8 @@ export function TranscriptAiStateProvider({
   const taskStatusOverridesRef = useRef(new Map<string, TaskStatusOverride>());
   const isLoadedRef = useRef(initialAiOutputs.length > 0);
   const lastCompletedCheckRef = useRef(0);
+  const lastStateFailedRef = useRef(false);
+  const recoveryPostScopeRef = useRef<string | null>(null);
   const serverPropsRef = useRef({ initialAiOutputs, initialStructuredItems });
   const [activePurpose, setActivePurpose] = useState<"ai" | "timeline" | null>(null);
   const [stateRevision, setStateRevision] = useState(0);
@@ -112,6 +116,8 @@ export function TranscriptAiStateProvider({
     setIsRefreshing(false);
     setError(null);
     lastCompletedCheckRef.current = 0;
+    lastStateFailedRef.current = false;
+    recoveryPostScopeRef.current = null;
     setStateRevision((revision) => revision + 1);
 
     return () => {
@@ -138,6 +144,7 @@ export function TranscriptAiStateProvider({
       taskDeletionTombstonesRef.current,
       taskStatusOverridesRef.current
     ));
+    lastCompletedCheckRef.current = 0;
     setStateRevision((revision) => revision + 1);
   }, [initialAiOutputs, initialStructuredItems, replaceState, transcriptId]);
 
@@ -208,6 +215,7 @@ export function TranscriptAiStateProvider({
     if (!transcriptId || scope.transcriptId !== transcriptId) return null;
     if (stateRequestRef.current) return stateRequestRef.current;
     const completionGeneration = stateRef.current.automaticGenerationKey;
+    const recoveryScope = `${transcriptId}:${scope.generation}:${completionGeneration ?? ""}`;
     const initialLoad = !isLoadedRef.current;
     if (initialLoad) setIsLoading(true);
     else setIsRefreshing(true);
@@ -223,19 +231,26 @@ export function TranscriptAiStateProvider({
         const eligible = new Set((payload.classifications ?? []).filter((item) => item.poll_eligible).map((item) => item.job_id));
         if (payload.jobs.some((job) => job.execution_mode === "automatic" && eligible.has(job.id)
           && (job.status === "queued" || job.status === "failed"
-            || (job.status === "running" && Date.parse(job.lease_expires_at ?? "") <= Date.now())))) {
+            || (job.status === "running" && Date.parse(job.lease_expires_at ?? "") <= Date.now())))
+          && recoveryPostScopeRef.current !== recoveryScope) {
           // Recovery POST can restore/claim persisted intents; the metadata GET never calls a provider.
+          // It runs at most once per transcript scope and completion generation so polling never re-POSTs each cycle.
+          recoveryPostScopeRef.current = recoveryScope;
           await fetch(`/api/transcripts/${transcriptId}/automatic-timeline`, { method: "POST" }).catch(() => null);
           if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId
             || stateRef.current.automaticGenerationKey !== completionGeneration) return null;
         }
         const metadata = mergeMetadata(payload);
         isLoadedRef.current = true;
+        lastStateFailedRef.current = false;
         setIsLoaded(true);
         setError(null);
         return metadata;
       } catch {
-        if (scopeRef.current.generation === scope.generation) setError("AI stav se nepodařilo načíst.");
+        if (scopeRef.current.generation === scope.generation) {
+          lastStateFailedRef.current = true;
+          setError("AI stav se nepodařilo načíst.");
+        }
         return null;
       } finally {
         if (scopeRef.current.generation === scope.generation) {
@@ -250,24 +265,31 @@ export function TranscriptAiStateProvider({
     return request;
   }, [mergeMetadata, transcriptId]);
 
-  // hydratePurpose loads only the newest body needed by the visible AI or timeline surface.
+  // hydratePurpose loads the visible surface's newest body and its automatic outputs in one concurrent round.
   const hydratePurpose = useCallback(async (purpose: AiStatePurpose, metadata?: ManualAiStateSnapshot | null) => {
     if (purpose === "metadata") return;
     const outputs = metadata?.outputs ?? stateRef.current.outputs;
-    const target = purpose === "timeline"
-      ? outputs.find((output) => output.processing_type === "timeline_chapters")
-      : outputs[0];
-    if (target) await loadOutput(target.id);
+    const target = getPurposeTarget(outputs, purpose);
     const automaticDone = new Set((metadata?.jobs ?? stateRef.current.jobs)
       .filter((job) => job.execution_mode === "automatic" && job.status === "done").map((job) => job.id));
-    await Promise.all(outputs.filter((output) => automaticDone.has(output.processing_job_id)
-      && (purpose === "ai" || output.processing_type === "timeline_chapters"))
-      .slice(0, 6).map((output) => loadOutput(output.id)));
+    const automaticOutputs = outputs.filter((output) => automaticDone.has(output.processing_job_id)
+      && (purpose === "ai" || output.processing_type === "timeline_chapters")).slice(0, 6);
+    // outputRequestsRef deduplicates a target that is also an automatic output.
+    await Promise.all([...(target ? [target] : []), ...automaticOutputs].map((output) => loadOutput(output.id)));
   }, [loadOutput]);
 
-  // loadForPurpose marks a lazy consumer and hydrates only its default-open body.
-  const loadForPurpose = useCallback(async (purpose: AiStatePurpose) => {
+  // loadForPurpose marks a lazy consumer and hydrates its default-open body; passive tab entry (reuseFresh)
+  // skips the state request while state checked within the freshness window already holds the target body.
+  const loadForPurpose = useCallback(async (purpose: AiStatePurpose, options?: { reuseFresh?: boolean }) => {
     const scope = scopeRef.current;
+    const target = getPurposeTarget(stateRef.current.outputs, purpose);
+    const isFresh = options?.reuseFresh === true && isLoadedRef.current && !lastStateFailedRef.current
+      && Date.now() - lastCompletedCheckRef.current <= AI_STATE_FRESHNESS_MS
+      && target !== undefined && stateRef.current.loadedOutputs.some((output) => output.id === target.id);
+    if (isFresh) {
+      await hydratePurpose(purpose);
+      return;
+    }
     const metadata = await refreshMetadata();
     if (scopeRef.current.generation !== scope.generation) return;
     await hydratePurpose(purpose, metadata);
@@ -338,6 +360,7 @@ export function TranscriptAiStateProvider({
       outputs: []
     });
     replaceState({ ...stateRef.current, ...metadata });
+    lastCompletedCheckRef.current = 0;
     isLoadedRef.current = true;
     setIsLoaded(true);
     const requestWasAlreadyInFlight = stateRequestRef.current !== null;
@@ -349,6 +372,7 @@ export function TranscriptAiStateProvider({
   // applyCleanupMutation records server-confirmed removals before any later bounded snapshot can race them.
   const applyCleanupMutation = useCallback((mutation: ManualAiCleanupMutationResponse) => {
     mutation.removed_job_ids.forEach((jobId) => jobTombstonesRef.current.add(jobId));
+    lastCompletedCheckRef.current = 0;
     replaceState(applyClientGuards(
       applyManualAiCleanupMutation(stateRef.current, mutation),
       outputTombstonesRef.current,
@@ -361,6 +385,7 @@ export function TranscriptAiStateProvider({
   // removeOutputs makes an explicit successful deletion authoritative across stale metadata and body requests.
   const removeOutputs = useCallback((outputIds: string[]) => {
     outputIds.forEach((outputId) => outputTombstonesRef.current.add(outputId));
+    lastCompletedCheckRef.current = 0;
     taskStatusOverridesRef.current.forEach((override, key) => {
       if (outputIds.includes(override.ai_output_id)) taskStatusOverridesRef.current.delete(key);
     });
@@ -375,6 +400,7 @@ export function TranscriptAiStateProvider({
       || taskDeletionTombstonesRef.current.has(`id:${task.id}`)
       || taskDeletionTombstonesRef.current.has(`output:${task.ai_output_id}`)) return;
     taskStatusOverridesRef.current.set(key, { id: task.id, ai_output_id: task.ai_output_id, status });
+    lastCompletedCheckRef.current = 0;
     replaceState(applyClientGuards(
       stateRef.current,
       outputTombstonesRef.current,
@@ -387,6 +413,7 @@ export function TranscriptAiStateProvider({
   // confirmTaskDeletion keeps a logical task absent after the owner-scoped delete endpoint confirms success.
   const confirmTaskDeletion = useCallback((task: StructuredTaskRow) => {
     taskDeletionTombstonesRef.current.add(getTaskDedupeKey(task));
+    lastCompletedCheckRef.current = 0;
     replaceState(applyClientGuards(
       stateRef.current,
       outputTombstonesRef.current,
@@ -403,6 +430,7 @@ export function TranscriptAiStateProvider({
     if (!transcriptId || scopeRef.current.transcriptId !== transcriptId) return;
     itemIds.forEach((id) => taskDeletionTombstonesRef.current.add(`id:${id}`));
     outputIds.forEach((id) => taskDeletionTombstonesRef.current.add(`output:${id}`));
+    lastCompletedCheckRef.current = 0;
     taskStatusOverridesRef.current.forEach((override, key) => {
       if ((override.id && itemIds.includes(override.id)) || outputIds.includes(override.ai_output_id)) {
         taskStatusOverridesRef.current.delete(key);
@@ -479,7 +507,7 @@ export function TranscriptAiStateProvider({
         return;
       }
       if (cycleInFlight || catchupScheduled) return;
-      if (Date.now() - lastCompletedCheckRef.current <= 30_000) {
+      if (Date.now() - lastCompletedCheckRef.current <= AI_STATE_FRESHNESS_MS) {
         if (timer === null) schedulePoll();
         return;
       }
@@ -552,6 +580,14 @@ export function useTranscriptAiState() {
 // useOptionalTranscriptAiState lets isolated development fixtures keep their explicit static AI props.
 export function useOptionalTranscriptAiState() {
   return useContext(TranscriptAiStateContext);
+}
+
+// getPurposeTarget picks the default-open output for a surface: newest for AI, newest timeline for Timeline.
+function getPurposeTarget(outputs: LoadedManualAiState["outputs"], purpose: AiStatePurpose) {
+  if (purpose === "metadata") return undefined;
+  return purpose === "timeline"
+    ? outputs.find((output) => output.processing_type === "timeline_chapters")
+    : outputs[0];
 }
 
 // createInitialState adapts optional fixture/server data while production detail starts empty.
