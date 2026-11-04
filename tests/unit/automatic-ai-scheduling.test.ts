@@ -31,15 +31,17 @@ it("persists independent jobs before deferred fan-out and survives the first enq
   for (const [input] of mocks.execute.mock.calls) expect(input.automaticPublication).toMatchObject({ generationKey: "gen", leaseToken: expect.any(String) });
 });
 
-// createSchedulingAdmin returns intents for every automatic type and enqueue results with the given per-type status.
-function createSchedulingAdmin(statusFor: (type: string) => string) {
+// createSchedulingAdmin returns intents for every automatic type and enqueue results with the given per-type status or failure.
+function createSchedulingAdmin(statusFor: (type: string) => string, enqueueFails: (type: string) => boolean = () => false) {
   const intents = automaticOutputTypes.map((type) => ({ processing_type: type, completion_generation_key: "gen", automatic_idempotency_key: type,
     transcript_id: "t", user_id: "u", model: "gpt-5.6-terra", provider: "openai", provider_config: {}, prompt_text_snapshot: "Synthetic" }));
   const rpc = vi.fn((name: string, input: Record<string, unknown>) => {
     const type = String(input.p_processing_type ?? input.p_job_id);
     const job = { ...intents.find((intent) => intent.processing_type === type), id: type,
       status: name.includes("claim") ? "running" : statusFor(type), attempt_count: 1, max_attempts: 3 };
-    const chain = { returns: () => chain, single: async () => ({ data: job, error: null }), maybeSingle: async () => ({ data: job, error: null }) };
+    const failed = !name.includes("claim") && enqueueFails(type);
+    const chain = { returns: () => chain, single: async () => ({ data: failed ? null : job, error: failed ? {} : null }),
+      maybeSingle: async () => ({ data: job, error: null }) };
     return chain;
   });
   const from = vi.fn((table: string) => {
@@ -68,4 +70,20 @@ it("still queues and dispatches only the jobs that need work when some are settl
   expect(mocks.after).toHaveBeenCalledOnce();
   await mocks.after.mock.calls[0][0]();
   expect(mocks.execute).toHaveBeenCalledOnce();
+});
+
+it("stays queued when one enqueue fails even though every enqueued job is settled", async () => {
+  const admin = createSchedulingAdmin(() => "done", (type) => type === "summary");
+  const result = await scheduleAutomaticOutputs({ admin: admin as never, transcriptId: "t", userId: "u" });
+  expect(result.status).toBe("queued");
+  expect(mocks.after).toHaveBeenCalledOnce();
+  await mocks.after.mock.calls[0][0]();
+  expect(mocks.execute).not.toHaveBeenCalled();
+});
+
+it("stays queued for a failed job that still has attempts left", async () => {
+  const admin = createSchedulingAdmin((type) => type === "timeline_chapters" ? "failed" : "done");
+  const result = await scheduleAutomaticOutputs({ admin: admin as never, transcriptId: "t", userId: "u" });
+  expect(result.status).toBe("queued");
+  expect(mocks.after).toHaveBeenCalledOnce();
 });

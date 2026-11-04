@@ -683,6 +683,76 @@ describe("manual AI state contract", () => {
     }
   });
 
+  // renderRecoveryHarness serves a mutable automatic job and recovery POST status for recovery dedupe tests.
+  const renderRecoveryHarness = async () => {
+    const control = {
+      job: { attempt_count: 0, lease_expires_at: null as string | null, status: "queued" },
+      postStatus: 200
+    };
+    const fetchMock = vi.fn(async (url: string) => url.includes("/automatic-timeline")
+      ? new Response(JSON.stringify({ status: "queued" }), { status: control.postStatus })
+      : new Response(JSON.stringify({
+        classifications: [{ actions: [], cleanup_reason: "active_or_slow", job_id: "auto-job", poll_eligible: true }],
+        cleanup: { eligible_count: 0, next_cursor: null },
+        jobs: [{ completed_at: null, created_at: "2026-09-03T09:00:00.000Z", execution_mode: "automatic", failure_code: null,
+          id: "auto-job", max_attempts: 3, model: "", processing_type: "timeline_chapters", retry_after_at: null, started_at: null, ...control.job }],
+        outputs: []
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const harness = await renderAiStateHarness();
+    const refresh = () => act(async () => harness.container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
+    const posts = () => fetchMock.mock.calls.filter(([url]) => String(url).includes("/automatic-timeline")).length;
+    return { ...harness, control, posts, refresh };
+  };
+
+  it("retries the automatic recovery POST on the next refresh after a failed POST", async () => {
+    const { control, posts, refresh, root } = await renderRecoveryHarness();
+    try {
+      control.postStatus = 503;
+      await refresh();
+      expect(posts()).toBe(1);
+      control.postStatus = 200;
+      await refresh();
+      expect(posts()).toBe(2);
+      await refresh();
+      expect(posts()).toBe(2);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("posts recovery again when the same job turns from a live lease into an expired lease", async () => {
+    const { control, posts, refresh, root } = await renderRecoveryHarness();
+    try {
+      await refresh();
+      expect(posts()).toBe(1);
+      control.job = { attempt_count: 1, lease_expires_at: new Date(Date.now() + 60_000).toISOString(), status: "running" };
+      await refresh();
+      expect(posts()).toBe(1);
+      control.job = { ...control.job, lease_expires_at: new Date(Date.now() - 1_000).toISOString() };
+      await refresh();
+      expect(posts()).toBe(2);
+      await refresh();
+      expect(posts()).toBe(2);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("does not repeat the recovery POST while the stuck job state stays unchanged", async () => {
+    const { control, posts, refresh, root } = await renderRecoveryHarness();
+    try {
+      control.job = { attempt_count: 1, lease_expires_at: null, status: "failed" };
+      for (let cycle = 0; cycle < 4; cycle += 1) await refresh();
+      expect(posts()).toBe(1);
+      control.job = { attempt_count: 2, lease_expires_at: null, status: "failed" };
+      await refresh();
+      expect(posts()).toBe(2);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("starts the default body and automatic output bodies in one concurrent round", async () => {
     const bodyResolvers = new Map<string, () => void>();
     const metadataRow = (id: string, job: string, type: string, at: string) => ({ body_loaded: false, created_at: at, id, processing_job_id: job,

@@ -215,7 +215,6 @@ export function TranscriptAiStateProvider({
     if (!transcriptId || scope.transcriptId !== transcriptId) return null;
     if (stateRequestRef.current) return stateRequestRef.current;
     const completionGeneration = stateRef.current.automaticGenerationKey;
-    const recoveryScope = `${transcriptId}:${scope.generation}:${completionGeneration ?? ""}`;
     const initialLoad = !isLoadedRef.current;
     if (initialLoad) setIsLoading(true);
     else setIsRefreshing(true);
@@ -228,17 +227,16 @@ export function TranscriptAiStateProvider({
         }
         if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId
           || stateRef.current.automaticGenerationKey !== completionGeneration) return null;
-        const eligible = new Set((payload.classifications ?? []).filter((item) => item.poll_eligible).map((item) => item.job_id));
-        if (payload.jobs.some((job) => job.execution_mode === "automatic" && eligible.has(job.id)
-          && (job.status === "queued" || job.status === "failed"
-            || (job.status === "running" && Date.parse(job.lease_expires_at ?? "") <= Date.now())))
-          && recoveryPostScopeRef.current !== recoveryScope) {
+        const stuckJobsKey = getStuckAutomaticJobsKey(payload);
+        const recoveryScope = `${transcriptId}:${scope.generation}:${completionGeneration ?? ""}:${stuckJobsKey}`;
+        if (stuckJobsKey && recoveryPostScopeRef.current !== recoveryScope) {
           // Recovery POST can restore/claim persisted intents; the metadata GET never calls a provider.
-          // It runs at most once per transcript scope and completion generation so polling never re-POSTs each cycle.
-          recoveryPostScopeRef.current = recoveryScope;
-          await fetch(`/api/transcripts/${transcriptId}/automatic-timeline`, { method: "POST" }).catch(() => null);
+          // It repeats only after a failed POST or when the stuck-job state changes, never on every polling cycle.
+          const recovered = await fetch(`/api/transcripts/${transcriptId}/automatic-timeline`, { method: "POST" })
+            .then((recovery) => recovery.ok, () => false);
           if (scopeRef.current.generation !== scope.generation || scopeRef.current.transcriptId !== transcriptId
             || stateRef.current.automaticGenerationKey !== completionGeneration) return null;
+          if (recovered) recoveryPostScopeRef.current = recoveryScope;
         }
         const metadata = mergeMetadata(payload);
         isLoadedRef.current = true;
@@ -580,6 +578,18 @@ export function useTranscriptAiState() {
 // useOptionalTranscriptAiState lets isolated development fixtures keep their explicit static AI props.
 export function useOptionalTranscriptAiState() {
   return useContext(TranscriptAiStateContext);
+}
+
+// getStuckAutomaticJobsKey fingerprints poll-eligible automatic jobs a recovery POST can help; "" when none are stuck.
+function getStuckAutomaticJobsKey(payload: ManualAiStateSnapshot) {
+  const eligible = new Set((payload.classifications ?? []).filter((item) => item.poll_eligible).map((item) => item.job_id));
+  return payload.jobs
+    .filter((job) => job.execution_mode === "automatic" && eligible.has(job.id)
+      && (job.status === "queued" || job.status === "failed"
+        || (job.status === "running" && Date.parse(job.lease_expires_at ?? "") <= Date.now())))
+    .map((job) => `${job.id}:${job.status}:${job.attempt_count}:${job.lease_expires_at ?? ""}`)
+    .sort()
+    .join("|");
 }
 
 // getPurposeTarget picks the default-open output for a surface: newest for AI, newest timeline for Timeline.
