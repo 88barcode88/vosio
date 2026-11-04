@@ -97,9 +97,12 @@ async function expectRouteGeometry(page: Page) {
   expect(report.fixedOffenders).toEqual([]);
 }
 
-// expectTouchSafeControls audits semantic controls and links explicitly marked as app actions.
+// expectTouchSafeControls audits semantic controls and links explicitly marked as app actions against
+// control-hit-targets.css: 30px on wide fine-pointer screens, 44px on touch and narrow screens.
 async function expectTouchSafeControls(page: Page) {
   const offenders = await page.evaluate(() => {
+    const compactDesktop = matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches;
+    const minimum = compactDesktop ? 30 : 44;
     const controls = Array.from(document.querySelectorAll<HTMLElement>([
       "button",
       "input:not([type='hidden']):not([type='checkbox']):not([type='radio']):not([type='color'])",
@@ -116,7 +119,7 @@ async function expectTouchSafeControls(page: Page) {
         return [];
       }
       const widthRequired = element.matches("button, [role='button'], [role='tab'], .icon-button, [data-touch-target='action']");
-      return rect.height + 0.5 < 44 || (widthRequired && rect.width + 0.5 < 44)
+      return rect.height + 0.5 < minimum || (widthRequired && rect.width + 0.5 < minimum)
         ? [{ className: String(element.className), height: rect.height, tag: element.tagName, width: rect.width }]
         : [];
     });

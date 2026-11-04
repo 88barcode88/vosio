@@ -47,7 +47,8 @@ test("compact toolbar, anchored filters and readable management retain desktop/m
     }
     return route.continue();
   });
-    await page.goto(`/login/recording-organization-e2e?scope=${scope}&fixture=compact`);
+    // The first visit may compile the fixture route on the dev server, so it gets more than the 10s action budget.
+    await page.goto(`/login/recording-organization-e2e?scope=${scope}&fixture=compact`, { timeout: 60_000 });
     await page.getByRole("button", { name: "Spravovat", exact: true }).click();
     await createEntity(page, "Přidat klienta", "Lucern");
     await createEntity(page, "Přidat klienta", "Srdceprocanis");

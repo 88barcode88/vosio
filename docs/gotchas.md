@@ -694,3 +694,10 @@ OpenAI, Gemini i Mistral pro processing i chat používají společný transport
 **Problém:** `tests/e2e/soniox-installation-settings.spec.ts` měří všechny `button`, `select` a `summary` na fixture `/login/soniox-installation-e2e` a vyžaduje výšku aspoň 44 px.
 **Proč:** fixture neleží v `.workspace-shell`, takže `control-hit-targets.css` (30 px na desktopu s jemným ukazatelem) se tam neuplatní; v aplikaci tatáž pravidla nové ovládání zmenší.
 **Řešení:** nové ovládací prvky Nastavení stylovat s `min-height: 44px` v `settings-layout.css`; `control-hit-targets.css` musí zůstat posledním importem v `app/globals.css` (hlídá unit test).
+
+## E2E: hustota ovládání 30/44 px a stavová zpráva v hlavičce detailu (04.11.2026)
+
+**Problém:** Starší E2E testy vyžadovaly všude 44 px a padaly na desktopu, kde `control-hit-targets.css` dává 30 px. Stavová zpráva přepisu v hlavičce detailu navíc při objevení roztáhla řadu akcí a tlačítka uskočila doprava.
+**Proč:** Na šířce od 901 px s jemným ukazatelem je minimum 30 px, na dotyku a úzkých obrazovkách 44 px. Řada akcí v hlavičce má šířku podle obsahu a položka zprávy s `flex-basis: 100%` do ní započítala šířku svého textu a jednu mezeru.
+**Řešení:** Testy berou minimum z `matchMedia("(min-width: 901px) and (pointer: fine)")` (30, jinak 44). Zpráva má `contain: inline-size` a `margin-inline-start: -8px` (jedna mezera řady); odsazení textu jen v levém zarovnání do 900 px. Fixtury Koše a AI archivu musí mít `capabilities`, jinak se akce nevykreslí.
+

@@ -96,6 +96,12 @@ export const whatsNewReleases: readonly WhatsNewRelease[] = [
         summary: "Jména a role mluvčích jsou zarovnané s poli, časová osa má víc místa u časů a mluvčích, tlačítka u uložených AI výstupů jsou pohromadě a načítání se ukáže na jednom řádku."
       },
       {
+        id: "detail-actions-stay-put",
+        kind: "fixed",
+        title: "Tlačítka v detailu nahrávky už neuskočí",
+        summary: "Po kliknutí na Spustit přepis nebo Přepsat znovu zůstanou tlačítka v hlavičce detailu na svém místě; zpráva o stavu přepisu se objeví pod nimi."
+      },
+      {
         id: "settings-clearer",
         kind: "improved",
         title: "Přehlednější Nastavení",

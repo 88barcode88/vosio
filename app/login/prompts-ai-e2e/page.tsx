@@ -5,6 +5,7 @@ import {
   createAiArchiveSearchParams
 } from "@/lib/ai/archive";
 import type { AiArchiveItem } from "@/lib/ai/types";
+import type { RecordingCapabilities } from "@/lib/recording-sharing/types";
 import {
   canonicalizePromptTemplateSearchParams,
   createPromptTemplateSearchParams
@@ -21,6 +22,12 @@ export const dynamic = "force-dynamic";
 
 const activeRecordingId = "00000000-0000-4000-8000-000000000904";
 const trashedRecordingId = "00000000-0000-4000-8000-000000000905";
+// The archive shows delete only with an explicit capability, so the owner fixture grants what an owner has.
+const ownerCapabilities: RecordingCapabilities = {
+  read: true, editTitle: true, editSpeakers: true, editTaskStatus: true,
+  manageAccess: true, delete: true, restore: false, purge: false,
+  runPersonalAi: true, usePrivateChat: true
+};
 const fixtureArchiveItems: AiArchiveItem[] = [
   {
     created_at: "2026-08-09T12:00:00.000Z",
@@ -29,6 +36,7 @@ const fixtureArchiveItems: AiArchiveItem[] = [
     output_text: null,
     processing_job_id: "00000000-0000-4000-8000-000000000921",
     processing_type: "summary",
+    capabilities: ownerCapabilities,
     recording: { id: activeRecordingId, status: "completed", title: "Aktivní produktový hovor" },
     transcript_id: "00000000-0000-4000-8000-000000000931"
   },
@@ -39,6 +47,7 @@ const fixtureArchiveItems: AiArchiveItem[] = [
     output_text: null,
     processing_job_id: "00000000-0000-4000-8000-000000000922",
     processing_type: "follow_up_email",
+    capabilities: ownerCapabilities,
     recording: { id: trashedRecordingId, status: "deleted", title: "Archivovaný klientský hovor" },
     transcript_id: "00000000-0000-4000-8000-000000000932"
   }

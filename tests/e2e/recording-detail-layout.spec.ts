@@ -216,7 +216,8 @@ test("AI jobs survive tab navigation while 25 output bodies stay lazy", async ({
 
 // readCompactStyle inspects every matching action, including reserved pending controls.
 async function readCompactStyle(page: Page, selector: string) {
-  return page.locator(selector).evaluateAll((elements) => elements.map(element => {
+  // Hidden placeholders (for example the not-yet-available transcription check) are not controls, so they are skipped.
+  return page.locator(selector).evaluateAll((elements) => elements.filter((element) => element.getBoundingClientRect().height > 0).map(element => {
     const styles = getComputedStyle(element, "::before");
     const icon = element.querySelector<SVGElement>("svg");
     const iconBox = icon?.getBoundingClientRect() ?? null;
@@ -419,9 +420,9 @@ for (const width of [320, 390, 768, 900, 1024, 1440]) {
       await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
       const controls = [
         [".recording-object-header .export-controls > summary", "5px"],
-        [".recording-object-header .recording-inline-edit > summary", "5px"],
+        // Title and organization editing now open from the single "Upravit a sdílení" dialog trigger.
+        [".recording-object-header .recording-detail-actions > button[aria-haspopup='dialog']", "5px"],
         [".recording-object-header .delete-recording-danger button", "5px"],
-        [".recording-object-header .recording-organization-popover > summary", "5px"],
         [".recording-object-header .recording-header-operations .command-button", "5px"],
         [".ai-tab-actions .quick-grid button:first-child", "5px"]
       ];
