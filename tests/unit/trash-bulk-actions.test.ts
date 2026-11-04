@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { purgeRecordingMutationAction, restoreRecordingsBulkAction } from "@/lib/recordings/actions";
+import { purgeRecordingMutationAction, restoreRecordingsBulkAction, trashRecordingsBulkAction } from "@/lib/recordings/actions";
 const m = vi.hoisted(() => ({ client: vi.fn(), caps: vi.fn(), admin: vi.fn(), worker: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -47,6 +47,23 @@ describe("bounded Trash mutations", () => {
   });
   it.each([[[]], [[id, missing]]])("rejects zero or multiple purge IDs", async (ids) => {
     expect(await purgeRecordingMutationAction(form(ids))).toEqual({ id: "item", ok: false, code: "invalid_item" }); expect(m.client).not.toHaveBeenCalled();
+  });
+  it("moves a bounded selection to Trash with the saved retention and reports denied rows without detail", async () => {
+    const rpc = setup();
+    rpc.mockImplementation(async (name: string, args: { p_recording_id?: string }) => ({
+      data: name === "get_accessible_recording_v1" ? [{ id: args.p_recording_id, updated_at: "2026-09-20T00:00:00Z" }]
+        : { recordingId: args.p_recording_id, changed: true, status: "deleted" }, error: null }) as never);
+    m.caps.mockImplementation(async (_client, value) => ({ delete: value !== missing }));
+    expect(await trashRecordingsBulkAction(form([id, missing]))).toEqual({ succeededIds: [id], failures: [{ id: missing, code: "forbidden" }] });
+    expect(rpc).toHaveBeenCalledWith("trash_recording_v1", { p_recording_id: id, p_expected_updated_at: "2026-09-20T00:00:00Z", p_retention_hours: 720 });
+    expect(rpc).not.toHaveBeenCalledWith("trash_recording_v1", expect.objectContaining({ p_recording_id: missing }));
+  });
+  it("rejects an empty or oversized Trash selection before any RPC", async () => {
+    const rpc = setup();
+    expect(await trashRecordingsBulkAction(form([]))).toEqual({ succeededIds: [], failures: [{ id: "bulk", code: "invalid_bulk" }] });
+    const ids = Array.from({ length: 101 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+    expect(await trashRecordingsBulkAction(form(ids))).toEqual({ succeededIds: [], failures: [{ id: "bulk", code: "invalid_bulk" }] });
+    expect(rpc).not.toHaveBeenCalled();
   });
   it("reports a locked upload fence or exhausted work as conflict without provider detail", async () => {
     const rpc = setup(); rpc.mockResolvedValue({ data: null, error: { code: "55000", message: "private" } } as never);

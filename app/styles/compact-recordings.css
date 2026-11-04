@@ -61,6 +61,9 @@
 .recording-object-header .recording-title-stack h1 { font-size: var(--text-xl); }
 .recording-object-header .recording-detail-main { gap: 10px; }
 .recording-object-header .recording-title-stack { gap: 6px; }
+/* Title on its own line with date, length, size and source right under it, so the header actions keep room beside it. */
+.recording-object-header .recording-title-stack { flex: 1 1 320px; }
+.recording-object-header .recording-title-line { flex-direction: column; align-items: flex-start; gap: 4px; }
 .recording-object-header .compact-popover-surface .recording-title-form { position: static; width: 100%; margin: 0; border: 0; box-shadow: none; padding: 0; background: transparent; }
 .recording-object-header .compact-popover-surface .export-controls-menu { position: static; width: 100%; margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
 .recording-detail-actions :is(.compact-popover > summary, .delete-recording-form button), .recording-organization-summary > button, .recording-selection-toolbar .compact-popover > summary { position: relative; isolation: isolate; min-height: 44px; padding: 0 9px; border: 0 !important; border-radius: 5px; background: transparent !important; box-shadow: none; font-size: var(--text-sm); }
@@ -309,3 +312,7 @@
   .recordings-inbox .recordings-row-compact-meta { display: inline; }
 }
 .recording-sharing-project-hint { margin: 6px 0 0; color: var(--text-muted); font-size: var(--text-xs); }
+/* Bulk move to Trash: shared small-action surface, danger tone so it reads differently from Sdílet.
+   The :is() prefix matches the shared small-action rule so this later rule wins. */
+:is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock) .recording-selection-toolbar > button.recording-selection-trash { gap: 6px; color: var(--danger); }
+:is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock) .recording-selection-toolbar > button.recording-selection-trash:disabled { color: var(--text-muted); }

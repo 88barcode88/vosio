@@ -6,6 +6,7 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ### Added
 
+- Lišta výběru v seznamu nahrávek má Do koše: hromadný přesun až 100 nahrávek (serverová akce `trashRecordingsBulkAction`, každá položka přes zamčené `trash_recording_v1`). Výběr nově zahrnuje i sdílené nahrávky, které smíte smazat; sdílení dál používá jen soukromé.
 - Dokumentace obsahuje návod na připojení AI asistenta (Claude, Codex) včetně bezpečnostních rad; adresa serveru se zobrazí jen v instalaci se zapnutým MCP.
 - Stránka Novinky s přehledem změn psaným pro uživatele, filtrem druhu změny, rozbalovacími podrobnostmi a tečkou v menu u nepřečtených novinek.
 - Seznam nahrávek má řazení (Podle klienta, Nejnovější, Nejstarší, Název A–Z, Nejdelší) uložené v parametru `sort` a samostatné sloupce Datum, Typ a Délka.
@@ -13,6 +14,7 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 
 ### Changed
 
+- Hlavička detailu nahrávky: název na vlastním řádku, datum, délka, velikost a zdroj hned pod ním; akce mají místo vedle.
 - Nastavení má obsah sekcí, omezenou šířku, změnu hesla pod tlačítkem, automatické výstupy seskupené vedle AI modelu, přehled modelů Soniox (živý přepis i soubory, s upozorněním na neschválený `SONIOX_ASYNC_MODEL`), přepínač motivu Světlý/Tmavý a lepivou lištu s neuloženými změnami, chybou a Zrušit změny. Chyba uložení rozlišuje neplatnou volbu a selhání uložení.
 - Sjednocená typografie (pět velikostí a tři tloušťky písma), ikony (13, 15 a 20 px), tlačítka a barevné tokeny napříč aplikací; role se všude jmenují Úpravy a Čtení.
 - Karta účtu v postranním menu je kompaktní.

@@ -42,6 +42,7 @@ export type TrashMutationCode =
   | "invalid_item"
   | "restore_not_found"
   | "restore_failed"
+  | "delete_failed"
   | "purge_not_found"
   | "purge_too_recent"
   | "purge_in_progress"
@@ -195,6 +196,34 @@ export async function restoreRecordingsBulkAction(formData: FormData): Promise<T
       result.failures.push({
         id: recordingId,
         code: error instanceof ManagedMutationError ? error.code : "restore_failed"
+      });
+    }
+  }
+  revalidatePath("/");
+  revalidatePath("/recordings");
+  revalidatePath("/trash");
+  return result;
+}
+
+// trashRecordingsBulkAction moves a bounded selection to Trash one locked RPC at a time and reports sanitized partial results.
+export async function trashRecordingsBulkAction(formData: FormData): Promise<TrashBulkResult> {
+  const parsed = parseRecordingBulkForm(formData);
+  if (!parsed.success) {
+    return { succeededIds: [], failures: [{ id: "bulk", code: "invalid_bulk" }] };
+  }
+  const { supabase, user } = await requireTrashUserWithoutRedirect();
+  const retentionHours = getUserSettingsFromMetadata(user.user_metadata).trashRetentionHours;
+  const result: TrashBulkResult = { succeededIds: [], failures: [] };
+
+  for (const recordingId of parsed.data.recordingIds) {
+    try {
+      await mutateManagedRecording(supabase, recordingId, "delete", retentionHours);
+      result.succeededIds.push(recordingId);
+      revalidatePath(`/recordings/${recordingId}`);
+    } catch (error) {
+      result.failures.push({
+        id: recordingId,
+        code: error instanceof ManagedMutationError ? error.code : "delete_failed"
       });
     }
   }

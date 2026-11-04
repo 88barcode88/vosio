@@ -32,9 +32,10 @@ async function geometry(page: Page) {
     .map((selector) => { const box = document.querySelector(selector)?.getBoundingClientRect(); return [selector, box ? { x: box.x, y: box.y + scrollY, width: box.width, height: box.height } : null]; })));
 }
 
-// headerFeedbackHeight measures the header action area; its transcription message row collapses when empty and grows with its text.
+// headerFeedbackHeight measures the whole detail header; the transcription message row under the actions collapses when
+// empty and grows with its text, and may or may not make the header taller depending on whether the title column is taller.
 async function headerFeedbackHeight(page: Page) {
-  return page.evaluate(() => document.querySelector(".recording-detail-actions")?.getBoundingClientRect().height ?? 0);
+  return page.evaluate(() => document.querySelector(".recording-object-header")?.getBoundingClientRect().height ?? 0);
 }
 
 // expectStableExceptHeaderFeedback allows content below the header to move only by the header action group's own growth.
