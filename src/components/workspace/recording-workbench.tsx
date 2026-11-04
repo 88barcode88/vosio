@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { RecordingCompletionNotice } from "@/components/persistent-recording-session";
 import { RecordingEditSharingDialog } from "@/components/workspace/recording-edit-sharing-dialog";
+import { RecordingRenamePrompt } from "@/components/workspace/recording-rename-prompt";
 import { ChevronLeft } from "lucide-react";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
 import { TranscriptTabs } from "@/components/transcript-tabs";
@@ -159,6 +160,8 @@ function RecordingCard({
             {activeRecordingRow.capabilities?.runPersonalAi ? <div className="recording-header-operations" aria-label="Akce přepisu">
               <CommandBar activeRecording={activeRecordingView} activeTranscript={activeTranscript} />
             </div> : null}
+            <RecordingRenamePrompt key={`rename-${activeRecordingRow.id}`} recordingId={activeRecordingRow.id}
+              title={activeRecordingRow.title} canEditTitle={activeRecordingRow.capabilities?.editTitle === true} />
             <RecordingEditSharingDialog
               key={`edit-sharing-${activeRecordingRow.id}`}
               options={recordingOrganizationOptions}

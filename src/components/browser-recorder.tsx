@@ -1,5 +1,6 @@
 "use client";
 
+import { withRenamePrompt } from "@/components/workspace/recording-rename-prompt";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -370,7 +371,7 @@ export function BrowserRecorder({
     onCompletionChange?.({ recordingId, phase: "saving", audioConfirmed: false, message: "Ukládáme nahrávku. Připravujeme přepis." });
     if (redirectAfterSave === "detail" && completionNavigatedRef.current !== recordingId) {
       completionNavigatedRef.current = recordingId;
-      if (`${window.location.pathname}${window.location.search}` === completionOriginRef.current) router.push(`/recordings/${recordingId}`);
+      if (`${window.location.pathname}${window.location.search}` === completionOriginRef.current) router.push(withRenamePrompt(`/recordings/${recordingId}`));
     }
   }
 
@@ -1970,7 +1971,8 @@ export function BrowserRecorder({
       return;
     }
     if (redirectAfterSave === "detail") {
-      const path = `/recordings/${recordingId}`;
+      // The detail asks once for a name for the freshly saved live recording.
+      const path = withRenamePrompt(`/recordings/${recordingId}`);
       router.push(hasSearchWarning ? addTranscriptSearchIndexWarningToPath(path) : path);
       return;
     }
