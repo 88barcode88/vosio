@@ -64,6 +64,7 @@ export function AiProcessingContent({
   onOutputsRemoved,
   onReload,
   outputMetadata,
+  resolveEvidenceSpeaker,
   resolveEvidenceTarget,
   structuredItems,
   onTaskDeleted,
@@ -86,6 +87,7 @@ export function AiProcessingContent({
   onOutputsRemoved?: (outputIds: string[]) => void;
   onReload?: () => Promise<void>;
   outputMetadata?: ManualAiOutputMetadata[];
+  resolveEvidenceSpeaker?: Parameters<typeof StructuredItemsContent>[0]["resolveEvidenceSpeaker"];
   resolveEvidenceTarget: (reference: TranscriptEvidenceReference) => TranscriptTarget | null;
   structuredItems: StructuredAiItems;
   onTaskDeleted?: Parameters<typeof StructuredItemsContent>[0]["onTaskDeleted"];
@@ -163,9 +165,11 @@ export function AiProcessingContent({
           checklistPending={Boolean(activeTranscript && pendingChecklist?.transcriptId === activeTranscript.id && pendingChecklist.ids)}
           checklistAction={activeTranscript ? <DeleteTranscriptChecklistButton key={activeTranscript.id} transcriptId={activeTranscript.id}
             onDeleted={onChecklistDeleted} onPending={(ids) => setPendingChecklist({ transcriptId: activeTranscript.id, ids })} /> : null}
+          onItemsDeleted={(ids) => onChecklistDeleted?.(ids, [])}
           onTaskDeleted={onTaskDeleted}
           onTaskStatusConfirmed={onTaskStatusConfirmed}
           onOpenEvidence={onOpenEvidence}
+          resolveEvidenceSpeaker={resolveEvidenceSpeaker}
           resolveEvidenceTarget={resolveEvidenceTarget}
         />
         {artifacts.map((metadata, index) => (

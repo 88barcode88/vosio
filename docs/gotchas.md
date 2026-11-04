@@ -701,3 +701,9 @@ OpenAI, Gemini i Mistral pro processing i chat používají společný transport
 **Proč:** Na šířce od 901 px s jemným ukazatelem je minimum 30 px, na dotyku a úzkých obrazovkách 44 px. Řada akcí v hlavičce má šířku podle obsahu a položka zprávy s `flex-basis: 100%` do ní započítala šířku svého textu a jednu mezeru.
 **Řešení:** Testy berou minimum z `matchMedia("(min-width: 901px) and (pointer: fine)")` (30, jinak 44). Zpráva má `contain: inline-size` a `margin-inline-start: -8px` (jedna mezera řady); odsazení textu jen v levém zarovnání do 900 px. Fixtury Koše a AI archivu musí mít `capabilities`, jinak se akce nevykreslí.
 
+
+## Mazání rozhodnutí a rizik: logická skupina, ne jeden řádek (04.11.2026)
+
+**Problém:** UI zobrazuje rozhodnutí a rizika deduplikovaná přes opakovaná AI zpracování (`dedupeStructuredAiItems`). Smazání jen zobrazeného řádku by po refreshi vytáhlo starší ekvivalentní kopii.
+**Proč:** Stejné rozhodnutí/riziko vzniká v každé generaci jako nový řádek `transcript_decisions`/`transcript_risks` a authenticated role má na tabulky jen `select`.
+**Řešení:** `DELETE /api/transcript-decisions/[decisionId]` a `/api/transcript-risks/[riskId]` (sdílený `structured-item-group-delete.server.ts`) sestaví skupinu přes `getDecisionDedupeKey`/`getRiskDedupeKey` v rámci téže nahrávky a smažou ji atomicky přes `delete_managed_transcript_decision_group_v1`/`delete_managed_transcript_risk_group_v1` (verze cílového řádku, aktuální `can_manage_recording`, max 1000 ID). Klient skryje vrácená `ids` přes `confirmChecklistDeletion(ids, [])`. Rozhodnutí se liší i stavem: „K potvrzení“ a „Dohodnuto“ téhož textu jsou dvě skupiny. Budoucí AI generování může položku vytvořit znovu. Migrace `20261104120000_decision_risk_group_delete.sql` musí být na targetu aplikovaná před nasazením aplikace.

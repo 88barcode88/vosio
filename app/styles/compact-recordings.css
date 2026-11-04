@@ -256,8 +256,26 @@
 .checklist-delete-control { gap:4px; }
 .checklist-delete-control p:empty { display:none; }
 .checklist-delete-control p:not(:empty) { max-width:340px; font-size:var(--text-sm); overflow-wrap:anywhere; }
-.structured-task-row { grid-template-columns:var(--control-hit-size) minmax(0,1fr) var(--control-hit-size); border:0; border-bottom:1px solid var(--border); border-radius:0; background:transparent; padding:4px 0; gap:8px; }
-.structured-task-row > button,.structured-task-row > .structured-task-delete { width:var(--control-hit-size); height:var(--control-hit-size); margin:0; border:0; background:transparent; }
+.structured-task-row { grid-template-columns:var(--control-hit-size) minmax(0,1fr) auto; border:0; border-bottom:1px solid var(--border); border-radius:0; background:transparent; padding:4px 0; gap:8px; }
+.structured-task-row > button { width:var(--control-hit-size); height:var(--control-hit-size); margin:0; border:0; background:transparent; }
+.structured-ai-compact-block li { grid-template-columns:18px minmax(0,1fr) auto; }
+/* Row actions: full-item copy before delete; both are quiet icon targets sharing the fine/touch hit policy. */
+.structured-item-actions { display:flex; align-items:flex-start; gap:2px; }
+.structured-item-actions > button { display:grid; place-items:center; width:var(--control-hit-size); height:var(--control-hit-size); margin:0; border:1px solid transparent; border-radius:var(--radius-sm); background:transparent; color:var(--text-muted); cursor:pointer; padding:0; }
+.structured-item-actions > button:disabled { cursor:not-allowed; opacity:.5; }
+.structured-item-actions > .structured-item-copy:hover { color:var(--accent); background:color-mix(in srgb, var(--accent) 9%, transparent); }
+.structured-item-actions > .structured-item-copy[data-copy-state="copied"] { color:var(--success); }
+.structured-item-actions > .structured-task-delete:hover:not(:disabled) { border-color:color-mix(in srgb, var(--danger) 42%, transparent); color:var(--danger); background:color-mix(in srgb, var(--danger) 9%, transparent); }
+.structured-item-actions > button:focus-visible,.structured-inline-copy:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px; }
+/* Optimistic delete hides the row via [hidden]; grid display would otherwise keep it visible until refresh. */
+.structured-task-row[hidden],.structured-ai-compact-block li[hidden] { display:none; }
+/* Status icon colors target every li svg; action icons follow their button color instead. */
+.structured-ai-compact-block li .structured-item-actions svg { margin-top:0; color:inherit; }
+/* Light text-only copy right after the item title; height follows the shared 30/44px hit policy (control-hit-targets.css). */
+.structured-inline-copy { display:inline-flex; align-items:center; min-height:var(--control-hit-size); margin-left:4px; border:0; background:transparent; color:var(--text-muted); cursor:pointer; padding:0 6px; font:inherit; font-size:var(--text-sm); font-weight:var(--weight-regular); line-height:var(--leading-ui); text-decoration:underline dotted; text-underline-offset:3px; vertical-align:middle; }
+.structured-inline-copy:hover { color:var(--accent); text-decoration-style:solid; }
+.structured-inline-copy[data-copy-state="copied"] { color:var(--success); text-decoration:none; }
+.structured-inline-copy[data-copy-state="failed"] { color:var(--danger); text-decoration:none; }
 .ai-output-detail summary { min-height:var(--control-hit-size); border-bottom:1px solid var(--border); padding:5px 0; }
 .ai-output-detail .ai-markdown-preview { padding:8px 0; }
 .ai-tab-actions { padding:6px 0; }
