@@ -81,7 +81,6 @@ describe("trash recording actions", () => {
     });
     await act(async () => root.render(
       <TrashRecordingsManager
-       
         recordings={recordings}
         restoreBulkAction={restoreBulkAction}
       />
@@ -129,7 +128,6 @@ describe("trash recording actions", () => {
     });
     await act(async () => root.render(
       <TrashRecordingsManager
-       
         purgeAction={vi.fn()}
         purgeItemAction={vi.fn()}
         recordings={recordings}
@@ -178,7 +176,6 @@ describe("trash recording actions", () => {
     });
     await act(async () => root.render(
       <TrashRecordingsManager
-       
         purgeAction={vi.fn()}
         purgeItemAction={purgeItemAction}
         recordings={recordings}
