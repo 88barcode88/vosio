@@ -21,7 +21,6 @@ import { formatFileSize, formatRecordingDate } from "@/lib/recordings/types";
 
 const BULK_SELECTION_LIMIT = 100;
 const PURGE_CONCURRENCY = 2;
-const PURGE_DELAY_MS = 86_400_000;
 const TRASH_RETENTION_LABELS: Record<24 | 168 | 720, string> = {
   24: "24 hodin",
   168: "7 dní",
@@ -64,7 +63,6 @@ function formatAutomaticPurgeDeadline(recording: RecordingClientView) {
 // TrashRecordingsManager owns bounded selection, partial settlements and the two-request purge queue.
 export function TrashRecordingsManager({
   recordings,
-  nowMs,
   restoreBulkAction = restoreRecordingsBulkAction,
   purgeItemAction = purgeRecordingMutationAction,
   restoreAction,
@@ -72,7 +70,6 @@ export function TrashRecordingsManager({
   actionContext
 }: {
   recordings: RecordingClientView[];
-  nowMs: number;
   restoreBulkAction?: TrashRestoreBulkAction;
   purgeItemAction?: TrashPurgeItemAction;
   restoreAction?: TrashRecordingAction;
@@ -90,10 +87,6 @@ export function TrashRecordingsManager({
   const selectableIds = recordings.filter((recording) => (recording.capabilities?.restore || recording.capabilities?.purge) && recording.purge_phase === "none").slice(0, BULK_SELECTION_LIMIT).map((recording) => recording.id);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
   const selectedRecordings = recordings.filter((recording) => selectedIds.has(recording.id));
-  const hasRecentSelection = selectedRecordings.some((recording) => {
-    const deletedAtMs = recording.deleted_at ? Date.parse(recording.deleted_at) : Number.NaN;
-    return !Number.isFinite(deletedAtMs) || deletedAtMs > nowMs - PURGE_DELAY_MS;
-  });
 
   // Keep the native select-all control truthful for partial selection.
   useEffect(() => {
@@ -214,7 +207,7 @@ export function TrashRecordingsManager({
       {recordings.length > 0 ? (
         <>
           <p className="trash-retention-note">
-            Trvalé smazání je dostupné 24 hodin po přesunutí do Koše. Automatický termín je uveden u každé položky.
+            Automatický termín je uveden u každé položky.
           </p>
           <div className="trash-bulk-toolbar">
             <label className="trash-selection-control">
@@ -230,13 +223,12 @@ export function TrashRecordingsManager({
               {restorePending ? "Obnovuji…" : `Obnovit vybrané (${selectedIds.size})`}
             </button>
             <button
-              disabled={selectedIds.size === 0 || hasRecentSelection || selectedRecordings.some((row) => !row.capabilities?.purge || row.purge_phase !== "none") || restorePending || Boolean(purgeProgress)}
+              disabled={selectedIds.size === 0 || selectedRecordings.some((row) => !row.capabilities?.purge || row.purge_phase !== "none") || restorePending || Boolean(purgeProgress)}
               onClick={() => setPurgeModalOpen(true)}
               type="button"
             >
               Smazat vybrané trvale ({selectedIds.size})
             </button>
-            {hasRecentSelection ? <span>Vybraná položka ještě nesplnila 24hodinové pravidlo.</span> : null}
           </div>
         </>
       ) : null}
@@ -271,7 +263,7 @@ export function TrashRecordingsManager({
             </time>
             <div className="trash-recording-actions">
               {recording.capabilities?.restore && recording.purge_phase === "none" ? <RestoreRecordingForm actionContext={actionContext} recordingId={recording.id} restoreAction={restoreAction} /> : null}
-              {recording.capabilities?.purge && recording.purge_phase === "none" && recording.deleted_at && Date.parse(recording.deleted_at) <= nowMs - PURGE_DELAY_MS ? <PurgeRecordingForm actionContext={actionContext} expectedUpdatedAt={recording.updated_at} purgeAction={purgeAction} recordingId={recording.id} /> : null}
+              {recording.capabilities?.purge && recording.purge_phase === "none" ? <PurgeRecordingForm actionContext={actionContext} expectedUpdatedAt={recording.updated_at} purgeAction={purgeAction} recordingId={recording.id} /> : null}
               {recording.purge_phase === "started" ? <span>Mazání probíhá</span> : null}
             </div>
           </article>

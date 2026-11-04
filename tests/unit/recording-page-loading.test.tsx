@@ -167,6 +167,22 @@ describe("recording page read scheduling", () => {
     }
   });
 
+  it("resolves the deep link from stored segments and passes slim tokens to the client", async () => {
+    const token = { confidence: 0.9, end_ms: 900, is_final: true, language: "cs", speaker: "1", start_ms: 500, text: "Ahoj" };
+    const stored = { id: "transcript-1", raw_text: "Ahoj", recording_id: "recording-1", segments: [{ text: "x", tokens: [token] }], speakers: [] };
+    mocks.listTranscripts.mockResolvedValue([stored]);
+    const element = await RecordingDetailPage({
+      params: Promise.resolve({ recordingId: "recording-1" }),
+      searchParams: Promise.resolve({ at: "500", tab: "transcript" })
+    });
+    expect(element.props.initialTranscriptDeepLink).toMatchObject({ target: { startMs: 500, transcriptId: "transcript-1" } });
+    expect(element.props.transcripts).toEqual([{
+      ...stored,
+      segments: [{ tokens: [{ end_ms: 900, speaker: "1", start_ms: 500, text: "Ahoj" }] }]
+    }]);
+    expect(stored.segments[0].tokens[0]).toBe(token);
+  });
+
   it("denies detail access before starting content or organization reads", async () => {
     mocks.capabilities.mockResolvedValue({ read: false });
     await expect(RecordingDetailPage({

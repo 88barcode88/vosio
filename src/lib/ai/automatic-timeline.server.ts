@@ -44,12 +44,23 @@ export async function scheduleAutomaticOutputs(input: { admin: SupabaseClient; t
     intent, job: await enqueueAutomaticTimelineJob(getAutomaticTimelineJobInput(intent), input.admin)
   })));
   const workers = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  const pendingWorkers = workers.filter(({ job }) => automaticJobNeedsWork(job));
+  // Idempotent re-enqueue of settled jobs is a no-op: report "current" so clients skip the reload and no worker runs.
+  if (!pendingWorkers.length && workers.length === results.length) {
+    return { status: "current", scheduledTypes: intents.map((intent) => intent.processing_type) };
+  }
   after(async () => {
-    await Promise.allSettled(workers.map(({ intent, job }) => reconcileAutomaticTimeline({
+    await Promise.allSettled(pendingWorkers.map(({ intent, job }) => reconcileAutomaticTimeline({
       ...input, jobId: job.id, generationKey: intent.completion_generation_key
     }, { findJob: async () => job })));
   });
   return { status: "queued", scheduledTypes: intents.map((intent) => intent.processing_type) };
+}
+
+// automaticJobNeedsWork mirrors reconcileAutomaticTimeline's early exits: settled or exhausted jobs need no worker.
+function automaticJobNeedsWork(job: AutomaticTimelineJobRow) {
+  if (job.status === "done" || job.status === "cancelled") return false;
+  return !(job.status === "failed" && job.attempt_count >= job.max_attempts);
 }
 
 type AutomaticTimelineGenerationInput =

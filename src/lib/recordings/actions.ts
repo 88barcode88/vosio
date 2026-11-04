@@ -44,7 +44,6 @@ export type TrashMutationCode =
   | "restore_failed"
   | "delete_failed"
   | "purge_not_found"
-  | "purge_too_recent"
   | "purge_in_progress"
   | "purge_storage_failed"
   | "purge_failed";

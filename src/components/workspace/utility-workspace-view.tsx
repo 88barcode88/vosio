@@ -51,7 +51,6 @@ type UtilityWorkspaceViewProps = {
   templateStatus: "created" | "duplicated" | "error" | "saved" | null;
   trashActionAlert?: string | null;
   trashActionContext?: Record<string, string>;
-  trashNowMs?: number;
   trashPurgeItemAction?: TrashPurgeItemAction;
   trashPurgeAction?: TrashRecordingAction;
   trashRestoreBulkAction?: TrashRestoreBulkAction;
@@ -82,7 +81,6 @@ export function UtilityWorkspaceView({
   settingsStatus,
   trashActionAlert,
   trashActionContext,
-  trashNowMs = 0,
   trashPurgeItemAction,
   trashPurgeAction,
   trashRestoreBulkAction,
@@ -171,7 +169,6 @@ export function UtilityWorkspaceView({
       {deletedRecordings.length > 0 ? (
         <TrashRecordingsManager
           actionContext={trashActionContext}
-          nowMs={trashNowMs}
           purgeAction={trashPurgeAction}
           purgeItemAction={trashPurgeItemAction}
           recordings={deletedRecordings}

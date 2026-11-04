@@ -40,8 +40,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const transcriptId = params.data.transcriptId;
   const outputOffset = parsedOffset.data;
   const supabase = await createClient();
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) return NextResponse.json({ error: "Nejste přihlášený." }, { status: 401 });
+  // getClaims verifies the JWT locally (asymmetric keys) instead of a per-request Auth server round trip.
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims?.sub;
+  if (claimsError || !userId) return NextResponse.json({ error: "Nejste přihlášený." }, { status: 401 });
 
   const { data: transcript } = await supabase.from("transcripts")
     .select("id,recording_id,completion_generation_key").eq("id", transcriptId)
@@ -73,26 +75,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const automaticJobsPromise = (async () => {
     if (!transcript.completion_generation_key) return { data: [], error: null };
     const intents = await admin.from("automatic_timeline_intents").select("automatic_idempotency_key")
-      .eq("transcript_id", transcriptId).eq("user_id", user.id)
+      .eq("transcript_id", transcriptId).eq("user_id", userId)
       .eq("completion_generation_key", transcript.completion_generation_key).limit(6);
     if (intents.error) return { data: [], error: intents.error };
     if (!intents.data?.length) return { data: [], error: null };
     return supabase.from("ai_processing_jobs")
       .select("id,execution_mode,processing_type,model,status,created_at,started_at,completed_at,attempt_count,max_attempts,lease_expires_at,failure_code,retry_after_at")
-      .eq("transcript_id", transcriptId).eq("user_id", user.id).eq("execution_mode", "automatic")
+      .eq("transcript_id", transcriptId).eq("user_id", userId).eq("execution_mode", "automatic")
       .in("automatic_idempotency_key", intents.data.map((intent) => intent.automatic_idempotency_key))
       .limit(6).returns<ManualAiJobSummary[]>();
   })();
   const [jobsResult, outputsResult, automaticJobsResult] = await Promise.all([
     supabase.from("ai_processing_jobs")
       .select("id,processing_type,model,status,created_at,started_at,completed_at,attempt_count,max_attempts,lease_expires_at,failure_code,retry_after_at")
-      .eq("transcript_id", transcriptId).eq("user_id", user.id).eq("execution_mode", "manual")
+      .eq("transcript_id", transcriptId).eq("user_id", userId).eq("execution_mode", "manual")
       .in("status", ["queued", "running", "done", "failed", "cancelled"])
       .order("created_at", { ascending: false }).order("id", { ascending: false })
       .limit(MAX_MANUAL_AI_STATE_ROWS).returns<ManualAiJobSummary[]>(),
     supabase.from("ai_outputs")
       .select("id,created_at,processing_job_id,transcript_id,ai_processing_jobs(processing_type)")
-      .eq("transcript_id", transcriptId).eq("user_id", user.id)
+      .eq("transcript_id", transcriptId).eq("user_id", userId)
       .order("created_at", { ascending: false }).order("id", { ascending: false })
       .range(outputOffset, outputOffset + MAX_MANUAL_AI_STATE_ROWS).returns<OutputMetadataRow[]>(),
     automaticJobsPromise
@@ -108,13 +110,25 @@ export async function GET(request: NextRequest, context: RouteContext) {
     failure_code: getSafeFailureCode(job.failure_code)
   }));
   const outputRows = outputsResult.data ?? [];
-  const automaticOutputResult = automaticJobsResult.data?.length
-    ? await supabase.from("ai_outputs")
-      .select("id,created_at,processing_job_id,transcript_id,ai_processing_jobs(processing_type)")
-      .eq("transcript_id", transcriptId).eq("user_id", user.id)
-      .in("processing_job_id", automaticJobsResult.data.map((job) => job.id)).limit(6).returns<OutputMetadataRow[]>()
-    : { data: [], error: null };
-  if (automaticOutputResult.error) return NextResponse.json({ error: "AI stav se nepodařilo načíst." }, { status: 503 });
+  // Cleanup state needs only manual job ids, so it runs concurrently with the automatic output lookup.
+  const [automaticOutputResult, cleanupResult] = await Promise.all([
+    automaticJobsResult.data?.length
+      ? supabase.from("ai_outputs")
+        .select("id,created_at,processing_job_id,transcript_id,ai_processing_jobs(processing_type)")
+        .eq("transcript_id", transcriptId).eq("user_id", userId)
+        .in("processing_job_id", automaticJobsResult.data.map((job) => job.id)).limit(6).returns<OutputMetadataRow[]>()
+      : { data: [], error: null },
+    getManualAiCleanupState({
+      admin,
+      jobIds: jobs.map((job) => job.id),
+      transcriptId,
+      userId
+    }).then((state) => ({ state }), () => null)
+  ]);
+  if (automaticOutputResult.error || !cleanupResult) {
+    return NextResponse.json({ error: "AI stav se nepodařilo načíst." }, { status: 503 });
+  }
+  const cleanupState = cleanupResult.state;
   const boundedOutputs = new Map([...outputRows.slice(0, MAX_MANUAL_AI_STATE_ROWS), ...(automaticOutputResult.data ?? [])]
     .map((output) => [output.id, output]));
   const outputs = [...boundedOutputs.values()].map((output): ManualAiOutputMetadata => ({
@@ -129,17 +143,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const nextOutputOffset = outputRows.length > MAX_MANUAL_AI_STATE_ROWS
     ? outputOffset + MAX_MANUAL_AI_STATE_ROWS
     : null;
-  let cleanupState;
-  try {
-    cleanupState = await getManualAiCleanupState({
-      admin,
-      jobIds: jobs.map((job) => job.id),
-      transcriptId,
-      userId: user.id
-    });
-  } catch {
-    return NextResponse.json({ error: "AI stav se nepodařilo načíst." }, { status: 503 });
-  }
 
   const automaticJobs = (automaticJobsResult.data ?? []).map((job) => ({
     ...job, execution_mode: "automatic" as const, failure_code: getSafeFailureCode(job.failure_code)

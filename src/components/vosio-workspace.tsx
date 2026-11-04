@@ -101,7 +101,6 @@ type VosioWorkspaceProps = {
   templateStatus?: "created" | "duplicated" | "error" | "saved" | null;
   trashActionAlert?: string | null;
   trashActionContext?: Record<string, string>;
-  trashNowMs?: number;
   trashPurgeItemAction?: TrashPurgeItemAction;
   trashPurgeAction?: TrashRecordingAction;
   trashRestoreBulkAction?: TrashRestoreBulkAction;
@@ -188,7 +187,6 @@ export function VosioWorkspace({
   templateStatus = null,
   trashActionAlert = null,
   trashActionContext,
-  trashNowMs,
   trashPurgeItemAction,
   trashPurgeAction,
   trashRestoreBulkAction,
@@ -295,7 +293,6 @@ export function VosioWorkspace({
                 templateStatus={templateStatus}
                 trashActionAlert={trashActionAlert}
                 trashActionContext={trashActionContext}
-                trashNowMs={trashNowMs}
                 trashPurgeItemAction={trashPurgeItemAction}
                 trashPurgeAction={trashPurgeAction}
                 trashRestoreBulkAction={trashRestoreBulkAction}

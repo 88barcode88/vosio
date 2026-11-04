@@ -94,6 +94,8 @@ function AiStateHarness() {
     } }, "AI"),
     createElement("button", { "data-purpose": "all", onClick: () => void state.loadAllOutputs() }, "All"),
     createElement("button", { "data-purpose": "accept", onClick: () => state.acceptJob({ id: "accepted-job", status: "queued" }, "summary") }, "Accept"),
+    createElement("button", { "data-purpose": "remove", onClick: () => state.removeOutputs(["unrelated-output"]) }, "Remove"),
+    createElement("button", { "data-purpose": "ai-tab", onClick: () => void state.loadForPurpose("ai", { reuseFresh: true }) }, "AI tab"),
     createElement("button", { "data-purpose": "inactive", onClick: () => state.setActivePurpose(null) }, "Inactive"),
     createElement("output", null, state.loadedOutputs.map((output) => output.id).join(","))
   );
@@ -210,6 +212,32 @@ describe("real detail tabs after server revalidation", () => {
       expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/process"))).toBe(false);
       await act(async () => root.render(detailTree("ai", "transcript-2")));
       expect(container.querySelector<HTMLInputElement>('input[aria-label="Lokální koncept"]')?.value).toBe("");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("re-entering the AI tab within the freshness window sends no further ai-state or automatic-timeline request", async () => {
+    const saved = outputPayload();
+    const fetchMock = vi.fn(async (url: string) => new Response(JSON.stringify(
+      url.includes("automatic-timeline") ? { status: "current" }
+        : url.includes("/ai-state") ? { jobs: [], outputs: [{ ...saved.output, body_loaded: false }] } : saved
+    )));
+    vi.stubGlobal("fetch", fetchMock);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const count = (part: string) => fetchMock.mock.calls.filter(([url]) => String(url).includes(part)).length;
+    try {
+      await act(async () => root.render(detailTree("ai")));
+      expect(container.textContent).toContain("Body saved-output");
+      const [stateBefore, postsBefore] = [count("/ai-state"), count("automatic-timeline")];
+      for (let index = 0; index < 5; index += 1) {
+        await act(async () => container.querySelector<HTMLButtonElement>('[role="tab"][id="recording-tab-transcript"]')!.click());
+        await act(async () => container.querySelector<HTMLButtonElement>('[role="tab"][id="recording-tab-ai"]')!.click());
+      }
+      expect(count("/ai-state")).toBe(stateBefore);
+      expect(count("automatic-timeline")).toBe(postsBefore);
     } finally {
       await act(async () => root.unmount());
     }
@@ -356,6 +384,36 @@ function createStateQuery(result: { data: unknown; error: unknown }) {
   return query;
 }
 
+const PERSONAL_TRANSCRIPT_ID = "00000000-0000-4000-8000-000000000931";
+
+// createPersonalAiStateRoutes wires an owner ai-state request with one manual job, one automatic job and a controllable automatic output lookup.
+function createPersonalAiStateRoutes(automaticOutputsResult: Promise<{ data: unknown; error: unknown }>) {
+  const job = { attempt_count: 0, completed_at: null, created_at: "2026-09-03T10:00:00.000Z", failure_code: null, lease_expires_at: null,
+    max_attempts: 3, model: "gpt", processing_type: "timeline_chapters", retry_after_at: null, started_at: null, status: "queued" };
+  const transcriptQuery = createSelectQuery({ data: { id: PERSONAL_TRANSCRIPT_ID, recording_id: "recording-1", completion_generation_key: "gen" }, error: null });
+  const intentsQuery = createStateQuery({ data: null, error: null });
+  intentsQuery.limit.mockResolvedValue({ data: [{ automatic_idempotency_key: "auto-key" }], error: null });
+  const manualJobs = createStateQuery({ data: [{ ...job, id: "manual-job" }], error: null });
+  const automaticJobs = createStateQuery({ data: [{ ...job, id: "auto-job", execution_mode: "automatic" }], error: null });
+  const pagedOutputs = createStateQuery({ data: [], error: null });
+  const automaticOutputs = createStateQuery({ data: null, error: null });
+  automaticOutputs.returns.mockReturnValue(automaticOutputsResult);
+  const automaticOutputRow = { ai_processing_jobs: { processing_type: "timeline_chapters" }, created_at: "2026-09-03T10:00:00.000Z",
+    id: "auto-output", processing_job_id: "auto-job", transcript_id: PERSONAL_TRANSCRIPT_ID };
+  const jobQueries = [manualJobs, automaticJobs];
+  const outputQueries = [pagedOutputs, automaticOutputs];
+  routeMocks.createAdminClient.mockReturnValue({ from: vi.fn(() => intentsQuery) } as never);
+  routeMocks.createClient.mockResolvedValue({
+    auth: { getClaims: vi.fn().mockResolvedValue({ data: { claims: { sub: "user-1" } }, error: null }) },
+    from: vi.fn((table: string) => {
+      if (table === "transcripts") return transcriptQuery;
+      if (table === "ai_processing_jobs") return jobQueries.shift();
+      return outputQueries.shift();
+    })
+  });
+  return { automaticOutputRow, automaticOutputs };
+}
+
 describe("manual AI state contract", () => {
   it("removes only explicitly confirmed cleanup and output ids", () => {
     const current = {
@@ -437,7 +495,7 @@ describe("manual AI state contract", () => {
     expect(stateRoute).toContain("execution_mode");
     expect(stateRoute).not.toMatch(/output_text|output_json|prompt_text_snapshot|provider_config|raw_text|error_message|lease_token/);
     expect(outputRoute).toContain('.eq("transcript_id", transcriptId)');
-    expect(outputRoute).toContain("resolveRecordingCapabilities");
+    expect(outputRoute).toContain("getClaims");
     expect(outputRoute).toContain("getAccessibleOutputTypes");
     expect(outputRoute).not.toContain('.select("*")');
     expect(outputRoute).toContain("transcript_tasks");
@@ -447,8 +505,9 @@ describe("manual AI state contract", () => {
     const transcriptQuery = createSelectQuery({ data: { id: "00000000-0000-4000-8000-000000000921" }, error: null });
     const outputQuery = createSelectQuery({ data: null, error: null });
     routeMocks.createClient.mockResolvedValue({
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } }, error: null }) },
-      from: vi.fn((table: string) => table === "transcripts" ? transcriptQuery : outputQuery)
+      auth: { getClaims: vi.fn().mockResolvedValue({ data: { claims: { sub: "user-1" } }, error: null }) },
+      from: vi.fn((table: string) => table === "transcripts" ? transcriptQuery : outputQuery),
+      rpc: vi.fn().mockResolvedValue({ data: [], error: null })
     });
 
     const response = await getOutput(
@@ -473,7 +532,7 @@ describe("manual AI state contract", () => {
     }));
     const outputsQuery = createStateQuery({ data: rows, error: null });
     routeMocks.createClient.mockResolvedValue({
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } }, error: null }) },
+      auth: { getClaims: vi.fn().mockResolvedValue({ data: { claims: { sub: "user-1" } }, error: null }) },
       from: vi.fn((table: string) => {
         if (table === "transcripts") return transcriptQuery;
         if (table === "ai_processing_jobs") return jobsQuery;
@@ -491,6 +550,239 @@ describe("manual AI state contract", () => {
     expect(outputsQuery.range).toHaveBeenCalledWith(50, 100);
     expect(payload.outputs).toHaveLength(50);
     expect(payload.nextOutputOffset).toBe(100);
+  });
+
+  it("runs cleanup state concurrently with the automatic output lookup and keeps the payload shape", async () => {
+    let resolveAutomaticOutputs!: (value: { data: unknown; error: unknown }) => void;
+    const routes = createPersonalAiStateRoutes(new Promise((resolve) => { resolveAutomaticOutputs = resolve; }));
+    routeMocks.getManualAiCleanupState.mockResolvedValue({
+      classifications: [{ actions: [], cleanup_reason: "active_or_slow", job_id: "manual-job", poll_eligible: true }],
+      cleanup: { eligible_count: 0, next_cursor: null }
+    });
+
+    const pending = getAiState(new NextRequest(`https://vosio.test/api/transcripts/${PERSONAL_TRANSCRIPT_ID}/ai-state`),
+      { params: Promise.resolve({ transcriptId: PERSONAL_TRANSCRIPT_ID }) });
+    await vi.waitFor(() => expect(routes.automaticOutputs.in).toHaveBeenCalled());
+    await vi.waitFor(() => expect(routeMocks.getManualAiCleanupState).toHaveBeenCalledWith(expect.objectContaining({
+      jobIds: ["manual-job"], transcriptId: PERSONAL_TRANSCRIPT_ID, userId: "user-1"
+    })));
+    resolveAutomaticOutputs({ data: [{ ...routes.automaticOutputRow }], error: null });
+    const response = await pending;
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      automaticGenerationKey: "gen",
+      classifications: [
+        { actions: [], cleanup_reason: "active_or_slow", job_id: "manual-job", poll_eligible: true },
+        expect.objectContaining({ job_id: "auto-job" })
+      ],
+      cleanup: { eligible_count: 0, next_cursor: null },
+      jobs: [
+        expect.objectContaining({ id: "auto-job", execution_mode: "automatic" }),
+        expect.objectContaining({ id: "manual-job", execution_mode: "manual" })
+      ],
+      nextOutputOffset: null,
+      outputs: [{
+        body_loaded: false, created_at: "2026-09-03T10:00:00.000Z", id: "auto-output",
+        processing_job_id: "auto-job", processing_type: "timeline_chapters", transcript_id: PERSONAL_TRANSCRIPT_ID
+      }]
+    });
+  });
+
+  it.each([
+    ["cleanup state fails", { data: [], error: null }, true],
+    ["automatic outputs fail", { data: null, error: { message: "boom" } }, false]
+  ])("keeps the 503 contract when %s", async (_label, automaticResult, cleanupFails) => {
+    createPersonalAiStateRoutes(Promise.resolve(automaticResult));
+    if (cleanupFails) routeMocks.getManualAiCleanupState.mockRejectedValue(new Error("cleanup"));
+    const response = await getAiState(new NextRequest(`https://vosio.test/api/transcripts/${PERSONAL_TRANSCRIPT_ID}/ai-state`),
+      { params: Promise.resolve({ transcriptId: PERSONAL_TRANSCRIPT_ID }) });
+    expect(response.status).toBe(503);
+  });
+
+  it("returns 401 without verified JWT claims", async () => {
+    routeMocks.createClient.mockResolvedValue({
+      auth: { getClaims: vi.fn().mockResolvedValue({ data: null, error: { message: "invalid" } }) },
+      from: vi.fn()
+    });
+    const response = await getAiState(new NextRequest(`https://vosio.test/api/transcripts/${PERSONAL_TRANSCRIPT_ID}/ai-state`),
+      { params: Promise.resolve({ transcriptId: PERSONAL_TRANSCRIPT_ID }) });
+    expect(response.status).toBe(401);
+  });
+
+  it("reuses fresh state for a repeated AI load and refreshes again after invalidation or the 30 s window", async () => {
+    const outputBody = {
+      output: { created_at: "2026-09-03T09:02:00.000Z", id: "output-new", output_json: null, output_text: "Nový", processing_job_id: "job-new", processing_type: "summary", transcript_id: "00000000-0000-4000-8000-000000000921" },
+      structuredItems: emptyStructuredItems
+    };
+    const fetchMock = vi.fn(async (url: string) => url.includes("/ai-state")
+      ? new Response(JSON.stringify({ jobs: [], outputs: [{ body_loaded: false, created_at: "2026-09-03T09:02:00.000Z", id: "output-new",
+        processing_job_id: "job-new", processing_type: "summary", transcript_id: "00000000-0000-4000-8000-000000000921" }] }), { status: 200 })
+      : new Response(JSON.stringify(outputBody), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const stateCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).includes("/ai-state")).length;
+    const { container, root } = await renderAiStateHarness();
+    const click = (purpose: string) => act(async () => container.querySelector<HTMLButtonElement>(`[data-purpose="${purpose}"]`)?.click());
+    try {
+      await click("ai-tab");
+      await click("ai-tab");
+      expect(stateCalls()).toBe(1);
+      expect(container.querySelector("output")?.textContent).toBe("output-new");
+
+      // Explicit reloads (reconcile, recovery, retry) always refresh, even inside the window.
+      await click("ai");
+      expect(stateCalls()).toBe(2);
+      await click("ai-tab");
+      expect(stateCalls()).toBe(2);
+
+      // A client mutation invalidates the freshness window.
+      await click("remove");
+      await click("ai-tab");
+      expect(stateCalls()).toBe(3);
+      await click("ai-tab");
+      expect(stateCalls()).toBe(3);
+
+      // Same-transcript server props bump stateRevision and invalidate the window too.
+      await act(async () => root.render(createElement(TranscriptAiStateProvider, {
+        transcriptId: "00000000-0000-4000-8000-000000000921", initialAiOutputs: [], initialStructuredItems: { ...emptyStructuredItems }
+      }, createElement(AiStateHarness))));
+      await click("ai-tab");
+      expect(stateCalls()).toBe(4);
+
+      // Past thirty seconds the next tab entry refreshes even without invalidation.
+      const now = Date.now();
+      vi.spyOn(Date, "now").mockReturnValue(now + 30_001);
+      await click("ai-tab");
+      expect(stateCalls()).toBe(5);
+    } finally {
+      await act(async () => root.unmount());
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("sends the automatic recovery POST at most once per transcript scope and generation", async () => {
+    const fetchMock = vi.fn(async (url: string) => url.includes("/automatic-timeline")
+      ? new Response(JSON.stringify({ status: "queued" }), { status: 200 })
+      : new Response(JSON.stringify({
+        classifications: [{ actions: [], cleanup_reason: "active_or_slow", job_id: "auto-job", poll_eligible: true }],
+        cleanup: { eligible_count: 0, next_cursor: null },
+        jobs: [{ attempt_count: 0, completed_at: null, created_at: "2026-09-03T09:00:00.000Z", execution_mode: "automatic", failure_code: null,
+          id: "auto-job", lease_expires_at: null, max_attempts: 3, model: "", processing_type: "timeline_chapters", retry_after_at: null, started_at: null, status: "queued" }],
+        outputs: []
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    try {
+      await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
+      await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
+      await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/ai-state"))).toHaveLength(3);
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/automatic-timeline"))).toHaveLength(1);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  // renderRecoveryHarness serves a mutable automatic job and recovery POST status for recovery dedupe tests.
+  const renderRecoveryHarness = async () => {
+    const control = {
+      job: { attempt_count: 0, lease_expires_at: null as string | null, status: "queued" },
+      postStatus: 200
+    };
+    const fetchMock = vi.fn(async (url: string) => url.includes("/automatic-timeline")
+      ? new Response(JSON.stringify({ status: "queued" }), { status: control.postStatus })
+      : new Response(JSON.stringify({
+        classifications: [{ actions: [], cleanup_reason: "active_or_slow", job_id: "auto-job", poll_eligible: true }],
+        cleanup: { eligible_count: 0, next_cursor: null },
+        jobs: [{ completed_at: null, created_at: "2026-09-03T09:00:00.000Z", execution_mode: "automatic", failure_code: null,
+          id: "auto-job", max_attempts: 3, model: "", processing_type: "timeline_chapters", retry_after_at: null, started_at: null, ...control.job }],
+        outputs: []
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const harness = await renderAiStateHarness();
+    const refresh = () => act(async () => harness.container.querySelector<HTMLButtonElement>('[data-purpose="metadata"]')?.click());
+    const posts = () => fetchMock.mock.calls.filter(([url]) => String(url).includes("/automatic-timeline")).length;
+    return { ...harness, control, posts, refresh };
+  };
+
+  it("retries the automatic recovery POST on the next refresh after a failed POST", async () => {
+    const { control, posts, refresh, root } = await renderRecoveryHarness();
+    try {
+      control.postStatus = 503;
+      await refresh();
+      expect(posts()).toBe(1);
+      control.postStatus = 200;
+      await refresh();
+      expect(posts()).toBe(2);
+      await refresh();
+      expect(posts()).toBe(2);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("posts recovery again when the same job turns from a live lease into an expired lease", async () => {
+    const { control, posts, refresh, root } = await renderRecoveryHarness();
+    try {
+      await refresh();
+      expect(posts()).toBe(1);
+      control.job = { attempt_count: 1, lease_expires_at: new Date(Date.now() + 60_000).toISOString(), status: "running" };
+      await refresh();
+      expect(posts()).toBe(1);
+      control.job = { ...control.job, lease_expires_at: new Date(Date.now() - 1_000).toISOString() };
+      await refresh();
+      expect(posts()).toBe(2);
+      await refresh();
+      expect(posts()).toBe(2);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("does not repeat the recovery POST while the stuck job state stays unchanged", async () => {
+    const { control, posts, refresh, root } = await renderRecoveryHarness();
+    try {
+      control.job = { attempt_count: 1, lease_expires_at: null, status: "failed" };
+      for (let cycle = 0; cycle < 4; cycle += 1) await refresh();
+      expect(posts()).toBe(1);
+      control.job = { attempt_count: 2, lease_expires_at: null, status: "failed" };
+      await refresh();
+      expect(posts()).toBe(2);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("starts the default body and automatic output bodies in one concurrent round", async () => {
+    const bodyResolvers = new Map<string, () => void>();
+    const metadataRow = (id: string, job: string, type: string, at: string) => ({ body_loaded: false, created_at: at, id, processing_job_id: job,
+      processing_type: type, transcript_id: "00000000-0000-4000-8000-000000000921" });
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes("/ai-state")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          jobs: [{ attempt_count: 1, completed_at: null, created_at: "2026-09-03T09:00:00.000Z", execution_mode: "automatic", failure_code: null,
+            id: "auto-job", lease_expires_at: null, max_attempts: 3, model: "", processing_type: "timeline_chapters", retry_after_at: null, started_at: null, status: "done" }],
+          outputs: [metadataRow("manual-output", "manual-job", "summary", "2026-09-03T09:02:00.000Z"),
+            metadataRow("auto-output", "auto-job", "timeline_chapters", "2026-09-03T09:01:00.000Z")]
+        }), { status: 200 }));
+      }
+      const id = url.includes("auto-output") ? "auto-output" : "manual-output";
+      return new Promise<Response>((resolve) => bodyResolvers.set(id, () => resolve(new Response(JSON.stringify({
+        output: { created_at: "2026-09-03T09:00:00.000Z", id, output_json: null, output_text: id, processing_job_id: id === "auto-output" ? "auto-job" : "manual-job",
+          processing_type: id === "auto-output" ? "timeline_chapters" : "summary", transcript_id: "00000000-0000-4000-8000-000000000921" },
+        structuredItems: emptyStructuredItems
+      }), { status: 200 }))));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { container, root } = await renderAiStateHarness();
+    try {
+      await act(async () => container.querySelector<HTMLButtonElement>('[data-purpose="ai"]')?.click());
+      expect([...bodyResolvers.keys()].sort()).toEqual(["auto-output", "manual-output"]);
+      await act(async () => bodyResolvers.forEach((resolve) => resolve()));
+      expect(container.querySelector("output")?.textContent?.split(",").sort()).toEqual(["auto-output", "manual-output"]);
+    } finally {
+      await act(async () => root.unmount());
+    }
   });
 
   it("rehydrates metadata first and only the newest default AI body afterward", async () => {

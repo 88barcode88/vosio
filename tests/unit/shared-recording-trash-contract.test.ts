@@ -19,8 +19,7 @@ describe("shared Trash SQL source boundaries (not runtime authorization proof)",
     expect(sql).not.toMatch(/grant\s+(select|update|delete|all).*on.*recordings.*to authenticated/i);
   });
 
-  it("retains upload/claim fences, prior status and irreversible cleanup state", () => {
-    expect(sql).toContain("interval '24 hours'");
+  it("retains claim fences, prior status and irreversible cleanup state", () => {
     expect(sql).toContain("interval '15 minutes'");
     expect(sql).toContain("deleted_from_status");
     expect(sql).toContain("v_op.phase <> 'prepared'");
@@ -119,6 +118,22 @@ describe("shared Trash SQL source boundaries (not runtime authorization proof)",
     for (const table of ["transcript_tasks", "transcript_chapters", "transcript_decisions", "transcript_risks"]) {
       expect(output).toContain(`from public.${table} x where x.ai_output_id=v_output.id and (x.transcript_id<>v_output.transcript_id or x.processing_job_id is distinct from v_output.processing_job_id)`);
     }
+  });
+
+  it("removes only the 24-hour Trash purge fence while keeping retention, claim and stale-lease guards", () => {
+    const fenceless = readFileSync("supabase/migrations/20261104160000_remove_trash_purge_24h_fence.sql", "utf8");
+    expect(fenceless).not.toContain("interval '24 hours'");
+    expect(fenceless).not.toContain("upload fence not elapsed");
+    for (const name of ["prepare_recording_purge_v1", "start_recording_purge_v1", "lock_accepted_recording_purge_v1", "claim_started_recording_purge_work_v1", "claim_due_recording_purges_v1", "finalize_recording_purge_v1"]) {
+      expect(fenceless).toContain("create or replace function public." + name + "(");
+    }
+    expect(fenceless.match(/security definer set search_path = ''/g)).toHaveLength(6);
+    expect(fenceless.match(/r\.purge_after <= statement_timestamp\(\)/g)).toHaveLength(2);
+    expect(fenceless).toContain("v_record.purge_started_at>statement_timestamp()-interval '15 minutes'");
+    expect(fenceless).toContain("o.worker_claimed_at<=statement_timestamp()-interval '15 minutes'");
+    expect(fenceless).toContain("v_record.deleted_at is distinct from v_op.deleted_at");
+    expect(fenceless).toContain("to authenticated;");
+    expect(fenceless).not.toMatch(/lock_accepted_recording_purge_v1\(uuid\)[^;]*to (authenticated|service_role)/);
   });
 
   it("recovers own existing receipts before current authority without renewing their state", () => {

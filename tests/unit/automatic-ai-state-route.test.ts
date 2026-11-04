@@ -24,7 +24,7 @@ it("keeps six current automatic jobs visible beside fifty manual jobs and never 
     return chain;
   };
   const rpc = vi.fn(); mocks.admin.mockReturnValue({ from, rpc });
-  mocks.client.mockResolvedValue({ auth: { getUser: async () => ({ data: { user: { id: "owner" } }, error: null }) }, from });
+  mocks.client.mockResolvedValue({ auth: { getClaims: async () => ({ data: { claims: { sub: "owner" } }, error: null }) }, from });
   mocks.cleanup.mockResolvedValue({ classifications: [], cleanup: { eligible_count: 0, next_cursor: null } });
   const response = await GET(new NextRequest("http://localhost/ai-state"), { params: Promise.resolve({ transcriptId: "00000000-0000-4000-8000-000000000111" }) });
   expect(response.status).toBe(200); const payload = await response.json(); expect(payload.jobs).toHaveLength(56);

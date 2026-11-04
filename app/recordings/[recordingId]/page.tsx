@@ -18,6 +18,7 @@ import {
 } from "@/lib/recording-organization/queries";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { listTranscriptsForRecording } from "@/lib/transcripts/queries";
+import { toClientTranscriptSegments } from "@/lib/transcripts/client-segments";
 import {
   parseTranscriptDeepLink,
   resolveTranscriptDeepLink
@@ -116,7 +117,10 @@ export default async function RecordingDetailPage({ params, searchParams }: Reco
       recordingMarkers={recordingMarkers}
       recordingOrganization={recordingOrganization}
       recordingOrganizationOptions={organizationOptions}
-      transcripts={transcripts}
+      transcripts={transcripts.map((transcript) => ({
+        ...transcript,
+        segments: toClientTranscriptSegments(transcript.segments)
+      }))}
       transcriptSearchWarning={isTranscriptSearchIndexWarningCode(query.warning)}
       userSettings={getUserSettingsFromMetadata(user.user_metadata)}
       userEmail={user.email ?? "uzivatel@vosio.local"}

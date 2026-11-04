@@ -26,7 +26,7 @@ insert into public.recording_access_grants(recording_id,user_id,role,scope_proje
 (pg_temp.tid(33000000,3),pg_temp.tid(13000000,4),'reader',null),
 (pg_temp.tid(33000000,4),pg_temp.tid(13000000,4),'reader',pg_temp.tid(23000000,1));
 -- Insert consistent historical Trash snapshots (the lifecycle trigger is UPDATE-only).
--- 5 manual already due, 6 manual 24h-eligible but not due; 7 automatic due; 8 auto exhausted.
+-- 5 manual already due, 6 manual purgeable but not due; 7 automatic due; 8 auto exhausted.
 insert into public.recordings(id,user_id,created_by,title,source_type,project_id,visibility,status,deleted_from_status,deleted_at,trash_retention_hours,purge_after,purge_attempt_count)
 select pg_temp.tid(33000000,n),pg_temp.tid(13000000,2),pg_temp.tid(13000000,2),'Old Trash '||n,'realtime',
 pg_temp.tid(23000000,1),'project','deleted','completed',
@@ -137,7 +137,8 @@ select throws_ok($$select public.trash_recording_v1(pg_temp.tid(33000000,1),'200
 select is(public.trash_recording_v1(pg_temp.tid(33000000,1),(select updated_at from public.recordings where id=pg_temp.tid(33000000,1)),168)->>'changed','true','Founder deletes project');
 select is(public.trash_recording_v1(pg_temp.tid(33000000,1),'2000-01-01',168)->>'changed','false','Repeat delete matched idempotent');
 select is((select trash_retention_hours from public.get_managed_recording_trash_v1(array[pg_temp.tid(33000000,1)])),168::smallint,'Safe manager enrichment');
-select throws_ok($$select public.prepare_recording_purge_v1(pg_temp.tid(33000000,1),pg_temp.tid(93000000,1),(select updated_at from public.recordings where id=pg_temp.tid(33000000,1)))$$,'55000',null,'Manual purge blocked before 24h, regardless retention');
+select is(public.prepare_recording_purge_v1(pg_temp.tid(33000000,1),pg_temp.tid(93000000,1),(select updated_at from public.recordings where id=pg_temp.tid(33000000,1)))->>'phase','prepared','Manual purge prepares immediately after trash, regardless retention');
+select is(public.release_recording_purge_request_v1(pg_temp.tid(33000000,1),pg_temp.tid(93000000,1))->>'phase','released','Immediate prepared purge releases before restore');
 select is(public.restore_shared_recording_v1(pg_temp.tid(33000000,1),(select updated_at from public.recordings where id=pg_temp.tid(33000000,1)))->>'status','completed','Restore exact prior status');
 select is(public.restore_shared_recording_v1(pg_temp.tid(33000000,1),'2000-01-01')->>'changed','false','Repeat restore explicit unchanged');
 select throws_ok($$select public.delete_managed_transcript_task_group_v1(pg_temp.tid(83000000,1),'2000-01-01',array[pg_temp.tid(83000000,1)])$$,'40001',null,'Task stale version rejected');
@@ -287,7 +288,7 @@ select is((select count(*) from public.ai_processing_jobs where id in(pg_temp.ti
 -- Stale started takeover rotates the token but NEVER reopens release/restore.
 set local role authenticated;
 select pg_temp.actor(5);
-select ok((select purge_after>statement_timestamp() from public.get_managed_recording_trash_v1(array[pg_temp.tid(33000000,6)])),'Manual purge may precede automatic retention after 24h fence');
+select ok((select purge_after>statement_timestamp() from public.get_managed_recording_trash_v1(array[pg_temp.tid(33000000,6)])),'Manual purge may precede automatic retention');
 select set_config('test.stale_op',public.prepare_recording_purge_v1(pg_temp.tid(33000000,6),pg_temp.tid(93000000,60),(select updated_at from public.recordings where id=pg_temp.tid(33000000,6)))->>'operationId',true);
 select is(public.start_recording_purge_v1(current_setting('test.stale_op')::uuid)->>'phase','started','Second accepted cleanup');
 set local role service_role;

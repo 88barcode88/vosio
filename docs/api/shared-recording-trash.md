@@ -87,7 +87,7 @@ submitted ID snapshot are not implicitly deleted. The earlier exact-task RPC
 is replaced, not retained as an alternative app path.
 
 Missing/foreign/unauthorized targets share SQLSTATE `42501`. Invalid input is
-`22023`; stale timestamp is `40001`; incompatible status, upload fence or claim
+`22023`; stale timestamp is `40001`; incompatible status or claim
 is `55000`. These errors are not success. Delete/restore already at their intended
 state returns `changed:false` after current authority verification. A repeated
 task-group/output delete fails `42501`. Task version conflict returns generic
@@ -104,7 +104,7 @@ not change custody, sharing, storage bindings or arbitrary recording columns.
 ## Manual purge: accepted receipt and Storage protocol
 
 1. New session `prepare` rechecks authority under lock, exact updated_at and deleted
-   state. Manual purge retains the existing 24-hour upload fence; it deliberately
+   state. Manual purge has no minimum time in Trash and deliberately
    does not wait for the automatic purge_after deadline. The caller must generate
    and retain a random request UUID **before calling prepare**, and reuse it for
    the same recording after a lost response. An authenticated actor can always
@@ -203,7 +203,7 @@ The four legacy service-only signatures remain: `claim_due_recording_purges_v1(i
 default 20)`, `refresh_recording_purge_claim_v1(uuid,uuid)`,
 `release_recording_purge_claim_v1(uuid,uuid)`, `finalize_recording_purge_v1(uuid,uuid)`.
 All now use the canonical lock and exclude active prepared/started manual
-receipts, including stale ones. Due time, 24-hour fence, max 5 automatic attempts,
+receipts, including stale ones. Due time, max 5 automatic attempts,
 15-minute lease age and max 20 batch size stay unchanged. Existing automatic
 worker Storage verification/retry behavior remains required; its legacy finalize
 is not a substitute for the new receipt-bound path. Manual claims do not increment
@@ -220,7 +220,7 @@ uses trusted project founder reassignment because a founder is not a revocable
 membership; this does not introduce or authorize a product transfer API.
 
 Also validate crash/retry across every Storage boundary, late TUS uploads after
-the 24-hour fence, current bucket upload RLS, stale receipt takeover, worker
+an immediate purge, current bucket upload RLS, stale receipt takeover, worker
 isolation, transaction advisory lock contention, trigger owner identity, FK
 cascades and PostgreSQL/PostgREST signatures. Runtime, Storage and concurrent
 execution remain required deployment gates, not claimed passes.

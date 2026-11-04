@@ -21,10 +21,10 @@ describe("trash route state", () => {
     });
   });
 
-  it("distinguishes an active purge from the 24-hour Storage safety window", () => {
+  it("explains an active purge and drops the retired 24-hour purge error code", () => {
     expect(canonicalizeTrashSearchParams(new URLSearchParams("error=purge_in_progress")).actionAlert)
       .toContain("mazání už probíhá");
     expect(canonicalizeTrashSearchParams(new URLSearchParams("error=purge_too_recent")).actionAlert)
-      .toContain("24 hodin");
+      .toBeNull();
   });
 });

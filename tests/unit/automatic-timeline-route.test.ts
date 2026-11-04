@@ -73,6 +73,23 @@ describe("automatic timeline route", () => {
     expect(JSON.stringify(mocks.scheduleAutomaticOutputs.mock.calls)).not.toContain("attacker");
   });
 
+  it("passes a settled 'current' schedule through unchanged so the client skips its reload", async () => {
+    const transcriptQuery = createTranscriptQuery({ data: { id: transcriptId, recording_id: "recording-id" }, error: null });
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "user-id" } }, error: null })) },
+      from: vi.fn(() => transcriptQuery),
+      rpc: vi.fn().mockResolvedValue({ data: { ...NO_RECORDING_CAPABILITIES, read: true, runPersonalAi: true }, error: null })
+    });
+    mocks.createAdminClient.mockReturnValue({ serviceRole: true });
+    mocks.scheduleAutomaticOutputs.mockResolvedValue({ status: "current", scheduledTypes: ["timeline_chapters"] });
+    const response = await POST(new NextRequest(`http://localhost/api/transcripts/${transcriptId}/automatic-timeline`, {
+      method: "POST", headers: { Origin: "http://localhost" }
+    }), { params: Promise.resolve({ transcriptId }) });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "current", scheduledTypes: ["timeline_chapters"] });
+  });
+
   it.each(["reader", "editor", "foreign-founder", "revoked"])("never creates a provider/admin path for %s", async () => {
     const query = createTranscriptQuery({ data: { id: transcriptId, recording_id: "shared" }, error: null });
     mocks.createClient.mockResolvedValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "author" } }, error: null }) },

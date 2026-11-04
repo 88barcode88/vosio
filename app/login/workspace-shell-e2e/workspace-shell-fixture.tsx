@@ -218,7 +218,6 @@ export function WorkspaceShellFixture({
       settingsFormDisabled={view === "settings"}
       transcripts={isDetail ? [createFixtureTranscript()] : []}
       trashActionContext={{ fixtureScope: scope }}
-      trashNowMs={Date.parse("2026-08-13T12:00:00.000Z")}
       trashPurgeItemAction={trashMode === "failure" ? rejectTrashPurgeItemAction : inertTrashPurgeItemAction}
       trashPurgeAction={trashMode === "failure" ? rejectTrashAction : inertTrashAction}
       trashRestoreBulkAction={trashMode === "failure" ? rejectTrashBulkRestoreAction : inertTrashBulkRestoreAction}

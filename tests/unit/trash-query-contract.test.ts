@@ -17,6 +17,6 @@ describe("trash query contract", () => {
     expect(manager).toContain("recording.deleted_at");
     expect(manager).not.toContain("formatRecordingDate(recording.updated_at)");
     expect(manager).toContain("Automatické smazání");
-    expect(manager).toContain("Trvalé smazání je dostupné 24 hodin");
+    expect(manager).not.toContain("24 hodin po přesunutí");
   });
 });

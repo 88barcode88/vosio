@@ -194,19 +194,22 @@ describe("durable live audio", () => {
 });
 
 describe("idempotent safety part upload", () => {
-  it("reuses an existing exact owner-scoped object without overwrite", async () => {
-    const upload = vi.fn();
-    const list = vi.fn(async () => ({
-      data: [{ metadata: { mimetype: "audio/webm", size: 5 }, name: "part-000000.webm" }],
-      error: null
-    }));
+  // mockLivePartStorage wires one authenticated client with spyable upload/info/list for live part uploads.
+  function mockLivePartStorage(storage: { info?: unknown; upload: unknown }) {
+    const list = vi.fn();
     mocks.createClient.mockReturnValue({
       rpc: captureRpc(),
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
-      storage: { from: vi.fn(() => ({ list, upload })) }
+      storage: { from: vi.fn(() => ({ info: vi.fn(), ...storage, list })) }
     });
+    return { list };
+  }
 
-    const result = await uploadLiveRecordingPart({
+  const livePartPath = "owner-1/00000000-0000-4000-8000-000000000711/live/part-000000.webm";
+  const conflictError = { message: "The resource already exists", status: 400, statusCode: "409" };
+  // uploadFirstLivePart sends the fixed five-byte webm part used by the idempotence tests.
+  function uploadFirstLivePart() {
+    return uploadLiveRecordingPart({
       blob: new Blob(["first"], { type: "audio/webm" }),
       contentType: "audio/webm",
       maxFileSizeBytes: 1_000,
@@ -217,9 +220,50 @@ describe("idempotent safety part upload", () => {
         userId: "owner-1"
       }
     });
+  }
 
-    expect(result).toEqual({ bytes: 5, reused: true, storagePath: "owner-1/00000000-0000-4000-8000-000000000711/live/part-000000.webm" });
-    expect(upload).not.toHaveBeenCalled();
+  it("uploads a new part once without any existence lookup", async () => {
+    const upload = vi.fn(async () => ({ data: { path: livePartPath }, error: null }));
+    const info = vi.fn();
+    const { list } = mockLivePartStorage({ info, upload });
+
+    await expect(uploadFirstLivePart()).resolves.toEqual({ bytes: 5, reused: false, storagePath: livePartPath });
+    expect(upload).toHaveBeenCalledOnce();
+    expect(upload).toHaveBeenCalledWith(livePartPath, expect.any(Blob), expect.objectContaining({ upsert: false }));
+    expect(info).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("reuses an existing exact owner-scoped object without overwrite", async () => {
+    const upload = vi.fn(async () => ({ data: null, error: conflictError }));
+    const info = vi.fn(async () => ({
+      data: { contentType: "audio/webm;codecs=opus", name: "part-000000.webm", size: 5 },
+      error: null
+    }));
+    const { list } = mockLivePartStorage({ info, upload });
+
+    await expect(uploadFirstLivePart()).resolves.toEqual({ bytes: 5, reused: true, storagePath: livePartPath });
+    expect(upload).toHaveBeenCalledOnce();
+    expect(info).toHaveBeenCalledOnce();
+    expect(info).toHaveBeenCalledWith(livePartPath);
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("propagates a non-conflict upload error when no part exists", async () => {
+    const upload = vi.fn(async () => ({ data: null, error: { message: "Network request failed" } }));
+    const info = vi.fn(async () => ({ data: null, error: { message: "Object not found", status: 400, statusCode: "404" } }));
+    mockLivePartStorage({ info, upload });
+
+    await expect(uploadFirstLivePart()).rejects.toThrow("Nahrání souboru se nepodařilo. Zkuste to znovu.");
+    expect(info).toHaveBeenCalledOnce();
+  });
+
+  it("fails verification when the existence lookup itself errors", async () => {
+    const upload = vi.fn(async () => ({ data: null, error: conflictError }));
+    const info = vi.fn(async () => ({ data: null, error: { message: "Internal", status: 500, statusCode: "500" } }));
+    mockLivePartStorage({ info, upload });
+
+    await expect(uploadFirstLivePart()).rejects.toThrow("Uloženou část audia se nepodařilo ověřit.");
   });
 
   it("removes only exact uploaded paths from one authenticated durable generation", async () => {
@@ -400,28 +444,12 @@ describe("idempotent safety part upload", () => {
   });
 
   it("fails safely when the deterministic path already has different bytes", async () => {
-    mocks.createClient.mockReturnValue({
-      rpc: captureRpc(),
-      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "owner-1" } }, error: null })) },
-      storage: { from: vi.fn(() => ({
-        list: vi.fn(async () => ({
-          data: [{ metadata: { mimetype: "audio/webm", size: 99 }, name: "part-000000.webm" }],
-          error: null
-        })),
-        upload: vi.fn()
-      })) }
+    mockLivePartStorage({
+      info: vi.fn(async () => ({ data: { contentType: "audio/webm", name: "part-000000.webm", size: 99 }, error: null })),
+      upload: vi.fn(async () => ({ data: null, error: conflictError }))
     });
 
-    await expect(uploadLiveRecordingPart({
-      blob: new Blob(["first"], { type: "audio/webm" }),
-      contentType: "audio/webm",
-      maxFileSizeBytes: 1_000,
-      partIndex: 0,
-      recording: {
-        id: "00000000-0000-4000-8000-000000000711",
-        storagePrefix: "owner-1/00000000-0000-4000-8000-000000000711/live/",
-        userId: "owner-1"
-      }
-    })).rejects.toThrow("Uložená část audia neodpovídá tomuto záznamu.");
+    await expect(uploadFirstLivePart()).rejects.toThrow("Uložená část audia neodpovídá tomuto záznamu.");
   });
+
 });

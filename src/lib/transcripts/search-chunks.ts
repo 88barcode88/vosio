@@ -58,11 +58,14 @@ export function getConsecutiveTranscriptSpeakerGroups(
     getStoredTranscriptSpeakerSummaries(speakers, segments).map((speaker) => [speaker.id, speaker])
   );
 
-  return tokens.reduce<ConsecutiveTranscriptSpeakerGroup[]>((groups, token) => {
+  // Local accumulator keeps grouping O(n); only this function owns it, so callers still get a fresh array.
+  const groups: ConsecutiveTranscriptSpeakerGroup[] = [];
+
+  for (const token of tokens) {
     const text = getTranscriptTokenText(token);
 
     if (!text.trim()) {
-      return groups;
+      continue;
     }
 
     const speakerId = normalizeSpeakerId(getTranscriptTokenSpeakerId(token));
@@ -79,28 +82,25 @@ export function getConsecutiveTranscriptSpeakerGroups(
       const endMs = getSafeGroupEnd(startMs, tokenEndMs)
         ?? getSafeGroupEnd(startMs, previous.endMs);
 
-      return [
-        ...groups.slice(0, -1),
-        {
-          ...previous,
-          endMs,
-          startMs,
-          text: `${previous.text}${text}`
-        }
-      ];
+      groups[groups.length - 1] = {
+        ...previous,
+        endMs,
+        startMs,
+        text: `${previous.text}${text}`
+      };
+      continue;
     }
 
-    return [
-      ...groups,
-      {
-        endMs: getSafeGroupEnd(tokenStartMs, tokenEndMs),
-        speakerId,
-        speakerLabel,
-        startMs: tokenStartMs,
-        text
-      }
-    ];
-  }, []);
+    groups.push({
+      endMs: getSafeGroupEnd(tokenStartMs, tokenEndMs),
+      speakerId,
+      speakerLabel,
+      startMs: tokenStartMs,
+      text
+    });
+  }
+
+  return groups;
 }
 
 // hasRenderableSpeakerGroups mirrors the transcript UI rule for exposing token groups as navigation targets.

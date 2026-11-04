@@ -65,7 +65,7 @@ describe("bounded Trash mutations", () => {
     expect(await trashRecordingsBulkAction(form(ids))).toEqual({ succeededIds: [], failures: [{ id: "bulk", code: "invalid_bulk" }] });
     expect(rpc).not.toHaveBeenCalled();
   });
-  it("reports a locked upload fence or exhausted work as conflict without provider detail", async () => {
+  it("reports a locked purge state or exhausted work as conflict without provider detail", async () => {
     const rpc = setup(); rpc.mockResolvedValue({ data: null, error: { code: "55000", message: "private" } } as never);
     expect(await purgeRecordingMutationAction(form([id]))).toEqual({ id, ok: false, code: "conflict" });
   });

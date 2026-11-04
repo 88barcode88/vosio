@@ -14,7 +14,7 @@ function client(read: boolean) {
   const selections: Array<{ table: string; columns: string }> = [];
   const from = vi.fn((table: string) => {
     const result = table === "transcripts" ? { id: transcriptId, recording_id: recordingId, completion_generation_key: "capture:fixture" }
-      : table === "ai_outputs" ? { id: outputId, transcript_id: transcriptId, created_at: "2026-10-02", processing_job_id: null, output_text: "saved", output_json: null } : null;
+      : table === "ai_outputs" && read ? { id: outputId, transcript_id: transcriptId, created_at: "2026-10-02", processing_job_id: null, output_text: "saved", output_json: null } : null;
     const query = { select: (columns: string) => { selections.push({ table, columns }); return query; },
       eq: vi.fn(), order: vi.fn(), range: vi.fn(), maybeSingle: vi.fn(async () => ({ data: result, error: null })),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: result ? [result] : [], error: null }).then(resolve) };
@@ -23,7 +23,10 @@ function client(read: boolean) {
   });
   const rpc = vi.fn().mockResolvedValue({ data: { read, editTitle: false, editSpeakers: false, editTaskStatus: false,
     manageAccess: false, delete: false, restore: false, purge: false, runPersonalAi: false, usePrivateChat: false }, error: null });
-  mocks.client.mockResolvedValue({ from, rpc, auth: { getUser: async () => ({ data: { user: { id: "reader" } }, error: null }) } });
+  mocks.client.mockResolvedValue({ from, rpc, auth: {
+    getUser: async () => ({ data: { user: { id: "reader" } }, error: null }),
+    getClaims: async () => ({ data: { claims: { sub: "reader" } }, error: null })
+  } });
   return { from, rpc, selections };
 }
 beforeEach(() => { vi.clearAllMocks(); mocks.types.mockResolvedValue(new Map([[outputId, "summary"]])); });
@@ -39,10 +42,12 @@ it("shared saved metadata and lazy body never read personal jobs, intents, provi
   expect(c.from.mock.calls.flat()).not.toContain("ai_processing_jobs");
   expect(c.rpc).toHaveBeenCalledWith("recording_capabilities_v1", { p_recording_id: recordingId });
 });
-it("revocation denies refresh and lazy body before artifact/projection or privileged reads", async () => {
+it("revocation denies refresh before artifact reads and hides the lazy body behind RLS", async () => {
   const c = client(false);
+  mocks.types.mockResolvedValue(new Map());
   expect((await state(new NextRequest("http://localhost/api"), { params: Promise.resolve({ transcriptId }) })).status).toBe(403);
+  expect(c.from.mock.calls).toEqual([["transcripts"]]);
   expect((await body(new NextRequest(`http://localhost/api?transcriptId=${transcriptId}`), { params: Promise.resolve({ outputId }) })).status).toBe(404);
-  expect(c.from.mock.calls).toEqual([["transcripts"], ["transcripts"]]);
-  expect(mocks.admin).not.toHaveBeenCalled(); expect(mocks.types).not.toHaveBeenCalled();
+  expect(c.from.mock.calls.slice(1).flat()).not.toContain("transcripts");
+  expect(mocks.admin).not.toHaveBeenCalled();
 });

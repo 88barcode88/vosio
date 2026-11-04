@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 
 // AutomaticTimelineReconciler restores consent-snapshotted output types only under current personal authority.
@@ -13,6 +13,12 @@ export function AutomaticTimelineReconciler({
   canRunPersonalAi?: boolean;
   transcriptId: string | null;
 }) {
+  // Latest callback is read at call time so parent re-renders (e.g. tab switches) never re-arm the POST.
+  const onReconciledRef = useRef(onReconciled);
+  useEffect(() => {
+    onReconciledRef.current = onReconciled;
+  }, [onReconciled]);
+
   useEffect(() => {
     if (!transcriptId || !canRunPersonalAi) {
       return;
@@ -36,8 +42,9 @@ export function AutomaticTimelineReconciler({
 
         const payload = await response.json().catch(() => null) as { status?: string } | null;
 
-        if (!disposed && payload?.status && payload.status !== "not_scheduled") {
-          await onReconciled?.();
+        // Only genuinely queued work changes AI state; current/not_scheduled need no reload.
+        if (!disposed && payload?.status === "queued") {
+          await onReconciledRef.current?.();
         }
       } catch {
         // Recovery is best-effort and will be attempted again on the next detail open.
@@ -53,7 +60,7 @@ export function AutomaticTimelineReconciler({
       document.removeEventListener("visibilitychange", reconcile);
       window.removeEventListener("online", reconcile);
     };
-  }, [onReconciled, transcriptId, canRunPersonalAi]);
+  }, [transcriptId, canRunPersonalAi]);
 
   return null;
 }
