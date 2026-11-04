@@ -495,7 +495,7 @@ describe("manual AI state contract", () => {
     expect(stateRoute).toContain("execution_mode");
     expect(stateRoute).not.toMatch(/output_text|output_json|prompt_text_snapshot|provider_config|raw_text|error_message|lease_token/);
     expect(outputRoute).toContain('.eq("transcript_id", transcriptId)');
-    expect(outputRoute).toContain("resolveRecordingCapabilities");
+    expect(outputRoute).toContain("getClaims");
     expect(outputRoute).toContain("getAccessibleOutputTypes");
     expect(outputRoute).not.toContain('.select("*")');
     expect(outputRoute).toContain("transcript_tasks");
@@ -505,8 +505,9 @@ describe("manual AI state contract", () => {
     const transcriptQuery = createSelectQuery({ data: { id: "00000000-0000-4000-8000-000000000921" }, error: null });
     const outputQuery = createSelectQuery({ data: null, error: null });
     routeMocks.createClient.mockResolvedValue({
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } }, error: null }) },
-      from: vi.fn((table: string) => table === "transcripts" ? transcriptQuery : outputQuery)
+      auth: { getClaims: vi.fn().mockResolvedValue({ data: { claims: { sub: "user-1" } }, error: null }) },
+      from: vi.fn((table: string) => table === "transcripts" ? transcriptQuery : outputQuery),
+      rpc: vi.fn().mockResolvedValue({ data: [], error: null })
     });
 
     const response = await getOutput(
