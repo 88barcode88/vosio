@@ -328,6 +328,11 @@ function getStoragePartMetadata(item: { metadata?: unknown }) {
   return { mimeType: normalizeAudioMimeType(metadata.mimetype), size: metadata.size };
 }
 
+// isStorageObjectNotFound mirrors storage-js exists(): object lookups report a missing path as HTTP 400 or 404.
+function isStorageObjectNotFound(error: { status?: unknown; statusCode?: unknown }) {
+  return error.status === 400 || error.status === 404 || error.statusCode === "404" || error.statusCode === "not_found";
+}
+
 // adoptLegacyLiveRecordingParts registers the complete browser scope before any legacy part is resumed.
 export async function adoptLegacyLiveRecordingParts(manifest: DurableSafetyManifest) {
   const parts = validateSafetyPartListing(manifest.parts).map(({ item }) => item);
@@ -375,25 +380,21 @@ export async function uploadLiveRecordingPart(input: LiveRecordingPartUploadInpu
     });
     if (error || data !== storagePath) throw new CaptureError(error?.code ?? "invalid_response");
   });
-  const name = storagePath.slice(input.recording.storagePrefix.length);
-  const folder = input.recording.storagePrefix.replace(/\/$/, "");
   const bucket = supabase.storage.from(RECORDINGS_BUCKET);
 
-  // findExistingPart verifies both bytes and MIME before treating a deterministic path as already uploaded.
+  // findExistingPart reads one exact object via info() and verifies bytes and MIME before reusing a deterministic path.
   async function findExistingPart() {
-    const { data, error } = await bucket.list(folder, { limit: 100, search: name });
+    const { data, error } = await bucket.info(storagePath);
 
     if (error) {
+      if (isStorageObjectNotFound(error)) {
+        return false;
+      }
+
       throw new Error("Uloženou část audia se nepodařilo ověřit.");
     }
 
-    const exact = (data ?? []).find((item) => item.name === name);
-
-    if (!exact) {
-      return false;
-    }
-
-    const metadata = getStoragePartMetadata(exact);
+    const metadata = getStoragePartMetadata({ metadata: { mimetype: data?.contentType, size: data?.size } });
     if (
       !metadata ||
       metadata.size !== input.blob.size ||
@@ -403,10 +404,6 @@ export async function uploadLiveRecordingPart(input: LiveRecordingPartUploadInpu
     }
 
     return true;
-  }
-
-  if (await findExistingPart()) {
-    return { bytes: input.blob.size, reused: true, storagePath };
   }
 
   const { error: uploadError } = await bucket.upload(storagePath, input.blob, {
