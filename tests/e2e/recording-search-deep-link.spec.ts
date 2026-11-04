@@ -153,6 +153,9 @@ test("opens one owned current search result at its transcript without autoplay",
   await pageTwoFilters.getByRole("button", { name: /^Filtry \(\d+\)$/u }).click();
   await expect(pageTwoFilters.getByLabel("Klient")).toHaveValue(clientId);
   await expect(pageTwoFilters.getByRole("checkbox", { name: "Důležité" })).toBeChecked();
+  // The anchored filter panel covers the first result on narrow screens, so close it before opening the result.
+  await pageTwoFilters.getByRole("button", { name: /^Filtry \(\d+\)$/u }).click();
+  await expect(pageTwoFilters.getByLabel("Klient")).toBeHidden();
 
   const pageTwoResultLink = page.getByRole("link", { name: /Otevřít nalezenou nahrávku/ }).first();
   await expect(page.locator('[data-e2e-candidate-count="4"]')).toBeVisible();

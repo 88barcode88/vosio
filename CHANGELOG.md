@@ -21,6 +21,7 @@ Všechny významné změny Vosia jsou vedené v tomto souboru. Projekt použív�
 - Malé akce používají jednotné ikony a kompaktní vzhled; zařazení nahrávky se upravuje v kontextovém okně místo velkého inline formuláře.
 - Seznam nahrávek dává přednost obsahu; obnova a hromadné sdílení jsou v kompaktních oknech. Název, export a přístup v detailu používají malé kontextové nabídky.
 - Nová nahrávka začíná soukromě, rozšířené zařazení je volitelné a technické informace o bucketu nezabírají hlavní plochu.
+- Tlačítka v hlavičce detailu nahrávky na šířce od 901 px po spuštění přepisu neuskočí doprava; dlouhá stavová zpráva už neroztáhne řadu akcí (`contain: inline-size`).
 - Řádek seznamu nahrávek už nezalamuje délku na další řádek (proměnná sloupců s vyšší specificitou přebíjela novější rozložení).
 - Spouštěč Upravit a sdílení a tlačítka sdílení v detailu už nevypadají jako nativní šedá tlačítka.
 - Chat zachovává načtenou historii a rozepsanou zprávu; otázku zobrazí ihned s trojtečkovým indikátorem až do odpovědi. Pozdní odpověď po přepnutí nahrávky nepřepíše novější odeslání.

@@ -353,7 +353,8 @@
   font-size: var(--text-xs);
 }
 
-[data-utility-surface="settings"] .settings-savebar-actions .ghost-action {
+/* :where keeps this below control-hit-targets.css so the app density policy still applies. */
+:where([data-utility-surface="settings"]) .settings-savebar-actions .ghost-action {
   min-height: 44px;
 }
 

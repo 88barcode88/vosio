@@ -198,6 +198,13 @@ async function expectNoHorizontalOverflow(page: Page, surfaceSelector = ".record
 }
 
 // waitForInboxSettlement lets client recovery state and dependent editor effects settle before interaction.
+// getControlHitSize mirrors control-hit-targets.css: 30px on wide fine-pointer screens, otherwise 44px.
+async function getControlHitSize(page: Page) {
+  const compactDesktop = await page.evaluate(() => matchMedia("(min-width: 901px) and (pointer: fine)").matches
+    && !matchMedia("(any-pointer: coarse)").matches);
+  return compactDesktop ? 30 : 44;
+}
+
 async function waitForInboxSettlement(page: Page) {
   await page.waitForLoadState("networkidle");
   await expect(page.locator(".live-recovery-panel")).toHaveCount(0);
@@ -230,6 +237,7 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     await page.setViewportSize({ width, height: 820 });
     await page.goto(fixturePath(fixtureScope));
     await waitForInboxSettlement(page);
+    const hit = await getControlHitSize(page);
 
     const disclosure = page.getByRole("button", { name: "Spravovat" });
     await expect(disclosure).toHaveAttribute("aria-expanded", "false");
@@ -280,9 +288,9 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     );
     const search = page.getByRole("searchbox", { name: "Hledat v nahrávkách" });
     expect(await expandedControls.count()).toBeGreaterThan(0);
-    for (const [control, borderRadius] of [[search, "6px"], [disclosure, "5px"]] as const) {
+    for (const [control, borderRadius] of [[search, "5px"], [disclosure, "5px"]] as const) {
       const styles = await getCompactControlStyle(control);
-      expect(styles.height).toBeGreaterThanOrEqual(44);
+      expect(styles.height).toBeGreaterThanOrEqual(hit);
       expect(styles.borderRadius).toBe(borderRadius);
       expect(styles.borderWidth).toBe(control === search ? "1px" : "0px");
       expect(styles.color).not.toBe(styles.backgroundColor);
@@ -291,7 +299,7 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
       for (const control of await expandedControls.all()) {
         const styles = await getCompactControlStyle(control);
-        expect(styles.height).toBeGreaterThanOrEqual(44);
+        expect(styles.height).toBeGreaterThanOrEqual(hit);
         expect(styles.borderRadius).toBe("5px");
       }
     }
@@ -307,7 +315,7 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     await expect(search).toBeVisible();
     await expect(actionsMenuTrigger).toHaveAttribute("aria-label", /Možnosti nahrávky/u);
     await actionsMenuTrigger.click();
-    await expect(actionsMenu.locator(".recording-title-edit-button")).toHaveAccessibleName("Upravit");
+    await expect(actionsMenu.locator(".recording-name-organization-popover > summary")).toHaveAccessibleName("Název a zařazení");
     await expect(actionsMenu.locator(".delete-recording-form button")).toHaveAccessibleName("Koš");
     await actionsMenuTrigger.click();
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -330,10 +338,10 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       table: tableBox,
       toolbar: toolbarBox
     } = geometry;
-    expect(searchBox.height).toBeGreaterThanOrEqual(44);
-    expect(searchBox.width).toBeGreaterThanOrEqual(44);
-    expect(disclosureBox.height).toBeGreaterThanOrEqual(44);
-    expect(disclosureBox.width).toBeGreaterThanOrEqual(44);
+    expect(searchBox.height).toBeGreaterThanOrEqual(hit);
+    expect(searchBox.width).toBeGreaterThanOrEqual(hit);
+    expect(disclosureBox.height).toBeGreaterThanOrEqual(hit);
+    expect(disclosureBox.width).toBeGreaterThanOrEqual(hit);
     expect(searchIconBox.x).toBeGreaterThanOrEqual(searchControlBox.x - 0.5);
     expect(searchIconBox.y).toBeGreaterThanOrEqual(searchControlBox.y - 0.5);
     expect(searchIconBox.x + searchIconBox.width)
@@ -345,11 +353,11 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       .toBeLessThanOrEqual(searchBox.x + searchPaddingLeft + 0.5);
 
     for (const chip of await page.locator(".recordings-status-summary a").all()) {
-      expect((await getBox(chip)).height).toBeGreaterThanOrEqual(44);
+      expect((await getBox(chip)).height).toBeGreaterThanOrEqual(hit);
     }
 
-    expect(actionsMenuBox.width).toBeGreaterThanOrEqual(44);
-    expect(actionsMenuBox.height).toBeGreaterThanOrEqual(44);
+    expect(actionsMenuBox.width).toBeGreaterThanOrEqual(hit);
+    expect(actionsMenuBox.height).toBeGreaterThanOrEqual(hit);
     expect(actionsMenuBox.x).toBeGreaterThanOrEqual(actionsBox.x - 0.5);
     expect(actionsMenuBox.y).toBeGreaterThanOrEqual(actionsBox.y - 0.5);
     expect(actionsMenuBox.x + actionsMenuBox.width).toBeLessThanOrEqual(actionsBox.x + actionsBox.width + 0.5);
@@ -381,12 +389,12 @@ for (const width of [375, 768, 901, 1024, 1440]) {
     }
     if (!listMode) {
       expect(actionsBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width - 0.5);
-      expect(actionsBox.width).toBeCloseTo(44, 0);
+      expect(actionsBox.width).toBeCloseTo(hit, 0);
       for (const control of await page.locator(
         ".recording-filters input:visible, .recording-filters select:visible, .recording-filters button:visible, .recordings-row-actions button:visible"
       ).all()) {
         const box = await getBox(control);
-        expect(box.height).toBeGreaterThanOrEqual(44);
+        expect(box.height).toBeGreaterThanOrEqual(hit);
       }
       if (width === 375 || width === 901) {
         const rows = page.locator(".recordings-row");
@@ -395,7 +403,7 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       }
     } else {
       expect(actionsBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width - 0.5);
-      expect(actionsBox.width).toBeCloseTo(48, 0);
+      expect(actionsBox.width).toBeCloseTo(hit, 0);
       expect(headerActionsBox).not.toBeNull();
       expect(actionsBox.x).toBeCloseTo(headerActionsBox!.x, 0);
       expect(actionsBox.width).toBeCloseTo(headerActionsBox!.width, 0);
@@ -413,9 +421,9 @@ for (const width of [375, 768, 901, 1024, 1440]) {
       colors.push(await page.locator(".recordings-status-summary").evaluate((element) =>
         getComputedStyle(element).backgroundColor
       ));
-      for (const [control, borderRadius] of [[search, "6px"], [disclosure, "5px"]] as const) {
+      for (const [control, borderRadius] of [[search, "5px"], [disclosure, "5px"]] as const) {
         const styles = await getCompactControlStyle(control);
-        expect(styles.height).toBeGreaterThanOrEqual(44);
+        expect(styles.height).toBeGreaterThanOrEqual(hit);
         expect(styles.borderRadius).toBe(borderRadius);
         expect(styles.borderWidth).toBe(control === search ? "1px" : "0px");
         expect(styles.color).not.toBe(styles.backgroundColor);
@@ -447,8 +455,8 @@ for (const width of [375, 901, 1024]) {
     const row = page.locator(".recordings-row").last();
     const actionsMenu = row.locator(".recordings-actions-menu");
     await actionsMenu.locator(":scope > summary").click();
-    await actionsMenu.locator(".recording-title-edit-button").click();
-    const popover = row.locator(".recording-title-popover");
+    await actionsMenu.locator(".recording-name-organization-popover > summary").click();
+    const popover = row.locator(".recording-name-organization-popover .compact-popover-surface");
     await expect(popover).toBeVisible();
     await popover.scrollIntoViewIfNeeded();
 
@@ -565,6 +573,7 @@ for (const width of [901, 1024]) {
     await page.setViewportSize({ width, height: 1200 });
     await page.goto(fixturePath(fixtureScope, "&fixture=indexed&q=Call"));
     await waitForInboxSettlement(page);
+    const hit = await getControlHitSize(page);
     await page.locator("html").evaluate((element) => { element.dataset.theme = "light"; });
 
     const inbox = page.locator(".recordings-inbox");
@@ -573,7 +582,7 @@ for (const width of [901, 1024]) {
     const actionsMenuTrigger = actionsMenu.locator(":scope > summary");
     await expect(actionsMenuTrigger).toHaveAttribute("aria-label", /Možnosti nahrávky/u);
     await actionsMenuTrigger.click();
-    await expect(actionsMenu.locator(".recording-title-edit-button")).toHaveAccessibleName("Upravit");
+    await expect(actionsMenu.locator(".recording-name-organization-popover > summary")).toHaveAccessibleName("Název a zařazení");
     await expect(actionsMenu.locator(".delete-recording-form button")).toHaveAccessibleName("Koš");
     await actionsMenuTrigger.click();
     await page.mouse.move(0, 0);
@@ -585,8 +594,8 @@ for (const width of [901, 1024]) {
     expect(geometry.actions.x).toBeGreaterThanOrEqual(geometry.result.x - 0.5);
     expect(geometry.actions.x + geometry.actions.width)
       .toBeLessThanOrEqual(geometry.result.x + geometry.result.width + 0.5);
-    expect(geometry.actionsMenu.width).toBeGreaterThanOrEqual(44);
-    expect(geometry.actionsMenu.height).toBeGreaterThanOrEqual(44);
+    expect(geometry.actionsMenu.width).toBeGreaterThanOrEqual(hit);
+    expect(geometry.actionsMenu.height).toBeGreaterThanOrEqual(hit);
     expect(geometry.actionsMenu.x).toBeGreaterThanOrEqual(geometry.actions.x - 0.5);
     expect(geometry.actionsMenu.x + geometry.actionsMenu.width)
       .toBeLessThanOrEqual(geometry.actions.x + geometry.actions.width + 0.5);
