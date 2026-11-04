@@ -456,7 +456,7 @@ describe("BrowserRecorder modes", () => {
       draft.resolve({ id: recordingId, storagePrefix: "live/", userId: "user-1" });
       await flushPromises(30);
     });
-    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}`);
+    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}?rename=1`);
   });
 
   it("opens the confirmed detail within two seconds while a twenty-second archive upload continues", async () => {
@@ -476,7 +476,7 @@ describe("BrowserRecorder modes", () => {
       await flushPromises(20);
       await vi.advanceTimersByTimeAsync(1_999);
     });
-    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}`);
+    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}?rename=1`);
     expect(completion).toHaveBeenLastCalledWith(expect.objectContaining({ recordingId, phase: "saving", audioConfirmed: false }));
     expect(mocks.completeLiveRecordingUpload).not.toHaveBeenCalled();
     expect(mocks.cleanupDurableSafetyGeneration).not.toHaveBeenCalled();
@@ -530,7 +530,7 @@ describe("BrowserRecorder modes", () => {
       document.querySelector<HTMLButtonElement>(".record-button")!.click();
       await flushPromises(20);
     });
-    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}`);
+    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}?rename=1`);
     window.history.replaceState(null, "", `/recordings/${recordingId}`);
     await act(async () => root?.render(sessionTree(false)));
     const dock = container.querySelector<HTMLElement>('[aria-label="Probíhající nahrávání"]')!;

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
+import { RecordingActionsMenu as RecordingActionsMenuShell } from "@/components/workspace/recording-actions-menu";
 import { BulkRecordingSharing } from "@/components/workspace/bulk-recording-sharing";
 import { RecordingSharingCheckbox, RecordingSharingSelectionProvider } from "@/components/workspace/recording-sharing-selection";
 import { DeleteRecordingForm } from "@/components/delete-recording-form";
@@ -80,17 +81,12 @@ function RecordingActionsMenu({ recordingId, title, capabilities, recording, opt
   const canEditOrganization = capabilities?.manageAccess;
   if (!capabilities?.editTitle && !capabilities?.delete && !canEditOrganization) return null;
   return (
-    <details className="recordings-actions-menu">
-      <summary aria-label={`Možnosti nahrávky ${title}`} title="Možnosti nahrávky">
-        <MoreHorizontal aria-hidden="true" size={15} />
-      </summary>
-      <div className="recordings-actions-popover">
-        {capabilities.editTitle || canEditOrganization ? <RecordingNameOrganizationEditor
-          recordingId={recordingId} title={title} editTitle={Boolean(capabilities.editTitle)}
-          editOrganization={Boolean(canEditOrganization)} recording={recording} options={options} /> : null}
-        {capabilities.delete ? <DeleteRecordingForm recordingId={recordingId} variant="compact" /> : null}
-      </div>
-    </details>
+    <RecordingActionsMenuShell title={title}>
+      {capabilities.editTitle || canEditOrganization ? <RecordingNameOrganizationEditor
+        recordingId={recordingId} title={title} editTitle={Boolean(capabilities.editTitle)}
+        editOrganization={Boolean(canEditOrganization)} recording={recording} options={options} /> : null}
+      {capabilities.delete ? <DeleteRecordingForm recordingId={recordingId} variant="compact" /> : null}
+    </RecordingActionsMenuShell>
   );
 }
 

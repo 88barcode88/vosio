@@ -10,7 +10,11 @@ import { updateRecordingTitleStateAction } from "@/lib/recordings/actions";
 
 type RecordingTitleEditorProps = {
   embedded?: boolean;
+  // Reports whether the draft differs from the saved title (embedded editors use it to warn before closing).
+  onDirtyChange?: (dirty: boolean) => void;
   onPendingChange?: (pending: boolean) => void;
+  // Called after the current title was saved successfully.
+  onSaved?: () => void;
   recordingId: string;
   saveAction?: SaveAction;
   title: string;
@@ -36,7 +40,9 @@ function RecordingTitleSaveButton() {
 // RecordingTitleEditor saves an inbox-row title before closing its anchored popover.
 export function RecordingTitleEditor({
   embedded = false,
+  onDirtyChange,
   onPendingChange,
+  onSaved,
   recordingId,
   saveAction = updateRecordingTitleStateAction,
   title
@@ -69,7 +75,8 @@ export function RecordingTitleEditor({
     createInitialSaveActionState()
   );
   useEffect(() => { onPendingChange?.(isPending); }, [isPending, onPendingChange]);
-  const closeAfterSuccess = useCallback(() => { if (!embedded) setIsOpen(false); }, [embedded]);
+  useEffect(() => { onDirtyChange?.(draftTitle.trim() !== title.trim()); }, [draftTitle, onDirtyChange, title]);
+  const closeAfterSuccess = useCallback(() => { if (!embedded) setIsOpen(false); onSaved?.(); }, [embedded, onSaved]);
   // dismissEditor resets the draft and hides only the current settled error revision.
   const dismissEditor = useCallback(() => {
     if (actionState.status === "error" && actionState.scopeKey === recordingId) {

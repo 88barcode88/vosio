@@ -36,7 +36,9 @@ const documentationSections: DocumentationSection[] = [
       "Vedle počtů podle stavu zvolíte řazení: Podle klienta (výchozí, skupiny podle klienta), Nejnovější, Nejstarší, Název A–Z nebo Nejdelší. Řazení se pamatuje v adrese stránky spolu s filtry.",
       "Export, úprava názvu a zařazení nahrávky se rozbalují přímo v detailu. Přehrávač začíná jako malý řádek s přehráváním a rozbalením. Rozbalení ukáže posun v audiu; sbalení ani přepnutí záložky přehrávání nepřeruší. Na mobilu zůstává přehrávač nahoře v detailu a nezakrývá spodní navigaci.",
       "Vyhledávání na stránce Nahrávky umí prohledat názvy i uložené přepisy. Fulltext vrátí konkrétní úryvek a po otevření přejde na odpovídající místo v přepisu.",
-      "V nabídce nahrávky otevřete Název a zařazení. Název a zařazení mají vlastní tlačítka Uložit; uložení jedné části neuloží druhou. Klient a Projekt se v seznamu zobrazují odděleně."
+      "V nabídce nahrávky otevřete Název a zařazení. Název a zařazení mají vlastní tlačítka Uložit; uložení jedné části neuloží druhou. Klient a Projekt se v seznamu zobrazují odděleně.",
+      "Když okno Název a zařazení zavíráte s neuloženou změnou, zeptá se: Uložit a zavřít, Zahodit změny, nebo Pokračovat v úpravách. Nabídka … u řádku se zavře kliknutím jinam, klávesou Escape nebo otevřením nabídky jiné nahrávky.",
+      "Po uložení živé nahrávky se otevře její detail a hned nabídne pojmenování; vygenerovaný název stačí přepsat a uložit, nebo zvolit Později."
     ],
     id: "nahravky",
     kicker: "Seznam a detail callů",

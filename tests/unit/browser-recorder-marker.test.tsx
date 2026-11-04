@@ -865,7 +865,7 @@ describe("BrowserRecorder live markers", () => {
     expect(Array.from(document.querySelectorAll('[role="status"]')).some((element) => (
       element.textContent === TRANSCRIPT_SEARCH_INDEX_WARNING_MESSAGE
     ))).toBe(true);
-    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}`);
+    expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}?rename=1`);
     expect(mocks.routerRefresh).toHaveBeenCalled();
     expect(mocks.failLiveRecordingUpload).not.toHaveBeenCalled();
   });
@@ -1028,7 +1028,7 @@ describe("BrowserRecorder live markers", () => {
     expect(realtime.recording.cancel).not.toHaveBeenCalled();
     expect(document.querySelector<HTMLButtonElement>(".record-button")?.disabled).toBe(false);
     if (leftOrigin) expect(mocks.routerPush).not.toHaveBeenCalled();
-    else expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}`);
+    else expect(mocks.routerPush).toHaveBeenCalledExactlyOnceWith(`/recordings/${recordingId}?rename=1`);
     window.history.replaceState(null, "", "/");
   });
 

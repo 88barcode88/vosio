@@ -60,11 +60,32 @@ describe("unified recording name and organization editor", () => {
     expect(container.querySelectorAll("form")).toHaveLength(2);
     expect(container.textContent).not.toContain("Upravit+");
     await changeTitle("Rozepsaný název");
-    await act(async () => container.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    const escape = () => act(async () => container.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await escape();
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.querySelector(".unsaved-changes-prompt")?.textContent).toContain("Máte neuložené změny v názvu");
+    await act(async () => Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Pokračovat v úpravách")!.click());
+    expect(container.querySelector(".unsaved-changes-prompt")).toBeNull();
+    expect(container.querySelector<HTMLInputElement>('input[name="title"]')!.value).toBe("Rozepsaný název");
+    await escape();
+    await act(async () => Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Zahodit změny")!.click());
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);
     await act(async () => trigger.click());
-    expect(container.querySelector<HTMLInputElement>('input[name="title"]')!.value).toBe("Rozepsaný název");
+    expect(container.querySelector<HTMLInputElement>('input[name="title"]')!.value).toBe(recording.title);
+    await escape();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("saves the unsaved draft and closes from the unsaved-changes question", async () => {
+    await openEditor();
+    await changeTitle("Nový název hovoru");
+    await act(async () => container.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await act(async () => { Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Uložit a zavřít")!.click(); for (let i = 0; i < 6; i++) await Promise.resolve(); });
+    expect(mocks.title).toHaveBeenCalledOnce();
+    expect(mocks.title.mock.calls[0][1].get("title")).toBe("Nový název hovoru");
+    expect(mocks.organization).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("keeps the other draft and failure visible after a partial save and accepts a retry", async () => {

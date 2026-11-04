@@ -316,3 +316,14 @@
    The :is() prefix matches the shared small-action rule so this later rule wins. */
 :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock) .recording-selection-toolbar > button.recording-selection-trash { gap: 6px; color: var(--danger); }
 :is(.workspace-shell, .recordings-inbox, .persistent-recorder-dock) .recording-selection-toolbar > button.recording-selection-trash:disabled { color: var(--text-muted); }
+/* Unsaved-changes question shown when a Název a zařazení popover is closed with a draft. */
+.unsaved-changes-prompt { display: grid; gap: 8px; margin: 0 0 10px; border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--warning) 9%, var(--surface)); padding: 10px 12px; font-size: var(--text-sm); }
+.unsaved-changes-prompt p { display: flex; align-items: flex-start; gap: 6px; margin: 0; }
+.unsaved-changes-prompt p svg { flex: 0 0 auto; margin-top: 2px; color: var(--warning); }
+.unsaved-changes-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+/* One-time "name this recording" dialog after a live recording is saved. */
+.recording-rename-prompt { width: min(440px, calc(100vw - 32px)); }
+.recording-rename-prompt-body { display: grid; gap: 10px; padding: 18px; }
+.recording-rename-prompt-body h2 { margin: 0; font-size: var(--text-lg); }
+.recording-rename-prompt-body > p { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); }
+.recording-rename-prompt-actions { display: flex; justify-content: flex-end; }

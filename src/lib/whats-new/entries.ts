@@ -96,6 +96,24 @@ export const whatsNewReleases: readonly WhatsNewRelease[] = [
         summary: "Jména a role mluvčích jsou zarovnané s poli, časová osa má víc místa u časů a mluvčích, tlačítka u uložených AI výstupů jsou pohromadě a načítání se ukáže na jednom řádku."
       },
       {
+        id: "rename-after-live",
+        kind: "new",
+        title: "Pojmenování hned po uložení živé nahrávky",
+        summary: "Po uložení živé nahrávky vás detail rovnou vyzve k pojmenování. Vygenerovaný název stačí přepsat, nebo zvolte Později."
+      },
+      {
+        id: "unsaved-changes-question",
+        kind: "improved",
+        title: "Neuložené změny se neztratí",
+        summary: "Když zavíráte Název a zařazení s neuloženou změnou, aplikace se zeptá, jestli ji uložit, zahodit, nebo pokračovat v úpravách."
+      },
+      {
+        id: "row-menu-closes",
+        kind: "fixed",
+        title: "Nabídka … u nahrávky se zavírá sama",
+        summary: "Nabídka u řádku v seznamu se zavře kliknutím jinam, klávesou Escape nebo otevřením nabídky jiné nahrávky, takže se už nepřekrývá víc nabídek."
+      },
+      {
         id: "bulk-trash",
         kind: "new",
         title: "Více nahrávek najednou do Koše",

@@ -4,7 +4,7 @@ import { RecordingWorkbench } from "@/components/workspace/recording-workbench";
 import { NO_RECORDING_CAPABILITIES } from "@/lib/recording-sharing/resolve-capabilities";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import type { RecordingRow } from "@/lib/recordings/types";
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }), usePathname: () => "/recordings/test", useSearchParams: () => new URLSearchParams() }));
 
 vi.mock("@/components/transcript-tabs", () => ({ TranscriptTabs: () => <div>Saved content</div> }));
 vi.mock("@/components/transcript-tabs/export-controls", () => ({ ExportControls: () => null }));
