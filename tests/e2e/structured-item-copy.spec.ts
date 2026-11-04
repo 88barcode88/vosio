@@ -50,6 +50,6 @@ test("a hidden structured row is not displayed while its delete is pending", asy
   await openEvidenceFixture(page, "none");
   const risk = page.locator("li[data-risk-row]");
   await expect(risk).toBeVisible();
-  await risk.evaluate((element) => { element.hidden = true; });
+  await risk.evaluate((element) => { (element as HTMLElement).hidden = true; });
   await expect(risk).toBeHidden();
 });
