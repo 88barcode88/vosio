@@ -416,6 +416,19 @@ export function TranscriptTabs({
     }, { allowPlay: true });
   }
 
+  // resolveStructuredEvidenceSpeaker names the speaker of a resolved evidence quote on demand (clipboard copy only).
+  function resolveStructuredEvidenceSpeaker(target: TranscriptTarget) {
+    if (!activeTranscript || target.transcriptId !== activeTranscript.id) {
+      return null;
+    }
+
+    const speakerBlocks = getTranscriptSpeakerBlocks(activeTranscript.segments, activeTranscript.speakers);
+    const block = speakerBlocks.find((candidate) => candidate.anchorId === target.anchorId)
+      ?? getPreferredTranscriptBlock(speakerBlocks, target);
+
+    return block?.speakerLabel || null;
+  }
+
   // resolveStructuredEvidenceTarget keeps stored ranges and falls back to one unique transcript quote.
   function resolveStructuredEvidenceTarget(reference: TranscriptEvidenceReference): TranscriptTarget | null {
     if (!activeTranscript || reference.transcriptId !== activeTranscript.id) {
@@ -587,6 +600,7 @@ export function TranscriptTabs({
               onOutputsRemoved={lazyAiState?.removeOutputs}
               onReload={() => lazyAiState?.loadForPurpose("ai") ?? Promise.resolve()}
               outputMetadata={lazyAiState?.outputs}
+              resolveEvidenceSpeaker={resolveStructuredEvidenceSpeaker}
               resolveEvidenceTarget={resolveStructuredEvidenceTarget}
               structuredItems={runtimeStructuredItems}
               onTaskDeleted={lazyAiState?.confirmTaskDeletion}

@@ -70,7 +70,7 @@ describe("Appica recording detail contract", () => {
     expect(transcriptCss).toMatch(/\.recording-audio-toggle\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/);
     expect(transcriptCss).toMatch(/\.recording-audio-progress input\s*\{[\s\S]*?min-height:\s*44px;/);
     expect(timelineCss).toMatch(/\.structured-task-row > button\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/);
-    expect(timelineCss).toMatch(/\.structured-task-row > \.structured-task-delete\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/);
+    expect(timelineCss).toMatch(/\.structured-item-actions > button\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/);
     expect(workspaceCss).toMatch(/\.recording-detail-back\s*\{[\s\S]*?min-height:\s*44px;/);
   });
 });

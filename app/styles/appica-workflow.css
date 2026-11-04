@@ -1552,8 +1552,7 @@
   padding: 8px;
 }
 
-.structured-task-row > button,
-.structured-task-row > .structured-task-delete {
+.structured-task-row > button {
   width: 44px;
   height: 44px;
   border-radius: 6px;

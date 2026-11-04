@@ -83,6 +83,30 @@ function formatStructuredTaskLine(task: StructuredTaskRow) {
   return `- [${checked}] ${task.title}${details ? ` (${details})` : ""}${evidence}`;
 }
 
+export type StructuredItemClipboardInput = {
+  title: string;
+  details?: Array<string | null | undefined>;
+  lines?: Array<string | null | undefined>;
+  evidenceQuote?: string | null;
+  evidenceLocation?: Array<string | null | undefined>;
+};
+
+// buildStructuredItemClipboardText renders one task/decision/risk row with its metadata and evidence as plain text.
+export function buildStructuredItemClipboardText(item: StructuredItemClipboardInput) {
+  const details = formatOptionalDetail(item.details ?? []);
+  const location = formatOptionalDetail(item.evidenceLocation ?? []);
+  const evidence = item.evidenceQuote
+    ? `Důkaz${location ? ` (${location})` : ""}: "${item.evidenceQuote}"`
+    : null;
+
+  return [
+    item.title.trim(),
+    details || null,
+    ...(item.lines ?? []).map((line) => line?.trim() || null),
+    evidence
+  ].filter((line): line is string => Boolean(line)).join("\n");
+}
+
 // buildStructuredChecklistMarkdown renders only persisted checklist tasks for focused export and clipboard actions.
 export function buildStructuredChecklistMarkdown(tasks: StructuredTaskRow[]) {
   const taskGroups = [

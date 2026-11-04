@@ -585,17 +585,9 @@
   background: transparent;
   cursor: pointer;
 }
-.structured-task-row > .structured-task-delete {
+.structured-item-actions > button {
   width: 44px;
   height: 44px;
-  margin: -5px -5px 0 0;
-  border-color: transparent;
-  color: var(--text-muted);
-}
-.structured-task-row > .structured-task-delete:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--danger) 42%, transparent);
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 9%, transparent);
 }
 .structured-task-delete-error {
   color: var(--danger) !important;

@@ -21,6 +21,8 @@ no browser/service EXECUTE. PUBLIC/anon are denied. No table grants are added.
 | `start_recording_purge_v1(p_operation_id uuid)` | JSON `{operationId,phase,changed}` |
 | `release_recording_purge_v1(p_operation_id uuid)` | Same JSON |
 | `delete_managed_transcript_task_group_v1(p_task_id uuid,p_expected_updated_at timestamptz,p_task_ids uuid[])` | JSON `{deletedCount,recordingId}` |
+| `delete_managed_transcript_decision_group_v1(p_decision_id uuid,p_expected_updated_at timestamptz,p_decision_ids uuid[])` | JSON `{deletedCount,recordingId,ids}` |
+| `delete_managed_transcript_risk_group_v1(p_risk_id uuid,p_expected_updated_at timestamptz,p_risk_ids uuid[])` | JSON `{deletedCount,recordingId,ids}` |
 | `delete_managed_ai_output_v1(p_output_id uuid)` | JSON `{deletedId,recordingId}` |
 | `get_managed_recording_trash_v1(p_recording_ids uuid[])` | Rows `(recording_id uuid,deleted_at timestamptz,trash_retention_hours smallint,purge_after timestamptz,purge_phase text)` |
 
