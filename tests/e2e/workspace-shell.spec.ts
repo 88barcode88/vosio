@@ -8,7 +8,8 @@ type FixtureView =
   | "recordings"
   | "settings"
   | "templates"
-  | "trash";
+  | "trash"
+  | "whats-new";
 
 // createFixtureScope supplies the exact twelve-hex token required by the guarded shell fixture.
 function createFixtureScope() {
@@ -56,10 +57,16 @@ async function getBox(locator: import("@playwright/test").Locator) {
   return box!;
 }
 
-// expectRealAppHitTargets checks visible semantic controls and labelled toggles against the shared 44px contract.
+// getControlHitSize mirrors control-hit-targets.css: 30px on wide fine-pointer screens, 44px on touch and narrow screens.
+async function getControlHitSize(page: Page) {
+  return page.evaluate(() => (matchMedia("(min-width: 901px) and (pointer: fine)").matches
+    && !matchMedia("(any-pointer: coarse)").matches ? 30 : 44));
+}
+
+// expectRealAppHitTargets checks visible semantic controls and labelled toggles against the shared density contract.
 async function expectRealAppHitTargets(page: Page) {
   const offenders = await page.evaluate(() => {
-    const minimum = 44;
+    const minimum = matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches ? 30 : 44;
     const isVisible = (element: HTMLElement) => {
       const style = getComputedStyle(element);
       const box = element.getBoundingClientRect();
@@ -151,9 +158,10 @@ for (const width of [375, 768, 1024, 1440]) {
 
     await expect(page.getByRole("heading", { name: "Koš" })).toBeVisible();
     await expect(page.locator(".trash-recording-row")).toHaveCount(2);
+    const hit = await getControlHitSize(page);
     for (const button of await page.locator(".trash-recording-row button").all()) {
       const box = await getBox(button);
-      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(hit);
     }
     await expectNoHorizontalOverflow(page);
     const scrollOwners = await page.evaluate(() => {
@@ -198,7 +206,7 @@ for (const width of [375, 768, 1024, 1440]) {
         expect(linkBox).not.toBeNull();
         expect(linkBox!.x).toBeGreaterThanOrEqual(topicBox!.x - 1);
         expect(linkBox!.x + linkBox!.width).toBeLessThanOrEqual(topicBox!.x + topicBox!.width + 1);
-        expect(linkBox!.height).toBeGreaterThanOrEqual(44);
+        expect(linkBox!.height).toBeGreaterThanOrEqual(await getControlHitSize(page));
       }
     }
   });
@@ -512,11 +520,13 @@ for (const width of [1024, 1440]) {
         };
       });
       expect(["6px", "10px"]).toContain(geometry.borderRadius);
-      expect(geometry.control.width).toBeGreaterThanOrEqual(44);
-      expect(geometry.control.height).toBeGreaterThanOrEqual(44);
+      const hit = await getControlHitSize(page);
+      expect(geometry.control.width).toBeGreaterThanOrEqual(hit);
+      expect(geometry.control.height).toBeGreaterThanOrEqual(hit);
       expect(geometry.icon).not.toBeNull();
-      expect(geometry.icon?.width).toBe(16);
-      expect(geometry.icon?.height).toBe(16);
+      // Icons follow the closed 13/15/20px icon scale; header controls use 15px.
+      expect(geometry.icon?.width).toBe(15);
+      expect(geometry.icon?.height).toBe(15);
       expect(geometry.icon!.left).toBeGreaterThanOrEqual(geometry.control.left);
       expect(geometry.icon!.right).toBeLessThanOrEqual(geometry.control.right);
       expect(geometry.icon!.top).toBeGreaterThanOrEqual(geometry.control.top);
@@ -524,7 +534,7 @@ for (const width of [1024, 1440]) {
     }
     const [userCardBox, signOutBox] = await Promise.all([getBox(userCard), getBox(signOut)]);
     expect((await userCard.evaluate((element) => getComputedStyle(element).gridTemplateColumns))
-      .split(" ").at(-1)).toBe("44px");
+      .split(" ").at(-1)).toBe(`${await getControlHitSize(page)}px`);
     expect(signOutBox.x + signOutBox.width).toBeLessThanOrEqual(userCardBox.x + userCardBox.width + 0.5);
     expect(await sidebar.evaluate((element) => ({
       position: getComputedStyle(element).position,
@@ -532,13 +542,15 @@ for (const width of [1024, 1440]) {
     }))).toEqual({ position: "sticky", top: "0px" });
     const desktopInternalHrefs = await sidebar.locator("a:not([target='_blank'])")
       .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+    // The primary "Nová nahrávka" action sits above the navigation; Novinky closes the utility group.
     expect(desktopInternalHrefs).toEqual([
-      fixturePath("recordings", scope),
       fixturePath("new", scope),
+      fixturePath("recordings", scope),
       fixturePath("templates", scope),
       fixturePath("trash", scope),
       fixturePath("settings", scope),
-      fixturePath("documentation", scope)
+      fixturePath("documentation", scope),
+      fixturePath("whats-new", scope)
     ]);
     expect(contentBox.x).toBe(sidebarBox.x + sidebarBox.width);
     expect(contentBox.x + contentBox.width).toBeLessThanOrEqual(width);
@@ -718,6 +730,8 @@ test("mobile active navigation and account focus use neutral semantic interactio
   await page.locator(".account-security-fields").evaluate((element) => {
     (element as HTMLFieldSetElement).disabled = false;
   });
+  // Password fields sit behind the "Změnit heslo" summary.
+  await page.locator(".account-security-password > summary").click();
   const accountInput = page.locator('.account-security-grid input[name="currentPassword"]');
   await accountInput.focus();
   const accountFocus = await accountInput.evaluate((element) => {
@@ -764,8 +778,10 @@ test("wide desktop surfaces use the available workspace width", async ({ page })
   expect(inboxWidth).toBeGreaterThan(1450);
 
   await page.goto(fixturePath("settings"));
+  // Settings is capped at a readable 1240px (settings-layout.css) and fills that cap on wide screens.
   const settingsWidth = await page.locator(".settings-panel").evaluate((element) => element.getBoundingClientRect().width);
-  expect(settingsWidth).toBeGreaterThan(1450);
+  expect(settingsWidth).toBeGreaterThan(1200);
+  expect(settingsWidth).toBeLessThanOrEqual(1240.5);
 });
 
 for (const width of [375, 768, 1024, 1440]) {
@@ -843,10 +859,14 @@ test("C8 low desktop uses one document scroll owner for reachable sidebar, detai
     sidebarPosition: "static"
   });
   expect(settingsState.documentExtra).toBeGreaterThan(0);
-  const settingsEnd = page.getByRole("button", { name: "Uložit nastavení" });
+  // The save button lives in a sticky bar, so it is reachable before and after scrolling to the last section.
+  const settingsSave = page.getByRole("button", { name: "Uložit nastavení" });
+  await expect(settingsSave).toBeInViewport();
+  const settingsEnd = page.getByRole("button", { name: "Technické informace" });
   await settingsEnd.scrollIntoViewIfNeeded();
   await expect(settingsEnd).toBeInViewport();
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await expect(settingsSave).toBeInViewport();
   expect(await page.evaluate(() => ({
     content: document.querySelector<HTMLElement>(".content-area")!.scrollTop,
     sidebar: document.querySelector<HTMLElement>(".sidebar")!.scrollTop

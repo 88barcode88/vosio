@@ -11,12 +11,17 @@ function fixturePath(path: string, query: Record<string, string> = {}) {
 // assertPickerGeometry checks the actual controls and containment in the chosen Appica surface.
 async function assertPickerGeometry(page: Page, picker: Locator) {
   await expect(picker).toBeVisible();
-  const result = await picker.evaluate((element) => ({
+  const result = await picker.evaluate((element) => {
+    // Wide fine-pointer screens use the 30px density from control-hit-targets.css; touch and narrow keep 44px.
+    const compactDesktop = matchMedia("(min-width: 901px) and (pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches;
+    const minimum = compactDesktop ? 29.5 : 43.5;
+    return {
     shortControls: Array.from(element.querySelectorAll<HTMLElement>("select, input[type=range], button"))
-      .filter((control) => control.getBoundingClientRect().height < 43.5).map((control) => control.tagName),
+      .filter((control) => control.getBoundingClientRect().height < minimum).map((control) => control.tagName),
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     focusableRange: element.querySelector<HTMLInputElement>('input[type="range"]')?.tabIndex
-  }));
+    };
+  });
   expect(result.shortControls).toEqual([]);
   expect(result.overflow).toBeLessThanOrEqual(1);
   expect(result.focusableRange).toBeGreaterThanOrEqual(0);
@@ -38,6 +43,8 @@ async function chooseEffort(slider: Locator, effort: "low" | "medium" | "xhigh" 
 
 for (const theme of ["light", "dark"] as const) {
   test(`variant A ${theme} sends the chosen manual effort and preserves the Settings preference`, async ({ page, context, baseURL }, testInfo) => {
+    // Visits two fixture routes; on a cold dev server their first compile can exceed the default 30s budget.
+    test.slow();
     if (testInfo.project.name === "mobile-chrome") await page.setViewportSize({ width: 375, height: 800 });
     await context.addCookies([{ name: "vosio-theme", value: theme, url: baseURL! }]);
     const bodies: Record<string, unknown>[] = [];

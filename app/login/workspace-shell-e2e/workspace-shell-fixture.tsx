@@ -123,11 +123,20 @@ function createFixtureRecording(): RecordingRow {
   };
 }
 
+// Owner authority over a trashed recording: Trash shows restore and purge only with these explicit capabilities.
+const trashOwnerCapabilities = {
+  read: true, editTitle: false, editSpeakers: false, editTaskStatus: false,
+  manageAccess: false, delete: false, restore: true, purge: true,
+  runPersonalAi: false, usePrivateChat: false
+};
+
 // createDeletedFixtureRecordings supplies safe local-only rows for Trash interaction and layout checks.
 function createDeletedFixtureRecordings(): RecordingRow[] {
   return [
     {
       ...createFixtureRecording(),
+      capabilities: trashOwnerCapabilities,
+      purge_phase: "none",
       deleted_at: "2026-08-09T12:00:00.000Z",
       duration_seconds: 2_580,
       file_size_bytes: 28_400_000,
@@ -141,6 +150,8 @@ function createDeletedFixtureRecordings(): RecordingRow[] {
     },
     {
       ...createFixtureRecording(),
+      capabilities: trashOwnerCapabilities,
+      purge_phase: "none",
       deleted_at: "2026-08-08T09:00:00.000Z",
       duration_seconds: 1_240,
       file_size_bytes: null,

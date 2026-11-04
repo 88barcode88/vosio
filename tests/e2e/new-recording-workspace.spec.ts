@@ -145,7 +145,10 @@ test("an upload failure stays local, safe and retryable", async ({ page }) => {
   await expect(status).toContainText("Nahrání souboru se nepodařilo. Zkuste to znovu.");
   const retry = page.getByRole("button", { name: "Zkusit znovu" });
   await expect(retry).toBeVisible();
-  expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  // Density policy from control-hit-targets.css: 30px on wide fine-pointer screens, 44px on touch and narrow screens.
+  const minimumHit = await page.evaluate(() => (matchMedia("(min-width: 901px) and (pointer: fine)").matches
+    && !matchMedia("(any-pointer: coarse)").matches ? 30 : 44));
+  expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(minimumHit);
   await retry.click();
   await expect(status).toHaveAttribute("data-phase", "transferring");
   await expect(status).toContainText("42 %");

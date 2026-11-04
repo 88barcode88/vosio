@@ -32,6 +32,23 @@ async function geometry(page: Page) {
     .map((selector) => { const box = document.querySelector(selector)?.getBoundingClientRect(); return [selector, box ? { x: box.x, y: box.y + scrollY, width: box.width, height: box.height } : null]; })));
 }
 
+// headerFeedbackHeight measures the header action area; its transcription message row collapses when empty and grows with its text.
+async function headerFeedbackHeight(page: Page) {
+  return page.evaluate(() => document.querySelector(".recording-detail-actions")?.getBoundingClientRect().height ?? 0);
+}
+
+// expectStableExceptHeaderFeedback allows content below the header to move only by the header action group's own growth.
+async function expectStableExceptHeaderFeedback(page: Page, before: Awaited<ReturnType<typeof geometry>>, feedbackBefore: number, ignore: string[] = []) {
+  const after = await geometry(page);
+  const shift = (await headerFeedbackHeight(page)) - feedbackBefore;
+  const below = new Set([".recording-audio-player", ".tabs-row", ".recording-chat-composer"]);
+  // normalize drops keys whose content changes by design and removes the header growth from boxes below it.
+  const normalize = (boxes: typeof before, offset: number) => Object.fromEntries(Object.entries(boxes)
+    .filter(([selector]) => !ignore.includes(selector))
+    .map(([selector, box]) => [selector, box && below.has(selector) ? { ...box, y: Math.round((box.y - offset) * 100) / 100 } : box]));
+  expect(normalize(after, shift)).toEqual(normalize(before, 0));
+}
+
 // compactAction proves the real hit rectangle, compact painted surface and action icon dimensions.
 async function compactAction(page: Page, selector: string) {
   const action = page.locator(selector).first();
@@ -89,13 +106,13 @@ test("transcription start and restart keep icon, toolbar and player through pend
       await openDetail(page, mode); await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
       const button = page.locator(".transcription-actions button").first();
       await compactAction(page, ".transcription-actions button:first-child");
-      await button.focus(); const before = await geometry(page); await button.click();
+      await button.focus(); const before = await geometry(page); const feedbackBefore = await headerFeedbackHeight(page); await button.click();
       await expect(button).toBeDisabled(); await expect(button).toHaveAccessibleName("Pracuji…");
       await expect(page.locator(".transcription-feedback [role='status']")).toContainText("Odesílám požadavek na přepis…");
-      expect(await geometry(page)).toEqual(before);
+      await expectStableExceptHeaderFeedback(page, before, feedbackBefore);
       await expect.poll(() => Boolean(release)).toBe(true); release!();
       await expect(button).toBeEnabled(); await expect(page.locator(".transcription-feedback [role='status']")).toHaveText(disabledMessage);
-      expect(await geometry(page)).toEqual(before);
+      await expectStableExceptHeaderFeedback(page, before, feedbackBefore);
       await expect(page.locator(".transcription-feedback")).toBeVisible();
       if (width === 320 || width === 1440) await page.screenshot({ path: info.outputPath(`transcription-${mode}-${width}-${theme}.png`) });
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
@@ -117,11 +134,13 @@ test("accepted transcription preserves geometry when checking action and running
     await page.setViewportSize({ width, height: 780 });
     await openDetail(page, "transcription");
     const start = page.locator(".transcription-actions button").first(); await expect(start).toHaveAccessibleName("Spustit přepis"); await start.focus();
-    const before = await geometry(page); await start.click(); await expect(start).toBeDisabled();
+    const before = await geometry(page); const feedbackBefore = await headerFeedbackHeight(page); await start.click(); await expect(start).toBeDisabled();
     await expect.poll(() => Boolean(release)).toBe(true); release!();
     await expect(page.getByRole("button", { name: "Zkontrolovat přepis" })).toBeVisible();
     await expect(page.locator(".transcription-feedback")).toContainText("Stav přepisu: běží.");
-    expect(await geometry(page)).toEqual(before);
+    // The first action changes from "Spustit přepis" to "Zkontrolovat přepis", so its own box may differ.
+    await expectStableExceptHeaderFeedback(page, before, feedbackBefore,
+      [".transcription-actions > button:first-child", ".transcription-actions > button:first-child svg", ".transcription-actions"]);
     await page.waitForLoadState("networkidle");
   }
 });
@@ -216,7 +235,7 @@ test("small semantic actions share geometry across new capture, settings, prompt
   await isolate(page);
   for (const width of [320, 1440]) for (const theme of ["dark", "light"]) {
     await page.setViewportSize({ width, height: 850 });
-    for (const [view, selector] of [["new", ".real-upload-actions button"], ["settings", ".settings-save-button"], ["trash", ".trash-bulk-toolbar button"], ["templates", ".prompt-editor-form button[type='submit']"]]) {
+    for (const [view, selector] of [["new", ".real-upload-actions button"], ["settings", ".settings-form .settings-save-button"], ["trash", ".trash-bulk-toolbar button"], ["templates", ".prompt-editor-form button[type='submit']"]]) {
       const scope = randomBytes(6).toString("hex");
       await page.goto(view === "templates" ? `/login/prompts-ai-e2e?scope=${scope}&view=templates&template=00000000-0000-4000-8000-000000000951` : `/login/workspace-shell-e2e?scope=${scope}&view=${view}`);
       await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
@@ -238,14 +257,15 @@ for (const touch of [false, true]) {
       for (const theme of ["light", "dark"]) {
         await page.locator("html").evaluate((element, value) => { element.dataset.theme = value; }, theme);
         await expect(page.locator(".recording-meta .recording-organization-badges")).toBeVisible();
-        expect(await page.locator(".recording-organization-popover").evaluate(element => Boolean(element.compareDocumentPosition(document.querySelector(".export-controls")!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
-        await expect(page.locator(".recording-organization-popover")).toHaveCount(1);
-        for (const selector of [".recording-organization-popover > summary", ".export-controls > summary", ".structured-checklist-actions > button:first-child", ".structured-checklist-actions > button:nth-child(2)", ".structured-checklist-actions .checklist-delete-control button"]) await compactAction(page, selector);
+        // Organization is edited in the "Upravit a sdílení" dialog, which sits before Export in the header actions.
+        const editTrigger = page.getByRole("button", { name: "Upravit a sdílení" });
+        expect(await editTrigger.evaluate(element => Boolean(element.compareDocumentPosition(document.querySelector(".export-controls")!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+        for (const selector of ['button:has-text("Upravit a sdílení")', ".export-controls > summary", ".structured-checklist-actions > button:first-child", ".structured-checklist-actions > button:nth-child(2)", ".structured-checklist-actions .checklist-delete-control button"]) await compactAction(page, selector);
         await expect(page.locator(".structured-ai-block > header .checklist-delete-control")).toBeVisible();
         const row = page.locator(".structured-task-row");
         expect(await row.evaluate(element => getComputedStyle(element).borderTopWidth)).toBe("0px");
-        await page.locator(".recording-organization-popover > summary").click();
-        const field = page.locator(".recording-organization-fields select").first();
+        await editTrigger.click();
+        const field = page.getByRole("dialog").locator("select").first();
         expect((await field.boundingBox())!.height).toBeGreaterThanOrEqual(touch ? 44 : 30);
         if (!touch) expect((await field.boundingBox())!.height).toBeLessThanOrEqual(32);
         await page.keyboard.press("Escape");

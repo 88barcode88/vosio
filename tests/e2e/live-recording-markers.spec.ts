@@ -636,8 +636,11 @@ test("actual persistent recorder saves two markers and opens both from timeline"
   await expect(openRecording).toHaveAttribute("data-touch-target", "action");
   const openRecordingBox = await openRecording.boundingBox();
   expect(openRecordingBox).not.toBeNull();
-  expect(openRecordingBox!.height).toBeGreaterThanOrEqual(43.5);
-  expect(openRecordingBox!.width).toBeGreaterThanOrEqual(43.5);
+  // Density policy from control-hit-targets.css: 30px on wide fine-pointer screens, 44px on touch and narrow screens.
+  const minimumHit = await page.evaluate(() => (matchMedia("(min-width: 901px) and (pointer: fine)").matches
+    && !matchMedia("(any-pointer: coarse)").matches ? 30 : 44));
+  expect(openRecordingBox!.height).toBeGreaterThanOrEqual(minimumHit - 0.5);
+  expect(openRecordingBox!.width).toBeGreaterThanOrEqual(minimumHit - 0.5);
 
   await page.waitForTimeout(1_100);
   const compactMarker = dock.getByRole("button", { name: "Označit moment" });
