@@ -118,7 +118,9 @@ describe("structured item copy actions", () => {
     await render();
     const button = await click('button[aria-label="Kopírovat text: Upravit fáze v přehledu oken."]');
     expect(writeText).toHaveBeenCalledWith("Upravit fáze v přehledu oken.");
-    expect(button.textContent).toBe("Zkopírováno");
+    expect(button.getAttribute("aria-label")).toBe("Zkopírováno");
+    expect(button.textContent).toBe("");
+    expect(button.closest(".structured-title-tail")?.textContent).toBe("oken. ");
   });
 
   it("copies the whole task with chips, evidence time and speaker", async () => {
@@ -166,7 +168,7 @@ describe("structured item copy actions", () => {
     writeText.mockRejectedValueOnce(new Error("denied"));
     await render();
     const button = await click('button[aria-label="Kopírovat text: Dropbox může brzdit práci."]');
-    expect(button.textContent).toBe("Nelze kopírovat");
+    expect(button.getAttribute("aria-label")).toBe("Nelze kopírovat");
   });
 });
 

@@ -40,7 +40,7 @@ export const whatsNewReleases: readonly WhatsNewRelease[] = [
         id: "structured-item-copy-delete",
         kind: "new",
         title: "Kopírování a mazání u úkolů, rozhodnutí i rizik",
-        summary: "Za každou větou je nenápadné „kopírovat“, které zkopíruje jen samotný text. Ikona vedle koše zkopíruje celou položku včetně štítků, dalšího kroku a citace s časem a mluvčím.",
+        summary: "Hned za každou větou je malá ikona kopírování, která zkopíruje jen samotný text. Ikona vedle koše zkopíruje celou položku včetně štítků, dalšího kroku a citace s časem a mluvčím.",
         detail: "Rozhodnutí a rizika teď mají vlastní koš stejně jako úkoly. Smazání odstraní položku i její opakované kopie ze starších AI zpracování; původní AI výstup zůstane uložený.",
         href: "/recordings"
       }

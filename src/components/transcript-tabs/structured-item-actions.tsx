@@ -37,21 +37,39 @@ function useCopyFeedback() {
   return { copy, state };
 }
 
-// InlineCopyButton is the light text-only copy action placed right after an item title.
+// InlineCopyButton is the light icon-only copy action placed right after an item title (copies the sentence only).
 export function InlineCopyButton({ label, text }: { label: string; text: string }) {
   const { copy, state } = useCopyFeedback();
+  const stateLabel = state === "copied" ? "Zkopírováno" : state === "failed" ? "Nelze kopírovat" : "Kopírovat jen text";
 
   return (
     <button
-      aria-label={`Kopírovat text: ${label}`}
+      aria-label={state === "idle" ? `Kopírovat text: ${label}` : stateLabel}
       className="structured-inline-copy"
       data-copy-state={state}
       onClick={() => void copy(text)}
-      title="Kopírovat jen text"
+      title={stateLabel}
       type="button"
     >
-      {state === "copied" ? "Zkopírováno" : state === "failed" ? "Nelze kopírovat" : "kopírovat"}
+      {state === "copied" ? <Check aria-hidden="true" size={13} /> : <Copy aria-hidden="true" size={13} />}
     </button>
+  );
+}
+
+// CopyableTitle renders an item title whose last word stays glued to the inline copy icon, so the icon never wraps alone.
+export function CopyableTitle({ text }: { text: string }) {
+  const trimmed = text.trim();
+  const splitAt = trimmed.lastIndexOf(" ");
+  const head = splitAt === -1 ? "" : trimmed.slice(0, splitAt + 1);
+  const tail = splitAt === -1 ? trimmed : trimmed.slice(splitAt + 1);
+
+  return (
+    <strong className="structured-copyable-title">
+      {head}
+      <span className="structured-title-tail">
+        {tail}{" "}<InlineCopyButton label={trimmed} text={trimmed} />
+      </span>
+    </strong>
   );
 }
 

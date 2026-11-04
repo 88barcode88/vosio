@@ -20,7 +20,7 @@ import {
 } from "@/components/transcript-tabs/export-utils";
 import {
   getEvidenceLocation,
-  InlineCopyButton,
+  CopyableTitle,
   StructuredItemActions,
   useStructuredItemGroupDelete,
   type EvidenceSpeakerResolver
@@ -308,7 +308,7 @@ function StructuredTaskRowView({
         {isDone ? <CheckCircle2 size={15} /> : <Circle size={15} />}
       </button>
       <div className="structured-task-copy">
-        <strong>{task.title} <InlineCopyButton label={task.title} text={task.title} /></strong>
+        <CopyableTitle text={task.title} />
         {meta.length > 0 ? (
           <div className="structured-task-meta">
             {meta.map((item) => (
@@ -445,7 +445,7 @@ function StructuredDecisionRowView({
     <li data-decision-status={getDecisionState(decision)} hidden={isDeleted}>
       {getDecisionIcon(decision)}
       <span>
-        <strong>{decision.title} <InlineCopyButton label={decision.title} text={decision.title} /></strong>
+        <CopyableTitle text={decision.title} />
         <small>{label}</small>
         <StructuredEvidence
           evidenceEndMs={decision.evidence_end_ms}
@@ -572,7 +572,7 @@ function StructuredRiskRowView({
     <li data-risk-row="true" hidden={isDeleted}>
       <TriangleAlert size={13} />
       <span>
-        <strong>{risk.title} <InlineCopyButton label={risk.title} text={risk.title} /></strong>
+        <CopyableTitle text={risk.title} />
         {impact ? <small>{impact}</small> : null}
         {mitigation ? <em>{mitigation}</em> : null}
         <StructuredEvidence
