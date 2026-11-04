@@ -27,9 +27,6 @@ export default async function TrashPage({
   }
 
   const deletedRecordings = await listDeletedRecordings(supabase);
-  // Server time is an explicit authorization-adjacent display input; the mutation enforces the same fence again.
-  // eslint-disable-next-line react-hooks/purity
-  const trashNowMs = Date.now();
 
   return (
     <VosioWorkspace
@@ -39,7 +36,6 @@ export default async function TrashPage({
       recordings={[]}
       transcripts={[]}
       trashActionAlert={canonical.actionAlert}
-      trashNowMs={trashNowMs}
       userEmail={user.email ?? "uzivatel@vosio.local"}
       view="trash"
     />

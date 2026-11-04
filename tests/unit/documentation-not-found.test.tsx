@@ -44,7 +44,7 @@ describe("documentation and not found surfaces", () => {
     expect(markup).toContain("Když jsou všechny vypnuté, AI se samo nespustí");
     expect(markup).toContain("Starší přepisy se zpětně nezpracovávají");
     expect(markup).toContain("24 hodin, 7 dní nebo 30 dní");
-    expect(markup).toContain("Ruční trvalé smazání je dostupné po 24 hodinách");
+    expect(markup).toContain("Ruční trvalé smazání je dostupné ihned po přesunu do Koše");
     expect(markup).toContain("není nasazen ani aktivní");
   });
 

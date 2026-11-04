@@ -68,7 +68,7 @@ describe("trash recording actions", () => {
     const safeRow = { ...createDeletedRecording(1), audioAvailability: undefined };
     const rpc = vi.fn(async (name: string) => ({ data: name === "list_accessible_recordings_v1" ? [safeRow] : name === "get_managed_recording_trash_v2" ? [{ recording_id: safeRow.id, deleted_at: safeRow.deleted_at, trash_retention_hours: 720, purge_after: safeRow.purge_after, purge_phase: "none", audio_availability: availability }] : safeRow.capabilities, error: null }));
     const rows = await listDeletedRecordings({ rpc } as never);
-    await act(async () => root.render(<TrashRecordingsManager recordings={rows.map(toRecordingClientView)} nowMs={Date.parse("2026-08-13T10:00:00Z")} />));
+    await act(async () => root.render(<TrashRecordingsManager recordings={rows.map(toRecordingClientView)} />));
     expect(container.textContent).toContain(label);
     expect(rows[0]).not.toHaveProperty("storage_path");
     expect(rows[0]?.audioAvailability).toBe(availability);
@@ -81,7 +81,7 @@ describe("trash recording actions", () => {
     });
     await act(async () => root.render(
       <TrashRecordingsManager
-        nowMs={Date.parse("2026-08-13T10:00:00.000Z")}
+       
         recordings={recordings}
         restoreBulkAction={restoreBulkAction}
       />
@@ -129,7 +129,7 @@ describe("trash recording actions", () => {
     });
     await act(async () => root.render(
       <TrashRecordingsManager
-        nowMs={Date.parse("2026-08-13T10:00:00.000Z")}
+       
         purgeAction={vi.fn()}
         purgeItemAction={vi.fn()}
         recordings={recordings}
@@ -178,7 +178,7 @@ describe("trash recording actions", () => {
     });
     await act(async () => root.render(
       <TrashRecordingsManager
-        nowMs={Date.parse("2026-08-13T10:00:00.000Z")}
+       
         purgeAction={vi.fn()}
         purgeItemAction={purgeItemAction}
         recordings={recordings}
@@ -229,13 +229,13 @@ describe("trash recording actions", () => {
     expect(container.textContent).not.toContain("private provider failure");
   });
 
-  it("disables bulk purge while any selected row is newer than twenty-four hours", async () => {
+  it("enables bulk and row purge immediately after a recording moves to Trash", async () => {
     const recording = {
       ...createDeletedRecording(1),
-      deleted_at: "2026-08-13T02:00:00.000Z"
+      deleted_at: new Date().toISOString()
     };
     await act(async () => root.render(
-      <TrashRecordingsManager nowMs={Date.parse("2026-08-13T10:00:00.000Z")} recordings={[recording]} />
+      <TrashRecordingsManager recordings={[recording]} />
     ));
     await act(async () => {
       container.querySelector<HTMLInputElement>(`input[aria-label="Vybrat ${recording.title}"]`)?.click();
@@ -243,23 +243,24 @@ describe("trash recording actions", () => {
 
     const purge = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent === "Smazat vybrané trvale (1)");
-    expect(purge?.disabled).toBe(true);
-    expect(container.textContent).toContain("Trvalé smazání je dostupné 24 hodin po přesunutí do Koše");
+    expect(purge?.disabled).toBe(false);
+    expect(container.querySelector(`[data-recording-id="${recording.id}"] button[aria-label="Smazat trvale"]`)).not.toBeNull();
+    expect(container.textContent).not.toContain("24 hodin po přesunutí");
   });
 
-  it("shows the immutable automatic deadline without changing the manual 24-hour rule", async () => {
+  it("shows the immutable automatic deadline per Trash row", async () => {
     const recording = {
       ...createDeletedRecording(1),
       purge_after: "2026-08-17T10:00:00.000Z",
       trash_retention_hours: 168 as const
     };
     await act(async () => root.render(
-      <TrashRecordingsManager nowMs={Date.parse("2026-08-12T10:00:00.000Z")} recordings={[recording]} />
+      <TrashRecordingsManager recordings={[recording]} />
     ));
 
     expect(container.textContent).toContain("Automatické smazání 17. 8. 2026 12:00");
     expect(container.textContent).toContain("7 dní");
-    expect(container.textContent).toContain("Trvalé smazání je dostupné 24 hodin po přesunutí do Koše");
+    expect(container.textContent).toContain("Automatický termín je uveden u každé položky.");
   });
 
   it("uses a safe deadline fallback for pre-migration Trash rows", async () => {
@@ -269,7 +270,7 @@ describe("trash recording actions", () => {
       trash_retention_hours: null
     };
     await act(async () => root.render(
-      <TrashRecordingsManager nowMs={Date.parse("2026-08-12T10:00:00.000Z")} recordings={[recording]} />
+      <TrashRecordingsManager recordings={[recording]} />
     ));
 
     expect(container.textContent).toContain("Automatické smazání zatím nemá termín");

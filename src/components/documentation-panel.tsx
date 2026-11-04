@@ -131,7 +131,7 @@ const documentationSections: DocumentationSection[] = [
     body: [
       "Smazání nahrávky z hlavního seznamu je soft-delete. Položka zmizí z Nahrávek a objeví se v Koši, kde ji lze ještě zkontrolovat.",
       "Více nahrávek najednou přesunete zaškrtnutím v seznamu a tlačítkem Do koše v liště výběru (nejvýše 100). Nahrávky, které smazat nesmíte, zůstanou vybrané; ty, které se nepodaří přesunout, také zůstanou vybrané a můžete to zkusit znovu.",
-      "Ruční trvalé smazání je dostupné po 24 hodinách od přesunu do Koše, bez ohledu na zvolený automatický termín. Automatický termín se při přesunu uloží ke konkrétní nahrávce a ukáže se u ní v Koši.",
+      "Ruční trvalé smazání je dostupné ihned po přesunu do Koše, bez ohledu na zvolený automatický termín. Automatický termín se při přesunu uloží ke konkrétní nahrávce a ukáže se u ní v Koši.",
       "Automatické čištění je v repozitáři zatím pouze připravený zdrojový postup: není nasazen ani aktivní.",
       "Trvalé smazání maže databázový řádek i související storage objekt, přepisy, joby a AI výstupy. Proto je tato akce oddělená od běžného smazání."
     ],

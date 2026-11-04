@@ -9,7 +9,6 @@ const trashErrorMessages = {
   purge_in_progress: "Trvalé mazání už probíhá. Zkuste to znovu později.",
   purge_not_found: "Smazaná nahrávka už není dostupná.",
   purge_storage_failed: "Audio soubor se nepodařilo odstranit. Nahrávka zůstala v Koši.",
-  purge_too_recent: "Nahrávku lze trvale smazat až 24 hodin po přesunu do Koše.",
   restore_failed: "Nahrávku se nepodařilo obnovit. Zkuste to znovu.",
   restore_not_found: "Smazaná nahrávka už není dostupná."
 } as const;

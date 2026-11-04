@@ -43,6 +43,14 @@ export const whatsNewReleases: readonly WhatsNewRelease[] = [
         summary: "Hned za každou větou je malá ikona kopírování, která zkopíruje jen samotný text. Ikona vedle koše zkopíruje celou položku včetně štítků, dalšího kroku a citace s časem a mluvčím.",
         detail: "Rozhodnutí a rizika teď mají vlastní koš stejně jako úkoly. Smazání odstraní položku i její opakované kopie ze starších AI zpracování; původní AI výstup zůstane uložený.",
         href: "/recordings"
+      },
+      {
+        id: "trash-immediate-purge",
+        kind: "improved",
+        title: "Trvalé smazání z Koše hned",
+        summary: "Nahrávku v Koši můžete trvale smazat ihned po přesunu, už nemusíte čekat 24 hodin.",
+        detail: "Automatické smazání podle zvoleného termínu (24 hodin, 7 dní nebo 30 dní) funguje dál beze změny.",
+        href: "/trash"
       }
     ]
   },
