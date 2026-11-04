@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Share2 } from "lucide-react";
 import { CompactPopover } from "@/components/ui/compact-popover";
 import { useRecordingSharingSelection } from "./recording-sharing-selection";
+import { BulkRecordingTrash } from "./bulk-recording-trash";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 import { bulkShareRecordings, bulkSharingSchema, type BulkSharingAttempt } from "@/lib/recording-sharing/bulk";
@@ -36,7 +37,12 @@ function SharingSelection({ recordings, detail, embedded = false, disabled = fal
   const router = useRouter();
   const selection = useRecordingSharingSelection();
   const [localIds, setLocalIds] = useState<string[]>(detail && recordings[0] ? [recordings[0].id] : []);
-  const ids = !detail && selection ? selection.ids : localIds;
+  // The list selection may also hold rows that can only go to Trash; sharing uses just its own eligible rows.
+  const shareableIds = useMemo(() => new Set(recordings.map((row) => row.id)), [recordings]);
+  const allSelectedIds = !detail && selection ? selection.ids : localIds;
+  const ids = !detail && selection ? selection.ids.filter((id) => shareableIds.has(id)) : localIds;
+  const trashIds = !detail && selection ? selection.ids.filter((id) => selection.trashable.includes(id)) : [];
+  const [trashMessage, setTrashMessage] = useState<{ tone: "status" | "alert"; text: string } | null>(null);
   const setIds = !detail && selection ? selection.setIds : setLocalIds;
   const [visibility, setVisibility] = useState<"private" | "project" | "selected">(detail ? recordings[0]?.visibility ?? "private" : "selected");
   const [members, setMembers] = useState<{ userId: string; email: string; role: "reader" | "editor" }[]>([]);
@@ -189,9 +195,13 @@ function SharingSelection({ recordings, detail, embedded = false, disabled = fal
     {message ? <p role="status">{message}</p> : null}
   </div>;
   if (detail) return eligible.length || retryPending ? <details className="bulk-recording-sharing" onToggle={(event) => { if (event.currentTarget.open && !retryPending) void loadRecipients(ids); }}><summary>Změnit viditelnost nahrávky</summary>{form}</details> : null;
-  return <>{message && ids.length === 0 && !retryPending ? <p className="recording-sharing-result" role="status">{message}</p> : null}<div className="recording-selection-toolbar" hidden={ids.length === 0 && !retryPending}>
-    <span>Vybráno {selectionCount}</span>
-    <CompactPopover label="Sdílet vybrané nahrávky" open={sharingOpen} onOpenChange={setSharingOpen} busy={busy} trigger={<><Share2 aria-hidden="true" size={15} />Sdílet</>}>{form}</CompactPopover>
-    <button type="button" disabled={busy || retryPending} onClick={() => setIds([])}>Zrušit výběr</button>
+  return <>{message && allSelectedIds.length === 0 && !retryPending ? <p className="recording-sharing-result" role="status">{message}</p> : null}
+  {trashMessage ? <p className="recording-sharing-result" role={trashMessage.tone}>{trashMessage.text}</p> : null}
+  <div className="recording-selection-toolbar" hidden={allSelectedIds.length === 0 && !retryPending}>
+    <span>Vybráno {retryPending ? attemptCount : allSelectedIds.length}</span>
+    {ids.length > 0 || retryPending ? <CompactPopover label="Sdílet vybrané nahrávky" open={sharingOpen} onOpenChange={setSharingOpen} busy={busy} trigger={<><Share2 aria-hidden="true" size={15} />Sdílet</>}>{form}</CompactPopover> : null}
+    {!retryPending ? <BulkRecordingTrash ids={trashIds} skippedCount={allSelectedIds.length - trashIds.length} disabled={busy}
+      onMessage={setTrashMessage} onSettled={(remaining) => setIds([...remaining, ...allSelectedIds.filter((id) => !trashIds.includes(id))])} /> : null}
+    <button type="button" disabled={busy || retryPending} onClick={() => { setIds([]); setTrashMessage(null); }}>Zrušit výběr</button>
   </div></>;
 }

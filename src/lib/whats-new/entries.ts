@@ -96,6 +96,19 @@ export const whatsNewReleases: readonly WhatsNewRelease[] = [
         summary: "Jména a role mluvčích jsou zarovnané s poli, časová osa má víc místa u časů a mluvčích, tlačítka u uložených AI výstupů jsou pohromadě a načítání se ukáže na jednom řádku."
       },
       {
+        id: "bulk-trash",
+        kind: "new",
+        title: "Více nahrávek najednou do Koše",
+        summary: "Zaškrtněte nahrávky v seznamu a v liště výběru klikněte na Do koše. Přesunout jde i nahrávky, které jsou už sdílené.",
+        href: "/recordings"
+      },
+      {
+        id: "detail-header-two-lines",
+        kind: "improved",
+        title: "Klidnější hlavička detailu nahrávky",
+        summary: "Název je na vlastním řádku a datum, délka, velikost a zdroj hned pod ním, takže tlačítka akcí zůstanou vedle a hlavička neposkakuje."
+      },
+      {
         id: "detail-actions-stay-put",
         kind: "fixed",
         title: "Tlačítka v detailu nahrávky už neuskočí",
