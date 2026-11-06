@@ -11,8 +11,8 @@ MCP bridge (viz [MCP a plugin](mcp-plugin.md)). Kód: `src/lib/mcp/capture.serve
 - Všechny endpointy jsou `POST`, `Content-Type: application/json`, `Authorization: Bearer <access>`.
 - Token musí mít přesně scope `{vosio:capture}`. `vosio:read`/`vosio:write` (i smíšená sada) dostane
   403 `insufficient_scope`; capture token naopak nepřijmou MCP ani audio (403 `insufficient_scope`).
-- `Origin` musí být přesně `chrome-extension://<id>`, kde `<id>` je host návratové adresy grantu
-  (`https://<id>.chromiumapp.org/…`, `grants.redirect_uri`). Jinak 403 `origin_mismatch`. Token se neposílá
+- `Origin` musí být přesně `chrome-extension://<id>` nebo `extension://<id>` (Edge může posílat toto schéma), kde `<id>` je host návratové adresy grantu
+  (`https://<id>.chromiumapp.org/…`, `grants.redirect_uri`). Jakékoli jiné schéma, ID nebo přípona (např. lomítko) → 403 `origin_mismatch`. Token se neposílá
   automaticky, CSRF tedy nehrozí; Origin chrání jen před použitím tokenu jiným rozšířením/stránkou
   v prohlížeči (mimo prohlížeč jde podvrhnout – tam platí 5minutový access token a úzký scope).
   Capture grant bez návratové adresy se odmítá.
@@ -28,7 +28,8 @@ MCP bridge (viz [MCP a plugin](mcp-plugin.md)). Kód: `src/lib/mcp/capture.serve
 | 400 | `invalid_request` | Neplatné tělo/hlavička, změněný název při stejném `requestId` |
 | 401 | `unauthorized` | Neplatný/odvolaný/prošlý token (`WWW-Authenticate`); rozšíření zkusí jednou refresh |
 | 403 | `insufficient_scope` / `origin_mismatch` | Špatný scope, nebo Origin neodpovídá grantu |
-| 404 | `not_found` | Neexistující i cizí nahrávka (stejná odpověď), jiné rozšíření, neznámá cesta |
+| 404 | `not_found` | Neexistující i cizí nahrávka (stejná odpověď), jiné rozšíření, neznámá cesta. Rozšíření bere trvale jen 404 s touto obálkou; holé 404 bez obálky (starší Function bez `/capture/*` po rollbacku) je pro něj opakovatelné |
+| 503 | `unavailable` | Dočasná nedostupnost; stejnou obálku vrací Function i na `/capture*`, když není načtena konfigurace mostu (ostatní cesty, např. discovery, zůstávají holé 404) |
 | 405 | `invalid_request` | Jiná metoda než POST (`Allow: POST`) |
 | 409 | `revision_conflict` | Stará revize, nebo nahrávku už uzavřel web (rozšíření si načte `/status`) |
 | 409 | `incomplete_parts` | Zaregistrovaná část chybí nebo nesedí velikost/MIME, nebo počet zaregistrovaných částí ≠ `partCount` – klient pošle znovu **celý** souvislý seznam částí od indexu 0 přes `/parts` (existující se vrátí jako `exists`, chybějící dostanou nové `uploadUrl`) a pak zopakuje `/complete` |
@@ -83,8 +84,8 @@ Všechny `{id}` jsou UUID nahrávky; každý `/recordings/{id}/*` ověří vazbu
   rozšíření bere `uploaded|transcribing|completed` jako „upload hotov“. `transcriptionState` ∈
   `queued|running|completed|failed|manual_required|null`. Nikdy nevrací obsah přepisu.
 - Nahrávka, kterou už uzavřel web (ruční obnova), vrací u `parts`/`complete` 409 `revision_conflict`; rozšíření si
-  načte `/status` a skončí. Rozpracovaný extension upload se 7 dní nenabízí v obnově ve webu (migrace
-  `20261106120000`).
+  načte `/status` a skončí. Rozpracovaný extension upload se 7 dní od založení vazby nenabízí v obnově ve webu (migrace
+  `20261106120000`). Upload, který uživatel v rozšíření zahodí, se do webové obnovy vrátí až po těchto 7 dnech od založení vazby – server o zahození neví (žádný „abandon“ endpoint).
 
 ## Konfigurace a runbook
 

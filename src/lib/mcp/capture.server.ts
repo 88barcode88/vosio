@@ -281,6 +281,11 @@ async function recordingStatus(ctx: Context, recordingId: string, request: Reque
   return Response.json({ recordingId, status: state.status, captureRevision: state.captureRevision, transcriptionState, detailUrl: detailUrl(ctx, recordingId) });
 }
 
+// True only for the grant's own extension origin: Chrome sends chrome-extension://<id>, Edge may send extension://<id>; nothing else is accepted.
+function isExtensionOrigin(origin: string | null, extensionId: string): boolean {
+  return origin === `chrome-extension://${extensionId}` || origin === `extension://${extensionId}`;
+}
+
 // Handle one /capture/* request: authenticate exactly a {capture} grant, bind to the extension origin, then dispatch the fixed endpoint.
 export async function handleCaptureRequest(request: Request, path: string, resolved: McpConfig, env: Environment = process.env): Promise<Response> {
   try {
@@ -294,7 +299,7 @@ export async function handleCaptureRequest(request: Request, path: string, resol
     });
     const extensionId = extensionIdFromRedirect(identity.redirectUri);
     if (identity.scopes.length !== 1 || identity.scopes[0] !== MCP_SCOPE_CAPTURE || !extensionId) throw new CaptureFailure(403, "insufficient_scope");
-    if (request.headers.get("origin") !== `chrome-extension://${extensionId}`) throw new CaptureFailure(403, "origin_mismatch");
+    if (!isExtensionOrigin(request.headers.get("origin"), extensionId)) throw new CaptureFailure(403, "origin_mismatch");
     const rate = userLimit(identity.userId);
     if (!rate.allowed) throw new CaptureFailure(429, "rate_limited", { "Retry-After": String(rate.retryAfterSeconds) });
     const ctx: Context = { identity, extensionId, config: resolved, env };

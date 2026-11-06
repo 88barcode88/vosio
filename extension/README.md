@@ -91,7 +91,8 @@ Zapsat verze Chrome a Edge a výsledky (bez obsahu nahrávek). Dokud není prove
 ## Odchylky od návrhu (D6/D8)
 
 - Oprávnění `alarms` je v manifestu (potřebuje ho `chrome.alarms`), `commands` v `permissions` není (je to klíč manifestu) – shodně s aktualizovaným D6.
-- `scopes_supported` serveru zůstává `[vosio:read, vosio:write]` (D1). Klient proto `vosio:capture` v discovery nekontroluje; nepodporovanou instalaci pozná podle `invalid_scope` při DCR/authorize nebo 404 z `/capture/config` (stejná česká hláška „Aktualizujte Vosio“) a spárování vrátí zpět.
+- `scopes_supported` serveru zůstává `[vosio:read, vosio:write]` (D1). Klient proto `vosio:capture` v discovery nekontroluje; nepodporovanou instalaci pozná podle `invalid_scope` (nebo `invalid_request` u starších serverů, které neznámý scope normalizují) při DCR, `invalid_scope` při authorize nebo 404 z `/capture/config` (stejná česká hláška „Aktualizujte Vosio“) a spárování vrátí zpět. 404 bez obálky `{error:{code}}` při samotném nahrávání (konfigurace mostu nenačtena, starší Function po rollbacku) je opakovatelné (backoff), trvalé je jen 404 s obálkou `not_found`.
+- Upload zahozený v rozšíření se do webové obnovy vrací až po 7 dnech od založení vazby; server se o zahození nedozví.
 - `/complete` s `transcription.state: "not_started"` je úspěch (audio uloženo, lokální data se smažou); klient zkusí `/complete` se stejným `requestId` ještě nejvýše 3× při dalších během fronty (záznam o tom přežije smazání audia).
 - Při 409 `incomplete_parts` klient znovu pošle do `/parts` **celý souvislý seznam částí od indexu 0**; existující části přijdou jako `exists`, chybějící dostanou nové `uploadUrl`. Odmítnutý podpis (PUT 400/401/403) vyvolá jednu re-registraci, pak nahrávka selže.
 - Adresy ze serveru se ověřují: `uploadUrl` musí být HTTPS na originu spárovaného serveru (resource), `detailUrl` HTTPS na `webOrigin` z configu, jinak chyba / odkaz se neotevře.

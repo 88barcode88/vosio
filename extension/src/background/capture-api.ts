@@ -10,17 +10,20 @@ import { disconnect, getAccessToken, markNeedsPairing, NeedsPairingError, Pairin
 export class CaptureApiError extends Error {
   readonly status: number;
   readonly code: string;
+  // False for an HTTP error whose body lacks the D8 `{error:{code}}` envelope (bare gateway/Function response, e.g. a 404 during a rollback).
+  readonly enveloped: boolean;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, enveloped = true) {
     super(message);
     this.name = "CaptureApiError";
     this.status = status;
     this.code = code;
+    this.enveloped = enveloped;
   }
 
-  // True for failures worth retrying later (network, rate limit, server trouble).
+  // True for failures worth retrying later (network, rate limit, server trouble, or a 404 without the D8 error envelope); an enveloped not_found stays permanent.
   get retryable(): boolean {
-    return this.status === 0 || this.status === 429 || this.status >= 500;
+    return this.status === 0 || this.status === 429 || this.status >= 500 || (this.status === 404 && !this.enveloped);
   }
 }
 
@@ -53,7 +56,8 @@ export async function capturePost<T>(path: string, body: unknown): Promise<T> {
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const error = isRecord(payload) ? payload.error : null;
-      throw new CaptureApiError(response.status, stringField(error, "code") ?? "http_error", stringField(error, "message") ?? `Server vrátil chybu ${response.status}.`);
+      const code = stringField(error, "code");
+      throw new CaptureApiError(response.status, code ?? "http_error", stringField(error, "message") ?? `Server vrátil chybu ${response.status}.`, code !== null);
     }
     return payload as T;
   }

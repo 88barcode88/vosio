@@ -37,6 +37,16 @@ describe("Supabase MCP HTTP dispatch", () => {
     mocks.load.mockResolvedValue(null);
     expect((await handleMcpEdge(new Request("http://internal/vosio-mcp/oauth/register", { method: "POST" }))).status).toBe(404);
   });
+  it("answers capture paths with a retryable 503 envelope (never a bare 404) while the bridge config is unavailable, but keeps 404 for discovery", async () => {
+    mocks.load.mockResolvedValue(null);
+    for (const path of ["/vosio-mcp/capture/config", "/functions/v1/vosio-mcp/capture/recordings/x/status", "/vosio-mcp/capture"]) {
+      const response = await handleMcpEdge(new Request(`http://internal${path}`, { method: "POST" }));
+      expect(response.status).toBe(503); expect(await response.json()).toMatchObject({ error: { code: "unavailable" } });
+    }
+    for (const path of ["/vosio-mcp/metadata", "/vosio-mcp/resource-metadata", "/vosio-mcp/capturex", "/other/capture/config"]) {
+      expect((await handleMcpEdge(new Request(`http://internal${path}`))).status).toBe(404);
+    }
+  });
   it("serves the same eleven tools through the real SDK behind a stripped gateway path", async () => {
     const response = await handleMcpEdge(new Request("http://internal/vosio-mcp", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) }));
     expect(response.status).toBe(200); expect((await response.json()).result.tools).toHaveLength(11);

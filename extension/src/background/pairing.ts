@@ -36,6 +36,7 @@ export class NeedsPairingError extends Error {
 
 // Message for installations whose server does not know the capture scope/endpoints yet (detected by DCR, authorize or /capture/config).
 export const UNSUPPORTED_MESSAGE = "Tato verze Vosia ještě nepodporuje rozšíření prohlížeče. Aktualizujte Vosio.";
+const UNSUPPORTED_REGISTRATION_MESSAGE = "Vosio pravděpodobně nepodporuje rozšíření prohlížeče – aktualizujte ho, nebo ověřte, že je zapnuté připojení MCP/OAuth.";
 
 // Czech status line for the pairing state shown in popup and options.
 export function describeStatus(status: PairingStatus, state?: Pick<PairingState, "webOrigin" | "email">): string {
@@ -163,6 +164,8 @@ async function registerClient(discovery: Discovery, redirectUri: string): Promis
   if (registrationError === "invalid_scope" || (registrationError === "invalid_client_metadata" && /scope/i.test(stringField(body, "error_description") ?? ""))) {
     throw new PairingError("unsupported", UNSUPPORTED_MESSAGE);
   }
+  // An older Vosio server answers the unknown scope vosio:capture with plain invalid_request (its DCR normalizer), so we cannot tell it from other bad input.
+  if (registrationError === "invalid_request") throw new PairingError("unsupported", UNSUPPORTED_REGISTRATION_MESSAGE);
   if (!response.ok || !clientId) throw new PairingError("auth_error", "Vosio odmítlo registraci rozšíření. Zkontrolujte, že je připojení MCP/OAuth zapnuté.");
   return clientId;
 }

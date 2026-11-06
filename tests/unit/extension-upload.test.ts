@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { backoffMs, discardSession, kickQueue, processQueue, uploadHooks } from "../../extension/src/background/upload.ts";
 import { recoverOrphans } from "../../extension/src/background/sessions.ts";
 import { setStore } from "../../extension/src/db/store.ts";
-import { readHistory, readPairing, writePairing } from "../../extension/src/shared/storage.ts";
+import { readHistory, readPairing, readTranscriptionRetries, writePairing, writeTranscriptionRetries } from "../../extension/src/shared/storage.ts";
 import type { HistoryEntry, StoredSession } from "../../extension/src/shared/types.ts";
 import { createMemoryStore, installChrome, installFakeVosio, pairFully, useFastTiming, type ChromeStub, type FakeVosio } from "./extension-test-utils";
 
@@ -237,6 +237,33 @@ describe("upload queue: failures and retries", () => {
     await discardSession("local-1");
     expect(store.sessions.size).toBe(0);
     expect(store.chunks).toHaveLength(0);
+  });
+
+  it("treats a bare 404 (no D8 envelope: config unavailable, rolled-back Function) as retryable, while an enveloped not_found stays permanent", async () => {
+    await makeSession();
+    once("/parts", () => new Response(null, { status: 404 }));
+    await processQueue();
+    expect(await store.getSession("local-1")).toMatchObject({ status: "queued", attempts: 1 });
+    expect(store.chunks).toHaveLength(3);
+    server.intercept = null;
+    await kickQueue();
+    expect(store.sessions.size).toBe(0);
+    expect(done).toHaveLength(1);
+
+    await makeSession();
+    once("/parts", () => jsonError(404, "not_found"));
+    await processQueue();
+    expect(await store.getSession("local-1")).toMatchObject({ status: "failed" });
+  });
+
+  it("keeps a scheduled transcription-start retry across a bare 404 and drops it after an enveloped not_found", async () => {
+    await writeTranscriptionRetries([{ recordingId: "rec-1", requestId: "22222222-2222-4222-8222-222222222222", captureRevision: 1, durationSeconds: 60, partCount: 1, attempts: 0 }]);
+    server.intercept = (route) => (route.endsWith("/complete") ? new Response(null, { status: 404 }) : undefined);
+    await processQueue();
+    expect(await readTranscriptionRetries()).toMatchObject([{ attempts: 1 }]);
+    server.intercept = (route) => (route.endsWith("/complete") ? jsonError(404, "not_found") : undefined);
+    await processQueue();
+    expect(await readTranscriptionRetries()).toHaveLength(0);
   });
 
   it("fails permanently on part_too_large and on a recording that belongs to another account", async () => {

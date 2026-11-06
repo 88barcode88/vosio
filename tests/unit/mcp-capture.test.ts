@@ -154,7 +154,10 @@ describe("capture config", () => {
 });
 
 describe("capture authentication", () => {
-  it.each([["web page", webOrigin], ["other extension", `chrome-extension://${otherExtension}`], ["missing", ""]])("rejects a foreign Origin (%s) without touching anything", async (_name, origin) => {
+  it.each([["Chrome", `chrome-extension://${extension}`], ["Edge", `extension://${extension}`]])("accepts the grant's own extension Origin (%s)", async (_name, origin) => {
+    expect((await call("/config", {}, { Origin: origin })).response.status).toBe(200);
+  });
+  it.each([["web page", webOrigin], ["other extension", `chrome-extension://${otherExtension}`], ["other extension (Edge scheme)", `extension://${otherExtension}`], ["other scheme", `moz-extension://${extension}`], ["extra path", `chrome-extension://${extension}/`], ["missing", ""]])("rejects a foreign Origin (%s) without touching anything", async (_name, origin) => {
     const { response, json } = await call("/recordings", { requestId: nextUuid(), title: "x", startedAt: "2026-11-06T13:00:00Z" }, { Origin: origin });
     expect(response.status).toBe(403); expect(json).toMatchObject({ error: { code: "origin_mismatch" } }); expect(sim.recordings.size).toBe(0);
   });

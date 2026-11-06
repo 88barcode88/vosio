@@ -8,6 +8,9 @@ import { handleMcpProtocol } from "./protocol.server";
 import { browserIdentity, handleMcpOAuth, readBrowserPending, upstreamConsentDetails } from "./oauth.server";
 import { readAuthorizedAudioChunk } from "./audio.server";
 
+// Matches /capture and /capture/* under either Function prefix (gateway-stripped or direct).
+const CAPTURE_PATH = /^(?:\/functions\/v1)?\/vosio-mcp\/capture(?:\/|$)/;
+
 // Advertise only public discovery information; custody and runtime secrets stay in the Function.
 export function mcpMetadata(config: McpConfig) {
   const base = `${config.origin}/api/mcp/oauth`;
@@ -48,7 +51,8 @@ async function browserView(config: McpConfig, url: URL) {
 // Dispatch a single Function using canonical configured URLs, never forwarded host headers.
 export async function handleMcpEdge(request: Request) {
   const config = await loadMcpConfig();
-  if (!config) return new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
+  // Capture clients get a retryable D8 envelope while the bridge config is unavailable; every other path (discovery, OAuth) keeps the bare 404.
+  if (!config) return CAPTURE_PATH.test(new URL(request.url).pathname) ? Response.json({ error: { code: "unavailable", message: "Služba je dočasně nedostupná. Zkuste to znovu." } }, { status: 503, headers: { "Cache-Control": "no-store" } }) : new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
   const incoming = new URL(request.url);
   // Supabase gateways strip /functions/v1; direct local runtime tests may retain it.
   const prefix = ["/functions/v1/vosio-mcp", "/vosio-mcp"].find((path) => incoming.pathname === path || incoming.pathname.startsWith(`${path}/`));

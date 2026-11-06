@@ -94,6 +94,12 @@ describe("extension pairing: discovery and permission errors", () => {
     expect((await readPairing()).status).toBe("unpaired");
   });
 
+  it("detects an older server that answers DCR with the unknown vosio:capture scope as invalid_request", async () => {
+    server.intercept = (route) => (route.endsWith("/oauth/register") ? new Response(JSON.stringify({ error: "invalid_request" }), { status: 400 }) : undefined);
+    await expect(pairWithServer(await discover(WEB))).rejects.toMatchObject({ code: "unsupported", message: expect.stringContaining("pravděpodobně nepodporuje rozšíření prohlížeče") });
+    expect((await readPairing()).status).toBe("unpaired");
+  });
+
   it("detects an installation without capture support via authorize invalid_scope", async () => {
     chromeStub.identity.launchWebAuthFlow.mockImplementation(async ({ url }: { url: string }) => `${new URL(url).searchParams.get("redirect_uri")}?error=invalid_scope`);
     await expect(pairWithServer(await discover(WEB))).rejects.toMatchObject({ code: "unsupported" });
