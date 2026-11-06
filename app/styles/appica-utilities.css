@@ -797,6 +797,48 @@ section[data-utility-surface="documentation"] {
   gap: 14px;
 }
 
+/* Connected apps and extensions: one bordered row per connection, actions wrap under the text on narrow panels. */
+[data-utility-surface="settings"] .settings-connections-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-utility-surface="settings"] .settings-connection-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 11px 12px;
+}
+
+[data-utility-surface="settings"] .settings-connection-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+[data-utility-surface="settings"] .settings-connection-info span {
+  color: var(--text-secondary);
+}
+
+[data-utility-surface="settings"] .settings-connection-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+}
+
 [data-utility-surface="settings"] .settings-usage-summary dl,
 [data-utility-surface="settings"] .settings-technical-list {
   display: grid;

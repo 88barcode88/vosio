@@ -34,7 +34,7 @@
 
 ## 4. Nastavení Vosia a uživatelská dokumentace
 
-- [ ] 4.1 Sekce „Připojené aplikace a rozšíření“ v `src/components/settings-panel.tsx` (D7): seznam, typ, datum, Odpojit s potvrzením, prázdný stav s odkazem na návod; sdílet formátování s `app/mcp/connections`. Testy `tests/unit/settings-panel-layout.test.ts` + nový test sekce (prázdný, naplněný, chyba odvolání). Ověřit cílené testy.
+- [x] 4.1 Sekce „Připojené aplikace a rozšíření“ v `src/components/settings-panel.tsx` (D7): seznam, typ, datum, Odpojit s potvrzením, prázdný stav s odkazem na návod; sdílet formátování s `app/mcp/connections`. Testy `tests/unit/settings-panel-layout.test.ts` + nový test sekce (prázdný, naplněný, chyba odvolání). Ověřit cílené testy.
 - [ ] 4.2 `src/components/documentation-panel.tsx` (instalace rozšíření, párování, režimy, informování účastníků, odpojení) a `src/lib/whats-new/entries.ts` (text pro uživatele, ne IT). Ověřit `npm.cmd run test -- tests/unit/whats-new*.test.ts` a vizuální kontrolu v `npm.cmd run dev`.
 
 ## 5. Rozšíření prohlížeče (`extension/`)
