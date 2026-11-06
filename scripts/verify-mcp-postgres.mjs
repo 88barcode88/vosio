@@ -14,6 +14,7 @@ const source = readFileSync(migration, "utf8").replaceAll("\r\n", "\n");
 const installationMigration = resolve(root, "supabase/migrations/20261006113000_vosio_mcp_installation.sql");
 const installationSource = readFileSync(installationMigration, "utf8").replaceAll("\r\n", "\n");
 const registrationSource = readFileSync(resolve(root, "supabase/migrations/20261007100000_vosio_mcp_dynamic_registration.sql"), "utf8").replaceAll("\r\n", "\n");
+const captureSource = readFileSync(resolve(root, "supabase/migrations/20261106120000_vosio_mcp_capture_scope.sql"), "utf8").replaceAll("\r\n", "\n");
 const connection = process.env.VOSIO_DISPOSABLE_DATABASE_URL;
 const psql = process.env.PSQL_BIN || "psql";
 let url;
@@ -112,7 +113,7 @@ function fixture() {
 // Build a genuine approved/claimed grant through the narrow custody workflow.
 function grant(f, options = {}) {
   const g = { id: randomUUID(), pendingId: randomUUID(), clientId: f.client, userId: f.editor, sessionId: f.sessions.editor,
-    resource: "https://installation.example/api/mcp", redirectUri: options.redirectUri || "https://host.example/callback", scopes: ["vosio:read", "vosio:write"], codeHash: hash(opaque()), nonceHash: hash(opaque()), stateHash: hash(opaque()), challenge: createHash("sha256").update(opaque()).digest("base64url"), upstreamExpiresAt: Math.floor(Date.now() / 1000) + 3600 };
+    resource: "https://installation.example/api/mcp", redirectUri: options.redirectUri || "https://host.example/callback", scopes: options.scopes || ["vosio:read", "vosio:write"], codeHash: hash(opaque()), nonceHash: hash(opaque()), stateHash: hash(opaque()), challenge: createHash("sha256").update(opaque()).digest("base64url"), upstreamExpiresAt: Math.floor(Date.now() / 1000) + 3600 };
   g.clientId = options.clientId || g.clientId;
   assert.deepEqual(custody("pending_create", { id: g.pendingId, clientId: g.clientId, redirectUri: g.redirectUri, resource: g.resource, state: "synthetic-state", challenge: g.challenge, scopes: g.scopes, nonceHash: g.nonceHash, upstreamStateHash: g.stateHash, encrypted: "synthetic-encrypted-verifier" }), { ok: true });
   assert.equal(custody("pending_approve", { id: g.pendingId, nonceHash: g.nonceHash, userId: g.userId, scopes: g.scopes }).userId, g.userId);
@@ -400,10 +401,122 @@ async function registrationProof(f) {
   observedLockRaces++; pass("race_grant_before_expired_pending_cleanup_preserves_client_and_grant");
 }
 
+// Compare one installed function body with the exact migration text being proved.
+function assertInstalledBody(qualified, signature, text) {
+  const start = text.indexOf(`function ${qualified}(`); const open = text.indexOf("as $$", start) + 5; const close = text.indexOf("$$;", open);
+  assert(start >= 0 && open > start && close > open, `source for ${qualified} not found`);
+  assert.equal(hash(scalar(`select prosrc from pg_proc where oid=${lit(`${qualified}(${signature})`)}::regprocedure;`).replaceAll("\r\n", "\n").trim()), hash(text.slice(open, close).trim()), `installed ${qualified} source differs`);
+}
+
+// Rehearse, apply and prove the capture-scope forward: scope sets, redirect binding, service-only bindings, recovery filter and guarded rollback.
+function captureProof(f) {
+  const forward = captureSource.replace(/^begin;\n/m, "").replace(/^commit;\n/m, "");
+  assert(forward.length < captureSource.length - 10, "migration must keep its explicit begin/commit");
+  const tables = ["recordings", "transcripts", "storage.objects", "vosio_mcp_private.clients", "vosio_mcp_private.pending", "vosio_mcp_private.grants", "vosio_mcp_private.tokens"];
+  const snapshot = () => tables.map((table) => scalar(`select md5(coalesce(string_agg(to_jsonb(t)::text,',' order by to_jsonb(t)::text),'')) from ${table} t;`));
+  const before = snapshot();
+  assert.equal(scalar("select to_regclass('vosio_mcp_private.capture_recordings') is null;"), "t");
+  sql(`begin; ${forward} rollback;`);
+  assert.equal(scalar("select to_regclass('vosio_mcp_private.capture_recordings') is null;"), "t");
+  assert.deepEqual(snapshot(), before); pass("capture_forward_rollback_rehearsal_preserves_content_storage_and_existing_custody");
+  if (!process.argv.includes("--apply")) throw new Error("BLOCKED: capture forward needs explicit local --apply.");
+  sql(`begin; ${forward} commit;`);
+  assert.deepEqual(snapshot(), before);
+  assertInstalledBody("public.mcp_list_own_connections_v1", "", captureSource); assertInstalledBody("public.list_recoverable_recording_captures_v1", "", captureSource);
+  assertInstalledBody("vosio_mcp_private.grant_json", "vosio_mcp_private.grants", captureSource);
+  for (const [name, signature] of [["mcp_capture_binding_record_v1", "uuid,text,uuid,uuid,uuid"], ["mcp_capture_binding_by_recording_v1", "uuid,text,uuid"], ["mcp_capture_binding_by_request_v1", "uuid,text,uuid"], ["mcp_capture_binding_complete_v1", "uuid,text,uuid,jsonb"]]) {
+    assertInstalledBody(`public.${name}`, signature, captureSource);
+    const oid = lit(`public.${name}(${signature})`);
+    assert.equal(scalar(`select p.prosecdef and p.proconfig=array['search_path=""'] and r.rolname='postgres' from pg_proc p join pg_roles r on r.oid=p.proowner where p.oid=${oid}::regprocedure;`), "t");
+    assert.equal(scalar(`select has_function_privilege('service_role',${oid},'execute') and not has_function_privilege('authenticated',${oid},'execute') and not has_function_privilege('anon',${oid},'execute');`), "t");
+  }
+  assert.equal(scalar("select relrowsecurity and relforcerowsecurity from pg_class where oid='vosio_mcp_private.capture_recordings'::regclass;"), "t");
+  for (const role of ["anon", "authenticated", "service_role"]) sql(`set role ${role}; ${rejected("select count(*) from vosio_mcp_private.capture_recordings;")}`);
+  pass("capture_forward_exact_source_service_only_acl_force_rls");
+
+  // Scope sets: only {read}, {read,write} and {capture} with a chromiumapp.org redirect are durable.
+  const extension = "a".repeat(32); const otherExtension = "b".repeat(32); const chromiumRedirect = `https://${extension}.chromiumapp.org/oauth`;
+  const captureClient = randomUUID();
+  sql(`insert into vosio_mcp_private.clients(id,name,redirects) values(${lit(captureClient)},'Synthetic extension',${lit(JSON.stringify([chromiumRedirect, `https://${otherExtension}.chromiumapp.org/oauth`, "https://host.example/callback"]))}::jsonb);`);
+  const pendingFor = (scopes, redirectUri) => ({ id: randomUUID(), clientId: captureClient, redirectUri, resource: "https://installation.example/api/mcp", state: "", challenge: opaque(), scopes, nonceHash: hash(opaque()), upstreamStateHash: hash(opaque()), encrypted: "synthetic" });
+  for (const [label, scopes, redirectUri] of [["capture_with_read", ["vosio:capture", "vosio:read"], chromiumRedirect], ["capture_with_write", ["vosio:capture", "vosio:write"], chromiumRedirect], ["unknown_scope", ["vosio:admin"], chromiumRedirect], ["write_without_read", ["vosio:write"], chromiumRedirect], ["capture_foreign_redirect", ["vosio:capture"], "https://host.example/callback"], ["capture_uppercase_id", ["vosio:capture"], `https://${"A".repeat(32)}.chromiumapp.org/oauth`], ["capture_wrong_alphabet", ["vosio:capture"], `https://${"q".repeat(32)}.chromiumapp.org/oauth`], ["capture_short_id", ["vosio:capture"], `https://${"a".repeat(31)}.chromiumapp.org/oauth`], ["capture_suffix_host", ["vosio:capture"], `https://${extension}.chromiumapp.org.evil.example/oauth`]]) {
+    sql(`set role service_role; ${rejected(call("pending_create", pendingFor(scopes, redirectUri)), "23514")}`); pass(`pending_scope_set_rejected_${label}`);
+  }
+  assert.deepEqual(custody("pending_create", pendingFor(["vosio:capture"], chromiumRedirect)), { ok: true });
+  assert.deepEqual(custody("pending_create", pendingFor(["vosio:read"], "https://host.example/callback")), { ok: true });
+  assert.deepEqual(custody("pending_create", pendingFor(["vosio:read", "vosio:write"], "https://host.example/callback")), { ok: true }); pass("pending_valid_scope_sets_accepted");
+  const readGrant = grant(f, { scopes: ["vosio:read"] }); const writeGrant = grant(f);
+  const captureGrant = grant(f, { clientId: captureClient, redirectUri: chromiumRedirect, scopes: ["vosio:capture"] });
+  const captureToken = issue(captureGrant); const readToken = issue(readGrant); issue(writeGrant);
+  const access = custody("access", { accessHash: captureToken.accessHash, resource: captureGrant.resource });
+  assert.deepEqual(access.scopes, ["vosio:capture"]); assert.equal(access.redirect_uri, chromiumRedirect); assert.equal(access.id, captureGrant.id);
+  assert.equal(custody("access", { accessHash: readToken.accessHash, resource: readGrant.resource }).redirect_uri, readGrant.redirectUri); pass("grant_json_returns_redirect_uri_for_capture_and_read");
+  const grantRejected = (id, scopes) => sql(rejected(`update vosio_mcp_private.grants set scopes=array[${scopes.map(lit).join(",")}] where id=${lit(id)};`, "23514"));
+  grantRejected(captureGrant.id, ["vosio:capture", "vosio:read"]); grantRejected(readGrant.id, ["vosio:capture"]); grantRejected(writeGrant.id, ["vosio:write"]); grantRejected(readGrant.id, ["vosio:admin"]);
+  sql(`update vosio_mcp_private.grants set scopes=array['vosio:capture'] where id=${lit(captureGrant.id)};`); pass("grant_scope_sets_enforced_in_sql");
+
+  // Own connections expose a safe extension identifier and keep the previous shape for MCP clients.
+  const actor = auth(f.editor, f.sessions.editor, f.upstreamClient);
+  const connections = json(`${actor} select public.mcp_list_own_connections_v1();`);
+  assert.equal(connections.find((item) => item.id === captureGrant.id).extensionId, extension);
+  assert.equal(connections.find((item) => item.id === readGrant.id).extensionId, null);
+  assert(!JSON.stringify(connections).includes("encrypted") && !JSON.stringify(connections).includes("chromiumapp")); pass("own_connections_extension_id_safe_and_backward_compatible");
+
+  // Bindings: exact user and extension, independent of the grant, idempotent, service-only.
+  const newRecording = (title) => { const id = randomUUID(); sql(`insert into public.recordings(id,user_id,created_by,title,source_type,status,visibility,file_size_bytes) values(${lit(id)},${lit(f.editor)},${lit(f.editor)},${lit(title)},'in_app_recording','uploading','private',1000);`); return id; };
+  const rpc = (name, ...args) => `public.${name}(${args.map((value) => value === null ? "null" : typeof value === "object" ? `${lit(JSON.stringify(value))}::jsonb` : lit(value)).join(",")})`;
+  const service = (statement) => json(`set role service_role; select ${statement};`);
+  const recording = newRecording("Synthetic extension upload"); const request = randomUUID();
+  for (const role of ["anon", "authenticated"]) for (const statement of [rpc("mcp_capture_binding_record_v1", f.editor, extension, recording, request, null), rpc("mcp_capture_binding_by_recording_v1", f.editor, extension, recording), rpc("mcp_capture_binding_by_request_v1", f.editor, extension, request), rpc("mcp_capture_binding_complete_v1", f.editor, extension, recording, { ok: true })]) sql(`set role ${role}; ${rejected(`select ${statement};`)}`);
+  const binding = service(rpc("mcp_capture_binding_record_v1", f.editor, extension, recording, request, captureGrant.id));
+  assert.equal(binding.recordingId, recording); assert.equal(binding.extensionId, extension); assert.equal(binding.createdGrantId, captureGrant.id); assert.equal(binding.completedAt, null);
+  assert.deepEqual(service(rpc("mcp_capture_binding_record_v1", f.editor, extension, recording, request, null)), binding); pass("capture_binding_record_idempotent_by_request");
+  const second = grant(f, { clientId: captureClient, redirectUri: chromiumRedirect, scopes: ["vosio:capture"] }); issue(second);
+  assert.equal(service(rpc("mcp_capture_binding_by_recording_v1", f.editor, extension, recording)).recordingId, recording);
+  assert.equal(service(rpc("mcp_capture_binding_by_request_v1", f.editor, extension, request)).recordingId, recording);
+  for (const [user, ext] of [[f.outsider, extension], [f.editor, otherExtension]]) {
+    assert.equal(service(rpc("mcp_capture_binding_by_recording_v1", user, ext, recording)), null); assert.equal(service(rpc("mcp_capture_binding_by_request_v1", user, ext, request)), null);
+    assert.equal(service(rpc("mcp_capture_binding_complete_v1", user, ext, recording, { ok: false })), null);
+  }
+  pass("capture_binding_visible_only_to_same_user_and_extension_across_grants");
+  sql(`set role service_role; ${rejected(`select ${rpc("mcp_capture_binding_record_v1", f.editor, extension, recording, randomUUID(), null)};`, "23505")}`);
+  sql(`set role service_role; ${rejected(`select ${rpc("mcp_capture_binding_record_v1", f.editor, extension, f.projectRecording, randomUUID(), null)};`, "22023")}`);
+  sql(`set role service_role; ${rejected(`select ${rpc("mcp_capture_binding_record_v1", f.editor, "not-an-extension", recording, randomUUID(), null)};`, "22023")}`);
+  pass("capture_binding_rejects_foreign_recording_duplicate_recording_and_bad_extension_id");
+
+  // Recovery: an unfinished extension upload is hidden for seven days, then and after completion it behaves as before.
+  const listed = (id) => json(`${actor} select coalesce(jsonb_agg(id),'[]'::jsonb) from public.list_recoverable_recording_captures_v1();`).includes(id);
+  const unbound = newRecording("Synthetic unbound upload");
+  assert(listed(unbound), "fixture recording must be recoverable so the exclusion is meaningful");
+  assert.equal(listed(recording), false); pass("recovery_list_hides_unfinished_extension_upload");
+  sql(`update vosio_mcp_private.capture_recordings set created_at=now()-interval '8 days' where recording_id=${lit(recording)};`); assert.equal(listed(recording), true);
+  sql(`update vosio_mcp_private.capture_recordings set created_at=now() where recording_id=${lit(recording)};`); assert.equal(listed(recording), false);
+  const completion = { transcription: { state: "queued", operationId: randomUUID() } };
+  const done = service(rpc("mcp_capture_binding_complete_v1", f.editor, extension, recording, completion));
+  assert.notEqual(done.completedAt, null); assert.deepEqual(done.completion, completion);
+  assert.deepEqual(service(rpc("mcp_capture_binding_complete_v1", f.editor, extension, recording, { transcription: { state: "not_started" } })).completion, completion);
+  assert.equal(listed(recording), true); pass("recovery_list_after_seven_days_or_completion_and_first_completion_wins");
+  const doomed = newRecording("Synthetic doomed upload"); service(rpc("mcp_capture_binding_record_v1", f.editor, extension, doomed, randomUUID(), null));
+  sql(`delete from public.recordings where id=${lit(doomed)};`);
+  assert.equal(service(rpc("mcp_capture_binding_by_recording_v1", f.editor, extension, doomed)), null); assert.equal(scalar(`select count(*) from vosio_mcp_private.capture_recordings where recording_id=${lit(doomed)};`), "0"); pass("deleting_recording_cascades_binding");
+
+  // Guarded rollback: refused while capture pending/grants exist, then restores the old checks.
+  const block = captureSource.slice(captureSource.indexOf("-- ROLLBACK-BEGIN"), captureSource.indexOf("-- ROLLBACK-END")).split("\n").slice(1).map((line) => line.replace(/^-- ?/, "")).join("\n");
+  assert(block.includes("begin;") && block.includes("commit;"));
+  const constraint = (table) => scalar(`select pg_get_constraintdef(oid) from pg_constraint where conname='${table}_scopes_check' and conrelid='vosio_mcp_private.${table}'::regclass;`);
+  const refused = sql(block, true); assert.notEqual(refused.status, 0); assert(String(refused.stderr).includes("capture pending/grant rows exist"));
+  for (const table of ["pending", "grants"]) assert.match(constraint(table), /capture/); pass("rollback_refused_while_capture_rows_exist");
+  sql("delete from vosio_mcp_private.grants where scopes @> array['vosio:capture']; delete from vosio_mcp_private.pending where scopes @> array['vosio:capture'];");
+  sql(block);
+  for (const table of ["pending", "grants"]) assert.doesNotMatch(constraint(table), /capture/);
+  sql(`set role service_role; ${rejected(call("pending_create", pendingFor(["vosio:capture"], chromiumRedirect)), "23514")}`);
+  assert.deepEqual(custody("pending_create", pendingFor(["vosio:read"], "https://host.example/callback")), { ok: true }); pass("rollback_restores_old_scope_checks_only_without_capture_rows");
+}
+
 try {
-  preflight(); const f = fixture(); installationProof(f); await registrationProof(f); sequential(f); contentMatrix(f); await races(f);
+  preflight(); const f = fixture(); installationProof(f); await registrationProof(f); sequential(f); contentMatrix(f); await races(f); captureProof(f);
   const receipt = { completedAt: new Date().toISOString(), database, runId, cases: results.length, passed: results, observedLockRaces,
-    migrationSha256: hash(source), installationMigrationSha256: hash(installationSource), registrationMigrationSha256: hash(registrationSource), scriptSha256: hash(readFileSync(fileURLToPath(import.meta.url), "utf8")), sourceOnly: true,
+    migrationSha256: hash(source), installationMigrationSha256: hash(installationSource), registrationMigrationSha256: hash(registrationSource), captureMigrationSha256: hash(captureSource), scriptSha256: hash(readFileSync(fileURLToPath(import.meta.url), "utf8")), sourceOnly: true,
     limits: "Real disposable PostgreSQL roles/RLS/transactions only; no target Auth/Storage/HTTP/browser or cryptographic server acceptance." };
   const path = resolve(root, ".tmp/mcp-postgres/receipt.json"); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
   console.log(`GREEN ${results.length} cases; ${observedLockRaces} observed PostgreSQL lock races. Receipt: .tmp/mcp-postgres/receipt.json`);
