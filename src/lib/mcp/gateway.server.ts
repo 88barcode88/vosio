@@ -8,7 +8,7 @@ export { MCP_NONCE_COOKIE } from "./request-context.server";
 const metadataSchema = z.object({ resource: z.string().url(), webOrigin: z.string().url(), issuer: z.string().url(), authorization_endpoint: z.string().url(), token_endpoint: z.string().url(), revocation_endpoint: z.string().url(), registration_endpoint: z.string().url().optional(), scopes_supported: z.array(z.string()), response_types_supported: z.array(z.string()), grant_types_supported: z.array(z.string()), token_endpoint_auth_methods_supported: z.array(z.string()), revocation_endpoint_auth_methods_supported: z.array(z.string()), code_challenge_methods_supported: z.array(z.string()) }).strict();
 const pendingView = z.object({ nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/), clientName: z.string().max(100), pending: z.object({ id: z.string().uuid(), status: z.enum(["pending", "approved"]), redirectUri: z.string().url(), scopes: z.array(z.string()) }) });
 const upstreamView = z.object({ nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/), authorizationId: z.string().max(200), redirectUrl: z.string().url().nullable() });
-const connectionsView = z.object({ nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/), connections: z.array(z.object({ id: z.string().uuid(), clientName: z.string().max(100), scopes: z.array(z.string()) })).max(50) });
+const connectionsView = z.object({ nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/), connections: z.array(z.object({ id: z.string().uuid(), clientName: z.string().max(100), scopes: z.array(z.string()), extensionId: z.string().regex(/^[a-p]{32}$/).nullable().optional() })).max(50) });
 const headers = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 
 // Derive the sole backend destination from the web's existing Supabase connection.

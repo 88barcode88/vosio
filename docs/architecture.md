@@ -53,7 +53,9 @@ Repo je source-available pod vlastní licencí v `LICENSE.md`. Soukromé a inter
 Veřejný zdroj obsahuje celou aplikaci, 41 migrací, Supabase Function `vosio-mcp`,
 webové OAuth/consent/discovery adaptéry a univerzální Codex plugin. Každá instalace
 používá vlastní Supabase projekt a kanonický HTTPS webový origin. Osobní OAuth
-bridge vydává opaque resource-bound tokeny se scopes `vosio:read`/`vosio:write`;
+bridge vydává opaque resource-bound tokeny se scopes `vosio:read`/`vosio:write`
+a samostatný `vosio:capture` pro rozšíření prohlížeče (jen zakládání vlastních nahrávek;
+MCP a audio ho odmítají);
 obsah čte ověřený user JWT přes aktuální RLS a canonical capabilities. Credentials
 a tokenová custody zůstávají serverové. `verify_jwt=false` na gateway nenahrazuje
 autentizaci handleru. Dynamic registration přijímá `native|web`, PKCE S256 a přesné

@@ -10,6 +10,7 @@ import { getMcpConfig, isMcpAllowedUrl, type McpConfig } from "./config.server";
 import { custody, registerDynamicClient } from "./oauth-store.server";
 import { decryptCustody, encryptCustody, equalHash, hashToken, newOpaqueToken, pkceChallenge } from "./oauth-crypto.server";
 import { grantSchema, verifyUpstream } from "./auth.server";
+import { extensionIdFromRedirect, isCaptureScopeSet, MCP_SCOPE_CAPTURE, MCP_SCOPE_READ, MCP_SCOPE_WRITE, MCP_SCOPES_SUPPORTED, mcpScopeSetSchema } from "./scopes";
 
 const uuid = z.string().uuid();
 const opaque = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
@@ -26,10 +27,10 @@ export const registerSchema = z.object({ client_name: z.string().trim().min(1).m
   tos_uri: z.union([metadataUrl, z.literal("")]).optional(), policy_uri: metadataUrl.optional(),
   software_id: z.string().max(100).optional(), software_version: z.string().max(100).optional()
 }).strict();
-const pendingSchema = z.object({ id: uuid, clientId: uuid, redirectUri: bounded, resource: bounded, state: z.string().max(1024), scopes: z.array(z.enum(["vosio:read", "vosio:write"])).min(1).max(2), userId: uuid.nullable(), encrypted: z.string().max(40000), status: z.enum(["pending", "approved"]).optional() });
+const pendingSchema = z.object({ id: uuid, clientId: uuid, redirectUri: bounded, resource: bounded, state: z.string().max(1024), scopes: mcpScopeSetSchema, userId: uuid.nullable(), encrypted: z.string().max(40000), status: z.enum(["pending", "approved"]).optional() });
 const pendingSecrets = z.object({ state: opaque, verifier: opaque }).strict();
 const upstreamTokens = z.object({ access_token: z.string().min(1).max(16000), refresh_token: z.string().min(1).max(4000) });
-const browserFormSchema = z.object({ action: z.enum(["approve", "deny", "upstream_approve", "upstream_deny", "revoke"]), nonce: opaque, pendingId: uuid.optional(), authorizationId: z.string().min(1).max(200).optional(), grantId: uuid.optional(), access: z.enum(["read", "write"]).optional() }).strict();
+const browserFormSchema = z.object({ action: z.enum(["approve", "deny", "upstream_approve", "upstream_deny", "revoke"]), nonce: opaque, pendingId: uuid.optional(), authorizationId: z.string().min(1).max(200).optional(), grantId: uuid.optional(), access: z.enum(["read", "write", "capture"]).optional() }).strict();
 const requestLimit = createRateLimiter({ limit: 30, windowMs: 60000 });
 
 class OAuthFailure extends Error {
@@ -50,11 +51,15 @@ async function consentSession(config: McpConfig) {
   });
 }
 
-// Normalize only supported Vosio scopes; write always entails read.
+// Normalize only supported Vosio scopes into one of the three allowed sets; write entails read and capture stands alone.
 export function normalizeMcpScopes(value: string) {
-  const scopes = value.split(/\s+/).filter(Boolean);
-  if (!scopes.length || scopes.some((scope) => scope !== "vosio:read" && scope !== "vosio:write")) throw new OAuthFailure("invalid_request");
-  return scopes.includes("vosio:write") ? ["vosio:read", "vosio:write"] as const : ["vosio:read"] as const;
+  const scopes = new Set(value.split(/\s+/).filter(Boolean));
+  if (!scopes.size || [...scopes].some((scope) => !(MCP_SCOPES_SUPPORTED as readonly string[]).includes(scope))) throw new OAuthFailure("invalid_request");
+  if (scopes.has(MCP_SCOPE_CAPTURE)) {
+    if (scopes.size !== 1) throw new OAuthFailure("invalid_scope");
+    return [MCP_SCOPE_CAPTURE] as const;
+  }
+  return scopes.has(MCP_SCOPE_WRITE) ? [MCP_SCOPE_READ, MCP_SCOPE_WRITE] as const : [MCP_SCOPE_READ] as const;
 }
 
 // Require canonical callback serialization so TypeScript and durable SQL compare the same host/path.
@@ -172,8 +177,9 @@ async function upstreamExchange(config: McpConfig, values: Record<string, string
 
 // Issue fenced bridge tokens while preserving the grant's fixed scope set on refresh.
 async function issueBridgeTokens(config: McpConfig, raw: Record<string, unknown>, refresh: boolean, requestedScopes?: ReturnType<typeof normalizeMcpScopes>) {
-  const grant = grantSchema.parse(raw);
-  if (!grant.fence || grant.resource !== config.resourceUrl || !grant.scopes.includes("vosio:read")) throw new OAuthFailure("invalid_grant");
+  const parsedGrant = grantSchema.safeParse(raw);
+  if (!parsedGrant.success || !parsedGrant.data.fence || parsedGrant.data.resource !== config.resourceUrl) throw new OAuthFailure("invalid_grant");
+  const grant = { ...parsedGrant.data, fence: parsedGrant.data.fence };
   try {
     if (requestedScopes && (requestedScopes.length !== grant.scopes.length || requestedScopes.some((scope) => !grant.scopes.includes(scope)))) throw new OAuthFailure("invalid_scope");
     const old = upstreamTokens.parse(decryptCustody(config.encryptionKey, grant.id, grant.encrypted));
@@ -214,8 +220,10 @@ export async function handleMcpOAuth(request: Request, action: "authorize" | "to
       const parsed = registerSchema.parse(await body(request));
       if (!parsed.grant_types.includes("authorization_code")) throw new OAuthFailure("invalid_request");
       // Declarative client metadata never confers authorization and no metadata URL is fetched.
-      if (parsed.scope) normalizeMcpScopes(parsed.scope);
+      const declared = parsed.scope ? normalizeMcpScopes(parsed.scope) : null;
       parsed.redirect_uris.forEach((uri) => validateMcpRedirect(config, uri));
+      // A capture client may only register verified browser-extension redirect URIs.
+      if (declared && isCaptureScopeSet(declared) && !parsed.redirect_uris.every((uri) => extensionIdFromRedirect(uri))) throw new OAuthFailure("invalid_request");
       const clientId = randomUUID();
       const registration = await registerDynamicClient({ clientId, name: parsed.client_name, redirects: parsed.redirect_uris });
       if (registration.status !== "accepted") throw new OAuthFailure("temporarily_unavailable", 429, registration.retryAfter);
@@ -226,10 +234,20 @@ export async function handleMcpOAuth(request: Request, action: "authorize" | "to
       validateMcpRedirect(config, args.redirect_uri);
       const client = await custody("client", { clientId: args.client_id });
       if (!client || !Array.isArray(client.redirects) || !client.redirects.some((uri) => typeof uri === "string" && matchesMcpRedirect(config, uri, args.redirect_uri))) throw new OAuthFailure("invalid_client");
-      const id = randomUUID(); const nonce = newOpaqueToken(); const state = newOpaqueToken(); const verifier = newOpaqueToken();
-      const scopes = [...normalizeMcpScopes(args.scope)];
-      if ((await custody("pending_create", { id, clientId: args.client_id, redirectUri: args.redirect_uri, resource: config.resourceUrl, state: args.state, challenge: args.code_challenge, scopes, nonceHash: hashToken(nonce), upstreamStateHash: hashToken(state), encrypted: encryptCustody(config.encryptionKey, id, { state, verifier }) }))?.ok !== true) throw new OAuthFailure("temporarily_unavailable", 503);
-      response = bindCookies(redirectResponse(`${config.origin}/mcp/consent?request=${id}`, 303), id, nonce);
+      // The client and redirect are now verified, so capture (browser extension) failures can safely be returned as a redirect with `error`.
+      const wantsCapture = args.scope.split(/\s+/).includes(MCP_SCOPE_CAPTURE);
+      try {
+        const id = randomUUID(); const nonce = newOpaqueToken(); const state = newOpaqueToken(); const verifier = newOpaqueToken();
+        const scopes = [...normalizeMcpScopes(args.scope)];
+        if (isCaptureScopeSet(scopes) && !extensionIdFromRedirect(args.redirect_uri)) throw new OAuthFailure("invalid_request");
+        if ((await custody("pending_create", { id, clientId: args.client_id, redirectUri: args.redirect_uri, resource: config.resourceUrl, state: args.state, challenge: args.code_challenge, scopes, nonceHash: hashToken(nonce), upstreamStateHash: hashToken(state), encrypted: encryptCustody(config.encryptionKey, id, { state, verifier }) }))?.ok !== true) throw new OAuthFailure("temporarily_unavailable", 503);
+        response = bindCookies(redirectResponse(`${config.origin}/mcp/consent?request=${id}`, 303), id, nonce);
+      } catch (error) {
+        if (!wantsCapture) throw error;
+        const failure = error instanceof OAuthFailure ? error : error instanceof z.ZodError ? new OAuthFailure("invalid_request") : new OAuthFailure("temporarily_unavailable", 503);
+        const target = new URL(args.redirect_uri); target.searchParams.set("error", failure.code); if (args.state) target.searchParams.set("state", args.state);
+        response = redirectResponse(target, 303);
+      }
     } else if (action === "token") {
       const args = tokenSchema.parse(await body(request));
       if (args.resource !== config.resourceUrl) throw new OAuthFailure("invalid_grant");
@@ -279,7 +297,9 @@ export async function handleMcpOAuth(request: Request, action: "authorize" | "to
           const target = new URL(pending.redirectUri); target.searchParams.set("error", "access_denied"); if (pending.state) target.searchParams.set("state", pending.state);
           response = redirectResponse(target, 303);
         } else {
-          const scopes: Array<"vosio:read" | "vosio:write"> = args.access === "write" ? ["vosio:read", "vosio:write"] : ["vosio:read"];
+          // The consent form must name exactly the pending scope kind: capture has no read/write choice.
+          if (isCaptureScopeSet(pending.scopes) !== (args.access === "capture")) throw new OAuthFailure("access_denied");
+          const scopes: Array<"vosio:read" | "vosio:write" | "vosio:capture"> = args.access === "capture" ? [MCP_SCOPE_CAPTURE] : args.access === "write" ? [MCP_SCOPE_READ, MCP_SCOPE_WRITE] : [MCP_SCOPE_READ];
           if (scopes.some((scope) => !pending.scopes.includes(scope))) throw new OAuthFailure("access_denied");
           if (!await custody("pending_approve", { id: pending.id, nonceHash: hashToken(browser.nonce), userId: browser.userId, scopes })) throw new OAuthFailure("access_denied");
           const secrets = pendingSecrets.parse(decryptCustody(config.encryptionKey, pending.id, pending.encrypted));

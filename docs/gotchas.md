@@ -145,6 +145,17 @@ Podepsaný JWT může přežít logout; nový MCP request proto kontroluje i ži
 tokenu zablokuje rodinu, vyžaduje nové připojení a neopakuje upstream request.
 Odinstalování pluginu samo nezruší backend grant. Viz [runbook](api/mcp-plugin.md).
 
+Scope `vosio:read` už není povinný pro každý bridge token. Povolené sady jsou
+`{read}`, `{read,write}` a `{capture}` (rozšíření prohlížeče); `{capture}` nelze
+kombinovat a platí jen s návratovou adresou `https://<32 písmen a–p>.chromiumapp.org/…`.
+Povinnost `read` se vynucuje až na MCP a audio cestách (`authenticateMcpRequest`,
+`edge-handler`, `handleMcpProtocol`): capture token tam dostane 403 `insufficient_scope`.
+Obecná autentizace bridge tokenu je `authenticateBridgeRequest` a scope si ověřuje volající.
+Chyby `/authorize` pro capture klienty se vracejí přesměrováním s `error` na ověřenou
+návratovou adresu (jinak by `launchWebAuthFlow` visel); u ostatních klientů zůstává JSON.
+Function nasazená před forwardem `20261106120000` nezná `redirect_uri` v `grant_json`, proto je
+v `grantSchema` volitelné; capture grant ho vyžaduje. Nejdřív migrace, potom Function.
+
 ## P1 source forwardy a historické AI zdroje
 
 Smazání checklistu odstraní úkoly, rozhodnutí i rizika/blokery přepisu a ponechává

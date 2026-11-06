@@ -1,12 +1,13 @@
 import "server-only";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { mcpScopeSetSchema } from "./scopes";
 
 const id = z.string().uuid();
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const text = z.string().min(1).max(2000);
 const encrypted = z.string().min(1).max(40000);
-const scopes = z.array(z.enum(["vosio:read", "vosio:write"])).min(1).max(2);
+const scopes = mcpScopeSetSchema;
 const registrationResult = z.discriminatedUnion("status", [
   z.object({ status: z.literal("accepted") }).strict(),
   z.object({ status: z.enum(["rate_limited", "capacity_limited"]), retryAfter: z.number().int().min(1).max(60) }).strict()

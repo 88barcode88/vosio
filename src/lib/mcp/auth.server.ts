@@ -5,15 +5,18 @@ import { loadMcpConfig, type McpConfig } from "./config.server";
 import { custody } from "./oauth-store.server";
 import { decryptCustody, hashToken } from "./oauth-crypto.server";
 import { createRateLimiter } from "@/lib/rate-limit";
+import { extensionIdFromRedirect, isCaptureScopeSet, MCP_SCOPE_READ, mcpScopeSetSchema } from "./scopes";
 
 export class McpAuthError extends Error {
   // Keep auth failures fixed and independent of Supabase response details.
-  constructor(public readonly code: "disabled" | "invalid_token" | "unavailable" | "rate_limited") { super("MCP authentication unavailable."); }
+  constructor(public readonly code: "disabled" | "invalid_token" | "insufficient_scope" | "unavailable" | "rate_limited") { super("MCP authentication unavailable."); }
 }
 const limit = createRateLimiter({ limit: 120, windowMs: 60000 });
 const upstreamSchema = z.object({ access_token: z.string().min(1).max(16000), refresh_token: z.string().min(1).max(4000) }).strict();
 const claimsSchema = z.object({ sub: z.string().uuid(), client_id: z.string(), session_id: z.string().uuid(), iss: z.string(), aud: z.literal("authenticated"), role: z.literal("authenticated"), exp: z.number().int().positive() });
-export const grantSchema = z.object({ id: z.string().uuid(), user_id: z.string().uuid(), session_id: z.string().uuid(), client_id: z.string().uuid(), resource: z.string(), scopes: z.array(z.enum(["vosio:read", "vosio:write"])).min(1).max(2), encrypted: z.string(), upstream_expires_at: z.number().int(), fence: z.string().uuid().nullable().optional() });
+export const grantSchema = z.object({ id: z.string().uuid(), user_id: z.string().uuid(), session_id: z.string().uuid(), client_id: z.string().uuid(), resource: z.string(), scopes: mcpScopeSetSchema, encrypted: z.string(), upstream_expires_at: z.number().int(), fence: z.string().uuid().nullable().optional(), redirect_uri: z.string().max(2000).optional() })
+  // A capture grant is only valid with its verified chromiumapp.org redirect; the SQL constraint enforces the same rule.
+  .refine((grant) => !isCaptureScopeSet(grant.scopes) || extensionIdFromRedirect(grant.redirect_uri) !== null, "Capture grant without extension redirect.");
 
 // Create a fresh JWT-scoped RLS client that cannot persist or refresh a browser session.
 export function upstreamSession(config: McpConfig, jwt: string) {
@@ -35,8 +38,13 @@ export async function verifyUpstream(config: McpConfig, jwt: string, expectedUse
   return { supabase, userId: claims.sub, sessionId: claims.session_id, expiresAt: claims.exp };
 }
 
-// Authenticate only a bridge bearer and its current grant, never application auth cookies.
-export async function authenticateMcpRequest(request: Request) {
+// Reject any grant that cannot read: MCP tools and audio require vosio:read, so a capture-only token never passes.
+export function assertMcpReadScope(scopes: readonly string[]) {
+  if (!scopes.includes(MCP_SCOPE_READ)) throw new McpAuthError("insufficient_scope");
+}
+
+// Authenticate only a bridge bearer and its current grant (any valid scope set), never application auth cookies; callers enforce their scope.
+export async function authenticateBridgeRequest(request: Request) {
   const config = await loadMcpConfig();
   if (!config) throw new McpAuthError("disabled");
   if (new URL(request.url).origin !== new URL(config.resourceUrl).origin) throw new McpAuthError("invalid_token");
@@ -47,12 +55,19 @@ export async function authenticateMcpRequest(request: Request) {
   try {
     const raw = await custody("access", { accessHash, resource: config.resourceUrl });
     const grant = grantSchema.safeParse(raw);
-    if (!grant.success || grant.data.resource !== config.resourceUrl || !grant.data.scopes.includes("vosio:read") || grant.data.upstream_expires_at <= Math.floor(Date.now() / 1000)) throw new McpAuthError("invalid_token");
+    if (!grant.success || grant.data.resource !== config.resourceUrl || grant.data.upstream_expires_at <= Math.floor(Date.now() / 1000)) throw new McpAuthError("invalid_token");
     const upstream = upstreamSchema.parse(decryptCustody(config.encryptionKey, grant.data.id, grant.data.encrypted));
     const verified = await verifyUpstream(config, upstream.access_token, grant.data.user_id, grant.data.session_id);
     // A revoke racing the upstream checks must still prevent returning an authenticated client.
     const current = await custody("access", { accessHash, resource: config.resourceUrl });
     if (!current || current.id !== grant.data.id) throw new McpAuthError("invalid_token");
-    return { supabase: verified.supabase, scopes: grant.data.scopes, resourceUrl: config.resourceUrl, userId: verified.userId, grantId: grant.data.id };
+    return { supabase: verified.supabase, scopes: grant.data.scopes, resourceUrl: config.resourceUrl, userId: verified.userId, grantId: grant.data.id, redirectUri: grant.data.redirect_uri ?? null };
   } catch (error) { if (error instanceof McpAuthError) throw error; throw new McpAuthError("unavailable"); }
+}
+
+// Authenticate an MCP/audio request: a valid bridge grant that additionally holds vosio:read.
+export async function authenticateMcpRequest(request: Request) {
+  const identity = await authenticateBridgeRequest(request);
+  assertMcpReadScope(identity.scopes);
+  return identity;
 }

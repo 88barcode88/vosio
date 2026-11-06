@@ -65,3 +65,25 @@ describe("Supabase MCP HTTP dispatch", () => {
     expect((await handleMcpEdge(new Request("http://internal/vosio-mcp/metadata"))).status).toBe(404);
   });
 });
+
+describe("vosio:capture isolation at the Edge dispatcher", () => {
+  const captureIdentity = { ...identity, scopes: ["vosio:capture"] };
+  it("advertises the capture scope in discovery", async () => {
+    const metadata = await (await handleMcpEdge(new Request("http://internal/vosio-mcp/metadata"))).json();
+    expect(metadata.scopes_supported).toEqual(["vosio:read", "vosio:write", "vosio:capture"]);
+    const resource = await (await handleMcpEdge(new Request("http://internal/vosio-mcp/resource-metadata"))).json();
+    expect(resource.scopes_supported).toContain("vosio:capture");
+  });
+  it.each(["initialize", "tools/list"])("rejects a capture token on MCP %s before protocol handling", async (method) => {
+    mocks.auth.mockResolvedValue(captureIdentity);
+    const response = await handleMcpEdge(new Request("http://internal/vosio-mcp", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: {} }) }));
+    expect(response.status).toBe(403); expect(await response.json()).toEqual({ error: "insufficient_scope" });
+    expect(response.headers.get("www-authenticate")).toContain("insufficient_scope");
+    expect(mocks.auth).toHaveBeenCalledTimes(1);
+  });
+  it("rejects a capture token on the audio route without reading Storage", async () => {
+    mocks.auth.mockResolvedValue(captureIdentity);
+    const response = await handleMcpEdge(new Request(`http://internal/vosio-mcp/audio/${id}`));
+    expect(response.status).toBe(403); expect(await response.text()).not.toBe("audio"); expect(mocks.audio).not.toHaveBeenCalled();
+  });
+});

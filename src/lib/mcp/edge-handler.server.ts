@@ -1,7 +1,8 @@
 import "server-only";
 import { loadMcpConfig, type McpConfig } from "./config.server";
 import { runMcpRequest } from "./request-context.server";
-import { authenticateMcpRequest, McpAuthError } from "./auth.server";
+import { assertMcpReadScope, authenticateMcpRequest, McpAuthError } from "./auth.server";
+import { MCP_SCOPE_READ, MCP_SCOPES_SUPPORTED } from "./scopes";
 import { handleMcpProtocol } from "./protocol.server";
 import { browserIdentity, handleMcpOAuth, readBrowserPending, upstreamConsentDetails } from "./oauth.server";
 import { readAuthorizedAudioChunk } from "./audio.server";
@@ -12,8 +13,15 @@ export function mcpMetadata(config: McpConfig) {
   return { resource: config.resourceUrl, webOrigin: config.origin, issuer: config.issuer,
     authorization_endpoint: `${base}/authorize`, token_endpoint: `${config.resourceUrl}/oauth/token`, revocation_endpoint: `${config.resourceUrl}/oauth/revoke`,
     ...(config.dcrEnabled ? { registration_endpoint: `${config.resourceUrl}/oauth/register` } : {}),
-    scopes_supported: ["vosio:read", "vosio:write"], response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"],
+    scopes_supported: [...MCP_SCOPES_SUPPORTED], response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"],
     token_endpoint_auth_methods_supported: ["none"], revocation_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"] };
+}
+
+// Authenticate an MCP/audio request and explicitly reject tokens without vosio:read (e.g. browser-extension capture tokens) before any protocol handling.
+async function authenticateMcpRead(request: Request) {
+  const identity = await authenticateMcpRequest(request);
+  assertMcpReadScope(identity.scopes);
+  return identity;
 }
 
 // Return only nonce-bound page models, never pending ciphertext, session objects or secrets.
@@ -50,28 +58,30 @@ export async function handleMcpEdge(request: Request) {
     let response: Response;
     try {
       if (request.method === "GET" && suffix === "/metadata") response = Response.json(mcpMetadata(config));
-      else if (request.method === "GET" && suffix === "/resource-metadata") response = Response.json({ resource: config.resourceUrl, authorization_servers: [config.issuer], scopes_supported: ["vosio:read", "vosio:write"], bearer_methods_supported: ["header"] });
+      else if (request.method === "GET" && suffix === "/resource-metadata") response = Response.json({ resource: config.resourceUrl, authorization_servers: [config.issuer], scopes_supported: [...MCP_SCOPES_SUPPORTED], bearer_methods_supported: ["header"] });
       else if (request.method === "GET" && /^\/browser\/(pending|upstream|connections)$/.test(suffix)) response = await browserView(config, new URL(canonical.url));
       else if (/^\/oauth\/(authorize|callback|consent|token|revoke|register)$/.test(suffix)) {
         const action = suffix.split("/").at(-1)! as Parameters<typeof handleMcpOAuth>[1];
         const allowed = action === "authorize" || action === "callback" ? ["GET"] : action === "consent" ? ["GET", "POST"] : ["POST"];
         response = allowed.includes(request.method) ? await handleMcpOAuth(new Request(`${config.origin}/api/mcp${suffix}${incoming.search}`, canonical), action) : new Response(null, { status: 405 });
-      } else if (suffix === "") response = await handleMcpProtocol(canonical, authenticateMcpRequest);
+      } else if (suffix === "") response = await handleMcpProtocol(canonical, authenticateMcpRead);
       else if (request.method === "GET" && /^\/audio\/[a-f0-9-]+$/i.test(suffix)) {
-        const identity = await authenticateMcpRequest(canonical);
+        const identity = await authenticateMcpRead(canonical);
         if (incoming.search || request.headers.has("origin") && request.headers.get("origin") !== new URL(config.resourceUrl).origin) return new Response(null, { status: 403, headers: { "Cache-Control": "no-store" } });
         const value = request.headers.get("range"); const range = value ? /^bytes=(\d+)-(\d*)$/.exec(value) : null;
         const start = range ? Number(range[1]) : 0; const end = range?.[2] ? Number(range[2]) : start + 1_048_575;
         if (value && !range || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start + 1 > 1_048_576) return new Response(null, { status: 416, headers: { "Cache-Control": "no-store" } });
         const audio = await readAuthorizedAudioChunk(identity, suffix.slice(7), start, end - start + 1);
-        const after = await authenticateMcpRequest(canonical);
+        const after = await authenticateMcpRead(canonical);
         if (after.grantId !== identity.grantId || after.userId !== identity.userId) throw new McpAuthError("invalid_token");
         response = new Response(new Uint8Array(audio.bytes), { status: audio.status, headers: { "Content-Type": audio.mimeType, "Content-Length": String(audio.bytes.length), "Accept-Ranges": "bytes", Vary: "Authorization", "X-Content-Type-Options": "nosniff", ...(audio.contentRange ? { "Content-Range": audio.contentRange } : {}) } });
       } else response = new Response(null, { status: 404 });
     } catch (error) {
       const unauthorized = error instanceof McpAuthError && error.code === "invalid_token";
-      response = Response.json({ error: unauthorized ? "invalid_token" : "unavailable" }, { status: unauthorized ? 401 : 403,
-        headers: unauthorized ? { "WWW-Authenticate": `Bearer resource_metadata="${config.resourceUrl}/resource-metadata", error="invalid_token"` } : {} });
+      const insufficient = error instanceof McpAuthError && error.code === "insufficient_scope";
+      response = Response.json({ error: unauthorized ? "invalid_token" : insufficient ? "insufficient_scope" : "unavailable" }, { status: unauthorized ? 401 : 403,
+        headers: unauthorized ? { "WWW-Authenticate": `Bearer resource_metadata="${config.resourceUrl}/resource-metadata", error="invalid_token"` }
+          : insufficient ? { "WWW-Authenticate": `Bearer resource_metadata="${config.resourceUrl}/resource-metadata", error="insufficient_scope", scope="${MCP_SCOPE_READ}"` } : {} });
     }
     response.headers.set("Cache-Control", "no-store"); response.headers.set("Referrer-Policy", "no-referrer");
     return response;
