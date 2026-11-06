@@ -69,6 +69,21 @@ Velikost části: rozšíření rotuje `MediaRecorder` tak, aby část nepřekro
 ### D7 Nastavení Vosia
 Sekce „Připojené aplikace a rozšíření“ v `src/components/settings-panel.tsx` mezi `settings-storage` a `settings-appearance`, data z existujících `mcp_list_own_connections_v1` / `mcp_revoke_own_connection_v1` (stejné jako `app/mcp/connections`), popisek typu podle scopes (`vosio:capture` → „Rozšíření prohlížeče – nahrávání“). `app/mcp/connections` zůstává a sdílí formátování (dnes by capture grant popsal jako „Čtení“ – opravit). `mcp_list_own_connections_v1` nevrací návratovou adresu; v téže migraci se rozšíří o bezpečný identifikátor rozšíření (host `chromiumapp.org`), aby uživatel rozlišil Chrome a Edge.
 
+### D8 Drátový kontrakt capture API (závazný pro backend i rozšíření)
+Discovery: rozšíření z adresy webu načte `GET <web>/.well-known/oauth-authorization-server` (authorization/token/registration/revocation endpointy). Resource URL Function = `registration_endpoint` bez koncového `/oauth/register`; capture báze = `<resource>/capture`. Oprávnění k originu webu se žádá v gestu „Spárovat“, k originu Supabase (resource) druhým tlačítkem po discovery (další gesto). DCR: `token_endpoint_auth_method: "none"`, `grant_types: ["authorization_code","refresh_token"]`, `redirect_uris: [chrome.identity.getRedirectURL("oauth")]`, `scope: "vosio:capture"`, `client_name: "Vosio rozšíření prohlížeče"`. Authorize navíc s `resource=<resource>`.
+
+Všechny požadavky `POST`, `Authorization: Bearer <access>`, `Content-Type: application/json`, `Origin` doplní prohlížeč. Úspěch 200 JSON; chyba `{ "error": { "code": string, "message": string } }` (zpráva česky, bez interních detailů):
+
+| Endpoint | Tělo | Odpověď |
+|---|---|---|
+| `/capture/config` | `{}` | `{ audioBitsPerSecond, maxPartBytes, mimeType: "audio/webm", recorderMimeType: "audio/webm;codecs=opus", storage: { apiKey }, webOrigin, account: { email } }` |
+| `/capture/recordings` | `{ requestId: uuid, title: string 1–200, startedAt: ISO 8601 }` | `{ recordingId, captureRevision, status, detailUrl }` (idempotentní podle `requestId`) |
+| `/capture/recordings/{id}/parts` | `{ captureRevision, mimeType: "audio/webm", parts: [{ index 0–999, sizeBytes > 0 }] }` (souvislé od 0) | `{ captureRevision, parts: [{ index, state: "ready", uploadUrl } \| { index, state: "exists" }] }` |
+| `/capture/recordings/{id}/complete` | `{ requestId: uuid, captureRevision, durationSeconds > 0, partCount }` | `{ recordingId, status, transcription: { state: "queued" \| "not_started", operationId \| null }, detailUrl }` (opakování vrátí uložený výsledek) |
+| `/capture/recordings/{id}/status` | `{}` | `{ recordingId, status, transcriptionState \| null, detailUrl }` |
+
+`uploadUrl` = `<publicSupabaseUrl>/storage/v1/object/upload/sign/recordings/<path>?token=<token>`; rozšíření pošle `PUT` s tělem = surový blob části a hlavičkami `Content-Type: audio/webm`, `apikey: <storage.apiKey>`, `x-upsert: false`. Kódy chyb: 400 `invalid_request`, 401 `unauthorized` (s `WWW-Authenticate`; rozšíření zkusí jednou refresh), 403 `insufficient_scope` / `origin_mismatch`, 404 `not_found` (neexistující i cizí), 409 `revision_conflict` (rozšíření si načte `/status` a pokračuje s aktuální revizí) / `incomplete_parts` (některá část chybí nebo nesedí – nahrát znovu dotčené části přes nové `/parts`), 410 `recording_deleted` (vlastní nahrávka v koši/smazaná – ukončit opakování), 413 `part_too_large`, 429 `rate_limited`, 503 `unavailable` (opakovat s backoffem).
+
 ## Risks / Trade-offs
 
 - [DOM detekce Meet/Teams/Zoom se rozbije aktualizací jejich UI] → izolované moduly na platformu, fallback zavření karty/změna URL/ruční stop, ruční start funguje vždy; selektory v gotchas.
