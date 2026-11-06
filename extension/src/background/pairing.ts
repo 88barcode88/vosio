@@ -34,6 +34,9 @@ export class NeedsPairingError extends Error {
   }
 }
 
+// Message for installations whose server does not know the capture scope/endpoints yet (detected by DCR, authorize or /capture/config).
+export const UNSUPPORTED_MESSAGE = "Tato verze Vosia ještě nepodporuje rozšíření prohlížeče. Aktualizujte Vosio.";
+
 // Czech status line for the pairing state shown in popup and options.
 export function describeStatus(status: PairingStatus, state?: Pick<PairingState, "webOrigin" | "email">): string {
   if (status === "paired") {
@@ -91,10 +94,6 @@ export async function discover(webOrigin: string): Promise<Discovery> {
   const registration = httpsUrl(stringField(body, "registration_endpoint"));
   if (!authorization || !token || !registration || !new URL(registration).pathname.endsWith(REGISTRATION_SUFFIX)) {
     throw new PairingError("not_vosio", "Server nevrací platná OAuth metadata Vosia (nebo používá nezabezpečené adresy).");
-  }
-  const scopes = isRecord(body) && Array.isArray(body.scopes_supported) ? body.scopes_supported : [];
-  if (!scopes.includes(CAPTURE_SCOPE)) {
-    throw new PairingError("unsupported", "Tato verze Vosia ještě nepodporuje rozšíření prohlížeče. Aktualizujte Vosio.");
   }
   const methods = isRecord(body) && Array.isArray(body.code_challenge_methods_supported) ? body.code_challenge_methods_supported : ["S256"];
   if (!methods.includes("S256")) throw new PairingError("not_vosio", "Server nepodporuje PKCE S256.");
@@ -160,6 +159,10 @@ async function registerClient(discovery: Discovery, redirectUri: string): Promis
   }
   const body: unknown = await response.json().catch(() => null);
   const clientId = stringField(body, "client_id");
+  const registrationError = stringField(body, "error");
+  if (registrationError === "invalid_scope" || (registrationError === "invalid_client_metadata" && /scope/i.test(stringField(body, "error_description") ?? ""))) {
+    throw new PairingError("unsupported", UNSUPPORTED_MESSAGE);
+  }
   if (!response.ok || !clientId) throw new PairingError("auth_error", "Vosio odmítlo registraci rozšíření. Zkontrolujte, že je připojení MCP/OAuth zapnuté.");
   return clientId;
 }
@@ -234,6 +237,7 @@ async function authorize(discovery: Discovery, clientId: string, redirectUri: st
   const params = new URL(redirected).searchParams;
   const error = params.get("error");
   if (error === "invalid_client") throw new PairingError("invalid_client", "Vosio nezná tohoto klienta.");
+  if (error === "invalid_scope") throw new PairingError("unsupported", UNSUPPORTED_MESSAGE);
   if (error === "access_denied") throw new PairingError("cancelled", "Souhlas byl odmítnut. Rozšíření zůstává nespárované.");
   if (error) throw new PairingError("auth_error", params.get("error_description") ?? "Vosio odmítlo přihlášení.");
   const code = params.get("code");

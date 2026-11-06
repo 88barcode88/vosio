@@ -5,13 +5,19 @@ import {
   TICK_ALARM, UPLOAD_ALARM, UPLOAD_LOCK, UPLOAD_MIME
 } from "../shared/constants.ts";
 import { timing } from "../shared/format.ts";
-import { addHistory, readPairing } from "../shared/storage.ts";
+import { addHistory, readPairing, readTranscriptionRetries, writeTranscriptionRetries, type TranscriptionRetry } from "../shared/storage.ts";
 import type {
   CompleteResponse, CreateRecordingResponse, HistoryEntry, RegisterPartsResponse, StatusResponse, StoredSession
 } from "../shared/types.ts";
 import { getStore } from "../db/store.ts";
 import { CaptureApiError, capturePost, fetchConfig, putPart } from "./capture-api.ts";
+import { startKeepAlive } from "./keep-alive.ts";
 import { describeStatus, NeedsPairingError, PairingError } from "./pairing.ts";
+import { isHttpsOnOrigin, safeDetailUrl } from "./url-guard.ts";
+
+const MAX_TRANSCRIPTION_RETRIES = 3;
+// Set when a queue run was requested while another run held the lock; the holder loops again instead of waiting for the next tick.
+let rerunRequested = false;
 
 // Callbacks the service worker installs to refresh UI and show notifications; no-ops by default (tests).
 export const uploadHooks = {
@@ -35,25 +41,51 @@ async function patch(session: StoredSession, changes: Partial<StoredSession>): P
 // Uploads one part with short in-process retries; rethrows non-retryable and exhausted failures.
 async function putWithRetry(url: string, blob: Blob, apiKey: string): Promise<void> {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= PUT_ATTEMPTS; attempt += 1) {
-    try {
-      await putPart(url, blob, apiKey);
-      return;
-    } catch (error) {
-      lastError = error;
-      if (!(error instanceof CaptureApiError) || !error.retryable) throw error;
-      if (attempt < PUT_ATTEMPTS) await timing.sleep(1000 * 3 ** (attempt - 1));
+  // Pings an extension API while the PUT is pending so Chrome does not kill the idle worker mid-upload.
+  const stopKeepAlive = startKeepAlive();
+  try {
+    for (let attempt = 1; attempt <= PUT_ATTEMPTS; attempt += 1) {
+      try {
+        await putPart(url, blob, apiKey);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!(error instanceof CaptureApiError) || !error.retryable) throw error;
+        if (attempt < PUT_ATTEMPTS) await timing.sleep(1000 * 3 ** (attempt - 1));
+      }
     }
+  } finally {
+    stopKeepAlive();
   }
   throw lastError;
 }
 
-// Records a confirmed upload in the history, deletes the local data and notifies the UI.
-async function finishSession(session: StoredSession, detailUrl: string | null, transcription: string | null): Promise<void> {
+// Records a confirmed upload in the history, deletes the local data and notifies the UI; "not_started" transcription gets one delayed /complete retry.
+async function finishSession(session: StoredSession, detailUrl: string | null, transcription: string | null, retry?: Omit<TranscriptionRetry, "attempts">): Promise<void> {
   const entry: HistoryEntry = { id: session.id, title: session.title ?? session.platformLabel, detailUrl, at: timing.now(), transcription };
   await addHistory(entry);
+  if (transcription === "not_started" && retry) await writeTranscriptionRetries([...(await readTranscriptionRetries()), { ...retry, attempts: 0 }]);
   await getStore().deleteSession(session.id);
   uploadHooks.onDone(entry);
+}
+
+// Retries /complete (same requestId) for recordings whose transcription was not started; dropped after success, a definitive error or 3 tries.
+async function retryTranscriptionStarts(): Promise<void> {
+  const retries = await readTranscriptionRetries();
+  if (retries.length === 0) return;
+  const remaining: TranscriptionRetry[] = [];
+  for (const retry of retries) {
+    try {
+      const result = await capturePost<CompleteResponse>(`/recordings/${retry.recordingId}/complete`, {
+        requestId: retry.requestId, captureRevision: retry.captureRevision, durationSeconds: retry.durationSeconds, partCount: retry.partCount
+      });
+      if (result.transcription?.state === "not_started" && retry.attempts + 1 < MAX_TRANSCRIPTION_RETRIES) remaining.push({ ...retry, attempts: retry.attempts + 1 });
+    } catch (error) {
+      const transient = error instanceof NeedsPairingError || error instanceof PairingError || (error instanceof CaptureApiError && error.retryable);
+      if (transient && retry.attempts + 1 < MAX_TRANSCRIPTION_RETRIES) remaining.push({ ...retry, attempts: retry.attempts + 1 });
+    }
+  }
+  await writeTranscriptionRetries(remaining);
 }
 
 // Reads the server-side state after a revision conflict; returns done info or the current revision.
@@ -82,9 +114,13 @@ async function uploadSession(initial: StoredSession): Promise<void> {
     const created = await capturePost<CreateRecordingResponse>("/recordings", {
       requestId: session.requestId, title: session.title, startedAt: new Date(session.startedAt).toISOString()
     });
-    session = await patch(session, { recordingId: created.recordingId, captureRevision: created.captureRevision, accountEmail: config.account.email || null, detailUrl: created.detailUrl });
+    session = await patch(session, { recordingId: created.recordingId, captureRevision: created.captureRevision, accountEmail: config.account.email || null, detailUrl: safeDetailUrl(created.detailUrl, config.webOrigin) });
   }
   const recordingId = session.recordingId as string;
+  const resourceOrigin = new URL((await readPairing()).resource).origin;
+  // Detail links from the server are only kept (and later opened) when HTTPS on the Vosio web origin.
+  const detailOf = (url: unknown): string | null => safeDetailUrl(url, config.webOrigin);
+  let reregisteredAfterRejection = false;
 
   for (let round = 0; round < SESSION_MAX_ROUNDS; round += 1) {
     let registration: RegisterPartsResponse;
@@ -95,7 +131,7 @@ async function uploadSession(initial: StoredSession): Promise<void> {
     } catch (error) {
       if (error instanceof CaptureApiError && error.code === "revision_conflict") {
         const synced = await syncRevision(session);
-        if ("done" in synced) return finishSession(session, synced.done.detailUrl, synced.done.transcriptionState);
+        if ("done" in synced) return finishSession(session, detailOf(synced.done.detailUrl), synced.done.transcriptionState);
         session = await patch(session, { captureRevision: synced.revision });
         continue;
       }
@@ -108,6 +144,9 @@ async function uploadSession(initial: StoredSession): Promise<void> {
       if (part.state !== "ready") continue;
       const source = parts[part.index];
       if (!source) continue;
+      if (!isHttpsOnOrigin(part.uploadUrl, resourceOrigin)) {
+        throw new CaptureApiError(422, "invalid_upload_url", "Server vrátil neplatnou adresu pro nahrání audia (musí být HTTPS na serveru Vosia).");
+      }
       try {
         await putWithRetry(part.uploadUrl, await store.getPartBlob(session.id, source.part, UPLOAD_MIME), config.storage.apiKey);
         session = await patch(session, { uploadedParts: [...new Set([...session.uploadedParts, part.index])] });
@@ -120,18 +159,23 @@ async function uploadSession(initial: StoredSession): Promise<void> {
         throw error;
       }
     }
-    if (urlRejected) continue;
+    if (urlRejected) {
+      // An expired/invalid signed token: re-register the parts once (new upload URLs) before giving up.
+      if (reregisteredAfterRejection) throw new CaptureApiError(403, "upload_rejected", "Úložiště opakovaně odmítlo nahrání části nahrávky.");
+      reregisteredAfterRejection = true;
+      continue;
+    }
 
+    const completeBody = { requestId: session.completeRequestId as string, captureRevision: session.captureRevision as number, durationSeconds: session.durationSeconds as number, partCount: parts.length };
     try {
-      const result = await capturePost<CompleteResponse>(`/recordings/${recordingId}/complete`, {
-        requestId: session.completeRequestId, captureRevision: session.captureRevision, durationSeconds: session.durationSeconds, partCount: parts.length
-      });
-      return finishSession(session, result.detailUrl, result.transcription?.state ?? null);
+      const result = await capturePost<CompleteResponse>(`/recordings/${recordingId}/complete`, completeBody);
+      // transcription "not_started" is not a failure: the audio is saved and the start is retried once later with the same requestId.
+      return finishSession(session, detailOf(result.detailUrl), result.transcription?.state ?? null, { recordingId, ...completeBody });
     } catch (error) {
       if (error instanceof CaptureApiError && error.code === "incomplete_parts") continue;
       if (error instanceof CaptureApiError && error.code === "revision_conflict") {
         const synced = await syncRevision(session);
-        if ("done" in synced) return finishSession(session, synced.done.detailUrl, synced.done.transcriptionState);
+        if ("done" in synced) return finishSession(session, detailOf(synced.done.detailUrl), synced.done.transcriptionState);
         session = await patch(session, { captureRevision: synced.revision });
         continue;
       }
@@ -185,30 +229,43 @@ export async function scheduleNext(): Promise<void> {
 // Processes all due sessions one by one under a cross-context lock; safe to call repeatedly.
 export async function processQueue(): Promise<void> {
   await navigator.locks.request(UPLOAD_LOCK, { ifAvailable: true }, async (lock) => {
-    if (!lock) return;
-    const store = getStore();
-    for (;;) {
-      const pairing = await readPairing();
-      const sessions = (await store.listSessions()).filter((session) => session.endedAt !== null).sort((a, b) => a.startedAt - b.startedAt);
-      if (pairing.status !== "paired") {
-        for (const session of sessions.filter((item) => item.status === "queued" || item.status === "uploading")) {
-          await patch(session, { status: "waiting-pair", lastError: describeStatus(pairing.status) });
-        }
-        break;
-      }
-      const now = timing.now();
-      const due = sessions.find((session) => (session.status === "queued" || session.status === "uploading") && (session.nextAttemptAt ?? 0) <= now);
-      if (!due) break;
-      try {
-        await uploadSession(due);
-      } catch (error) {
-        if ((await handleFailure(due.id, error)) === "stop") break;
-      }
-      uploadHooks.onChange();
+    if (!lock) {
+      // Another run holds the lock: ask it to loop once more so newly queued sessions are not left for the next tick.
+      rerunRequested = true;
+      return;
     }
+    do {
+      rerunRequested = false;
+      await drainQueue();
+    } while (rerunRequested);
   });
   await scheduleNext();
   uploadHooks.onChange();
+}
+
+// Uploads every due session once, then retries pending transcription starts; runs inside the queue lock.
+async function drainQueue(): Promise<void> {
+  const store = getStore();
+  for (;;) {
+    const pairing = await readPairing();
+    const sessions = (await store.listSessions()).filter((session) => session.endedAt !== null).sort((a, b) => a.startedAt - b.startedAt);
+    if (pairing.status !== "paired") {
+      for (const session of sessions.filter((item) => item.status === "queued" || item.status === "uploading")) {
+        await patch(session, { status: "waiting-pair", lastError: describeStatus(pairing.status) });
+      }
+      break;
+    }
+    const now = timing.now();
+    const due = sessions.find((session) => (session.status === "queued" || session.status === "uploading") && (session.nextAttemptAt ?? 0) <= now);
+    if (!due) break;
+    try {
+      await uploadSession(due);
+    } catch (error) {
+      if ((await handleFailure(due.id, error)) === "stop") break;
+    }
+    uploadHooks.onChange();
+  }
+  if ((await readPairing()).status === "paired") await retryTranscriptionStarts();
 }
 
 // Requeues sessions waiting for pairing or retry (resetting the backoff) and runs the queue; used after pairing and manual retry.

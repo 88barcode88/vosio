@@ -14,8 +14,9 @@ Manifest: `extension/manifest.json`. Pro každé oprávnění: co dělá, proč 
 | `scripting` | Registrace content scriptu pro vlastní weby, které uživatel sám přidá v nastavení. |
 | `tabs` | Čtení URL a stavu aktivní karty pro rozpoznání schůzky a automatické ukončení (zavření karty, odchod z adresy schůzky). Obsah stránek se nečte. |
 | `notifications` | Volitelné upozornění „Schůzka zjištěna“ a hlášení „Uloženo ve Vosiu“ / „Je potřeba znovu spárovat“. |
-| `commands` | Klávesová zkratka pro spuštění/zastavení nahrávání (výchozí Alt+Shift+R). |
 | `alarms` | Opakování odesílání po výpadku sítě a pravidelná kontrola čekajících nahrávek. |
+
+Klávesová zkratka (výchozí Alt+Shift+R) je klíč `commands` v manifestu, nikoli oprávnění.
 
 ## Hostitelská oprávnění (`host_permissions`)
 

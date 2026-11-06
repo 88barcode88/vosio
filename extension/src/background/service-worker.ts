@@ -9,8 +9,10 @@ import type { MeetingState } from "../shared/types.ts";
 import { getStore } from "../db/store.ts";
 import { getConfigOrCached } from "./capture-api.ts";
 import { chromeCaptureBackend } from "./offscreen-client.ts";
+import { authorizeMessage } from "./message-guard.ts";
 import { describeStatus } from "./pairing.ts";
 import { RecordingController } from "./recording.ts";
+import { decideShortcut } from "./shortcut.ts";
 import { syncCustomScripts } from "./sites.ts";
 import { refreshToolbar } from "./tab-ui.ts";
 import { discardSession, ensureTickAlarm, kickQueue, processQueue, uploadHooks } from "./upload.ts";
@@ -50,8 +52,18 @@ chrome.notifications.onClicked.addListener((id) => {
   void chrome.notifications.clear(id);
 });
 
-// Loads persisted tab states once per worker lifetime so decisions survive service worker restarts.
-const ready: Promise<void> = (async () => {
+// Restricts the token storage to trusted extension contexts where the browser supports it (content scripts then cannot read it).
+async function restrictStorageAccess(): Promise<void> {
+  try {
+    await chrome.storage.local.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" });
+  } catch (error) {
+    console.warn("Vosio: storage access level could not be restricted", error);
+  }
+}
+
+// One-time worker initialization: loads persisted tab states, alarms, custom scripts, crash recovery and the upload queue.
+async function init(): Promise<void> {
+  await restrictStorageAccess();
   const stored = await readTabStates();
   tabStates = Object.fromEntries(Object.entries(stored).map(([key, value]) => [Number(key), value]));
   await ensureTickAlarm();
@@ -59,7 +71,19 @@ const ready: Promise<void> = (async () => {
   await controller.recover();
   void processQueue();
   scheduleRefresh();
-})();
+}
+
+let readyPromise: Promise<void> | null = null;
+
+// Returns the init promise; a failed init is logged and reset so the next event retries it instead of staying rejected forever.
+function whenReady(): Promise<void> {
+  readyPromise ??= init().catch((error: unknown) => {
+    readyPromise = null;
+    console.error("Vosio: service worker initialization failed", error);
+    throw error;
+  });
+  return readyPromise;
+}
 
 // Persists the current tab states to session storage.
 function persistTabStates(): Promise<void> {
@@ -91,7 +115,7 @@ async function promptUser(reason: string): Promise<void> {
 
 // Handles a toolbar click on a tab where the popup is disabled (mode Automaticky): starts recording immediately.
 async function handleActionClick(tab: { id?: number; url?: string; title?: string }, streamPromise: Promise<string> | null): Promise<void> {
-  await ready;
+  await whenReady();
   const [settings, pairing, noticeAccepted, active] = await Promise.all([loadSettings(), readPairing(), readNoticeAccepted(), readActiveRecording()]);
   if (active || settings.mode !== "auto" || pairing.status !== "paired" || !noticeAccepted || tab.id === undefined || !streamPromise) {
     await promptUser(pairing.status === "paired" ? "Otevřete okno rozšíření a potvrďte nahrávání." : describeStatus(pairing.status));
@@ -117,18 +141,19 @@ chrome.action.onClicked.addListener((tab) => {
 
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command !== DEFAULT_SHORTCUT_COMMAND) return;
-  // Request the stream id synchronously in the shortcut gesture; it is simply unused when the shortcut stops a recording.
+  // Request the stream id synchronously in the shortcut gesture; it is simply unused when the shortcut stops a recording or asks first.
   const streamPromise = tab?.id !== undefined ? chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }) : null;
   streamPromise?.catch(() => undefined);
   void (async () => {
-    await ready;
-    const active = await readActiveRecording();
-    if (active) {
+    await whenReady();
+    const [settings, pairing, noticeAccepted, active] = await Promise.all([loadSettings(), readPairing(), readNoticeAccepted(), readActiveRecording()]);
+    const action = decideShortcut({ recording: active !== null, mode: settings.mode, paired: pairing.status === "paired", noticeAccepted, canCapture: tab?.id !== undefined && streamPromise !== null });
+    if (action === "stop") {
       await controller.stop("manual");
       return;
     }
-    const [pairing, noticeAccepted] = await Promise.all([readPairing(), readNoticeAccepted()]);
-    if (pairing.status !== "paired" || !noticeAccepted || !tab || tab.id === undefined || !streamPromise) {
+    if (action === "prompt" || !tab || tab.id === undefined || !streamPromise) {
+      // Zeptat se / Vypnuto (or unpaired / notice pending): confirmation happens in the popup.
       await promptUser(pairing.status === "paired" ? "Otevřete okno rozšíření a potvrďte nahrávání." : describeStatus(pairing.status));
       return;
     }
@@ -141,7 +166,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 
 // Stores the content script report for a tab, stops the recording when the call ended and updates the toolbar.
 async function handleMeetingState(tabId: number, url: string, state: MeetingState): Promise<void> {
-  await ready;
+  await whenReady();
   const previous = tabStates[tabId];
   tabStates = { ...tabStates, [tabId]: state };
   tabUrls[tabId] = url;
@@ -179,7 +204,7 @@ async function buildPopupState(tabId: number | null): Promise<PopupState> {
 
 // Routes a message from popup/options/content/offscreen to its handler and returns the response.
 async function handleMessage(message: ServiceWorkerMessage, sender: chrome.runtime.MessageSender): Promise<unknown> {
-  await ready;
+  await whenReady();
   switch (message.type) {
     case "start-recording":
       return startFromTab({ id: message.tabId, url: message.tabUrl, title: message.tabTitle }, message.streamId, message.replaceExisting === true);
@@ -218,9 +243,14 @@ async function handleMessage(message: ServiceWorkerMessage, sender: chrome.runti
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Offscreen-targeted messages and unknown shapes are not for the service worker.
-  if (!isRecord(message) || typeof message.type !== "string" || message.target === "offscreen") return undefined;
-  handleMessage(message as unknown as ServiceWorkerMessage, sender)
+  // Offscreen-targeted messages are not for the service worker.
+  if (isRecord(message) && message.target === "offscreen") return undefined;
+  const authorized = authorizeMessage(message, sender, chrome.runtime.id, chrome.runtime.getURL(""));
+  if (!authorized) {
+    sendResponse({ ok: false, error: "Zpráva byla odmítnuta." });
+    return undefined;
+  }
+  handleMessage(authorized, sender)
     .then(sendResponse)
     .catch((error: unknown) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "Neznámá chyba" }));
   return true;
@@ -228,7 +258,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   void (async () => {
-    await ready;
+    await whenReady();
     const { [tabId]: _removed, ...rest } = tabStates;
     tabStates = rest;
     delete tabUrls[tabId];
@@ -240,7 +270,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (!changeInfo.url && changeInfo.status !== "complete") return;
   void (async () => {
-    await ready;
+    await whenReady();
     const url = changeInfo.url ?? tab.url ?? "";
     if (url) tabUrls[tabId] = url;
     if (changeInfo.url) await controller.handleUrlChange(tabId, changeInfo.url);
@@ -259,9 +289,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === UPLOAD_ALARM || alarm.name === TICK_ALARM) void ready.then(() => processQueue());
+  if (alarm.name === UPLOAD_ALARM || alarm.name === TICK_ALARM) void whenReady().then(() => processQueue());
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void whenReady().then(() => kickQueue());
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  void ready.then(() => ensureTickAlarm());
+  void whenReady().then(() => ensureTickAlarm());
 });

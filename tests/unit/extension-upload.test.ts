@@ -261,6 +261,119 @@ describe("upload queue: failures and retries", () => {
     expect(done).toHaveLength(0);
   });
 
+  it("on 409 incomplete_parts resends the FULL contiguous part list from index 0 (existing parts come back as exists)", async () => {
+    await makeSession([10, 20, 30]);
+    const lists: number[][] = [];
+    let completes = 0;
+    server.intercept = (route, request) => {
+      if (route.endsWith("/parts")) lists.push((request.body as { parts: Array<{ index: number }> }).parts.map((part) => part.index));
+      if (route.endsWith("/complete") && (completes += 1) === 1) server.objects.delete("rec-1/part-2");
+      return undefined;
+    };
+    await processQueue();
+    expect(lists).toEqual([[0, 1, 2], [0, 1, 2]]);
+    expect(server.putCount).toBe(4);
+    expect(store.sessions.size).toBe(0);
+  });
+
+  it("fails with incomplete_parts semantics when the registered part count differs from partCount (server side)", async () => {
+    await makeSession([10, 20]);
+    server.intercept = (route, request) => {
+      if (route.endsWith("/complete")) (request.body as { partCount: number }).partCount = 3;
+      return undefined;
+    };
+    await processQueue();
+    expect((await store.getSession("local-1"))?.status).toBe("queued");
+    expect(done).toHaveLength(0);
+  });
+
+  it("re-registers once when a signed upload URL was rejected (expired token) and then succeeds", async () => {
+    await makeSession([10]);
+    once("/part-0", () => new Response("expired", { status: 403 }));
+    await processQueue();
+    expect(server.calls.filter((route) => route.endsWith("/parts"))).toHaveLength(2);
+    expect(store.sessions.size).toBe(0);
+  });
+
+  it("marks the recording failed when the storage keeps rejecting the upload after one re-registration", async () => {
+    await makeSession([10]);
+    server.intercept = (route) => (route.startsWith("PUT ") ? new Response("denied", { status: 401 }) : undefined);
+    await processQueue();
+    expect(server.calls.filter((route) => route.endsWith("/parts"))).toHaveLength(2);
+    expect(await store.getSession("local-1")).toMatchObject({ status: "failed" });
+    expect(store.chunks).toHaveLength(1);
+  });
+
+  it("refuses upload URLs outside the paired server origin (no PUT is sent)", async () => {
+    await makeSession([10]);
+    server.intercept = async (route) => {
+      if (!route.endsWith("/parts")) return undefined;
+      return new Response(JSON.stringify({ captureRevision: 9, parts: [{ index: 0, state: "ready", uploadUrl: "https://evil.example/upload?token=t" }] }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    await processQueue();
+    expect(await store.getSession("local-1")).toMatchObject({ status: "failed", lastError: expect.stringContaining("neplatnou adresu") });
+    expect(server.putCount).toBe(0);
+  });
+
+  it("does not keep or open a detail URL outside the Vosio web origin", async () => {
+    await makeSession([10]);
+    server.intercept = async (route) => {
+      if (!route.endsWith("/complete")) return undefined;
+      return new Response(JSON.stringify({ recordingId: "rec-1", status: "uploaded", transcription: { state: "queued", operationId: null }, detailUrl: "https://evil.example/x" }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    await processQueue();
+    expect((await readHistory())[0].detailUrl).toBeNull();
+  });
+
+  it("treats transcription not_started as saved (local data deleted) and retries /complete with the same requestId", async () => {
+    await makeSession([10]);
+    server.transcriptionState = "not_started";
+    const completes: string[] = [];
+    server.intercept = (route, request) => {
+      if (route.endsWith("/complete")) completes.push((request.body as { requestId: string }).requestId);
+      return undefined;
+    };
+    await processQueue();
+    expect(done).toHaveLength(1);
+    expect(store.sessions.size).toBe(0);
+    expect(store.chunks).toHaveLength(0);
+    expect(completes.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(completes)).toEqual(new Set(["22222222-2222-4222-8222-222222222222"]));
+    expect((await readHistory())[0].transcription).toBe("not_started");
+  });
+
+  it("treats a recording already closed by the web (409 revision_conflict, status uploaded) as done", async () => {
+    await makeSession([10]);
+    once("/parts", () => {
+      const recording = server.recordings.get("rec-1")!;
+      recording.revision += 3;
+      recording.completeRequestId = "closed-by-web";
+      return undefined;
+    });
+    await processQueue();
+    expect(store.sessions.size).toBe(0);
+    expect(done).toHaveLength(1);
+    expect(server.putCount).toBe(0);
+  });
+
+  it("picks up a session queued while the lock is held in the same run (no wait for the next tick)", async () => {
+    await makeSession([10]);
+    let injected = false;
+    server.intercept = async (route) => {
+      if (route.endsWith("/complete") && !injected) {
+        injected = true;
+        const first = (await store.getSession("local-1"))!;
+        await store.putSession({ ...first, id: "local-2", status: "queued", recordingId: null, captureRevision: null, uploadedParts: [], startedAt: first.startedAt + 1, requestId: "33333333-3333-4333-8333-333333333333", completeRequestId: "44444444-4444-4444-8444-444444444444" });
+        await store.addChunk({ sessionId: "local-2", part: 0, seq: 0, t: 2, blob: new Blob([new Uint8Array(5)]) });
+        void processQueue();
+      }
+      return undefined;
+    };
+    await processQueue();
+    expect(store.sessions.size).toBe(0);
+    expect(server.recordings.size).toBe(2);
+  });
+
   it("backs off exponentially up to 15 minutes", () => {
     expect([1, 2, 3].map(backoffMs)).toEqual([5000, 10000, 20000]);
     expect(backoffMs(40)).toBe(15 * 60 * 1000);

@@ -28,8 +28,30 @@ const KEYS = {
   notice: "noticeAccepted",
   active: "activeRecording",
   history: "history",
-  tabStates: "tabStates"
+  tabStates: "tabStates",
+  retries: "transcriptionRetries"
 } as const;
+
+// Pending retry of /complete for a recording whose audio is stored but whose transcription was reported as "not_started".
+export interface TranscriptionRetry {
+  recordingId: string;
+  requestId: string;
+  captureRevision: number;
+  durationSeconds: number;
+  partCount: number;
+  attempts: number;
+}
+
+// Reads the transcription start retries that survive deletion of the local audio.
+export async function readTranscriptionRetries(): Promise<TranscriptionRetry[]> {
+  const stored = (await chrome.storage.local.get(KEYS.retries))[KEYS.retries];
+  return Array.isArray(stored) ? (stored as TranscriptionRetry[]) : [];
+}
+
+// Replaces the list of transcription start retries.
+export async function writeTranscriptionRetries(retries: TranscriptionRetry[]): Promise<void> {
+  await chrome.storage.local.set({ [KEYS.retries]: retries });
+}
 
 // Narrows an unknown value to a valid recording mode.
 function isMode(value: unknown): value is Mode {

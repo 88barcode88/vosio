@@ -6,6 +6,7 @@ import type { OffscreenStartResult, OffscreenStatusResult } from "../shared/mess
 import { SessionRecorder, type RecorderLike } from "./session-recorder.ts";
 
 const HEARTBEAT_MS = 20_000;
+const MIC_TIMEOUT_MS = 4_000;
 
 interface RunningCapture {
   sessionId: string;
@@ -32,9 +33,24 @@ async function release(capture: RunningCapture): Promise<void> {
 // Opens the microphone; null when permission was not granted (recording continues with tab audio only).
 async function openMic(): Promise<MediaStream | null> {
   try {
-    return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+    // Without a prior grant getUserMedia could wait for a prompt nobody can see in an offscreen document.
+    const permission = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    if (permission.state !== "granted") return null;
   } catch {
-    return null;
+    // Permissions API unavailable: fall through to the guarded getUserMedia below.
+  }
+  const request = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), MIC_TIMEOUT_MS);
+  });
+  try {
+    const stream = await Promise.race([request.catch(() => null), timeout]);
+    // A stream that arrives after the timeout must not keep the microphone open.
+    if (stream === null) void request.then((late) => late.getTracks().forEach((track) => track.stop())).catch(() => undefined);
+    return stream;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

@@ -18,8 +18,7 @@ async function applyToTab(tabId: number, text: string, color: string, title: str
 }
 
 // Recomputes the global badge and the badge/popup of every tab with a known meeting state (and the recorded tab).
-export async function refreshToolbar(tabStates: Record<number, MeetingState>, tabUrls: Record<number, string>): Promise<void> {
-  const [settings, pairing, noticeAccepted, active] = await Promise.all([loadSettings(), readPairing(), readNoticeAccepted(), readActiveRecording()]);
+export async function refreshToolbar(tabStates: Record<number, MeetingState>, tabUrls: Record<number, string>): Promise<void> {  const [settings, pairing, noticeAccepted, active] = await Promise.all([loadSettings(), readPairing(), readNoticeAccepted(), readActiveRecording()]);
   const paired = pairing.status === "paired";
   const globalText = active ? "REC" : paired ? "" : "!";
   const globalColor = active ? COLORS.recording : COLORS.pairing;
@@ -29,7 +28,8 @@ export async function refreshToolbar(tabStates: Record<number, MeetingState>, ta
   const tabIds = new Set<number>([...Object.keys(tabStates).map(Number), ...(active ? [active.tabId] : [])]);
   for (const tabId of tabIds) {
     const state = tabStates[tabId];
-    const url = tabUrls[tabId] ?? "";
+    // tabUrls lives in worker memory; after a worker restart the URL is read from the tab itself.
+    const url = tabUrls[tabId] ?? (await chrome.tabs.get(tabId).catch(() => null))?.url ?? "";
     const meeting = settings.mode !== "off" && url !== "" && isMeetingTab(url, state?.inCall ?? false, customHosts);
     if (active) {
       await applyToTab(tabId, "REC", COLORS.recording, active.tabId === tabId ? "Vosio – nahrává se (otevřete okno pro zastavení)" : "Vosio – probíhá nahrávání jiné karty", POPUP_PATH);

@@ -36,7 +36,6 @@
     "scripting",
     "tabs",
     "notifications",
-    "commands",
     "alarms"
   ],
   "host_permissions": [

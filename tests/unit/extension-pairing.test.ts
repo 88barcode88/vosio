@@ -84,12 +84,28 @@ describe("extension pairing: discovery and permission errors", () => {
     await expect(discover(WEB)).rejects.toMatchObject({ code: "not_vosio" });
   });
 
-  it("reports an installation without vosio:capture support", async () => {
-    server.intercept = async (_route, request) => {
-      if (!request.url.includes("well-known")) return undefined;
-      return new Response(JSON.stringify({ authorization_endpoint: `${WEB}/a`, token_endpoint: `${WEB}/t`, registration_endpoint: `${RESOURCE}/oauth/register`, scopes_supported: ["vosio:read"] }), { status: 200 });
-    };
-    await expect(discover(WEB)).rejects.toMatchObject({ code: "unsupported" });
+  it("does not require vosio:capture in scopes_supported (server advertises only read/write)", async () => {
+    await expect(discover(WEB)).resolves.toMatchObject({ resource: RESOURCE });
+  });
+
+  it("detects an installation without capture support via DCR invalid_scope", async () => {
+    server.intercept = (route) => (route.endsWith("/oauth/register") ? new Response(JSON.stringify({ error: "invalid_scope" }), { status: 400 }) : undefined);
+    await expect(pairWithServer(await discover(WEB))).rejects.toMatchObject({ code: "unsupported" });
+    expect((await readPairing()).status).toBe("unpaired");
+  });
+
+  it("detects an installation without capture support via authorize invalid_scope", async () => {
+    chromeStub.identity.launchWebAuthFlow.mockImplementation(async ({ url }: { url: string }) => `${new URL(url).searchParams.get("redirect_uri")}?error=invalid_scope`);
+    await expect(pairWithServer(await discover(WEB))).rejects.toMatchObject({ code: "unsupported" });
+  });
+
+  it("detects an installation without capture endpoints via 404 from /capture/config and rolls the pairing back", async () => {
+    server.intercept = (route) => (route.endsWith("/capture/config") ? new Response(JSON.stringify({ error: { code: "not_found", message: "x" } }), { status: 404 }) : undefined);
+    const step = await startPairing(WEB);
+    const result = await continuePairing(discoveryOf(step));
+    expect(result).toMatchObject({ kind: "error", message: expect.stringContaining("Aktualizujte Vosio") });
+    expect((await readPairing()).status).toBe("unpaired");
+    expect(server.grant.revoked).toBe(true);
   });
 
   it("explains the denied web origin permission and does not call the server", async () => {

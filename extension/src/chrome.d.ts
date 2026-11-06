@@ -27,6 +27,7 @@ declare namespace chrome {
     function getURL(path: string): string;
     function getContexts(filter: { contextTypes?: string[]; documentUrls?: string[] }): Promise<ExtensionContext[]>;
     function getManifest(): { version: string; name: string };
+    function getPlatformInfo(): Promise<{ os: string }>;
     function openOptionsPage(): Promise<void>;
     const onMessage: ChromeEvent<(message: unknown, sender: MessageSender, sendResponse: (response?: unknown) => void) => boolean | void>;
     const onInstalled: ChromeEvent<(details: { reason: string }) => void>;
@@ -42,6 +43,8 @@ declare namespace chrome {
       get(keys?: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>>;
       set(items: Record<string, unknown>): Promise<void>;
       remove(keys: string | string[]): Promise<void>;
+      // Present only in newer Chrome versions; feature-detected before use.
+      setAccessLevel?(accessOptions: { accessLevel: string }): Promise<void>;
     }
     const local: StorageArea;
     const sync: StorageArea;

@@ -16,8 +16,8 @@ let busy = false;
 
 const MODES: Array<{ value: Mode; label: string; hint: string }> = [
   { value: "auto", label: "Automaticky", hint: "Kliknutí na ikonu (nebo zkratka) na schůzce okamžitě spustí nahrávání, bez dalšího dialogu." },
-  { value: "ask", label: "Zeptat se", hint: "Po kliknutí na ikonu se zobrazí potvrzení „Nahrát tuto schůzku?“." },
-  { value: "off", label: "Vypnuto", hint: "Schůzky se nehlídají ani neoznačují. Nahrávání lze stále spustit ručně z okna rozšíření." }
+  { value: "ask", label: "Zeptat se", hint: "Po kliknutí na ikonu nebo stisku zkratky se zobrazí okno s potvrzením „Nahrát tuto schůzku?“." },
+  { value: "off", label: "Vypnuto", hint: "Schůzky se nehlídají ani neoznačují a nic se nespouští samo. Nahrávání lze spustit ručně z okna rozšíření (zkratka okno otevře)." }
 ];
 
 // Sends a message to the service worker, ignoring a missing receiver.

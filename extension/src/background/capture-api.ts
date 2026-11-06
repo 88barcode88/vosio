@@ -4,7 +4,7 @@ import { REQUEST_TIMEOUT_MS, UPLOAD_MIME, UPLOAD_TIMEOUT_MS } from "../shared/co
 import { isRecord, numberField, stringField, timing } from "../shared/format.ts";
 import { readCachedConfig, readPairing, writeCachedConfig, writePairing } from "../shared/storage.ts";
 import type { CaptureConfig, Discovery, PairingState } from "../shared/types.ts";
-import { disconnect, getAccessToken, markNeedsPairing, NeedsPairingError, pairWithServer } from "./pairing.ts";
+import { disconnect, getAccessToken, markNeedsPairing, NeedsPairingError, PairingError, pairWithServer, UNSUPPORTED_MESSAGE } from "./pairing.ts";
 
 // Error returned by the capture API or the storage PUT; status 0 means a network failure.
 export class CaptureApiError extends Error {
@@ -111,6 +111,8 @@ export async function finishPairing(discovery: Discovery): Promise<PairingState>
     return next;
   } catch (error) {
     await disconnect();
+    // An installation without the capture endpoints answers /capture/config with 404.
+    if (error instanceof CaptureApiError && error.status === 404) throw new PairingError("unsupported", UNSUPPORTED_MESSAGE);
     if (error instanceof CaptureApiError && error.status === 403) {
       throw new CaptureApiError(403, error.code, "Vosio nepovolilo rozšíření tohoto původu. Zkontrolujte ID rozšíření v nastavení připojení.");
     }
@@ -136,6 +138,7 @@ export async function putPart(uploadUrl: string, blob: Blob, apiKey: string): Pr
   if (response.ok) return "uploaded";
   const text = await response.text().catch(() => "");
   if (response.status === 409 || /duplicate|already exists/i.test(text)) return "exists";
-  if (response.status === 401 || response.status === 403) throw new CaptureApiError(response.status, "upload_url_rejected", "Oprávnění k nahrání vypršelo.");
+  // 400/401/403 look like an expired or invalid signed token: the caller re-registers the part once for a fresh URL.
+  if (response.status === 400 || response.status === 401 || response.status === 403) throw new CaptureApiError(response.status, "upload_url_rejected", "Oprávnění k nahrání vypršelo.");
   throw new CaptureApiError(response.status, "upload_failed", `Úložiště odmítlo nahrání části (${response.status}).`);
 }

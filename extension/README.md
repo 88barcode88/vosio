@@ -55,7 +55,7 @@ Testy používají `chrome.*` stub, Web Locks a fake server drátového kontrakt
 | Detekce | `src/content/*`, `shared/platforms.ts` | modul na platformu, monitor s debounce |
 | UI | `popup/`, `options/`, `permissions/` | česky, tokeny podle DESIGN.md |
 
-Režimy: **Automaticky** = klik na ikonu nebo zkratka (`Alt+Shift+R`) na rozpoznané schůzce okamžitě spustí nahrávání (popup se na takové kartě vypíná `action.setPopup({popup:""})`); **Zeptat se** = popup s potvrzením; **Vypnuto** = schůzky se neoznačují, ruční start z popupu zůstává. Klávesová zkratka startuje/zastavuje vždy okamžitě (vědomý úmysl uživatele), po jednorázovém potvrzení upozornění o informování účastníků.
+Režimy: **Automaticky** = klik na ikonu nebo zkratka (`Alt+Shift+R`) na rozpoznané schůzce okamžitě spustí nahrávání (popup se na takové kartě vypíná `action.setPopup({popup:""})`); **Zeptat se** = popup s potvrzením; **Vypnuto** = schůzky se neoznačují a nic se nespouští samo, ruční start z popupu zůstává. Zkratka se řídí režimem: v Automaticky startuje okamžitě, v Zeptat se / Vypnuto otevře popup s potvrzením (`action.openPopup()`, při selhání notifikace); běžící nahrávku zastaví ve všech režimech. Před první nahrávkou je vždy nutné potvrdit upozornění o informování účastníků.
 
 ## Návod pro self-hostery
 
@@ -90,10 +90,13 @@ Zapsat verze Chrome a Edge a výsledky (bez obsahu nahrávek). Dokud není prove
 
 ## Odchylky od návrhu (D6/D8)
 
-- Oprávnění **`alarms`** je navíc proti seznamu v D6: `chrome.alarms` (fronta odesílání, D6) bez něj nefunguje.
+- Oprávnění `alarms` je v manifestu (potřebuje ho `chrome.alarms`), `commands` v `permissions` není (je to klíč manifestu) – shodně s aktualizovaným D6.
+- `scopes_supported` serveru zůstává `[vosio:read, vosio:write]` (D1). Klient proto `vosio:capture` v discovery nekontroluje; nepodporovanou instalaci pozná podle `invalid_scope` při DCR/authorize nebo 404 z `/capture/config` (stejná česká hláška „Aktualizujte Vosio“) a spárování vrátí zpět.
+- `/complete` s `transcription.state: "not_started"` je úspěch (audio uloženo, lokální data se smažou); klient zkusí `/complete` se stejným `requestId` ještě nejvýše 3× při dalších během fronty (záznam o tom přežije smazání audia).
+- Při 409 `incomplete_parts` klient znovu pošle do `/parts` **celý souvislý seznam částí od indexu 0**; existující části přijdou jako `exists`, chybějící dostanou nové `uploadUrl`. Odmítnutý podpis (PUT 400/401/403) vyvolá jednu re-registraci, pak nahrávka selže.
+- Adresy ze serveru se ověřují: `uploadUrl` musí být HTTPS na originu spárovaného serveru (resource), `detailUrl` HTTPS na `webOrigin` z configu, jinak chyba / odkaz se neotevře.
 - `GET /capture/recordings/{id}/status` v D8 nevrací `captureRevision`, ale zpráva o `revision_conflict` říká „načti `/status` a pokračuj s aktuální revizí“. Klient čte volitelné pole `captureRevision` z odpovědi `/status`; pokud chybí, odeslání se zopakuje později. **Server má do `/status` přidat `captureRevision`.**
-- Stavy nahrávky, které klient po `/status` považuje za „hotovo“ (konec opakování, smazání lokálních dat): `uploaded`, `transcribing`, `transcribed`, `completed`, `ready` (konstanta `DONE_STATUSES`).
-- Zkratka `Alt+Shift+R` startuje i v režimu Zeptat se (bez dialogu), protože zkratka je výslovný úmysl; potvrzení upozornění se vyžaduje vždy.
+- Stavy nahrávky, které klient po `/status` považuje za „hotovo“ (konec opakování, smazání lokálních dat): `uploaded`, `transcribing`, `completed` (konstanta `DONE_STATUSES`, shodně s enumem serveru).
 
 ## Gotchas (controller přenese do `docs/gotchas.md`)
 
@@ -102,6 +105,9 @@ Zapsat verze Chrome a Edge a výsledky (bez obsahu nahrávek). Dokud není prove
 - **Offscreen dokument nemůže zobrazit dotaz na mikrofon**; povolení se dělá na viditelné stránce rozšíření (`permissions/permissions.html`) a platí pro celý origin `chrome-extension://<id>`.
 - **Content scripty nesmí být ES moduly**: build je slepuje do klasického skriptu (`content/entry-*.js`); sdílený kód (`shared/platforms.ts`) se tím do každého balíčku vkládá znovu.
 - **Service worker usíná**: stav nahrávky je v `chrome.storage.local` (`activeRecording`), stav karet v `chrome.storage.session`; po restartu `RecordingController.recover()` zjistí z offscreen dokumentu, zda nahrávání běží, jinak z chunků v IndexedDB udělá čekající nahrávku. Per-tab badge a popup Chrome při navigaci maže; content script po načtení stav hlásí znovu.
+- **Service worker během dlouhého PUT**: Chrome ukončuje worker po 30 s nečinnosti. Během PUT části běží každých 20 s lehké volání `chrome.runtime.getPlatformInfo` (`background/keep-alive.ts`). **Zbývající riziko:** pokud prohlížeč worker přesto ukončí, PUT se přeruší; fronta pokračuje po dalším probuzení (alarm `vosio-tick`, `onStartup`) a část nahraje znovu (existující části server vrací jako `exists`). Reálně ověřit na pomalém uploadu (7.2).
+- **Důvěryhodnost zpráv**: service worker přijímá od content scriptů jen `meeting-state` s validovaným tvarem; všechny ostatní zprávy jen ze stránek rozšíření (`sender.url` začíná `chrome.runtime.getURL("")`, `sender.id === chrome.runtime.id`). `chrome.storage.local.setAccessLevel(TRUSTED_CONTEXTS)` se volá při startu workeru, pokud ho prohlížeč podporuje (tokeny pak nečtou content scripty).
+- **Mikrofon v offscreen**: před `getUserMedia` se zjišťuje stav oprávnění (`navigator.permissions.query`); bez `granted` se mikrofon přeskočí (nahrává se jen schůzka s upozorněním), samotné `getUserMedia` má timeout 4 s.
 - **Refresh token se rotuje**: nový pár se ukládá před použitím a refresh běží pod `navigator.locks`; po ztracené odpovědi obnovy je další pokus replay → grant se odvolá → stav „Odpojeno ve Vosiu“ → nové spárování a pokračování do téže nahrávky (stejná `requestId`).
 - **Meeting selektory** (konzervativní; neznámý jazyk/DOM = „nejsem v hovoru“, takže se nikdy neukončí omylem, zůstanou zavření karty/změna URL/ruční stop):
   - Meet: URL `meet.google.com/abc-defg-hij`; v hovoru = tlačítko s `aria-label`/`data-tooltip` „Leave call“ / „Opustit hovor“ (a další jazyky).

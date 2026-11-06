@@ -53,6 +53,8 @@ export interface ChromeStub {
   scripting: { registered: Map<string, { id: string; matches?: string[] }>; registerContentScripts: ReturnType<typeof vi.fn>; unregisterContentScripts: ReturnType<typeof vi.fn>; getRegisteredContentScripts: ReturnType<typeof vi.fn> };
   alarms: { created: Map<string, unknown>; create: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
   notifications: { create: ReturnType<typeof vi.fn> };
+  tabs: { urls: Map<number, string> };
+  action: { setPopup: ReturnType<typeof vi.fn>; setBadgeText: ReturnType<typeof vi.fn> };
 }
 
 // Installs a chrome.* stub (and Web Locks) on globalThis and returns handles for assertions.
@@ -85,12 +87,15 @@ export function installChrome(): ChromeStub {
       getRegisteredContentScripts: vi.fn(async ({ ids }: { ids?: string[] } = {}) => [...registered.values()].filter((script) => !ids || ids.includes(script.id)))
     },
     alarms: { created, create: vi.fn(async (name: string, info: unknown) => void created.set(name, info)), clear: vi.fn(async (name: string) => created.delete(name)) },
-    notifications: { create: vi.fn(async () => "id") }
+    notifications: { create: vi.fn(async () => "id") },
+    tabs: { urls: new Map<number, string>() },
+    action: { setBadgeText: vi.fn(async () => undefined), setPopup: vi.fn(async () => undefined) }
   };
   vi.stubGlobal("chrome", {
     ...stub,
-    runtime: { getURL: (path: string) => `chrome-extension://test/${path}`, sendMessage: vi.fn(async () => undefined) },
-    action: { setBadgeText: vi.fn(async () => undefined), setBadgeBackgroundColor: vi.fn(async () => undefined), setPopup: vi.fn(async () => undefined), setTitle: vi.fn(async () => undefined) }
+    runtime: { id: "test", getURL: (path: string) => `chrome-extension://test/${path}`, sendMessage: vi.fn(async () => undefined), getPlatformInfo: vi.fn(async () => ({ os: "win" })) },
+    tabs: { get: vi.fn(async (id: number) => ({ id, url: stub.tabs.urls.get(id) })) },
+    action: { ...stub.action, setBadgeBackgroundColor: vi.fn(async () => undefined), setTitle: vi.fn(async () => undefined) }
   });
   installLocks();
   return stub;
@@ -173,6 +178,7 @@ export class FakeVosio {
   refreshes = 0;
   expiredTokens = new Set<string>();
   putCount = 0;
+  transcriptionState = "queued";
 
   // Decides the route key of a request, e.g. "POST /capture/complete" or "TOKEN refresh_token".
   private async handle(url: string, init: RequestInit = {}): Promise<{ route: string; response: Response }> {
@@ -191,7 +197,7 @@ export class FakeVosio {
     }
 
     if (url === `${WEB}/.well-known/oauth-authorization-server`) {
-      return { route, response: json(200, { issuer: WEB, authorization_endpoint: `${WEB}/api/mcp/oauth/authorize`, token_endpoint: `${WEB}/api/mcp/oauth/token`, registration_endpoint: `${RESOURCE}/oauth/register`, revocation_endpoint: `${WEB}/api/mcp/oauth/revoke`, scopes_supported: ["vosio:read", "vosio:write", "vosio:capture"], code_challenge_methods_supported: ["S256"] }) };
+      return { route, response: json(200, { issuer: WEB, authorization_endpoint: `${WEB}/api/mcp/oauth/authorize`, token_endpoint: `${WEB}/api/mcp/oauth/token`, registration_endpoint: `${RESOURCE}/oauth/register`, revocation_endpoint: `${WEB}/api/mcp/oauth/revoke`, scopes_supported: ["vosio:read", "vosio:write"], code_challenge_methods_supported: ["S256"] }) };
     }
     if (parsed.pathname.endsWith("/oauth/register")) {
       this.registrations += 1;
@@ -262,6 +268,8 @@ export class FakeVosio {
     if (body.captureRevision !== recording.revision) return error(409, "revision_conflict");
     if (match[2] === "parts") {
       const parts = body.parts as Array<{ index: number; sizeBytes: number }>;
+      // The server rejects part lists that are not contiguous from index 0.
+      if (!parts.every((part, position) => part.index === position)) return error(400, "invalid_request");
       recording.revision += 1;
       return json(200, {
         captureRevision: recording.revision,
@@ -274,13 +282,13 @@ export class FakeVosio {
     }
     if (recording.completeRequestId === body.requestId) {
       recording.completeCalls += 1;
-      return json(200, { recordingId: recording.id, status: "uploaded", transcription: { state: "queued", operationId: "op-1" }, detailUrl });
+      return json(200, { recordingId: recording.id, status: "uploaded", transcription: { state: this.transcriptionState, operationId: "op-1" }, detailUrl });
     }
     const complete = [...recording.registered].every(([index, size]) => this.objects.get(`${recording.id}/part-${index}`) === size) && recording.registered.size === body.partCount;
     if (!complete) return error(409, "incomplete_parts");
     recording.completeRequestId = String(body.requestId);
     recording.completeCalls += 1;
-    return json(200, { recordingId: recording.id, status: "uploaded", transcription: { state: "queued", operationId: "op-1" }, detailUrl });
+    return json(200, { recordingId: recording.id, status: "uploaded", transcription: { state: this.transcriptionState, operationId: "op-1" }, detailUrl });
   }
 
   // Global fetch replacement; a route in dropResponseFor is processed but its response is lost (network error).

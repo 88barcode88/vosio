@@ -35,7 +35,7 @@ export const UPLOAD_ALARM = "vosio-upload";
 export const TICK_ALARM = "vosio-tick";
 
 // Recording statuses (server side) that mean the audio is safely stored in Vosio.
-export const DONE_STATUSES: readonly string[] = ["uploaded", "transcribing", "transcribed", "completed", "ready"];
+export const DONE_STATUSES: readonly string[] = ["uploaded", "transcribing", "completed"];
 
 export const MAX_HISTORY = 5;
 export const DEFAULT_SHORTCUT_COMMAND = "toggle-recording";

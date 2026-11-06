@@ -95,6 +95,7 @@ function historyList(state: PopupState): HTMLElement | null {
     h("li", {},
       h("div", { class: "ok", text: "Uloženo ve Vosiu" }),
       h("div", { text: entry.title }),
+      entry.transcription === "not_started" && h("div", { class: "muted small", text: "Audio je uloženo, přepis se spustí později (nebo ho spusťte ve Vosiu)." }),
       entry.detailUrl && h("a", { href: entry.detailUrl, text: "Otevřít nahrávku", class: "small", target: "_blank" })
     )
   );
