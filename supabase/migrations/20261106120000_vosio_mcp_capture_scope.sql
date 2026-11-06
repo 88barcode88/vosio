@@ -43,6 +43,8 @@ create table vosio_mcp_private.capture_recordings (
   created_grant_id uuid,
   completed_at timestamptz,
   completion jsonb check (completion is null or (jsonb_typeof(completion)='object' and octet_length(completion::text)<=8192)),
+  registered_part_count integer check (registered_part_count is null or registered_part_count between 1 and 1000),
+  transcription_config jsonb check (transcription_config is null or (jsonb_typeof(transcription_config)='object' and octet_length(transcription_config::text)<=1024)),
   created_at timestamptz not null default clock_timestamp(),
   constraint capture_recordings_request_key unique (user_id,extension_id,request_id),
   constraint capture_recordings_completion_check check (completion is null or completed_at is not null)
@@ -56,7 +58,8 @@ revoke all on vosio_mcp_private.capture_recordings from public,anon,authenticate
 create function vosio_mcp_private.capture_binding_json(b vosio_mcp_private.capture_recordings) returns jsonb
 language sql immutable set search_path='' as $$
 select case when b.recording_id is null then null else jsonb_build_object('recordingId',b.recording_id,'extensionId',b.extension_id,
-  'requestId',b.request_id,'createdGrantId',b.created_grant_id,'completedAt',b.completed_at,'completion',b.completion,'createdAt',b.created_at) end;
+  'requestId',b.request_id,'createdGrantId',b.created_grant_id,'completedAt',b.completed_at,'completion',b.completion,'createdAt',b.created_at,
+  'registeredPartCount',b.registered_part_count,'transcriptionConfig',b.transcription_config) end;
 $$;
 alter function vosio_mcp_private.capture_binding_json(vosio_mcp_private.capture_recordings) owner to postgres;
 revoke all on function vosio_mcp_private.capture_binding_json(vosio_mcp_private.capture_recordings) from public,anon,authenticated,service_role;
@@ -113,19 +116,52 @@ begin
   return vosio_mcp_private.capture_binding_json(b);
 end; $$;
 
+-- Remember how many parts the extension registered (the highest count ever sent; registered parts are never removed) so /complete can
+-- refuse a partial list before the recording is closed; null if no binding.
+create function public.mcp_capture_binding_parts_v1(p_user_id uuid,p_extension_id text,p_recording_id uuid,p_part_count integer)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare b vosio_mcp_private.capture_recordings;
+begin
+  if p_user_id is null or p_recording_id is null or p_extension_id is null or p_extension_id !~ '^[a-p]{32}$'
+    or p_part_count is null or p_part_count not between 1 and 1000 then
+    raise exception 'invalid capture binding request' using errcode='22023'; end if;
+  update vosio_mcp_private.capture_recordings set registered_part_count=greatest(coalesce(registered_part_count,0),p_part_count)
+    where recording_id=p_recording_id and user_id=p_user_id and extension_id=p_extension_id returning * into b;
+  return vosio_mcp_private.capture_binding_json(b);
+end; $$;
+
+-- Pin the region and model of the first transcription prepare (both are part of its idempotency hash) so retries reuse them; first value wins, null if no binding.
+create function public.mcp_capture_binding_transcription_v1(p_user_id uuid,p_extension_id text,p_recording_id uuid,p_config jsonb)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare b vosio_mcp_private.capture_recordings;
+begin
+  if p_user_id is null or p_recording_id is null or p_extension_id is null or p_extension_id !~ '^[a-p]{32}$'
+    or p_config is null or jsonb_typeof(p_config) is distinct from 'object' or octet_length(p_config::text)>1024 then
+    raise exception 'invalid capture binding request' using errcode='22023'; end if;
+  update vosio_mcp_private.capture_recordings set transcription_config=coalesce(transcription_config,p_config)
+    where recording_id=p_recording_id and user_id=p_user_id and extension_id=p_extension_id returning * into b;
+  return vosio_mcp_private.capture_binding_json(b);
+end; $$;
+
 -- Service-only: same ACL pattern as custody/installation RPCs; users and anon can never read or write bindings.
 alter function public.mcp_capture_binding_record_v1(uuid,text,uuid,uuid,uuid) owner to postgres;
 alter function public.mcp_capture_binding_by_recording_v1(uuid,text,uuid) owner to postgres;
 alter function public.mcp_capture_binding_by_request_v1(uuid,text,uuid) owner to postgres;
 alter function public.mcp_capture_binding_complete_v1(uuid,text,uuid,jsonb) owner to postgres;
+alter function public.mcp_capture_binding_parts_v1(uuid,text,uuid,integer) owner to postgres;
+alter function public.mcp_capture_binding_transcription_v1(uuid,text,uuid,jsonb) owner to postgres;
 revoke all on function public.mcp_capture_binding_record_v1(uuid,text,uuid,uuid,uuid) from public,anon,authenticated,service_role;
 revoke all on function public.mcp_capture_binding_by_recording_v1(uuid,text,uuid) from public,anon,authenticated,service_role;
 revoke all on function public.mcp_capture_binding_by_request_v1(uuid,text,uuid) from public,anon,authenticated,service_role;
 revoke all on function public.mcp_capture_binding_complete_v1(uuid,text,uuid,jsonb) from public,anon,authenticated,service_role;
+revoke all on function public.mcp_capture_binding_parts_v1(uuid,text,uuid,integer) from public,anon,authenticated,service_role;
+revoke all on function public.mcp_capture_binding_transcription_v1(uuid,text,uuid,jsonb) from public,anon,authenticated,service_role;
 grant execute on function public.mcp_capture_binding_record_v1(uuid,text,uuid,uuid,uuid) to service_role;
 grant execute on function public.mcp_capture_binding_by_recording_v1(uuid,text,uuid) to service_role;
 grant execute on function public.mcp_capture_binding_by_request_v1(uuid,text,uuid) to service_role;
 grant execute on function public.mcp_capture_binding_complete_v1(uuid,text,uuid,jsonb) to service_role;
+grant execute on function public.mcp_capture_binding_parts_v1(uuid,text,uuid,integer) to service_role;
+grant execute on function public.mcp_capture_binding_transcription_v1(uuid,text,uuid,jsonb) to service_role;
 
 -- 4. Own-connection list gains the extension identifier (chromiumapp.org host label of the verified redirect URI, else null).
 create or replace function public.mcp_list_own_connections_v1() returns jsonb
@@ -196,6 +232,6 @@ commit;
 -- alter table vosio_mcp_private.grants add constraint grants_scopes_check check (scopes @> array['vosio:read'] and scopes <@ array['vosio:read','vosio:write']);
 -- commit;
 -- ROLLBACK-END
--- The block above restores only the scope checks. The additive objects (capture_recordings, the four mcp_capture_binding_* RPCs,
+-- The block above restores only the scope checks. The additive objects (capture_recordings, the six mcp_capture_binding_* RPCs,
 -- the redirect_uri key in grant_json, extensionId in mcp_list_own_connections_v1 and the recovery filter) are harmless without capture
 -- grants and stay; drop them only in a separately authorized cleanup.

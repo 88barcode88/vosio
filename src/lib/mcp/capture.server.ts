@@ -10,7 +10,7 @@ import { liveAudioQualityOptions, RECORDINGS_BUCKET } from "@/lib/recordings/typ
 import { DEFAULT_SONIOX_ASYNC_MODEL, isApprovedSonioxAsyncModel } from "@/lib/model-options";
 import { getUserSettingsFromMetadata } from "@/lib/settings/metadata";
 import { authenticateBridgeRequest, McpAuthError } from "./auth.server";
-import { captureCompletionSchema, completeCaptureBinding, getCaptureBindingByRecording, readRecordingsBucketLimit, recordCaptureBinding, type CaptureCompletion } from "./capture-store.server";
+import { captureCompletionSchema, captureTranscriptionConfigSchema, completeCaptureBinding, getCaptureBindingByRecording, pinTranscriptionConfig, readRecordingsBucketLimit, recordCaptureBinding, recordRegisteredParts, type CaptureBinding, type CaptureCompletion } from "./capture-store.server";
 import type { McpConfig } from "./config.server";
 import { extensionIdFromRedirect, MCP_SCOPE_CAPTURE } from "./scopes";
 
@@ -137,28 +137,50 @@ async function dispatchOperation(ctx: Context, operationId: string) {
   const token = ctx.env.RECORDING_TRANSCRIPTION_DISPATCH_TOKEN;
   if (!token) return;
   try {
-    await fetch(`${ctx.config.origin}/api/jobs/recording-transcription/dispatch`, { method: "POST", redirect: "error", signal: AbortSignal.timeout(8000),
+    const response = await fetch(`${ctx.config.origin}/api/jobs/recording-transcription/dispatch`, { method: "POST", redirect: "error", signal: AbortSignal.timeout(8000),
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ operationId }) });
+    // A rejected dispatch (wrong token, unreachable route) would otherwise stay invisible; record only the status code.
+    if (!response.ok) audit("dispatch", String(response.status));
   } catch { audit("dispatch", "error"); }
 }
 
-// Prepare and start the transcription under the user's JWT, then dispatch it; returns not_started on any failure.
-async function startTranscription(ctx: Context, recordingId: string, completionRequestId: string, captureRevision: number): Promise<{ state: "queued" | "not_started"; operationId: string | null }> {
+// Reuse the region and model pinned by the first prepare (both are part of its idempotency hash); on the first attempt pin the current ones.
+async function resolveTranscriptionConfig(ctx: Context, recordingId: string, binding: CaptureBinding) {
+  const pinned = captureTranscriptionConfigSchema.safeParse(binding.transcriptionConfig);
+  if (pinned.success) return pinned.data;
+  const current = { region: getUserSettingsFromMetadata(ctx.identity.userMetadata).sonioxRegion, model: resolveModel(ctx.env) };
+  const stored = await pinTranscriptionConfig(ctx.identity.userId, ctx.extensionId, recordingId, current);
+  const winner = captureTranscriptionConfigSchema.safeParse(stored?.transcriptionConfig);
+  if (!winner.success) throw new Error("Transcription config was not stored.");
+  return winner.data;
+}
+
+type TranscriptionStart = { transcription: CaptureCompletion["transcription"]; phase: string | null };
+const NOT_STARTED: TranscriptionStart = { transcription: { state: "not_started", operationId: null }, phase: null };
+
+// Prepare and start the transcription under the user JWT, then dispatch it; returns not_started on any failure.
+async function startTranscription(ctx: Context, recordingId: string, binding: CaptureBinding, completionRequestId: string, captureRevision: number): Promise<TranscriptionStart> {
   try {
-    const settings = getUserSettingsFromMetadata(ctx.identity.userMetadata);
+    const config = await resolveTranscriptionConfig(ctx, recordingId, binding);
     const prepared = await ctx.identity.supabase.rpc("prepare_recording_transcription_v1", {
       p_recording_id: recordingId, p_request_id: uuidV5(completionRequestId), p_expected_capture_revision: captureRevision,
-      p_region: settings.sonioxRegion, p_model: resolveModel(ctx.env), p_purpose: "capture"
+      p_region: config.region, p_model: config.model, p_purpose: "capture"
     });
-    if (prepared.error) { audit("transcription_prepare", "error"); return { state: "not_started", operationId: null }; }
+    if (prepared.error) { audit("transcription_prepare", "error"); return NOT_STARTED; }
     const operation = operationSchema.parse(prepared.data);
     const started = await ctx.identity.supabase.rpc("start_recording_transcription_v1", { p_operation_id: operation.operationId });
-    if (started.error) { audit("transcription_start", "error"); return { state: "not_started", operationId: null }; }
+    if (started.error) { audit("transcription_start", "error"); return NOT_STARTED; }
     const receipt = operationSchema.parse(started.data);
-    if (receipt.operationId !== operation.operationId) return { state: "not_started", operationId: null };
+    if (receipt.operationId !== operation.operationId) return NOT_STARTED;
     if (["started", "accepted"].includes(receipt.phase)) await dispatchOperation(ctx, receipt.operationId);
-    return { state: "queued", operationId: receipt.operationId };
-  } catch { audit("transcription", "error"); return { state: "not_started", operationId: null }; }
+    return { transcription: { state: "queued", operationId: receipt.operationId }, phase: receipt.phase };
+  } catch { audit("transcription", "error"); return NOT_STARTED; }
+}
+
+// Recording status reported by /complete: "transcribing" once the operation exists, unless that operation already ended (then its terminal phase).
+function completionStatus(uploadedStatus: string, phase: string | null) {
+  if (phase === null) return uploadedStatus;
+  return phase === "completed" || phase === "failed" ? phase : "transcribing";
 }
 
 // POST /capture/config: recording settings of this installation and user.
@@ -196,11 +218,10 @@ async function registerParts(ctx: Context, recordingId: string, request: Request
   if (body.parts.some((part) => part.sizeBytes > maxPartBytes)) throw new CaptureFailure(413, "part_too_large");
   const bucket = ctx.identity.supabase.storage.from(RECORDINGS_BUCKET);
   const parts: Array<{ index: number; state: "ready"; uploadUrl: string } | { index: number; state: "exists" }> = [];
-  let revision = first.captureRevision;
+  // Preparing a part never bumps capture_revision, so the revision verified above is valid for every part.
   for (const part of body.parts) {
-    if (part.index > 0) { const current = await readState(ctx.identity, recordingId); if (!current) throw new CaptureFailure(410, "recording_deleted"); revision = current.captureRevision; }
     const expectedPath = `${ctx.identity.userId}/${recordingId}/live/part-${String(part.index).padStart(6, "0")}.webm`;
-    const prepared = await ctx.identity.supabase.rpc("prepare_recording_live_part_v1", { p_recording_id: recordingId, p_expected_capture_revision: revision, p_part_index: part.index, p_mime_type: body.mimeType, p_file_size_bytes: part.sizeBytes });
+    const prepared = await ctx.identity.supabase.rpc("prepare_recording_live_part_v1", { p_recording_id: recordingId, p_expected_capture_revision: first.captureRevision, p_part_index: part.index, p_mime_type: body.mimeType, p_file_size_bytes: part.sizeBytes });
     if (prepared.error) throw await failFromWrite(ctx, recordingId, prepared.error);
     if (prepared.data !== expectedPath) throw new CaptureFailure(503, "unavailable");
     const signed = await bucket.createSignedUploadUrl(expectedPath);
@@ -213,10 +234,10 @@ async function registerParts(ctx: Context, recordingId: string, request: Request
     if (!token) throw new CaptureFailure(503, "unavailable");
     parts.push({ index: part.index, state: "ready", uploadUrl: `${ctx.config.publicSupabaseUrl}/storage/v1/object/upload/sign/${RECORDINGS_BUCKET}/${expectedPath}?token=${encodeURIComponent(token)}` });
   }
-  const final = await readState(ctx.identity, recordingId);
-  if (!final) throw new CaptureFailure(410, "recording_deleted");
+  // Remember how many parts exist so /complete can refuse a partial list before the recording is closed.
+  await recordRegisteredParts(ctx.identity.userId, ctx.extensionId, recordingId, body.parts.length).catch(() => { throw new CaptureFailure(503, "unavailable"); });
   audit("parts", "ok");
-  return Response.json({ captureRevision: final.captureRevision, parts });
+  return Response.json({ captureRevision: first.captureRevision, parts });
 }
 
 // Replay a stored completion result exactly as first returned.
@@ -230,13 +251,16 @@ async function completeRecording(ctx: Context, recordingId: string, request: Req
   const { binding, state } = await requireBound(ctx, recordingId);
   const stored = captureCompletionSchema.safeParse(binding.completion);
   if (binding.completedAt && stored.success) return completionResponse(ctx, recordingId, stored.data);
+  // Closing with fewer parts than registered would transcribe without the tail while the extension deletes its local copy.
+  if (OPEN_STATUSES.includes(state.status) && binding.registeredPartCount !== body.partCount) throw new CaptureFailure(409, "incomplete_parts");
   const done = await ctx.identity.supabase.rpc("complete_recording_live_parts_v1", { p_recording_id: recordingId, p_request_id: body.requestId, p_expected_capture_revision: body.captureRevision, p_duration_seconds: Math.max(1, Math.round(body.durationSeconds)) });
   // A recording the web already closed (recovery) is reported as a revision conflict so the extension reads /status and stops.
   if (done.error) throw done.error.code === "55000" ? failFromRpc(done.error, !OPEN_STATUSES.includes(state.status)) : await failFromWrite(ctx, recordingId, done.error);
   const receipt = captureReceiptSchema.safeParse(done.data);
   if (!receipt.success || receipt.data.recordingId !== recordingId) throw new CaptureFailure(503, "unavailable");
-  const transcription = await startTranscription(ctx, recordingId, body.requestId, receipt.data.captureRevision);
-  const completion: CaptureCompletion = { requestId: body.requestId, status: transcription.state === "queued" ? "transcribing" : receipt.data.status, transcription };
+  const { transcription, phase } = await startTranscription(ctx, recordingId, binding, body.requestId, receipt.data.captureRevision);
+  // D8 keeps state "queued" for any existing operation (also an already ended one); /status reports the actual progress.
+  const completion: CaptureCompletion = { requestId: body.requestId, status: completionStatus(receipt.data.status, phase), transcription };
   // Only a started transcription is stored; otherwise a repeated /complete retries it idempotently.
   if (transcription.state === "queued") await completeCaptureBinding(ctx.identity.userId, ctx.extensionId, recordingId, completion).catch(() => audit("complete_store", "error"));
   audit("complete", transcription.state);

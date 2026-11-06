@@ -31,7 +31,7 @@ MCP bridge (viz [MCP a plugin](mcp-plugin.md)). Kód: `src/lib/mcp/capture.serve
 | 404 | `not_found` | Neexistující i cizí nahrávka (stejná odpověď), jiné rozšíření, neznámá cesta |
 | 405 | `invalid_request` | Jiná metoda než POST (`Allow: POST`) |
 | 409 | `revision_conflict` | Stará revize, nebo nahrávku už uzavřel web (rozšíření si načte `/status`) |
-| 409 | `incomplete_parts` | Zaregistrovaná část chybí nebo nesedí velikost/MIME – nahrát znovu přes nové `/parts` |
+| 409 | `incomplete_parts` | Zaregistrovaná část chybí nebo nesedí velikost/MIME, nebo počet zaregistrovaných částí ≠ `partCount` – klient pošle znovu **celý** souvislý seznam částí od indexu 0 přes `/parts` (existující se vrátí jako `exists`, chybějící dostanou nové `uploadUrl`) a pak zopakuje `/complete` |
 | 410 | `recording_deleted` | Vlastní nahrávka v koši/smazaná – ukončit opakování |
 | 413 | `part_too_large` | Část větší než `maxPartBytes` |
 | 429 | `rate_limited` | `Retry-After` |
@@ -56,20 +56,28 @@ Všechny `{id}` jsou UUID nahrávky; každý `/recordings/{id}/*` ověří vazbu
 - `recordings`: `create_recording_with_access_v1` (`in_app_recording`, soukromá, bez projektu) idempotentně podle
   `requestId` (název je v otisku), poté vazba přes `mcp_capture_binding_record_v1`. `startedAt` se jen validuje
   (čas je už v názvu). `detailUrl` = `<web>/recordings/<id>`.
-- `parts`: `prepare_recording_live_part_v1` pro každou část (revize se čte před každou částí) a
-  `createSignedUploadUrl(path)` pod JWT uživatele; `uploadUrl` =
+- `parts`: `prepare_recording_live_part_v1` pro každou část (revize se ověří jednou a platí pro všechny části –
+  `prepare_recording_live_part_v1` revizi nemění) a `createSignedUploadUrl(path)` pod JWT uživatele; po úspěchu se do
+  vazby uloží počet zaregistrovaných částí (nejvyšší dosud poslaný, `mcp_capture_binding_parts_v1`); `uploadUrl` =
   `<publicSupabaseUrl>/storage/v1/object/upload/sign/recordings/<uid>/<id>/live/part-NNNNNN.webm?token=<token>`
   (nikdy interní `SUPABASE_URL`). Rozšíření posílá `PUT` s tělem = blob části a hlavičkami
   `Content-Type: audio/webm`, `apikey: <storage.apiKey>`, `x-upsert: false`. Pokud Storage odmítne podpis, protože objekt
   existuje, vrací se `state: "exists"` (rozšíření bere i HTTP 409 nebo tělo „Duplicate/already exists“ u `PUT` jako
   existující objekt); o úplnosti rozhoduje kontrola manifestu v `/complete`. Audio neprochází Function ani webem.
 - `complete`: `complete_recording_live_parts_v1` (délka se zaokrouhlí na celé sekundy, min. 1; `partCount` je jen
-  vstupní kontrola 1–1000, autoritativní je manifest v DB), pak `prepare_/start_recording_transcription_v1` pod JWT
+  vstupní kontrola 1–1000 a musí se rovnat počtu zaregistrovaných částí z `/parts`, jinak 409 `incomplete_parts` ještě před
+  uzavřením nahrávky; autoritativní zůstává manifest v DB), pak `prepare_/start_recording_transcription_v1` pod JWT
   uživatele a `POST <web>/api/jobs/recording-transcription/dispatch`. `requestId` přepisu = UUIDv5 z `requestId`
-  dokončení, `captureRevision` z potvrzení dokončení. Opakované dokončení vrátí uložený výsledek (uloží se až po
+  dokončení, `captureRevision` z potvrzení dokončení. Region a model prvního pokusu o `prepare` se uloží do vazby
+  (`mcp_capture_binding_transcription_v1`, vyhrává první hodnota) a opakovaná `/complete` je znovu použijí – oboje je
+  součástí idempotentního otisku `prepare`, takže pozdější změna regionu v nastavení nebo env `SONIOX_ASYNC_MODEL`
+  opakování nerozbije. Nejde-li hodnoty uložit, vrací se `not_started`. Opakované dokončení vrátí uložený výsledek (uloží se až po
   úspěšném startu přepisu; selhání prepare/start vrací 200 s `not_started` a opakování `/complete` se stejným
   `requestId` start zkusí znovu bez druhé operace). Selhání dispatch nevrací chybu – operace zůstává pro existující
-  dohledání/obnovu. Model: `DEFAULT_SONIOX_ASYNC_MODEL` z `src/lib/model-options.ts` nebo schválený
+  dohledání/obnovu; odmítnutý dispatch (`!response.ok`) se zapíše do auditu jako `dispatch` + HTTP kód, chyba spojení jako
+  `dispatch` + `error`. `transcription.state` je `queued` pro každou existující operaci (i když už skončila),
+  `not_started` jen pokud operace nevznikla; `status` je `transcribing` pro rozběhnutou operaci, `completed`/`failed`
+  pokud start vrátil už ukončenou operaci. Skutečný průběh vždy hlásí `/status`. Model: `DEFAULT_SONIOX_ASYNC_MODEL` z `src/lib/model-options.ts` nebo schválený
   `SONIOX_ASYNC_MODEL`; region z uživatelského `sonioxRegion`; jazyk stejně jako ostatní async přepisy.
 - `status`: `status` je surová hodnota `recording_status` (`created|uploading|uploaded|transcribing|completed|failed|deleted`),
   rozšíření bere `uploaded|transcribing|completed` jako „upload hotov“. `transcriptionState` ∈
@@ -85,6 +93,11 @@ Všechny `{id}` jsou UUID nahrávky; každý `/recordings/{id}/*` ověří vazbu
   Volitelný `SONIOX_ASYNC_MODEL` ve Function musí odpovídat webu (v5 i v6 jsou aktivní, DB neshodu nezachytí).
 - Dokončení přepisů delších než okno dispatch (240 s) bez otevřeného Vosia vyžaduje HTTPS `NEXT_PUBLIC_APP_URL`
   (webhook Sonioxu); jinak se dokončí dohledáním při otevření nahrávky.
+- Smoke dispatche s platným tokenem (po nasazení tokenu na web i do Function): z vlastního stroje
+  `POST <web>/api/jobs/recording-transcription/dispatch` s hlavičkou `Authorization: Bearer <RECORDING_TRANSCRIPTION_DISPATCH_TOKEN>`
+  a tělem `{"operationId":"<nově vygenerované UUID>"}` (neexistující operace se nespustí, ověřuje se jen token a 202; chybný token dá 401); pak jedno testovací
+  nahrávání z rozšíření a v logu Function nesmí být záznam `vosio_capture` `dispatch` s kódem jiným než 2xx.
+  Hodnotu tokenu nikdy nevypisovat do dokumentace ani logů.
 - Pořadí nasazení: migrace `20261106120000` → web (dispatch route + souhlas) → tokeny → Function. HTTPS smoke:
   401 bez tokenu, 403 pro MCP token na `/capture`, 403 pro capture token na MCP/audio, platný tok z rozšíření.
 - Rollback: předchozí verze Function (capture endpointy zmizí), odvolat capture granty; migrace je aditivní.

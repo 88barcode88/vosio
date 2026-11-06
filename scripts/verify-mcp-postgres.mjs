@@ -424,7 +424,7 @@ function captureProof(f) {
   assert.deepEqual(snapshot(), before);
   assertInstalledBody("public.mcp_list_own_connections_v1", "", captureSource); assertInstalledBody("public.list_recoverable_recording_captures_v1", "", captureSource);
   assertInstalledBody("vosio_mcp_private.grant_json", "vosio_mcp_private.grants", captureSource);
-  for (const [name, signature] of [["mcp_capture_binding_record_v1", "uuid,text,uuid,uuid,uuid"], ["mcp_capture_binding_by_recording_v1", "uuid,text,uuid"], ["mcp_capture_binding_by_request_v1", "uuid,text,uuid"], ["mcp_capture_binding_complete_v1", "uuid,text,uuid,jsonb"]]) {
+  for (const [name, signature] of [["mcp_capture_binding_record_v1", "uuid,text,uuid,uuid,uuid"], ["mcp_capture_binding_by_recording_v1", "uuid,text,uuid"], ["mcp_capture_binding_by_request_v1", "uuid,text,uuid"], ["mcp_capture_binding_complete_v1", "uuid,text,uuid,jsonb"], ["mcp_capture_binding_parts_v1", "uuid,text,uuid,integer"], ["mcp_capture_binding_transcription_v1", "uuid,text,uuid,jsonb"]]) {
     assertInstalledBody(`public.${name}`, signature, captureSource);
     const oid = lit(`public.${name}(${signature})`);
     assert.equal(scalar(`select p.prosecdef and p.proconfig=array['search_path=""'] and r.rolname='postgres' from pg_proc p join pg_roles r on r.oid=p.proowner where p.oid=${oid}::regprocedure;`), "t");
@@ -469,7 +469,7 @@ function captureProof(f) {
   const rpc = (name, ...args) => `public.${name}(${args.map((value) => value === null ? "null" : typeof value === "object" ? `${lit(JSON.stringify(value))}::jsonb` : lit(value)).join(",")})`;
   const service = (statement) => json(`set role service_role; select ${statement};`);
   const recording = newRecording("Synthetic extension upload"); const request = randomUUID();
-  for (const role of ["anon", "authenticated"]) for (const statement of [rpc("mcp_capture_binding_record_v1", f.editor, extension, recording, request, null), rpc("mcp_capture_binding_by_recording_v1", f.editor, extension, recording), rpc("mcp_capture_binding_by_request_v1", f.editor, extension, request), rpc("mcp_capture_binding_complete_v1", f.editor, extension, recording, { ok: true })]) sql(`set role ${role}; ${rejected(`select ${statement};`)}`);
+  for (const role of ["anon", "authenticated"]) for (const statement of [rpc("mcp_capture_binding_record_v1", f.editor, extension, recording, request, null), rpc("mcp_capture_binding_by_recording_v1", f.editor, extension, recording), rpc("mcp_capture_binding_by_request_v1", f.editor, extension, request), rpc("mcp_capture_binding_complete_v1", f.editor, extension, recording, { ok: true }), rpc("mcp_capture_binding_parts_v1", f.editor, extension, recording, 1), rpc("mcp_capture_binding_transcription_v1", f.editor, extension, recording, { region: "eu", model: "m" })]) sql(`set role ${role}; ${rejected(`select ${statement};`)}`);
   const binding = service(rpc("mcp_capture_binding_record_v1", f.editor, extension, recording, request, captureGrant.id));
   assert.equal(binding.recordingId, recording); assert.equal(binding.extensionId, extension); assert.equal(binding.createdGrantId, captureGrant.id); assert.equal(binding.completedAt, null);
   assert.deepEqual(service(rpc("mcp_capture_binding_record_v1", f.editor, extension, recording, request, null)), binding); pass("capture_binding_record_idempotent_by_request");
@@ -479,12 +479,24 @@ function captureProof(f) {
   for (const [user, ext] of [[f.outsider, extension], [f.editor, otherExtension]]) {
     assert.equal(service(rpc("mcp_capture_binding_by_recording_v1", user, ext, recording)), null); assert.equal(service(rpc("mcp_capture_binding_by_request_v1", user, ext, request)), null);
     assert.equal(service(rpc("mcp_capture_binding_complete_v1", user, ext, recording, { ok: false })), null);
+    assert.equal(service(rpc("mcp_capture_binding_parts_v1", user, ext, recording, 2)), null);
+    assert.equal(service(rpc("mcp_capture_binding_transcription_v1", user, ext, recording, { region: "eu", model: "x" })), null);
   }
   pass("capture_binding_visible_only_to_same_user_and_extension_across_grants");
   sql(`set role service_role; ${rejected(`select ${rpc("mcp_capture_binding_record_v1", f.editor, extension, recording, randomUUID(), null)};`, "23505")}`);
   sql(`set role service_role; ${rejected(`select ${rpc("mcp_capture_binding_record_v1", f.editor, extension, f.projectRecording, randomUUID(), null)};`, "22023")}`);
   sql(`set role service_role; ${rejected(`select ${rpc("mcp_capture_binding_record_v1", f.editor, "not-an-extension", recording, randomUUID(), null)};`, "22023")}`);
   pass("capture_binding_rejects_foreign_recording_duplicate_recording_and_bad_extension_id");
+
+  // Registered part count keeps the highest value; the transcription region/model of the first prepare is pinned (first wins).
+  assert.equal(binding.registeredPartCount, null); assert.equal(binding.transcriptionConfig, null);
+  assert.equal(service(rpc("mcp_capture_binding_parts_v1", f.editor, extension, recording, 3)).registeredPartCount, 3);
+  assert.equal(service(rpc("mcp_capture_binding_parts_v1", f.editor, extension, recording, 2)).registeredPartCount, 3);
+  sql(`set role service_role; ${rejected(`select ${rpc("mcp_capture_binding_parts_v1", f.editor, extension, recording, 0)};`, "22023")}`);
+  const pinned = { region: "eu", model: "stt-async-v5" };
+  assert.deepEqual(service(rpc("mcp_capture_binding_transcription_v1", f.editor, extension, recording, pinned)).transcriptionConfig, pinned);
+  assert.deepEqual(service(rpc("mcp_capture_binding_transcription_v1", f.editor, extension, recording, { region: "global", model: "other" })).transcriptionConfig, pinned);
+  pass("capture_binding_part_count_max_and_transcription_config_first_wins");
 
   // Recovery: an unfinished extension upload is hidden for seven days, then and after completion it behaves as before.
   const listed = (id) => json(`${actor} select coalesce(jsonb_agg(id),'[]'::jsonb) from public.list_recoverable_recording_captures_v1();`).includes(id);

@@ -4,12 +4,12 @@ import { handleMcpEdge } from "@/lib/mcp/edge-handler.server";
 import { McpAuthError } from "@/lib/mcp/auth.server";
 import { parseMcpConfig } from "@/lib/mcp/config.server";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), load: vi.fn(), store: { record: vi.fn(), byRecording: vi.fn(), byRequest: vi.fn(), complete: vi.fn(), limit: vi.fn() } }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), load: vi.fn(), store: { record: vi.fn(), byRecording: vi.fn(), byRequest: vi.fn(), complete: vi.fn(), limit: vi.fn(), parts: vi.fn(), pin: vi.fn() } }));
 vi.mock("@/lib/mcp/config.server", async (original) => ({ ...await original<typeof import("@/lib/mcp/config.server")>(), loadMcpConfig: mocks.load }));
 vi.mock("@/lib/mcp/auth.server", async (original) => ({ ...await original<typeof import("@/lib/mcp/auth.server")>(), authenticateBridgeRequest: mocks.auth }));
 vi.mock("@/lib/mcp/capture-store.server", async (original) => ({ ...await original<typeof import("@/lib/mcp/capture-store.server")>(),
   recordCaptureBinding: mocks.store.record, getCaptureBindingByRecording: mocks.store.byRecording, getCaptureBindingByRequest: mocks.store.byRequest,
-  completeCaptureBinding: mocks.store.complete, readRecordingsBucketLimit: mocks.store.limit }));
+  completeCaptureBinding: mocks.store.complete, readRecordingsBucketLimit: mocks.store.limit, recordRegisteredParts: mocks.store.parts, pinTranscriptionConfig: mocks.store.pin }));
 
 const userId = "10000000-0000-4000-8000-000000000001";
 const otherUserId = "10000000-0000-4000-8000-0000000000ff";
@@ -22,8 +22,8 @@ const resourceUrl = `${publicUrl}/functions/v1/vosio-mcp`;
 const env: Record<string, string | undefined> = { RECORDING_TRANSCRIPTION_DISPATCH_TOKEN: "dispatch-secret" };
 
 type Recording = { id: string; user: string; title: string; status: string; revision: number; requestId: string; parts: Map<number, number>; completions: Map<string, { status: string; revision: number }>; operation?: { id: string; phase: string } };
-type Binding = { recordingId: string; extensionId: string; userId: string; requestId: string; completedAt: string | null; completion: Record<string, unknown> | null };
-const sim = { recordings: new Map<string, Recording>(), bindings: new Map<string, Binding>(), objects: new Set<string>(), operations: new Map<string, string>(), nextId: 1, prepareTranscription: vi.fn(), failPrepare: false };
+type Binding = { recordingId: string; extensionId: string; userId: string; requestId: string; completedAt: string | null; completion: Record<string, unknown> | null; registeredPartCount: number | null; transcriptionConfig: Record<string, unknown> | null };
+const sim = { recordings: new Map<string, Recording>(), bindings: new Map<string, Binding>(), objects: new Set<string>(), operations: new Map<string, string>(), nextId: 1, prepareTranscription: vi.fn(), failPrepare: false, startPhase: null as string | null, stateReads: 0 };
 
 // Deterministic UUID for synthetic rows.
 function nextUuid() { return `20000000-0000-4000-8000-${String(sim.nextId++).padStart(12, "0")}`; }
@@ -40,7 +40,7 @@ function userClient(user = userId) {
         const row: Recording = { id: nextUuid(), user, title: String(args.p_title), status: "created", revision: 0, requestId: String(args.p_request_id), parts: new Map(), completions: new Map() };
         sim.recordings.set(row.id, row); return { data: row.id, error: null };
       }
-      case "get_recording_capture_state_v1": return recording && recording.user === user && recording.status !== "deleted" ? { data: { recordingId: recording.id, status: recording.status, captureRevision: recording.revision }, error: null } : { data: null, error: null };
+      case "get_recording_capture_state_v1": sim.stateReads += 1; return recording && recording.user === user && recording.status !== "deleted" ? { data: { recordingId: recording.id, status: recording.status, captureRevision: recording.revision }, error: null } : { data: null, error: null };
       case "prepare_recording_live_part_v1": {
         if (!recording || !open.includes(recording.status)) return error("42501");
         if (recording.revision !== args.p_expected_capture_revision) return error("40001");
@@ -68,7 +68,7 @@ function userClient(user = userId) {
       case "start_recording_transcription_v1": {
         const row = [...sim.recordings.values()].find((candidate) => candidate.operation?.id === args.p_operation_id);
         if (!row?.operation) return error("42501");
-        if (row.operation.phase === "prepared") { row.operation.phase = "started"; row.status = "transcribing"; row.revision += 1; }
+        if (row.operation.phase === "prepared") { row.operation.phase = sim.startPhase ?? "started"; row.status = "transcribing"; row.revision += 1; }
         return { data: { operationId: row.operation.id, phase: row.operation.phase }, error: null };
       }
       case "get_managed_recording_transcription_v1": {
@@ -80,6 +80,11 @@ function userClient(user = userId) {
   };
   const storage = { from: () => ({ createSignedUploadUrl: async (path: string) => sim.objects.has(path) ? { data: null, error: { message: "The resource already exists", statusCode: "409" } } : { data: { signedUrl: `http://kong:8000/storage/v1/object/upload/sign/recordings/${path}?token=tok`, token: "tok&1", path }, error: null } }) };
   return { rpc, storage };
+}
+// Project the in-memory binding to the shape the store RPCs return.
+function project(row: Binding) {
+  return { recordingId: row.recordingId, extensionId: row.extensionId, requestId: row.requestId, createdGrantId: null, createdAt: "2026-11-06T13:00:00Z", completedAt: row.completedAt, completion: row.completion,
+    registeredPartCount: row.registeredPartCount, transcriptionConfig: row.transcriptionConfig };
 }
 // Create an identity for the capture extension; overrides model another grant, extension or token kind.
 function identity(overrides: Record<string, unknown> = {}) {
@@ -104,19 +109,27 @@ async function registerParts(recordingId: string, revision: number, sizes: numbe
   return result;
 }
 
+// Spy on the metadata-only audit line written through console.info.
+let audit: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
-  vi.resetAllMocks(); vi.spyOn(console, "info").mockImplementation(() => undefined);
-  Object.assign(sim, { recordings: new Map(), bindings: new Map(), objects: new Set(), operations: new Map(), nextId: 1, failPrepare: false }); sim.prepareTranscription = vi.fn();
+  vi.resetAllMocks(); audit = vi.spyOn(console, "info").mockImplementation(() => undefined);
+  Object.assign(sim, { recordings: new Map(), bindings: new Map(), objects: new Set(), operations: new Map(), nextId: 1, failPrepare: false, startPhase: null, stateReads: 0 }); sim.prepareTranscription = vi.fn();
   mocks.auth.mockImplementation(async () => identity());
   mocks.store.limit.mockResolvedValue(52_428_800);
   mocks.store.record.mockImplementation(async (input: { userId: string; extensionId: string; recordingId: string; requestId: string }) => {
     const existing = [...sim.bindings.values()].find((row) => row.userId === input.userId && row.extensionId === input.extensionId && row.requestId === input.requestId);
-    const binding = existing ?? { ...input, completedAt: null, completion: null }; sim.bindings.set(binding.recordingId, binding);
-    return { recordingId: binding.recordingId, extensionId: binding.extensionId, requestId: binding.requestId, createdGrantId: null, createdAt: "2026-11-06T13:00:00Z", completedAt: binding.completedAt, completion: binding.completion };
+    const binding = existing ?? { ...input, completedAt: null, completion: null, registeredPartCount: null, transcriptionConfig: null }; sim.bindings.set(binding.recordingId, binding);
+    return project(binding);
   });
   mocks.store.byRecording.mockImplementation(async (user: string, ext: string, recordingId: string) => {
     const row = sim.bindings.get(recordingId);
-    return row && row.userId === user && row.extensionId === ext ? { recordingId, extensionId: ext, requestId: row.requestId, createdGrantId: null, createdAt: "2026-11-06T13:00:00Z", completedAt: row.completedAt, completion: row.completion } : null;
+    return row && row.userId === user && row.extensionId === ext ? project(row) : null;
+  });
+  mocks.store.parts.mockImplementation(async (_user: string, _ext: string, recordingId: string, count: number) => {
+    const row = sim.bindings.get(recordingId)!; row.registeredPartCount = Math.max(row.registeredPartCount ?? 0, count); return project(row);
+  });
+  mocks.store.pin.mockImplementation(async (_user: string, _ext: string, recordingId: string, config: Record<string, unknown>) => {
+    const row = sim.bindings.get(recordingId)!; row.transcriptionConfig ??= config; return project(row);
   });
   mocks.store.complete.mockImplementation(async (_user: string, _ext: string, recordingId: string, completion: Record<string, unknown>) => {
     const row = sim.bindings.get(recordingId)!; row.completedAt ??= "2026-11-06T13:05:00Z"; row.completion ??= completion; return row;
@@ -316,6 +329,88 @@ describe("transcription start failures", () => {
     } finally { delete env.SONIOX_ASYNC_MODEL; }
     expect((await call(`/recordings/${recordingId}/complete`, body)).json).toMatchObject({ transcription: { state: "queued" } });
     expect(sim.prepareTranscription).toHaveBeenCalledWith(expect.objectContaining({ p_model: expect.stringMatching(/^stt-async-v/) }));
+  });
+});
+
+describe("capture review fixes", () => {
+  const completeBody = (registered: { json: Record<string, unknown> | null }, partCount: number) => ({ requestId: nextUuid(), captureRevision: registered.json!.captureRevision, durationSeconds: 5, partCount });
+
+  it("refuses /complete when fewer parts were registered than the client announces, then accepts the full list", async () => {
+    const recordingId = await createRecording(); const registered = await registerParts(recordingId, 0, [10, 20]);
+    const partial = await call(`/recordings/${recordingId}/complete`, completeBody(registered, 3));
+    expect(partial.response.status).toBe(409); expect(partial.json).toMatchObject({ error: { code: "incomplete_parts" } });
+    expect(sim.recordings.get(recordingId)!.status).toBe("uploading"); expect(sim.operations.size).toBe(0); expect(fetch).not.toHaveBeenCalled();
+    const full = await registerParts(recordingId, 0, [10, 20, 30]);
+    const done = await call(`/recordings/${recordingId}/complete`, completeBody(full, 3));
+    expect(done.response.status).toBe(200); expect(done.json).toMatchObject({ transcription: { state: "queued" } });
+  });
+  it("refuses /complete announcing fewer parts than were ever registered", async () => {
+    const recordingId = await createRecording(); await registerParts(recordingId, 0, [10, 20, 30]); const again = await registerParts(recordingId, 0, [10, 20]);
+    const done = await call(`/recordings/${recordingId}/complete`, completeBody(again, 2));
+    expect(done.response.status).toBe(409); expect(done.json).toMatchObject({ error: { code: "incomplete_parts" } });
+  });
+  it("refuses /complete before any /parts call", async () => {
+    const recordingId = await createRecording();
+    const done = await call(`/recordings/${recordingId}/complete`, { requestId: nextUuid(), captureRevision: 0, durationSeconds: 5, partCount: 1 });
+    expect(done.response.status).toBe(409); expect(done.json).toMatchObject({ error: { code: "incomplete_parts" } });
+  });
+
+  it("reuses the region and model of the first prepare after a failed start, even when the setting or env changed", async () => {
+    const recordingId = await createRecording(); const registered = await registerParts(recordingId, 0, [10]);
+    const body = completeBody(registered, 1); sim.failPrepare = true;
+    const first = await call(`/recordings/${recordingId}/complete`, body);
+    expect(first.json).toMatchObject({ transcription: { state: "not_started" } });
+    const firstArgs = sim.prepareTranscription.mock.calls[0][0] as { p_region: string; p_model: string };
+    expect(firstArgs.p_region).toBe("global");
+    sim.failPrepare = false; env.SONIOX_ASYNC_MODEL = "stt-async-v5";
+    mocks.auth.mockImplementation(async () => identity({ userMetadata: { vosio_settings: { sonioxRegion: "eu" } } }));
+    try {
+      const retry = await call(`/recordings/${recordingId}/complete`, body);
+      expect(retry.json).toMatchObject({ transcription: { state: "queued" } });
+    } finally { delete env.SONIOX_ASYNC_MODEL; }
+    const retryArgs = sim.prepareTranscription.mock.calls[1][0] as { p_region: string; p_model: string };
+    expect(retryArgs).toMatchObject({ p_region: firstArgs.p_region, p_model: firstArgs.p_model });
+    expect(mocks.store.pin).toHaveBeenCalledTimes(1);
+  });
+  it("reports not_started when the transcription config cannot be pinned", async () => {
+    const recordingId = await createRecording(); const registered = await registerParts(recordingId, 0, [10]);
+    mocks.store.pin.mockRejectedValueOnce(new Error("binding unavailable"));
+    const done = await call(`/recordings/${recordingId}/complete`, completeBody(registered, 1));
+    expect(done.json).toMatchObject({ transcription: { state: "not_started", operationId: null } }); expect(sim.prepareTranscription).not.toHaveBeenCalled();
+  });
+
+  it("audits a rejected dispatch with its status code only", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 401 }));
+    const recordingId = await createRecording(); const registered = await registerParts(recordingId, 0, [10]);
+    const done = await call(`/recordings/${recordingId}/complete`, completeBody(registered, 1));
+    expect(done.response.status).toBe(200); expect(done.json).toMatchObject({ transcription: { state: "queued" } });
+    expect(audit).toHaveBeenCalledWith(JSON.stringify({ event: "vosio_capture", operation: "dispatch", result: "401" }));
+  });
+  it("does not audit a failure for an accepted dispatch", async () => {
+    const recordingId = await createRecording(); const registered = await registerParts(recordingId, 0, [10]);
+    await call(`/recordings/${recordingId}/complete`, completeBody(registered, 1));
+    expect(audit.mock.calls.some(([line]: unknown[]) => String(line).includes('"operation":"dispatch"'))).toBe(false);
+  });
+
+  it("verifies the revision once for any number of parts and uses it for every part", async () => {
+    const recordingId = await createRecording(); sim.stateReads = 0;
+    const registered = await registerParts(recordingId, 0, [10, 20, 30, 40]);
+    expect(registered.response.status).toBe(200); expect(registered.json).toMatchObject({ captureRevision: 0 }); expect(registered.json!.parts).toHaveLength(4);
+    expect(sim.stateReads).toBe(1);
+  });
+
+  it.each([["completed", "completed"], ["failed", "failed"]])("keeps state queued and reports the %s phase as status when start returns an ended operation", async (phase, status) => {
+    sim.startPhase = phase;
+    const recordingId = await createRecording(); const registered = await registerParts(recordingId, 0, [10]);
+    const done = await call(`/recordings/${recordingId}/complete`, completeBody(registered, 1));
+    const operationId = sim.recordings.get(recordingId)!.operation!.id;
+    expect(done.json).toMatchObject({ status, transcription: { state: "queued", operationId } }); expect(fetch).not.toHaveBeenCalled();
+  });
+  it("dispatches an accepted operation and still reports transcribing", async () => {
+    sim.startPhase = "accepted";
+    const recordingId = await createRecording(); const registered = await registerParts(recordingId, 0, [10]);
+    const done = await call(`/recordings/${recordingId}/complete`, completeBody(registered, 1));
+    expect(done.json).toMatchObject({ status: "transcribing", transcription: { state: "queued" } }); expect(fetch).toHaveBeenCalledOnce();
   });
 });
 

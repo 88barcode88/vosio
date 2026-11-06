@@ -11,9 +11,13 @@ export const captureCompletionSchema = z.object({
   transcription: z.object({ state: z.enum(["queued", "not_started"]), operationId: id.nullable() }).strict()
 }).strict();
 export type CaptureCompletion = z.infer<typeof captureCompletionSchema>;
+// Region and model of the first transcription prepare, reused by every retry because both are part of its idempotency hash.
+export const captureTranscriptionConfigSchema = z.object({ region: z.enum(["global", "eu"]), model: z.string().min(1).max(100) }).strict();
+export type CaptureTranscriptionConfig = z.infer<typeof captureTranscriptionConfigSchema>;
 const bindingSchema = z.object({
   recordingId: id, extensionId: extension, requestId: id, createdGrantId: id.nullable(), createdAt: z.string(),
-  completedAt: z.string().nullable(), completion: z.record(z.string(), z.unknown()).nullable()
+  completedAt: z.string().nullable(), completion: z.record(z.string(), z.unknown()).nullable(),
+  registeredPartCount: z.number().int().min(1).max(1000).nullable(), transcriptionConfig: z.record(z.string(), z.unknown()).nullable()
 });
 export type CaptureBinding = z.infer<typeof bindingSchema>;
 
@@ -45,6 +49,16 @@ export function getCaptureBindingByRequest(userId: string, extensionId: string, 
 // Mark the upload complete and keep the first completion result (later calls return it unchanged).
 export function completeCaptureBinding(userId: string, extensionId: string, recordingId: string, completion: CaptureCompletion) {
   return bindingRpc("mcp_capture_binding_complete_v1", { p_user_id: userId, p_extension_id: extensionId, p_recording_id: recordingId, p_completion: captureCompletionSchema.parse(completion) });
+}
+
+// Remember the highest number of parts registered for the recording so /complete can refuse a partial list.
+export function recordRegisteredParts(userId: string, extensionId: string, recordingId: string, partCount: number) {
+  return bindingRpc("mcp_capture_binding_parts_v1", { p_user_id: userId, p_extension_id: extensionId, p_recording_id: recordingId, p_part_count: partCount });
+}
+
+// Pin the region and model of the first transcription prepare; the first stored value wins and is returned in the binding.
+export function pinTranscriptionConfig(userId: string, extensionId: string, recordingId: string, config: CaptureTranscriptionConfig) {
+  return bindingRpc("mcp_capture_binding_transcription_v1", { p_user_id: userId, p_extension_id: extensionId, p_recording_id: recordingId, p_config: captureTranscriptionConfigSchema.parse(config) });
 }
 
 // Read the recordings bucket size limit with the service client; null when unavailable so callers fail closed.
