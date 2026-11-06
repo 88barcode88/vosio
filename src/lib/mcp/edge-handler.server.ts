@@ -2,7 +2,7 @@ import "server-only";
 import { loadMcpConfig, type McpConfig } from "./config.server";
 import { runMcpRequest } from "./request-context.server";
 import { assertMcpReadScope, authenticateMcpRequest, McpAuthError } from "./auth.server";
-import { MCP_SCOPE_READ, MCP_SCOPES_SUPPORTED } from "./scopes";
+import { MCP_DISCOVERY_SCOPES, MCP_SCOPE_READ } from "./scopes";
 import { handleMcpProtocol } from "./protocol.server";
 import { browserIdentity, handleMcpOAuth, readBrowserPending, upstreamConsentDetails } from "./oauth.server";
 import { readAuthorizedAudioChunk } from "./audio.server";
@@ -13,7 +13,7 @@ export function mcpMetadata(config: McpConfig) {
   return { resource: config.resourceUrl, webOrigin: config.origin, issuer: config.issuer,
     authorization_endpoint: `${base}/authorize`, token_endpoint: `${config.resourceUrl}/oauth/token`, revocation_endpoint: `${config.resourceUrl}/oauth/revoke`,
     ...(config.dcrEnabled ? { registration_endpoint: `${config.resourceUrl}/oauth/register` } : {}),
-    scopes_supported: [...MCP_SCOPES_SUPPORTED], response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"],
+    scopes_supported: [...MCP_DISCOVERY_SCOPES], response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"],
     token_endpoint_auth_methods_supported: ["none"], revocation_endpoint_auth_methods_supported: ["none"], code_challenge_methods_supported: ["S256"] };
 }
 
@@ -58,7 +58,7 @@ export async function handleMcpEdge(request: Request) {
     let response: Response;
     try {
       if (request.method === "GET" && suffix === "/metadata") response = Response.json(mcpMetadata(config));
-      else if (request.method === "GET" && suffix === "/resource-metadata") response = Response.json({ resource: config.resourceUrl, authorization_servers: [config.issuer], scopes_supported: [...MCP_SCOPES_SUPPORTED], bearer_methods_supported: ["header"] });
+      else if (request.method === "GET" && suffix === "/resource-metadata") response = Response.json({ resource: config.resourceUrl, authorization_servers: [config.issuer], scopes_supported: [...MCP_DISCOVERY_SCOPES], bearer_methods_supported: ["header"] });
       else if (request.method === "GET" && /^\/browser\/(pending|upstream|connections)$/.test(suffix)) response = await browserView(config, new URL(canonical.url));
       else if (/^\/oauth\/(authorize|callback|consent|token|revoke|register)$/.test(suffix)) {
         const action = suffix.split("/").at(-1)! as Parameters<typeof handleMcpOAuth>[1];

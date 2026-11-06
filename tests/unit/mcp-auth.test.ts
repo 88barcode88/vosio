@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { getMcpConfig, parseMcpConfig } from "@/lib/mcp/config.server";
+import { mcpMetadata } from "@/lib/mcp/edge-handler.server";
 import { authenticateBridgeRequest, authenticateMcpRequest, verifyUpstream } from "@/lib/mcp/auth.server";
 import { decryptCustody, encryptCustody, hashToken, newOpaqueToken, pkceChallenge } from "@/lib/mcp/oauth-crypto.server";
 import { authorizeSchema, handleMcpOAuth, matchesMcpRedirect, MCP_NONCE_COOKIE, MCP_PENDING_COOKIE, normalizeMcpScopes, upstreamConsentDetails, validateMcpRedirect, validateUpstreamRedirect } from "@/lib/mcp/oauth.server";
@@ -462,5 +463,19 @@ describe("vosio:capture scope set", () => {
     const widened = await handleMcpOAuth(tokenRequest(config, { grant_type: "refresh_token", refresh_token: token, client_id: clientId, resource: config.resourceUrl, scope: "vosio:read" }), "token");
     expect(widened.status).toBe(400); expect(await widened.json()).toEqual({ error: "invalid_scope" });
     expect(mocks.custody).toHaveBeenCalledWith("revoke_grant", { grantId });
+  });
+});
+
+describe("SDK-style implicit scope resolution", () => {
+  it("keeps DCR and /authorize working for a loopback client that requests scopes_supported joined by space", async () => {
+    const { config, pending } = setup(); pending.redirectUri = "http://127.0.0.1:50000/callback";
+    const scope = mcpMetadata(config).scopes_supported.join(" ");
+    expect(scope).toBe("vosio:read vosio:write");
+    const registered = await handleMcpOAuth(new Request(`${config.origin}/api/mcp/oauth/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_name: "Claude Code", redirect_uris: [pending.redirectUri], scope }) }), "register");
+    expect(registered.status).toBe(201);
+    const params = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: pending.redirectUri, code_challenge: token, code_challenge_method: "S256", resource: config.resourceUrl, scope });
+    const response = await handleMcpOAuth(new Request(`${config.origin}/api/mcp/oauth/authorize?${params}`), "authorize");
+    expect(response.status).toBe(303); expect(response.headers.get("location")).toContain("/mcp/consent?request=");
+    expect(mocks.custody).toHaveBeenCalledWith("pending_create", expect.objectContaining({ scopes: ["vosio:read", "vosio:write"] }));
   });
 });

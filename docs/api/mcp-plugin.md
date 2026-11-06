@@ -54,7 +54,10 @@ Allowed scope sets are exactly `{vosio:read}`, `{vosio:read,vosio:write}` (write
 and `{vosio:capture}`. Capture cannot be combined with read or write and is accepted at
 registration (DCR `scope`), `/authorize` and in SQL only with a redirect URI matching
 `^https://[a-p]{32}\.chromiumapp\.org/`. Discovery (`scopes_supported` in `/metadata` and
-`/resource-metadata`) lists all three. Refresh keeps the grant's set; a different set is
+`/resource-metadata`) deliberately lists only `vosio:read` and `vosio:write`
+(`MCP_DISCOVERY_SCOPES`): MCP SDK clients request `scopes_supported` joined by space when the
+401 challenge has no `scope`, so advertising capture would make them ask for an invalid set.
+The extension requests `vosio:capture` explicitly. Refresh keeps the grant's set; a different set is
 `invalid_scope`. The mandatory `read` check is no longer part of generic token
 authentication: `authenticateBridgeRequest` returns any valid grant (with `redirectUri`),
 `authenticateMcpRequest` additionally requires `vosio:read`. The Edge dispatcher, the

@@ -5,6 +5,8 @@ export const MCP_SCOPE_WRITE = "vosio:write";
 export const MCP_SCOPE_CAPTURE = "vosio:capture";
 // Every scope the bridge understands; discovery advertises exactly this list.
 export const MCP_SCOPES_SUPPORTED = [MCP_SCOPE_READ, MCP_SCOPE_WRITE, MCP_SCOPE_CAPTURE] as const;
+// Scopes advertised in discovery: SDK clients fall back to scopes_supported when no scope is challenged, so capture must stay out of it.
+export const MCP_DISCOVERY_SCOPES = [MCP_SCOPE_READ, MCP_SCOPE_WRITE] as const;
 export type McpScope = (typeof MCP_SCOPES_SUPPORTED)[number];
 
 // Browser-extension redirect URIs are exactly https://<32 letters a-p>.chromiumapp.org/..., mirroring the SQL check constraints.

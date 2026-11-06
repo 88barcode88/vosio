@@ -68,11 +68,11 @@ describe("Supabase MCP HTTP dispatch", () => {
 
 describe("vosio:capture isolation at the Edge dispatcher", () => {
   const captureIdentity = { ...identity, scopes: ["vosio:capture"] };
-  it("advertises the capture scope in discovery", async () => {
+  it("keeps capture out of discovery so SDK clients never request it implicitly", async () => {
     const metadata = await (await handleMcpEdge(new Request("http://internal/vosio-mcp/metadata"))).json();
-    expect(metadata.scopes_supported).toEqual(["vosio:read", "vosio:write", "vosio:capture"]);
+    expect(metadata.scopes_supported).toEqual(["vosio:read", "vosio:write"]);
     const resource = await (await handleMcpEdge(new Request("http://internal/vosio-mcp/resource-metadata"))).json();
-    expect(resource.scopes_supported).toContain("vosio:capture");
+    expect(resource.scopes_supported).toEqual(["vosio:read", "vosio:write"]);
   });
   it.each(["initialize", "tools/list"])("rejects a capture token on MCP %s before protocol handling", async (method) => {
     mocks.auth.mockResolvedValue(captureIdentity);
