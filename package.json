@@ -7,6 +7,7 @@
     "postinstall": "node scripts/patch-soniox-websocket-auth.mjs",
     "assets:favicon": "node scripts/generate-favicon.mjs",
     "build:plugin": "node scripts/build-vosio-plugin.mjs",
+    "build:extension": "node scripts/build-vosio-extension.mjs",
     "dev": "next dev --hostname 127.0.0.1 --port 3047",
     "build": "next build",
     "check": "npm run typecheck && npm run lint && npm run test",

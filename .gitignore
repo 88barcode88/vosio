@@ -40,6 +40,9 @@ supabase/.branches/
 supabase/.temp/
 supabase/functions/vosio-mcp/generated/
 
+# Local dev signing key of the browser extension (never commit)
+extension/dev-key.pem
+
 # Local code intelligence indexes
 .codegraph/
 

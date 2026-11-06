@@ -1,0 +1,111 @@
+/* Shared styles of the Vosio extension pages; tokens follow DESIGN.md (neutral workspace, graphite dark mode). */
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-muted: #f2f3f5;
+  --border: #e9ebef;
+  --border-strong: #d8dce3;
+  --text: #171c27;
+  --text-secondary: #697180;
+  --accent: #191f2c;
+  --accent-hover: #252c3b;
+  --accent-text: #ffffff;
+  --focus-ring: #4d6dba;
+  --success: #25845b;
+  --danger: #c94f53;
+  --warning: #a46a18;
+  --info: #4d6dba;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111318;
+    --surface: #1a1d24;
+    --surface-muted: #252830;
+    --border: #2d313b;
+    --border-strong: #414754;
+    --text: #f2f3f6;
+    --text-secondary: #a2a9b7;
+    --accent: #edf0f6;
+    --accent-hover: #ffffff;
+    --accent-text: #171b23;
+    --focus-ring: #abc2f8;
+    --success: #8ed5b0;
+    --danger: #f79d9f;
+    --warning: #ecc18c;
+    --info: #abc2f8;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+h1 { margin: 0; font-size: 1.125rem; font-weight: 600; line-height: 1.5; }
+h2 { margin: 0 0 8px; font-size: 1rem; font-weight: 600; line-height: 1.5; }
+p { margin: 0 0 8px; }
+a { color: var(--info); }
+
+.muted { color: var(--text-secondary); font-size: 0.8125rem; }
+.small { font-size: 0.75rem; }
+.ok { color: var(--success); }
+.warn { color: var(--warning); }
+.error { color: var(--danger); }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+.stack > * + * { margin-top: 8px; }
+
+button, .button {
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+button:hover { background: var(--surface-muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button.primary:hover { background: var(--accent-hover); }
+button.danger { color: var(--danger); }
+button:disabled { opacity: 0.55; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+input[type="text"], select {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+input[type="text"] { width: 100%; }
+
+.recording-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-right: 6px; }
+/* Timer display uses tabular figures so digits do not jump (the only allowed non-token numeric display). */
+.timer { font-size: 1.125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.list { list-style: none; margin: 0; padding: 0; }
+.list > li { padding: 8px 0; border-top: 1px solid var(--border); }
+.list > li:first-child { border-top: 0; padding-top: 0; }

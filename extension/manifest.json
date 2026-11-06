@@ -1,0 +1,75 @@
+{
+  "manifest_version": 3,
+  "name": "Vosio – nahrávání schůzek",
+  "short_name": "Vosio",
+  "description": "Nahrává online schůzky (Google Meet, Teams, Zoom) do vašeho vlastního Vosia k přepisu.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Vosio",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "permissions": [
+    "tabCapture",
+    "offscreen",
+    "storage",
+    "unlimitedStorage",
+    "identity",
+    "scripting",
+    "tabs",
+    "notifications",
+    "commands",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "https://teams.microsoft.com/*",
+    "https://teams.live.com/*",
+    "https://app.zoom.us/*",
+    "https://*.zoom.us/wc/*"
+  ],
+  "optional_host_permissions": ["https://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["content/entry-meet.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://teams.microsoft.com/*", "https://teams.live.com/*"],
+      "js": ["content/entry-teams.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://app.zoom.us/wc/*", "https://*.zoom.us/wc/*"],
+      "js": ["content/entry-zoom.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "toggle-recording": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Spustit nebo zastavit nahrávání schůzky"
+    }
+  }
+}
