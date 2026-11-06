@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ExtensionDocumentationSection } from "@/components/documentation-extension-section";
 import { McpDocumentationSection } from "@/components/documentation-mcp-section";
 
 type DocumentationSection = {
@@ -112,6 +113,7 @@ const documentationSections: DocumentationSection[] = [
       "Lišta u spodního okraje ukazuje, jestli máte neuložené změny, jestli uložení selhalo (změny zůstanou ve formuláři) nebo jestli je vše uložené. Zrušit změny vrátí formulář do uloženého stavu. Motiv (Světlý nebo Tmavý) se uloží hned v tomto prohlížeči.",
       "Jazyk a přepis ukazuje použitý model Soniox pro živý přepis i pro nahrané soubory. Model pro soubory nastavuje správce instalace; pokud je neplatný, Nastavení na to upozorní.",
       "Automatické výstupy mají šest samostatných voleb: shrnutí, úkoly, zápis ze schůzky, CRM poznámka, navazující e-mail a časová osa. Když jsou všechny vypnuté, AI se samo nespustí. Vysvětlení live přepisu je viditelné přímo u nastavení. Technické informace mají vlastní sbalenou část; Diagnostika a využití zachovává podrobnosti pod Více informací."
+      ,"Část Připojené aplikace a rozšíření ukazuje vaše spárovaná rozšíření prohlížeče a připojené AI asistenty s datem spárování. Tlačítkem Odpojit po potvrzení jim okamžitě odeberete přístup."
       ,"Pro budoucí položky v Koši můžete zvolit 24 hodin, 7 dní nebo 30 dní. Výchozí volba je 30 dní a změna nemění termín položek, které už v Koši jsou. Usage ukazuje orientační AI a Soniox náklady; skutečné vyúčtování najdete u poskytovatelů."
     ],
     id: "nastaveni",
@@ -176,6 +178,7 @@ export function DocumentationPanel({ mcpResourceUrl = null }: { mcpResourceUrl?:
               {section.title}
             </a>
           ))}
+          <a href="#rozsireni-prohlizece">Rozšíření prohlížeče</a>
           <a href="#pripojeni-ai-asistenta">Připojení AI asistenta</a>
         </nav>
 
@@ -191,6 +194,7 @@ export function DocumentationPanel({ mcpResourceUrl = null }: { mcpResourceUrl?:
               ))}
             </section>
           ))}
+          <ExtensionDocumentationSection />
           <McpDocumentationSection resourceUrl={mcpResourceUrl} />
           <p className="documentation-more"><Link href="/whats-new">Otevřít Novinky</Link></p>
         </div>

@@ -150,6 +150,8 @@ při HTTPS `NEXT_PUBLIC_APP_URL` (webhook Sonioxu); jinak se dokončí dohledán
 Selhání prepare/start přepisu v `/complete` vrací 200 `not_started` a opakování se stejným `requestId` ho zkusí
 znovu; model Function (`SONIOX_ASYNC_MODEL`) musí odpovídat webu, DB neshodu v5/v6 nezachytí.
 
+Sekce Nastavení „Připojené aplikace a rozšíření“ načítá seznam až v prohlížeči přes server action, takže `renderToStaticMarkup` testy `SettingsPanel` ukážou jen stav načítání. `mcp_revoke_own_connection_v1` vrací `false` (ne chybu), když session není aktivní; UI to bere jako selhání odpojení. Tlačítka sekce jsou uvnitř formuláře Nastavení, proto musí mít `type="button"`.
+
 Scope `vosio:read` už není povinný pro každý bridge token. Povolené sady jsou
 `{read}`, `{read,write}` a `{capture}` (rozšíření prohlížeče); `{capture}` nelze
 kombinovat a platí jen s návratovou adresou `https://<32 písmen a–p>.chromiumapp.org/…`.
