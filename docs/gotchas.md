@@ -145,6 +145,11 @@ Podepsaný JWT může přežít logout; nový MCP request proto kontroluje i ži
 tokenu zablokuje rodinu, vyžaduje nové připojení a neopakuje upstream request.
 Odinstalování pluginu samo nezruší backend grant. Viz [runbook](api/mcp-plugin.md).
 
+Capture API rozšíření (`/capture/*`) dokončí přepisy delší než okno dispatch (240 s) bez otevřeného Vosia jen
+při HTTPS `NEXT_PUBLIC_APP_URL` (webhook Sonioxu); jinak se dokončí dohledáním při otevření nahrávky.
+Selhání prepare/start přepisu v `/complete` vrací 200 `not_started` a opakování se stejným `requestId` ho zkusí
+znovu; model Function (`SONIOX_ASYNC_MODEL`) musí odpovídat webu, DB neshodu v5/v6 nezachytí.
+
 Scope `vosio:read` už není povinný pro každý bridge token. Povolené sady jsou
 `{read}`, `{read,write}` a `{capture}` (rozšíření prohlížeče); `{capture}` nelze
 kombinovat a platí jen s návratovou adresou `https://<32 písmen a–p>.chromiumapp.org/…`.
@@ -236,7 +241,7 @@ V původní úvaze se objevil název SONiVOX. Pro speech-to-text provider v tomt
 
 ## Vercel a audio
 
-Audio soubory mohou být velké a dlouhé zpracování nepatří do jednoho Vercel requestu. Hlavní upload cesta je frontend -> Supabase Storage TUS endpoint přes authenticated browser session, ne frontend -> Vercel API route -> storage/provider. TUS adaptér posílá 6 MiB chunky a před každým requestem znovu čte access token, protože dlouhému uploadu může mezitím expirivat session. Authorization nastavuj pouze v `onBeforeRequest`; kombinace statického `headers.authorization` a následného `setHeader` v browserovém `tus-js-client` hodnoty přes XHR spojí čárkou a Supabase odmítne neplatnou dvojitou bearer hlavičku.
+Audio soubory mohou být velké a dlouhé zpracování nepatří do jednoho Vercel requestu. Hlavní upload cesta je frontend -> Supabase Storage TUS endpoint přes authenticated browser session (rozšíření prohlížeče nahrává části podepsaným jednorázovým `PUT` z capture API, viz [capture API](api/browser-extension-capture.md); audio nikdy neprochází Vercelem ani Function), ne frontend -> Vercel API route -> storage/provider. TUS adaptér posílá 6 MiB chunky a před každým requestem znovu čte access token, protože dlouhému uploadu může mezitím expirivat session. Authorization nastavuj pouze v `onBeforeRequest`; kombinace statického `headers.authorization` a následného `setHeader` v browserovém `tus-js-client` hodnoty přes XHR spojí čárkou a Supabase odmítne neplatnou dvojitou bearer hlavičku.
 
 Manuální vícesouborový upload běží sekvenčně. Průběh celé fronty se počítá z odeslaných bytů, ne z průměru procent jednotlivých souborů; nesmí klesnout při přechodu na další soubor. Zrušení ukončí aktivní TUS upload, ale capture zůstává `uploading`, aby šlo obnovit stejný request a pevně navázaný objekt. Neprovádí přímý zápis `failed`; ani neúspěšná finalizace nesmí předstírat dokončení nebo vytvořit nový objekt. Kontrola stavu musí přiznat vlastní selhání a zrušení zachovat původní identitu. Revokace (`42501`) zakáže další týmové pokračování; soukromá obnova vyžaduje výslovný nový scope, nikoli tichou kopii.
 

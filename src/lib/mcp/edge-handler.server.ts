@@ -3,6 +3,7 @@ import { loadMcpConfig, type McpConfig } from "./config.server";
 import { runMcpRequest } from "./request-context.server";
 import { assertMcpReadScope, authenticateMcpRequest, McpAuthError } from "./auth.server";
 import { MCP_DISCOVERY_SCOPES, MCP_SCOPE_READ } from "./scopes";
+import { handleCaptureRequest } from "./capture.server";
 import { handleMcpProtocol } from "./protocol.server";
 import { browserIdentity, handleMcpOAuth, readBrowserPending, upstreamConsentDetails } from "./oauth.server";
 import { readAuthorizedAudioChunk } from "./audio.server";
@@ -64,7 +65,8 @@ export async function handleMcpEdge(request: Request) {
         const action = suffix.split("/").at(-1)! as Parameters<typeof handleMcpOAuth>[1];
         const allowed = action === "authorize" || action === "callback" ? ["GET"] : action === "consent" ? ["GET", "POST"] : ["POST"];
         response = allowed.includes(request.method) ? await handleMcpOAuth(new Request(`${config.origin}/api/mcp${suffix}${incoming.search}`, canonical), action) : new Response(null, { status: 405 });
-      } else if (suffix === "") response = await handleMcpProtocol(canonical, authenticateMcpRead);
+      } else if (suffix === "/capture" || suffix.startsWith("/capture/")) response = await handleCaptureRequest(canonical, suffix.slice("/capture".length), config);
+      else if (suffix === "") response = await handleMcpProtocol(canonical, authenticateMcpRead);
       else if (request.method === "GET" && /^\/audio\/[a-f0-9-]+$/i.test(suffix)) {
         const identity = await authenticateMcpRead(canonical);
         if (incoming.search || request.headers.has("origin") && request.headers.get("origin") !== new URL(config.resourceUrl).origin) return new Response(null, { status: 403, headers: { "Cache-Control": "no-store" } });

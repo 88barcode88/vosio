@@ -24,7 +24,7 @@ export function upstreamSession(config: McpConfig, jwt: string) {
 }
 
 // Verify the signed upstream actor, OAuth client and live Supabase session on every use.
-export async function verifyUpstream(config: McpConfig, jwt: string, expectedUser?: string, expectedSession?: string): Promise<{ supabase: SupabaseClient; userId: string; sessionId: string; expiresAt: number }> {
+export async function verifyUpstream(config: McpConfig, jwt: string, expectedUser?: string, expectedSession?: string): Promise<{ supabase: SupabaseClient; userId: string; sessionId: string; expiresAt: number; email: string | null; userMetadata: Record<string, unknown> }> {
   const supabase = upstreamSession(config, jwt);
   const { data: user, error: userError } = await supabase.auth.getUser(jwt);
   const { data: verified, error: claimsError } = await supabase.auth.getClaims(jwt);
@@ -35,7 +35,7 @@ export async function verifyUpstream(config: McpConfig, jwt: string, expectedUse
     || claims.client_id !== config.upstreamClientId || claims.iss !== `${config.publicSupabaseUrl}/auth/v1` || claims.exp <= Math.floor(Date.now() / 1000)) throw new McpAuthError("invalid_token");
   const active = await supabase.rpc("mcp_auth_session_active_v1");
   if (active.error || active.data !== true) throw new McpAuthError("invalid_token");
-  return { supabase, userId: claims.sub, sessionId: claims.session_id, expiresAt: claims.exp };
+  return { supabase, userId: claims.sub, sessionId: claims.session_id, expiresAt: claims.exp, email: user.user.email ?? null, userMetadata: user.user.user_metadata ?? {} };
 }
 
 // Reject any grant that cannot read: MCP tools and audio require vosio:read, so a capture-only token never passes.
@@ -61,7 +61,7 @@ export async function authenticateBridgeRequest(request: Request) {
     // A revoke racing the upstream checks must still prevent returning an authenticated client.
     const current = await custody("access", { accessHash, resource: config.resourceUrl });
     if (!current || current.id !== grant.data.id) throw new McpAuthError("invalid_token");
-    return { supabase: verified.supabase, scopes: grant.data.scopes, resourceUrl: config.resourceUrl, userId: verified.userId, grantId: grant.data.id, redirectUri: grant.data.redirect_uri ?? null };
+    return { supabase: verified.supabase, scopes: grant.data.scopes, resourceUrl: config.resourceUrl, userId: verified.userId, grantId: grant.data.id, redirectUri: grant.data.redirect_uri ?? null, email: verified.email, userMetadata: verified.userMetadata };
   } catch (error) { if (error instanceof McpAuthError) throw error; throw new McpAuthError("unavailable"); }
 }
 

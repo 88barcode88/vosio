@@ -65,7 +65,9 @@ MCP zůstává disabled-first. Správce nasadí migrace, web a Function, nastav�
 confidential OAuth klienta a dva runtime secrets, ověří identitu a výslovně aktivuje.
 Uživatel veřejného pluginu zadává pouze adresu svého webu a dokončí osobní přihlášení.
 [MCP kontrakt](api/mcp-plugin.md), [plugin](api/vosio-plugin.md),
-[český owner setup](../plugins/vosio/SETUP.md).
+[český owner setup](../plugins/vosio/SETUP.md). Úzké capture rozhraní rozšíření prohlížeče
+(`/capture/*`, podepsaný upload částí, spuštění přepisu přes dispatch route webu):
+[Capture API rozšíření](api/browser-extension-capture.md).
 
 Source-only sdílený Koš má úzké session mutation RPC a oddělený receipt-bound
 Storage worker kontrakt v [shared Trash API](api/shared-recording-trash.md).
