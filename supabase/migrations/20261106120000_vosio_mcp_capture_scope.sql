@@ -47,7 +47,7 @@ create table vosio_mcp_private.capture_recordings (
   transcription_config jsonb check (transcription_config is null or (jsonb_typeof(transcription_config)='object' and octet_length(transcription_config::text)<=1024)),
   created_at timestamptz not null default clock_timestamp(),
   constraint capture_recordings_request_key unique (user_id,extension_id,request_id),
-  constraint capture_recordings_completion_check check (completion is null or completed_at is not null)
+  constraint capture_recordings_completion_requires_completed_at check (completion is null or completed_at is not null)
 );
 alter table vosio_mcp_private.capture_recordings owner to postgres;
 alter table vosio_mcp_private.capture_recordings enable row level security;
