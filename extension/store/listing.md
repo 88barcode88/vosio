@@ -1,6 +1,6 @@
 # Podklady pro Chrome Web Store a Edge Add-ons
 
-Koncept pro podání vlastníkem. Nic z toho není publikováno. Snímky obrazovky: **TBD** (pořídit z dev buildu po akceptaci 7.2; viz seznam na konci).
+Koncept pro podání vlastníkem. Nic z toho není publikováno. Snímky obrazovky: **TBD** (pořídit z dev buildu po ruční akceptaci; viz seznam na konci).
 
 ## Jediný účel (single purpose)
 

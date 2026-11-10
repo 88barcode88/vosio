@@ -2,7 +2,7 @@
 
 Manifest V3 rozšíření, které nahrává online schůzky (Google Meet, Microsoft Teams web, Zoom web, vlastní weby) do **vlastního** Vosia uživatele. Přepis spouští Vosio. Rozšíření neobsahuje žádnou adresu konkrétní instalace, žádné tajemství ani npm závislost.
 
-Návrh a kontrakt: `openspec/changes/vosio-browser-extension/` (`design.md` D4, D6, D8; `specs/browser-extension-*`).
+Kontrakt serveru: `docs/api/browser-extension-capture.md`. Označení D1–D8 níže jsou interní čísla návrhových rozhodnutí; podstata každého je popsaná přímo u něj.
 
 ## Sestavení
 
@@ -64,7 +64,7 @@ Režimy: **Automaticky** = klik na ikonu nebo zkratka (`Alt+Shift+R`) na rozpozn
 - **Vlastní build s vlastním ID funguje**: `npm run build:extension` → načíst unpacked, nebo zabalit vlastním klíčem. Každé ID se zaregistruje samostatně přes DCR (návratová adresa `https://<id>.chromiumapp.org/oauth`), server nic nenastavuje.
 - Ověření čistoty balíčku: `rg -n "supabase\.co|<ref-projektu>|<vaše-doména>" .tmp/extension` nesmí nic najít.
 
-## Ruční akceptace (úkol 7.2, vyžaduje nasazení na privátní target)
+## Ruční akceptace (po nasazení na vlastní instalaci)
 
 Zapsat verze Chrome a Edge a výsledky (bez obsahu nahrávek). Dokud není provedeno, je akceptace **pending**.
 
@@ -106,7 +106,7 @@ Zapsat verze Chrome a Edge a výsledky (bez obsahu nahrávek). Dokud není prove
 - **Offscreen dokument nemůže zobrazit dotaz na mikrofon**; povolení se dělá na viditelné stránce rozšíření (`permissions/permissions.html`) a platí pro celý origin `chrome-extension://<id>`.
 - **Content scripty nesmí být ES moduly**: build je slepuje do klasického skriptu (`content/entry-*.js`); sdílený kód (`shared/platforms.ts`) se tím do každého balíčku vkládá znovu.
 - **Service worker usíná**: stav nahrávky je v `chrome.storage.local` (`activeRecording`), stav karet v `chrome.storage.session`; po restartu `RecordingController.recover()` zjistí z offscreen dokumentu, zda nahrávání běží, jinak z chunků v IndexedDB udělá čekající nahrávku. Per-tab badge a popup Chrome při navigaci maže; content script po načtení stav hlásí znovu.
-- **Service worker během dlouhého PUT**: Chrome ukončuje worker po 30 s nečinnosti. Během PUT části běží každých 20 s lehké volání `chrome.runtime.getPlatformInfo` (`background/keep-alive.ts`). **Zbývající riziko:** pokud prohlížeč worker přesto ukončí, PUT se přeruší; fronta pokračuje po dalším probuzení (alarm `vosio-tick`, `onStartup`) a část nahraje znovu (existující části server vrací jako `exists`). Reálně ověřit na pomalém uploadu (7.2).
+- **Service worker během dlouhého PUT**: Chrome ukončuje worker po 30 s nečinnosti. Během PUT části běží každých 20 s lehké volání `chrome.runtime.getPlatformInfo` (`background/keep-alive.ts`). **Zbývající riziko:** pokud prohlížeč worker přesto ukončí, PUT se přeruší; fronta pokračuje po dalším probuzení (alarm `vosio-tick`, `onStartup`) a část nahraje znovu (existující části server vrací jako `exists`). Reálně ověřit na pomalém uploadu (ruční akceptace).
 - **Důvěryhodnost zpráv**: service worker přijímá od content scriptů jen `meeting-state` s validovaným tvarem; všechny ostatní zprávy jen ze stránek rozšíření (`sender.url` začíná `chrome.runtime.getURL("")`, `sender.id === chrome.runtime.id`). `chrome.storage.local.setAccessLevel(TRUSTED_CONTEXTS)` se volá při startu workeru, pokud ho prohlížeč podporuje (tokeny pak nečtou content scripty).
 - **Mikrofon v offscreen**: před `getUserMedia` se zjišťuje stav oprávnění (`navigator.permissions.query`); bez `granted` se mikrofon přeskočí (nahrává se jen schůzka s upozorněním), samotné `getUserMedia` má timeout 4 s.
 - **Refresh token se rotuje**: nový pár se ukládá před použitím a refresh běží pod `navigator.locks`; po ztracené odpovědi obnovy je další pokus replay → grant se odvolá → stav „Odpojeno ve Vosiu“ → nové spárování a pokračování do téže nahrávky (stejná `requestId`).
