@@ -24,8 +24,8 @@ function createLoginRedirect(request: NextRequest) {
 
 // updateSession refreshes Supabase auth cookies and protects private app routes.
 export async function updateSession(request: NextRequest) {
-  // Exact cookie-less scheduler and per-job callback POSTs use their own Bearer/HMAC guards.
-  const schedulerPaths = ["/api/jobs/manual-recording-purge", "/api/jobs/recording-transcription"];
+  // Exact cookie-less scheduler, dispatch and per-job callback POSTs use their own Bearer/HMAC guards.
+  const schedulerPaths = ["/api/jobs/manual-recording-purge", "/api/jobs/recording-transcription", "/api/jobs/recording-transcription/dispatch"];
   const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
   const callbackPath = new RegExp(`^/api/jobs/recording-transcription/${uuid}/${uuid}$`, "i").test(request.nextUrl.pathname);
   if (request.method === "POST" && (schedulerPaths.includes(request.nextUrl.pathname) || callbackPath)

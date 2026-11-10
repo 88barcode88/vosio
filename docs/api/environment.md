@@ -73,6 +73,13 @@ Vosio expects the required variables below. `GEMINI_API_KEY` and `MISTRAL_API_KE
 - Defaults to `stt-async-v6`. Accepted values are only the reviewed list `sonioxAsyncModelIds` in `src/lib/model-options.ts` (`stt-async-v6`, `stt-async-v5`); any other value stops transcription with "configuration requires review".
 - Each accepted model also needs an active row in `public.recording_transcription_models_v1` (`stt-async-v6` is added by `20261103200000_soniox_async_v6.sql`). Apply that migration before the web release.
 
+`RECORDING_TRANSCRIPTION_DISPATCH_TOKEN`
+
+- Optional; needed for transcription of recordings made by the browser extension without an open Vosio.
+- Server-only random secret, the same value on the web and in the `vosio-mcp` Edge Function (never the worker token, never in source or docs).
+- The web route `POST /api/jobs/recording-transcription/dispatch` accepts only `Bearer <token>` and an `operationId`; without it the route returns 401. See [capture API](browser-extension-capture.md).
+- The Function also honours `SONIOX_ASYNC_MODEL` (same approved list; must equal the web's value) and takes the web address from `installation.web_origin`.
+
 `OPENAI_API_KEY`
 
 - Required only for AI processing.

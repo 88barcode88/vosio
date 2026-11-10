@@ -6,6 +6,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { createRateLimiter } from "@/lib/rate-limit";
 import { executeVosioTool, McpContentError, VOSIO_TOOL_DEFINITIONS, type VosioContentContext } from "./content.server";
 import { readAuthorizedAudioChunk } from "./audio.server";
+import { MCP_SCOPE_READ } from "./scopes";
 
 export type McpProtocolIdentity = VosioContentContext & { userId: string; grantId: string };
 const requestLimit = createRateLimiter({ limit: 120, windowMs: 60_000 });
@@ -53,6 +54,8 @@ function safeToolError(error: unknown) {
 // Handle one stateless SDK exchange with fresh authorization for each tool or audio resource operation.
 export async function handleMcpProtocol(request: Request, authorize: (request: Request) => Promise<McpProtocolIdentity>) {
   const identity = await authorize(request);
+  // Defense in depth: a token without vosio:read (e.g. browser-extension capture) never reaches initialize, tools/list or any tool.
+  if (!identity.scopes.includes(MCP_SCOPE_READ)) return Response.json({ error: "insufficient_scope" }, { status: 403, headers: { "Cache-Control": "no-store" } });
   const origin = new URL(identity.resourceUrl).origin;
   if (new URL(request.url).origin !== origin || request.headers.has("origin") && request.headers.get("origin") !== origin) {
     return Response.json({ error: "denied" }, { status: 403, headers: { "Cache-Control": "no-store" } });

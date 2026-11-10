@@ -32,6 +32,29 @@ export const WHATS_NEW_KIND_LABELS: Record<WhatsNewKind, string> = {
 // Newest release first; the first entry's id drives the "unread" dot in the sidebar.
 export const whatsNewReleases: readonly WhatsNewRelease[] = [
   {
+    id: "2026-11-06",
+    label: "Listopad 2026",
+    date: "06.11.2026",
+    items: [
+      {
+        id: "browser-extension",
+        kind: "new",
+        title: "Nahrávání schůzek přímo z prohlížeče",
+        summary: "Rozšíření Vosio pro Chrome a Edge nahraje schůzku v Google Meet, Teams nebo Zoomu jedním kliknutím a pošle ji do Vosia k přepisu. Vosio přitom nemusíte mít otevřené.",
+        detail: "Rozšíření spárujete se svým Vosiem a v nastavení zvolíte, jestli má nahrávat automaticky, nebo se napřed zeptat. Chrome vyžaduje jedno kliknutí na ikonu rozšíření nebo klávesovou zkratku. Před nahráváním informujte účastníky schůzky.",
+        href: "/documentation#rozsireni-prohlizece"
+      },
+      {
+        id: "settings-connections",
+        kind: "new",
+        title: "Přehled připojených aplikací v Nastavení",
+        summary: "V Nastavení vidíte, která rozšíření a AI asistenti mají přístup k vašemu Vosiu, a kterékoli z nich můžete odpojit.",
+        detail: "Po odpojení ztratí aplikace přístup okamžitě. Nahrávky, které už ve Vosiu jsou, zůstanou.",
+        href: "/settings#settings-connections"
+      }
+    ]
+  },
+  {
     id: "2026-11-04",
     label: "Listopad 2026",
     date: "04.11.2026",

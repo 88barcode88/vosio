@@ -12,7 +12,8 @@ canonical resource URL, Supabase project, dedicated confidential OAuth client
 and server encryption key. There is no built-in project/account/host. An existing
 deployment's data or OAuth registrations are never copied to another installation.
 
-The bridge implements real `vosio:read` and `vosio:write` OAuth scopes. Supabase
+The bridge implements real `vosio:read`, `vosio:write` and `vosio:capture` OAuth scopes
+(see "Scope `vosio:capture`" below). Supabase
 OAuth's built-in scopes cannot supply those custom permissions directly. The
 upstream authorization uses code+S256 PKCE with `email`, then verifies the actual
 Supabase user, signed claims, project issuer, authenticated audience/role,
@@ -46,6 +47,57 @@ set. Scopes are fixed on the grant, so changing them requires a new consent.
 A different supported scope set returns `invalid_scope` and closes the claimed
 family before upstream exchange. Malformed scopes are rejected before claim.
 Refresh never forwards Vosio scopes to the upstream Supabase OAuth token endpoint.
+
+## Scope `vosio:capture` (browser extension)
+
+Allowed scope sets are exactly `{vosio:read}`, `{vosio:read,vosio:write}` (write entails read)
+and `{vosio:capture}`. Capture cannot be combined with read or write and is accepted at
+registration (DCR `scope`), `/authorize` and in SQL only with a redirect URI matching
+`^https://[a-p]{32}\.chromiumapp\.org/`. Discovery (`scopes_supported` in `/metadata` and
+`/resource-metadata`) deliberately lists only `vosio:read` and `vosio:write`
+(`MCP_DISCOVERY_SCOPES`): MCP SDK clients request `scopes_supported` joined by space when the
+401 challenge has no `scope`, so advertising capture would make them ask for an invalid set.
+The extension requests `vosio:capture` explicitly. Refresh keeps the grant's set; a different set is
+`invalid_scope`. The mandatory `read` check is no longer part of generic token
+authentication: `authenticateBridgeRequest` returns any valid grant (with `redirectUri`),
+`authenticateMcpRequest` additionally requires `vosio:read`. The Edge dispatcher, the
+protocol handler and the audio reader each reject a capture token with 403
+`insufficient_scope`; capture endpoints (separate change task) require exactly `{capture}`.
+Errors of `/authorize` for a capture request (mixed set, non-extension redirect, storage
+failure) are returned as a 303 redirect with `error` and `state` to the already verified,
+registered redirect URI; unknown client or unregistered redirect stays a JSON 400. The consent
+page `/mcp/consent` has a third mode for `{capture}`: Czech text about the narrow permission,
+the extension ID derived from the verified redirect, no read/write choice; the form posts
+`access=capture`, and `approve` refuses any mismatch between pending set and `access`.
+`/mcp/connections` labels the type with `mcpConnectionTypeLabel` (`src/lib/mcp/connection-labels.ts`).
+
+DB contract (`20261106120000_vosio_mcp_capture_scope.sql`, additive, one transaction):
+
+- `vosio_mcp_private.pending_scopes_check` and `grants_scopes_check` allow only the three sets;
+  `{capture}` additionally requires the chromiumapp.org redirect URI. `mcp_register_dynamic_client_v1`
+  validates no scopes and is unchanged.
+- `vosio_mcp_private.grant_json` (returned by custody `access`, `code_claim`, `refresh_claim`) adds `redirect_uri`.
+- Table `vosio_mcp_private.capture_recordings(recording_id pk -> recordings on delete cascade, user_id,
+  extension_id, request_id, created_grant_id, completed_at, completion jsonb, created_at)`, unique
+  `(user_id, extension_id, request_id)`; `extension_id` is the 32-letter chromiumapp host label.
+  FORCE RLS, no grants to any API role. `created_grant_id` has no FK (audit only), so the binding
+  survives the grant.
+- Service-role-only RPCs (security definer, empty search path, owner postgres, EXECUTE revoked from
+  public/anon/authenticated), all return jsonb `{recordingId, extensionId, requestId, createdGrantId,
+  completedAt, completion, createdAt}` or null:
+  `mcp_capture_binding_record_v1(p_user_id, p_extension_id, p_recording_id, p_request_id, p_created_grant_id default null)`
+  (idempotent by user/extension/request; foreign recording or bad id `22023`; recording already bound
+  under another request `23505`), `mcp_capture_binding_by_recording_v1(p_user_id, p_extension_id, p_recording_id)`,
+  `mcp_capture_binding_by_request_v1(p_user_id, p_extension_id, p_request_id)`,
+  `mcp_capture_binding_complete_v1(p_user_id, p_extension_id, p_recording_id, p_completion)` (sets
+  `completed_at` once and keeps the first `completion`; null if no binding).
+- `list_recoverable_recording_captures_v1` hides bound recordings with `completed_at is null` created
+  less than 7 days ago; same signature and ACL.
+- `mcp_list_own_connections_v1` adds `extensionId` (host label or null); older consumers ignore it.
+- Rollback: the commented ROLLBACK block at the end of the migration restores the old two checks and
+  refuses (`55000`) while any pending/grant row with `vosio:capture` exists; the additive objects stay.
+  Deploy order: migration first, then Function and web. Proof: `scripts/verify-mcp-postgres.mjs`
+  (`captureProof`, run on a disposable DB only; not yet executed).
 
 ## Surface and bounds
 

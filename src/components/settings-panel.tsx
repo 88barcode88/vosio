@@ -5,6 +5,7 @@ import { CheckCircle2, CircleDot, Save, Settings2, TriangleAlert } from "lucide-
 import { ThemeChoice } from "@/components/theme-toggle";
 import { AccountSecurityPanel } from "@/components/account-security-panel";
 import { AiModelPicker, createAiModelSelection } from "@/components/ai-model-picker";
+import { SettingsConnectionsSection } from "@/components/settings-connections-section";
 import { Disclosure } from "@/components/ui/disclosure";
 import { APP_VERSION } from "@/lib/app-version";
 import type { InstallationEnvironment, InstallationStatus } from "@/lib/installation-status.server";
@@ -153,6 +154,7 @@ const settingsSections = [
   { id: "settings-transcription", label: "Jazyk a přepis" },
   { id: "settings-recording", label: "Nahrávání" },
   { id: "settings-storage", label: "Úložiště" },
+  { id: "settings-connections", label: "Připojené aplikace" },
   { id: "settings-appearance", label: "Vzhled" },
   { id: "settings-diagnostics", label: "Využití" }
 ] as const;
@@ -575,6 +577,8 @@ export function SettingsPanel({ accountEmail, disableAccountSecurity = false, di
           </div>
           <p className="settings-limit-callout">Efektivní limit manuálního uploadu: <strong>{storageLimitSummary.manualUploadLimit}</strong>.</p>
         </section>
+
+        <SettingsConnectionsSection />
 
         <section className="settings-section" aria-labelledby="settings-appearance">
           <div className="settings-section-heading"><h2 id="settings-appearance">Vzhled</h2><p>Motiv se přepne a uloží v tomto prohlížeči hned, bez tlačítka Uložit.</p></div>

@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { getMcpConfig, parseMcpConfig } from "@/lib/mcp/config.server";
-import { authenticateMcpRequest, verifyUpstream } from "@/lib/mcp/auth.server";
+import { mcpMetadata } from "@/lib/mcp/edge-handler.server";
+import { authenticateBridgeRequest, authenticateMcpRequest, verifyUpstream } from "@/lib/mcp/auth.server";
 import { decryptCustody, encryptCustody, hashToken, newOpaqueToken, pkceChallenge } from "@/lib/mcp/oauth-crypto.server";
 import { authorizeSchema, handleMcpOAuth, matchesMcpRedirect, MCP_NONCE_COOKIE, MCP_PENDING_COOKIE, normalizeMcpScopes, upstreamConsentDetails, validateMcpRedirect, validateUpstreamRedirect } from "@/lib/mcp/oauth.server";
 import { custodySchemas } from "@/lib/mcp/oauth-store.server";
@@ -350,5 +351,131 @@ describe("OAuth consent, callback and single-use issuance", () => {
     expect(response.status).toBe(400); expect(await response.json()).toEqual({ error: "invalid_grant" });
     expect(mocks.custody.mock.calls[0][0]).toBe("refresh_claim"); expect(fetchMock).toHaveBeenCalledOnce();
     expect(mocks.custody).toHaveBeenCalledWith("revoke_grant", { grantId });
+  });
+});
+
+const extensionId = "abcdefghijklmnopabcdefghijklmnop";
+const extensionRedirect = `https://${extensionId}.chromiumapp.org/oauth`;
+// Switch the synthetic pending request and registered client to a browser-extension capture request.
+function captureSetup() {
+  const context = setup();
+  Object.assign(context.pending, { redirectUri: extensionRedirect, scopes: ["vosio:capture"], status: "pending" });
+  Object.assign(context.grant, { scopes: ["vosio:capture"], redirect_uri: extensionRedirect });
+  return context;
+}
+// Build a public authorize request for the extension client.
+function authorizeRequest(config: ReturnType<typeof configure>, extra: Record<string, string> = {}) {
+  const params = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: extensionRedirect, state: "ext-state", code_challenge: token, code_challenge_method: "S256", resource: config.resourceUrl, scope: "vosio:capture", ...extra });
+  return new Request(`${config.origin}/api/mcp/oauth/authorize?${params}`);
+}
+
+describe("vosio:capture scope set", () => {
+  it("normalizes capture only as its own set", () => {
+    expect(normalizeMcpScopes("vosio:capture")).toEqual(["vosio:capture"]);
+    expect(normalizeMcpScopes("vosio:capture vosio:capture")).toEqual(["vosio:capture"]);
+    for (const value of ["vosio:capture vosio:read", "vosio:write vosio:capture", "vosio:capture admin"]) expect(() => normalizeMcpScopes(value)).toThrow();
+    expect(normalizeMcpScopes("vosio:read")).toEqual(["vosio:read"]);
+  });
+
+  it("authenticates a capture grant generically but keeps it out of MCP and audio authentication", async () => {
+    const { config } = captureSetup(); const request = () => new Request(config.resourceUrl, { headers: { Authorization: `Bearer ${token}` } });
+    expect(await authenticateBridgeRequest(request())).toMatchObject({ userId, grantId, scopes: ["vosio:capture"], redirectUri: extensionRedirect });
+    await expect(authenticateMcpRequest(request())).rejects.toMatchObject({ code: "insufficient_scope" });
+  });
+
+  it.each([
+    ["capture without redirect", { scopes: ["vosio:capture"], redirect_uri: undefined }],
+    ["capture with foreign redirect", { scopes: ["vosio:capture"], redirect_uri: "https://host.example/callback" }],
+    ["capture mixed with read", { scopes: ["vosio:capture", "vosio:read"], redirect_uri: extensionRedirect }],
+    ["write without read", { scopes: ["vosio:write"], redirect_uri: undefined }]
+  ])("rejects an invalid stored grant: %s", async (_name, patch) => {
+    const { config, grant } = setup(); mocks.custody.mockResolvedValue({ ...grant, ...patch });
+    await expect(authenticateBridgeRequest(new Request(config.resourceUrl, { headers: { Authorization: `Bearer ${token}` } }))).rejects.toMatchObject({ code: "invalid_token" });
+  });
+
+  it("registers a capture client only with verified extension redirects", async () => {
+    const { config } = setup(); const register = (body: Record<string, unknown>) => handleMcpOAuth(new Request(`${config.origin}/api/mcp/oauth/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), "register");
+    expect((await register({ client_name: "Vosio rozšíření", redirect_uris: [extensionRedirect], scope: "vosio:capture" })).status).toBe(201);
+    for (const body of [{ redirect_uris: ["https://host.example/callback"], scope: "vosio:capture" }, { redirect_uris: [extensionRedirect, "https://host.example/callback"], scope: "vosio:capture" }, { redirect_uris: [extensionRedirect], scope: "vosio:capture vosio:read" }]) expect((await register(body)).status).toBe(400);
+    expect(mocks.register).toHaveBeenCalledOnce();
+  });
+
+  it("creates a capture pending request for a verified extension redirect", async () => {
+    const { config } = captureSetup();
+    const response = await handleMcpOAuth(authorizeRequest(config), "authorize");
+    expect(response.status).toBe(303); expect(response.headers.get("location")).toContain("/mcp/consent?request=");
+    expect(mocks.custody).toHaveBeenCalledWith("pending_create", expect.objectContaining({ scopes: ["vosio:capture"], redirectUri: extensionRedirect, state: "ext-state" }));
+  });
+
+  it.each([
+    ["mixed scopes", "vosio:capture vosio:read", extensionRedirect, "invalid_scope"],
+    ["foreign redirect", "vosio:capture", "https://host.example/callback", "invalid_request"]
+  ])("returns %s as a redirect with an error to the registered redirect URI", async (_name, scope, redirect, error) => {
+    const { config, pending } = captureSetup(); pending.redirectUri = redirect;
+    const response = await handleMcpOAuth(authorizeRequest(config, { scope, redirect_uri: redirect }), "authorize");
+    expect(response.status).toBe(303);
+    const target = new URL(response.headers.get("location")!);
+    expect(`${target.origin}${target.pathname}`).toBe(`${new URL(redirect).origin}${new URL(redirect).pathname}`);
+    expect(target.searchParams.get("error")).toBe(error); expect(target.searchParams.get("state")).toBe("ext-state");
+    expect(mocks.custody).not.toHaveBeenCalledWith("pending_create", expect.anything());
+  });
+
+  it("redirects a capture storage failure but never redirects to an unregistered URI", async () => {
+    const { config, pending } = captureSetup();
+    mocks.custody.mockImplementation(async (action: string) => action === "client" ? { id: clientId, name: "Ext", redirects: [pending.redirectUri] } : null);
+    const failed = await handleMcpOAuth(authorizeRequest(config), "authorize");
+    expect(failed.status).toBe(303); expect(new URL(failed.headers.get("location")!).searchParams.get("error")).toBe("temporarily_unavailable");
+    const unregistered = await handleMcpOAuth(authorizeRequest(config, { redirect_uri: `https://${"p".repeat(32)}.chromiumapp.org/oauth` }), "authorize");
+    expect(unregistered.status).toBe(400); expect(unregistered.headers.get("location")).toBeNull();
+  });
+
+  it("keeps non-capture authorize errors as JSON", async () => {
+    const { config } = setup();
+    const params = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: "https://host.example/callback", code_challenge: token, code_challenge_method: "S256", resource: config.resourceUrl, scope: "admin" });
+    const response = await handleMcpOAuth(new Request(`${config.origin}/api/mcp/oauth/authorize?${params}`), "authorize");
+    expect(response.status).toBe(400); expect(await response.json()).toEqual({ error: "invalid_request" });
+  });
+
+  it("approves exactly the capture set and refuses a read/write choice on a capture request", async () => {
+    const { config, nonce } = captureSetup();
+    const approve = (access?: string) => handleMcpOAuth(new Request(`${config.origin}/api/mcp/oauth/consent`, { method: "POST", headers: { Origin: config.origin, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ action: "approve", nonce, pendingId, ...(access ? { access } : {}) }) }), "consent");
+    for (const access of [undefined, "read", "write"]) expect((await approve(access)).status).toBe(400);
+    expect(mocks.custody).not.toHaveBeenCalledWith("pending_approve", expect.anything());
+    expect((await approve("capture")).status).toBe(303);
+    expect(mocks.custody).toHaveBeenCalledWith("pending_approve", expect.objectContaining({ id: pendingId, userId, scopes: ["vosio:capture"] }));
+  });
+
+  it("does not allow capture access on a read/write consent request", async () => {
+    const { config, nonce, pending } = setup(); pending.status = "pending";
+    const response = await handleMcpOAuth(new Request(`${config.origin}/api/mcp/oauth/consent`, { method: "POST", headers: { Origin: config.origin, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ action: "approve", nonce, pendingId, access: "capture" }) }), "consent");
+    expect(response.status).toBe(400); expect(mocks.custody).not.toHaveBeenCalledWith("pending_approve", expect.anything());
+  });
+
+  it("issues and refreshes capture tokens with the same fixed set", async () => {
+    const { config, fetchMock, tokens } = captureSetup(); fetchMock.mockImplementation(async () => new Response(JSON.stringify(tokens), { status: 200 }));
+    const issued = await handleMcpOAuth(tokenRequest(config, { grant_type: "authorization_code", code: token, client_id: clientId, redirect_uri: extensionRedirect, resource: config.resourceUrl, code_verifier: newOpaqueToken() }), "token");
+    expect(await issued.json()).toMatchObject({ scope: "vosio:capture", expires_in: 300 });
+    for (const scope of [undefined, "vosio:capture"]) {
+      const refreshed = await handleMcpOAuth(tokenRequest(config, { grant_type: "refresh_token", refresh_token: token, client_id: clientId, resource: config.resourceUrl, ...(scope ? { scope } : {}) }), "token");
+      expect(refreshed.status).toBe(200); expect(await refreshed.json()).toMatchObject({ scope: "vosio:capture" });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const widened = await handleMcpOAuth(tokenRequest(config, { grant_type: "refresh_token", refresh_token: token, client_id: clientId, resource: config.resourceUrl, scope: "vosio:read" }), "token");
+    expect(widened.status).toBe(400); expect(await widened.json()).toEqual({ error: "invalid_scope" });
+    expect(mocks.custody).toHaveBeenCalledWith("revoke_grant", { grantId });
+  });
+});
+
+describe("SDK-style implicit scope resolution", () => {
+  it("keeps DCR and /authorize working for a loopback client that requests scopes_supported joined by space", async () => {
+    const { config, pending } = setup(); pending.redirectUri = "http://127.0.0.1:50000/callback";
+    const scope = mcpMetadata(config).scopes_supported.join(" ");
+    expect(scope).toBe("vosio:read vosio:write");
+    const registered = await handleMcpOAuth(new Request(`${config.origin}/api/mcp/oauth/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_name: "Claude Code", redirect_uris: [pending.redirectUri], scope }) }), "register");
+    expect(registered.status).toBe(201);
+    const params = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: pending.redirectUri, code_challenge: token, code_challenge_method: "S256", resource: config.resourceUrl, scope });
+    const response = await handleMcpOAuth(new Request(`${config.origin}/api/mcp/oauth/authorize?${params}`), "authorize");
+    expect(response.status).toBe(303); expect(response.headers.get("location")).toContain("/mcp/consent?request=");
+    expect(mocks.custody).toHaveBeenCalledWith("pending_create", expect.objectContaining({ scopes: ["vosio:read", "vosio:write"] }));
   });
 });

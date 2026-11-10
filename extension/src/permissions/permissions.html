@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vosio – povolení mikrofonu</title>
+    <link rel="stylesheet" href="../shared/ui.css" />
+    <style>
+      main { max-width: 480px; margin: 48px auto; padding: 0 16px; }
+    </style>
+  </head>
+  <body>
+    <main class="stack">
+      <h1>Povolení mikrofonu</h1>
+      <p>Vosio nahrává zvuk schůzky a váš hlas z mikrofonu. Prohlížeč se vás na povolení zeptá jen jednou; bez něj se nahraje pouze zvuk schůzky.</p>
+      <p class="muted">Mikrofon se používá pouze během nahrávání, kterou sami spustíte.</p>
+      <div class="row"><button id="allow" class="primary" type="button">Povolit mikrofon</button></div>
+      <p id="result" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="permissions.js"></script>
+  </body>
+</html>

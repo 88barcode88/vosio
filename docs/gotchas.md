@@ -145,6 +145,24 @@ Podepsaný JWT může přežít logout; nový MCP request proto kontroluje i ži
 tokenu zablokuje rodinu, vyžaduje nové připojení a neopakuje upstream request.
 Odinstalování pluginu samo nezruší backend grant. Viz [runbook](api/mcp-plugin.md).
 
+Capture API rozšíření (`/capture/*`) dokončí přepisy delší než okno dispatch (240 s) bez otevřeného Vosia jen
+při HTTPS `NEXT_PUBLIC_APP_URL` (webhook Sonioxu); jinak se dokončí dohledáním při otevření nahrávky.
+Selhání prepare/start přepisu v `/complete` vrací 200 `not_started` a opakování se stejným `requestId` ho zkusí
+znovu; model Function (`SONIOX_ASYNC_MODEL`) musí odpovídat webu, DB neshodu v5/v6 nezachytí.
+
+Sekce Nastavení „Připojené aplikace a rozšíření“ načítá seznam až v prohlížeči přes server action, takže `renderToStaticMarkup` testy `SettingsPanel` ukážou jen stav načítání. `mcp_revoke_own_connection_v1` vrací `false` (ne chybu), když session není aktivní; UI to bere jako selhání odpojení. Tlačítka sekce jsou uvnitř formuláře Nastavení, proto musí mít `type="button"`.
+
+Scope `vosio:read` už není povinný pro každý bridge token. Povolené sady jsou
+`{read}`, `{read,write}` a `{capture}` (rozšíření prohlížeče); `{capture}` nelze
+kombinovat a platí jen s návratovou adresou `https://<32 písmen a–p>.chromiumapp.org/…`.
+Povinnost `read` se vynucuje až na MCP a audio cestách (`authenticateMcpRequest`,
+`edge-handler`, `handleMcpProtocol`): capture token tam dostane 403 `insufficient_scope`.
+Obecná autentizace bridge tokenu je `authenticateBridgeRequest` a scope si ověřuje volající.
+Chyby `/authorize` pro capture klienty se vracejí přesměrováním s `error` na ověřenou
+návratovou adresu (jinak by `launchWebAuthFlow` visel); u ostatních klientů zůstává JSON.
+Function nasazená před forwardem `20261106120000` nezná `redirect_uri` v `grant_json`, proto je
+v `grantSchema` volitelné; capture grant ho vyžaduje. Nejdřív migrace, potom Function.
+
 ## P1 source forwardy a historické AI zdroje
 
 Smazání checklistu odstraní úkoly, rozhodnutí i rizika/blokery přepisu a ponechává
@@ -225,7 +243,7 @@ V původní úvaze se objevil název SONiVOX. Pro speech-to-text provider v tomt
 
 ## Vercel a audio
 
-Audio soubory mohou být velké a dlouhé zpracování nepatří do jednoho Vercel requestu. Hlavní upload cesta je frontend -> Supabase Storage TUS endpoint přes authenticated browser session, ne frontend -> Vercel API route -> storage/provider. TUS adaptér posílá 6 MiB chunky a před každým requestem znovu čte access token, protože dlouhému uploadu může mezitím expirivat session. Authorization nastavuj pouze v `onBeforeRequest`; kombinace statického `headers.authorization` a následného `setHeader` v browserovém `tus-js-client` hodnoty přes XHR spojí čárkou a Supabase odmítne neplatnou dvojitou bearer hlavičku.
+Audio soubory mohou být velké a dlouhé zpracování nepatří do jednoho Vercel requestu. Hlavní upload cesta je frontend -> Supabase Storage TUS endpoint přes authenticated browser session (rozšíření prohlížeče nahrává části podepsaným jednorázovým `PUT` z capture API, viz [capture API](api/browser-extension-capture.md); audio nikdy neprochází Vercelem ani Function), ne frontend -> Vercel API route -> storage/provider. TUS adaptér posílá 6 MiB chunky a před každým requestem znovu čte access token, protože dlouhému uploadu může mezitím expirivat session. Authorization nastavuj pouze v `onBeforeRequest`; kombinace statického `headers.authorization` a následného `setHeader` v browserovém `tus-js-client` hodnoty přes XHR spojí čárkou a Supabase odmítne neplatnou dvojitou bearer hlavičku.
 
 Manuální vícesouborový upload běží sekvenčně. Průběh celé fronty se počítá z odeslaných bytů, ne z průměru procent jednotlivých souborů; nesmí klesnout při přechodu na další soubor. Zrušení ukončí aktivní TUS upload, ale capture zůstává `uploading`, aby šlo obnovit stejný request a pevně navázaný objekt. Neprovádí přímý zápis `failed`; ani neúspěšná finalizace nesmí předstírat dokončení nebo vytvořit nový objekt. Kontrola stavu musí přiznat vlastní selhání a zrušení zachovat původní identitu. Revokace (`42501`) zakáže další týmové pokračování; soukromá obnova vyžaduje výslovný nový scope, nikoli tichou kopii.
 
@@ -707,3 +725,9 @@ OpenAI, Gemini i Mistral pro processing i chat používají společný transport
 **Problém:** UI zobrazuje rozhodnutí a rizika deduplikovaná přes opakovaná AI zpracování (`dedupeStructuredAiItems`). Smazání jen zobrazeného řádku by po refreshi vytáhlo starší ekvivalentní kopii.
 **Proč:** Stejné rozhodnutí/riziko vzniká v každé generaci jako nový řádek `transcript_decisions`/`transcript_risks` a authenticated role má na tabulky jen `select`.
 **Řešení:** `DELETE /api/transcript-decisions/[decisionId]` a `/api/transcript-risks/[riskId]` (sdílený `structured-item-group-delete.server.ts`) sestaví skupinu přes `getDecisionDedupeKey`/`getRiskDedupeKey` v rámci téže nahrávky a smažou ji atomicky přes `delete_managed_transcript_decision_group_v1`/`delete_managed_transcript_risk_group_v1` (verze cílového řádku, aktuální `can_manage_recording`, max 1000 ID). Klient skryje vrácená `ids` přes `confirmChecklistDeletion(ids, [])`. Rozhodnutí se liší i stavem: „K potvrzení“ a „Dohodnuto“ téhož textu jsou dvě skupiny. Budoucí AI generování může položku vytvořit znovu. Migrace `20261104120000_decision_risk_group_delete.sql` musí být na targetu aplikovaná před nasazením aplikace.
+
+## Inline CHECK dostane jméno `<tabulka>_<sloupec>_check` (09.11.2026)
+
+**Problém:** Migrace `20261106120000` měla inline `check` na sloupci `completion` a zároveň pojmenovaný table constraint `capture_recordings_completion_check`. Na Postgresu 17 skončila chybou `42710 check constraint ... already exists`. Unit testy to nezachytily, protože migraci nespouštějí proti DB.
+**Proč:** Postgres pojmenuje inline column check automaticky `<tabulka>_<sloupec>_check`. Ručně pojmenovaný constraint se stejným vzorem jména se s ním srazí.
+**Řešení:** Pojmenované table constrainty nepojmenovávej vzorem `<tabulka>_<sloupec>_check`, pokud má sloupec i inline check (zde `capture_recordings_completion_requires_completed_at`). Migraci před apply vždy vyzkoušej v transakci s `rollback`. Migrace `20261106120000` musí být na targetu aplikovaná před nasazením aplikace a Function `vosio-mcp`.

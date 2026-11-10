@@ -1,5 +1,6 @@
 import { getMcpMetadata, readPendingView } from "@/lib/mcp/gateway.server";
 import { notFound } from "next/navigation";
+import { extensionIdFromRedirect, isCaptureScopeSet } from "@/lib/mcp/scopes";
 export const dynamic = "force-dynamic";
 export const metadata = { referrer: "same-origin" as const };
 
@@ -10,6 +11,17 @@ export default async function McpConsentPage({ searchParams }: { searchParams: P
   const params = await searchParams;
   const details = await readPendingView(params.request).catch(() => null);
   if (!details || details.pending.status !== "pending") notFound();
+  const extensionId = isCaptureScopeSet(details.pending.scopes) ? extensionIdFromRedirect(details.pending.redirectUri) : null;
+  if (isCaptureScopeSet(details.pending.scopes) && !extensionId) notFound();
+  if (extensionId) return <main className="auth-shell"><section className="auth-card" aria-label="Připojení rozšíření prohlížeče">
+    <div className="auth-heading"><h1>Připojit rozšíření prohlížeče</h1><p>Rozšíření „{details.clientName}“ bude moci nahrávat do vašeho Vosia.</p></div>
+    <p>Instalace Vosio: {config.webOrigin}</p><p>ID rozšíření: {extensionId}</p>
+    <form action="/api/mcp/oauth/consent" method="post" className="auth-form">
+      <input type="hidden" name="pendingId" value={details.pending.id} /><input type="hidden" name="nonce" value={details.nonce} /><input type="hidden" name="access" value="capture" />
+      <p>Rozšíření smí pouze vytvářet nové nahrávky, nahrávat do nich zvuk a spouštět jejich přepis. Nemůže číst vaše existující nahrávky, přepisy ani výstupy a nemůže nic upravovat ani mazat. Připojení můžete kdykoliv odebrat v Nastavení.</p>
+      <button name="action" value="approve" type="submit">Povolit nahrávání</button><button name="action" value="deny" type="submit">Odmítnout</button>
+    </form>
+  </section></main>;
   return <main className="auth-shell"><section className="auth-card" aria-label="Připojení MCP klienta">
     <div className="auth-heading"><h1>Připojit {details.clientName}</h1><p>Klient získá přístup jen k obsahu, který smíte ve Vosio používat.</p></div>
     <p>Instalace Vosio: {config.webOrigin}</p><p>Cílová adresa klienta: {new URL(details.pending.redirectUri).origin}</p>

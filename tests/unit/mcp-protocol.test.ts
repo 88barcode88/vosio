@@ -83,3 +83,17 @@ describe("MCP SDK protocol", () => {
     expect((await response).status).toBe(400); expect(cancel).toHaveBeenCalledOnce(); expect(mocks.execute).not.toHaveBeenCalled();
   });
 });
+
+describe("MCP SDK protocol scope boundary", () => {
+  it.each([["initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "proof", version: "1" } }], ["tools/list", undefined]] as const)("denies a capture-only identity on %s", async (method, params) => {
+    const authorize = vi.fn().mockResolvedValue({ ...identity(), scopes: ["vosio:capture"] });
+    const response = await handleMcpProtocol(request(method, params), authorize);
+    expect(response.status).toBe(403); expect(await response.json()).toEqual({ error: "insufficient_scope" });
+    expect(mocks.execute).not.toHaveBeenCalled(); expect(mocks.audio).not.toHaveBeenCalled();
+  });
+  it("denies a capture-only identity on audio resources", async () => {
+    const authorize = vi.fn().mockResolvedValue({ ...identity(), scopes: ["vosio:capture"] });
+    const response = await handleMcpProtocol(request("resources/read", { uri: `${resourceUrl}/audio/11111111-1111-4111-8111-111111111111/chunks/0` }), authorize);
+    expect(response.status).toBe(403); expect(mocks.audio).not.toHaveBeenCalled();
+  });
+});

@@ -16,6 +16,11 @@ vi.mock("@/lib/settings/actions", () => ({
   updateUserSettingsAction: vi.fn()
 }));
 
+vi.mock("@/lib/settings/connection-actions", () => ({
+  listOwnConnectionsAction: vi.fn(async () => ({ connections: [], ok: true })),
+  revokeOwnConnectionAction: vi.fn(async () => ({ ok: true }))
+}));
+
 
 const storageConfig = {
   allowedMimeTypes: ["audio/mpeg"],
@@ -91,7 +96,7 @@ describe("settings workspace layout", () => {
 
   it("links every section from the settings navigation", () => {
     const markup = renderSettings({ error: "Usage se teď nepodařilo načíst.", summary: null });
-    for (const id of ["settings-account", "settings-ai", "settings-transcription", "settings-recording", "settings-storage", "settings-appearance", "settings-diagnostics"]) {
+    for (const id of ["settings-account", "settings-ai", "settings-transcription", "settings-recording", "settings-storage", "settings-connections", "settings-appearance", "settings-diagnostics"]) {
       expect(markup).toContain(`href="#${id}"`);
       expect(markup).toContain(`id="${id}"`);
     }
@@ -249,7 +254,7 @@ describe("settings workspace layout", () => {
       }
     });
 
-    const headings = ["Účet", "AI a výstupy", "Jazyk a přepis", "Nahrávání", "Úložiště", "Vzhled", "Diagnostika a využití"];
+    const headings = ["Účet", "AI a výstupy", "Jazyk a přepis", "Nahrávání", "Úložiště", "Připojené aplikace a rozšíření", "Vzhled", "Diagnostika a využití"];
     const headingPositions = headings.map((heading) => markup.search(new RegExp(`<h2[^>]*>${heading}</h2>`, "u")));
 
     expect(headingPositions.every((position) => position >= 0)).toBe(true);
